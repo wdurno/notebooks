@@ -1,1 +1,4 @@
 # notebooks
+
+Smaller AI experiments
+
