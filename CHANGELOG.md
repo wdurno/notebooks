@@ -1,3 +1,6 @@
+#### v0.3.0 
+- online nets show potential improvements in transfer learning 
+
 #### v0.2.1 
 - online nets actually fit now 
 
