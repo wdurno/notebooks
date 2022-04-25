@@ -249,7 +249,7 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True, tqdm_seconds=10): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -264,7 +264,7 @@ class Model(nn.Module):
         self.total_rewards = [] 
         simulation_results = [] 
         ## run experiment 
-        iters = tqdm(range(total_iters), disable=False) 
+        iters = tqdm(range(total_iters), disable=False, mininterval=tqdm_seconds) 
         for iter_idx in iters: 
             prev_env_state = env_state 
             if self.explore_probability_func(iter_idx) > np.random.uniform(): ## TODO move to get_action 
@@ -293,8 +293,9 @@ class Model(nn.Module):
                 loss = float(loss) 
                 mean_reward = float(mean_reward) 
                 param_nan = self.get_parameter_vector().isnan().sum() 
-                iters.set_description(f'n_restarts: {n_restarts}, last_total_reward: {last_total_reward}, '+\
-                    f'loss: {round(loss,4)}, halt: {halt_method}, mean_reward: {round(mean_reward,2)}, action: {action}') 
+                ## too many print statements 
+                #iters.set_description(f'n_restarts: {n_restarts}, last_total_reward: {last_total_reward}, '+\
+                #    f'loss: {round(loss,4)}, halt: {halt_method}, mean_reward: {round(mean_reward,2)}, action: {action}') 
                 pass 
 
             if done: 
