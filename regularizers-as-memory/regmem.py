@@ -264,7 +264,7 @@ class Model(nn.Module):
         self.total_rewards = [] 
         simulation_results = [] 
         ## run experiment 
-        iters = tqdm(range(total_iters), disable=False, mininterval=tqdm_seconds) 
+        iters = tqdm(range(total_iters), disable=False, mininterval=tqdm_seconds, maxinterval=tqdm_seconds) 
         for iter_idx in iters: 
             prev_env_state = env_state 
             if self.explore_probability_func(iter_idx) > np.random.uniform(): ## TODO move to get_action 
