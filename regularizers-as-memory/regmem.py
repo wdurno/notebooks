@@ -40,7 +40,8 @@ class Model(nn.Module):
             hessian_sum=None, 
             hessian_denominator=None, 
             hessian_center=None, 
-            observations=[]): 
+            observations=[], 
+            total_iters=0): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -58,6 +59,7 @@ class Model(nn.Module):
         self.hessian_sum = hessian_sum 
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
+        self.total_iters = total_iters 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
         self.fc1_bn = nn.BatchNorm1d(32) 
@@ -91,9 +93,10 @@ class Model(nn.Module):
                 lbfgs=self.lbfgs, 
                 env_name=self.env_name,
                 hessian_sum=self.hessian_sum.detach().clone() if self.hessian_sum is not None else None, 
-                hessian_denominator=self.hessian_denominator, ## this is an int, so it is copied via '=' 
+                hessian_denominator=self.hessian_denominator, ## this is an int or None, so it is copied via '=' 
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
-                observations=self.observations.copy()) 
+                observations=self.observations.copy(), 
+                total_iters=self.total_iters) 
         out.load_state_dict(self.state_dict()) 
         return out 
 
@@ -133,7 +136,7 @@ class Model(nn.Module):
             predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
             loss = F.smooth_l1_loss(predicted, target) 
             loss.backward() 
-            grad_vec = torch.cat([p.grad.reshape([-1]) for p in model.parameters()]) 
+            grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
             outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 
             if self.hessian_sum is None or self.hessian_denominator is None: 
                 self.hessian_sum = outter_product 
@@ -292,7 +295,8 @@ class Model(nn.Module):
             ## store for model fitting 
             self.store_observation(observation) 
             ## store for output 
-            simulation_results.append((reward, done, iter_idx)) 
+            self.total_iters += 1 
+            simulation_results.append((reward, done, self.total_iters)) 
 
             if iter_idx > 30 and iter_idx % 1 == 0: 
                 loss, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size) 
