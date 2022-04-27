@@ -15,54 +15,46 @@
 
 # COMMAND ----------
 
+## pyspark  
+
 def f(model_idx):
     model_idx = int(model_idx) 
     ## install requirements
     import os
-    os.system('pip install torch tqdm gym pygame')
+    os.system('pip install torch tqdm gym pygame') ## does %pip work on auto-scaled nodes? 
     ## run experiment 
     from regmem import Model
     model = Model() 
     result_tuples = model.simulate(total_iters=10000, plot_prob_func=False, plot_rewards=False) 
     ## format output 
     out = []
+    cumulative_reward = 0 
     for r in result_tuples:
         reward = r[0]
         done = r[1]
+        if done:
+            cumulative_reward = 0 
+        else:
+            cumulative_reward += reward 
+            pass 
         iter_idx = r[2]
-        out.append((reward, done, iter_idx, model_idx))
+        out.append((cumulative_reward, done, iter_idx, model_idx))
     return out 
 
 x = sc.parallelize(list(range(100)), 50) 
-y = x.map(f).collect() 
-y
+y = x.flatMap(f) 
+schema = ['score', 'done', 'iter', 'model'] 
+z = y.toDF(schema=schema) 
+w = z.groupBy('iter').mean('score')
+df = w.toPandas()
+scores = df.sort_values('iter')['avg(score)'].tolist()
 
 # COMMAND ----------
+
+## analysis 
 
 import matplotlib.pyplot as plt 
 import pandas as pd 
 
-def process_data(data):
-    cumulative_score = [] 
-    iteration = [] 
-    model_idx = [] 
-    prev_score = 0. 
-    for job_result in data:
-        for row in job_result:
-            if row[0] > 0.: 
-                prev_score += row[0] 
-                cumulative_score.append(prev_score) 
-                iteration.append(row[2]) 
-                model_idx.append(row[3]) 
-            else: 
-                prev_score = 0 
-                pass
-            pass
-        pass 
-    ## can be replaced with flatmap, toDF, and SparkSQL 
-    df = pd.DataFrame({'score': cumulative_score, 'iter': iteration, 'model': model_idx}) 
-    return df.groupby('iter').agg({'score': 'mean'}).score.tolist()
-
-mean_scores = process_data(y)
-plt.plot(mean_scores) 
+plt.plot(scores) 
 plt.show()
