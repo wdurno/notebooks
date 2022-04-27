@@ -39,7 +39,8 @@ class Model(nn.Module):
             env_name=ENV_NAME,
             hessian_sum=None, 
             hessian_denominator=None, 
-            hessian_center=None): 
+            hessian_center=None, 
+            observations=[]): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -64,7 +65,7 @@ class Model(nn.Module):
         self.fc2_bn = nn.BatchNorm1d(32) 
         self.fc3 = nn.Linear(32, n_actions) 
         ## init data structures 
-        self.observations = [] 
+        self.observations = observations 
         self.env = None 
         if self.lbfgs: 
             ## Misbehavior observed with large `history_size`, ie. >20 
@@ -87,7 +88,12 @@ class Model(nn.Module):
                 learning_rate=self.learning_rate, 
                 grad_clip=self.grad_clip, 
                 short_term_memory_length=self.short_term_memory_length, 
-                lbfgs=self.lbfgs) 
+                lbfgs=self.lbfgs, 
+                env_name=self.env_name,
+                hessian_sum=self.hessian_sum.detach().clone() if self.hessian_sum is not None else None, 
+                hessian_denominator=self.hessian_denominator, ## this is an int, so it is copied via '=' 
+                hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
+                observations=self.observations.copy()) 
         out.load_state_dict(self.state_dict()) 
         return out 
 
