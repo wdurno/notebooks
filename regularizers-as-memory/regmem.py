@@ -205,6 +205,9 @@ class Model(nn.Module):
         return nn.utils.parameters_to_vector(self.parameters()) 
     
     def optimize(self, max_iter=None, batch_size=None): 
+        if len(self.observations) < batch_size:
+            ## do not optimize without sufficient sample size 
+            return None, None, None 
         iter_n = 0 
         n_dels = 30 
         dels = [None]*n_dels 
@@ -299,14 +302,16 @@ class Model(nn.Module):
             simulation_results.append((reward, done, self.total_iters)) 
 
             if iter_idx > 30 and iter_idx % 1 == 0: 
-                loss, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size) 
-                loss = float(loss) 
-                mean_reward = float(mean_reward) 
-                param_nan = self.get_parameter_vector().isnan().sum() 
+                _ = self.optimize(max_iter=1, batch_size=self.batch_size) 
+                #loss, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size) 
+                pass 
+                #loss = float(loss) 
+                #mean_reward = float(mean_reward) 
+                #param_nan = self.get_parameter_vector().isnan().sum() 
                 ## too many print statements 
                 #iters.set_description(f'n_restarts: {n_restarts}, last_total_reward: {last_total_reward}, '+\
                 #    f'loss: {round(loss,4)}, halt: {halt_method}, mean_reward: {round(mean_reward,2)}, action: {action}') 
-                pass 
+                #pass 
 
             if done: 
                 env_state = env.reset() 

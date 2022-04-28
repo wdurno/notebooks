@@ -104,15 +104,12 @@ plt.show()
 # COMMAND ----------
 
 ## save data 
-FILENAME = 'df-4.27.22'
+FILENAME = 'df-4.28.22'
 
 storage_name = 'databricksdataa'
-sas_key = '[REDACTED]' ## TODO REDACT OR CYCLE THIS KEY 
+sas_key = '[REDACTED]' ## TODO CYCLE THIS KEY 
 output_container_name = 'data'
 output_container_path = ''
-
-df_to_save = pd.DataFrame({'scores0': scores0, 'scores1': scores1, 'scores2': scores0})
-#df_to_save.to_parquet('df-4.27.22.parquet.gzip', compression='gzip') ## databricks is locally read-only...  
 
 # Configure blob storage account access key globally
 spark.conf.set(
@@ -122,5 +119,5 @@ spark.conf.set(
 output_container_path = "wasbs://%s@%s.blob.core.windows.net" % (output_container_name, storage_name) 
 output_blob_folder = "%s/" % output_container_path 
 
-df_to_save = pd.DataFrame({'scores0': scores0, 'scores1': scores1, 'scores2': scores0}) 
+df_to_save = pd.DataFrame({'scores0': scores0, 'scores1': scores1, 'scores2': scores2}) 
 dbutils.fs.put(f'{output_blob_folder}/{FILENAME}.csv', df_to_save.to_csv(), overwrite=True) ## got annoyed with mounts for blob-writing parquets 
