@@ -16,9 +16,10 @@
 # COMMAND ----------
 
 ## pyspark  
+import pandas as pd 
 
-SAMPLE_SIZE = 10 
-#SAMPLE_SIZE = 100 
+SAMPLE_SIZE = 1000 
+ITERS=1000
 
 def f(task_idx):
     import traceback 
@@ -31,18 +32,18 @@ def f(task_idx):
         from regmem import Model
         condition_0_model = Model() 
         ## condition 0 (control): No use of memory, no discarding of data 
-        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=10000, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## copy, creating other models before continuing 
         condition_1_model = condition_0_model.copy() 
         condition_2_model = condition_0_model.copy() 
         ## continue condition 0 trial, without application of memory and without discarding data 
-        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=10000, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 1 (control): No use of memory, do discard data 
         condition_1_model.clear_observations() 
-        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=10000, plot_prob_func=False, plot_rewards=False) 
+        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 2 (experimental): Use memory, do discard data 
         condition_2_model.convert_observations_to_memory() 
-        condition_2_result_tuples_after = condition_1_model.simulate(total_iters=10000, plot_prob_func=False, plot_rewards=False) 
+        condition_2_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
@@ -93,10 +94,33 @@ scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist(
 ## analysis 
 
 import matplotlib.pyplot as plt 
-import pandas as pd 
 
 plt.plot(scores0, label='0') 
 plt.plot(scores1, label='1') 
 plt.plot(scores2, label='2') 
 plt.legend()
 plt.show()
+
+# COMMAND ----------
+
+## save data 
+FILENAME = 'df-4.27.22'
+
+storage_name = 'databricksdataa'
+sas_key = '[REDACTED]' ## TODO REDACT OR CYCLE THIS KEY 
+output_container_name = 'data'
+output_container_path = ''
+
+df_to_save = pd.DataFrame({'scores0': scores0, 'scores1': scores1, 'scores2': scores0})
+#df_to_save.to_parquet('df-4.27.22.parquet.gzip', compression='gzip') ## databricks is locally read-only...  
+
+# Configure blob storage account access key globally
+spark.conf.set(
+  "fs.azure.account.key.%s.blob.core.windows.net" % storage_name,
+  sas_key)
+
+output_container_path = "wasbs://%s@%s.blob.core.windows.net" % (output_container_name, storage_name) 
+output_blob_folder = "%s/" % output_container_path 
+
+df_to_save = pd.DataFrame({'scores0': scores0, 'scores1': scores1, 'scores2': scores0}) 
+dbutils.fs.put(f'{output_blob_folder}/{FILENAME}.csv', df_to_save.to_csv(), overwrite=True) ## got annoyed with mounts for blob-writing parquets 
