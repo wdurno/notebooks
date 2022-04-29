@@ -128,7 +128,7 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self): 
+    def convert_observations_to_memory(self, n_eigenvectors = None): 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
         for obs in self.observations: 
@@ -149,6 +149,15 @@ class Model(nn.Module):
         self.hessian_center = target_model.get_parameter_vector().detach() 
         ## wipe observations, and use memory going forward instead 
         self.clear_observations() 
+        ## for simulation purposes only - no computational benefit is derived from using this feature 
+        if n_eigenvectors is not None: 
+            eigs = torch.linalg.eig(self.hessian_sum) 
+            ## extract and truncate 
+            vecs = eigs.eigenvectors.real
+            vals = eigs.eigenvalues.real
+            vecs[:,n_eigenvectors:] = 0 
+            vals[n_eigenvectors:] = 0  
+            self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
     
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
