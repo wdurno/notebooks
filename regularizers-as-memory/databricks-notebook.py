@@ -109,6 +109,9 @@ df = w.toPandas()
 scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
 scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
 scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
+scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
+scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist() 
+scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist() 
 
 # COMMAND ----------
 
@@ -119,13 +122,16 @@ import matplotlib.pyplot as plt
 plt.plot(scores0, label='0') 
 plt.plot(scores1, label='1') 
 plt.plot(scores2, label='2') 
+plt.plot(scores3, label='3') 
+plt.plot(scores4, label='4') 
+plt.plot(scores5, label='5') 
 plt.legend()
 plt.show()
 
 # COMMAND ----------
 
 ## save data 
-FILENAME = 'df-4.29.22-2'
+FILENAME = 'df-4.30.22-2'
 
 storage_name = 'databricksdataa'
 sas_key = '[REDACTED]' ## TODO CYCLE THIS KEY 
@@ -140,20 +146,10 @@ spark.conf.set(
 output_container_path = "wasbs://%s@%s.blob.core.windows.net" % (output_container_name, storage_name) 
 output_blob_folder = "%s/" % output_container_path 
 
-df_to_save = pd.DataFrame({'scores0': scores0, 'scores1': scores1, 'scores2': scores2}) 
+df_to_save = pd.DataFrame({'scores0': scores0, 
+                           'scores1': scores1, 
+                           'scores2': scores2,
+                           'scores3': scores3,
+                           'scores4': scores4,
+                           'scores5': scores5,})
 dbutils.fs.put(f'{output_blob_folder}/{FILENAME}.csv', df_to_save.to_csv(), overwrite=True) ## got annoyed with mounts for blob-writing parquets 
-
-# COMMAND ----------
-
-scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
-scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist() 
-scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist() 
-
-plt.plot(scores0, label='0') 
-plt.plot(scores1, label='1') 
-plt.plot(scores2, label='2') 
-plt.plot(scores3, label='3') 
-plt.plot(scores4, label='4') 
-plt.plot(scores5, label='5') 
-plt.legend()
-plt.show()
