@@ -1,3 +1,6 @@
+#### v0.4.0 
+- Progress made in regularizers-as-memory 
+
 #### v0.3.0 
 - online nets show potential improvements in transfer learning 
 
