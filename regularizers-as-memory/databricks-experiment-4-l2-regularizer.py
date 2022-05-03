@@ -1,9 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Databricks experiments 1 and 2 
-# MAGIC 
-# MAGIC - Experiment 1: demonstrate lift with full Fisher Information matrix 
-# MAGIC - Experiment 2: demonstrate lift with low-rank approximations of the Fisher Information matrix 
+# MAGIC # Databricks experiment 4: L2 regularizer effects 
 # MAGIC 
 # MAGIC I'm using Databricks to avoid architecting and containerization work. 
 # MAGIC Default environments seem to have most dependencies, but need init step `pip install gym pygame`. 
@@ -50,15 +47,13 @@ def f(task_idx):
         ## condition 2 (experimental): Use memory, do discard data 
         condition_2_model.convert_observations_to_memory() 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 3 (experimental): Use memory, do discard data, use 1 eigenvector 
-        condition_3_model.convert_observations_to_memory(n_eigenvectors=1) 
-        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 4 (experimental): Use memory, do discard data, use 2 eigenvectors 
-        condition_4_model.convert_observations_to_memory(n_eigenvectors=2) 
-        condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 5 (experimental): Use memory, do discard data, use 10 eigenvectors 
-        condition_5_model.convert_observations_to_memory(n_eigenvectors=10) 
-        condition_5_result_tuples_after = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        ## condition 3 (experimental): Use memory, do not discard data, use L2 Regularizer = 1
+        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False, l2_regularizer=1.0) 
+        ## condition 4 (control): Use memory, do not discard data, use L2 Regularizer = 100
+        condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False, l2_regularizer=100.0) 
+        ## condition 5 (control): Use memory, do discard data, use L2 Regularizer = 1 
+        condition_5_model.clear_observations() 
+        condition_5_result_tuples_after = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False, l2_regularizer=1.0) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
@@ -134,7 +129,7 @@ plt.show()
 # COMMAND ----------
 
 ## save data 
-FILENAME = 'df-5.1.22-1'
+FILENAME = 'df-experiment-4-5.2.22-1'
 
 storage_name = 'databricksdataa'
 sas_key = '[REDACTED]' ## TODO CYCLE THIS KEY 
