@@ -213,7 +213,7 @@ class Model(nn.Module):
     def get_parameter_vector(self): 
         return nn.utils.parameters_to_vector(self.parameters()) 
     
-    def optimize(self, max_iter=None, batch_size=None): 
+    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None): 
         if len(self.observations) < batch_size:
             ## do not optimize without sufficient sample size 
             return None, None, None 
@@ -233,9 +233,13 @@ class Model(nn.Module):
             #loss = F.mse_loss(predicted, target) 
             loss = F.smooth_l1_loss(predicted, target) 
             if regularizer is not None: 
-                #n = predicted.shape[0] 
-                #loss = (n*loss + regularizer)/(n + self.) ## TODO balance by sample size 
                 loss += regularizer 
+            if l2_regularizer is not None: 
+                ## for experimental purposes only 
+                t0 = self.hessian_center = target_model.get_parameter_vector().detach() 
+                t = self.get_parameter_vector() 
+                dt = (t - t0).reshape([-1, 1])
+                loss += l2_regularizer * dt.transpose(0,1).matmul(dt).reshape([]) 
             loss_f = float(loss) 
             loss.backward() 
             if not self.lbfgs: 
@@ -270,7 +274,7 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True, tqdm_seconds=10): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True, tqdm_seconds=10, l2_regularizer=None): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -311,8 +315,7 @@ class Model(nn.Module):
             simulation_results.append((reward, done, self.total_iters)) 
 
             if iter_idx > 30 and iter_idx % 1 == 0: 
-                _ = self.optimize(max_iter=1, batch_size=self.batch_size) 
-                #loss, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size) 
+                _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
                 pass 
                 #loss = float(loss) 
                 #mean_reward = float(mean_reward) 

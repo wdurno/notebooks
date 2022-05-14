@@ -1,36 +1,14 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Databricks experiments 1 and 2 
-# MAGIC 
-# MAGIC - Experiment 1: demonstrate lift with full Fisher Information matrix 
-# MAGIC - Experiment 2: demonstrate lift with low-rank approximations of the Fisher Information matrix 
-# MAGIC 
-# MAGIC I'm using Databricks to avoid architecting and containerization work. 
-# MAGIC Default environments seem to have most dependencies, but need init step `pip install gym pygame`. 
-# MAGIC Used Spark config:
-# MAGIC ```
-# MAGIC spark.task.cpus 2
-# MAGIC spark.executor.pyspark.memory 12g
-# MAGIC ```
-# MAGIC 
-# MAGIC I'm using a scaled compute environment because my experiments have _noisy_ results and non-trivial compute time per experiment.
-# MAGIC By executing at scale, I can average-out noise and derive statistically significant findings.
+import pandas as pd
+from az_blob_util import upload_to_blob_store
+import os 
 
-# COMMAND ----------
-
-## pyspark  
-import pandas as pd 
-
-SAMPLE_SIZE = 1000 
-ITERS=1000
+SAMPLE_SIZE = 50 # 1000  
+ITERS=100
 
 def f(task_idx):
     import traceback 
     try:
         task_idx = int(task_idx) 
-        ## install requirements 
-        import os 
-        os.system('pip install torch tqdm gym pygame') ## does %pip work on auto-scaled nodes? 
         ## run experiment 
         from regmem import Model 
         condition_0_model = Model() 
@@ -116,35 +94,13 @@ scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist(
 scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist() 
 scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist() 
 
-# COMMAND ----------
-
-## analysis 
-
-import matplotlib.pyplot as plt 
-
-plt.plot(scores0, label='0') 
-plt.plot(scores1, label='1') 
-plt.plot(scores2, label='2') 
-plt.plot(scores3, label='3') 
-plt.plot(scores4, label='4') 
-plt.plot(scores5, label='5') 
-plt.legend()
-plt.show()
-
-# COMMAND ----------
-
-## save data 
-FILENAME = 'df-5.1.22-1'
-
+### save data 
+FILENAME = 'example-df.csv'
 storage_name = 'databricksdataa'
-sas_key = '[REDACTED]' ## TODO CYCLE THIS KEY 
+sas_key = os.environ['STORAGE_KEY']  
 output_container_name = 'data'
-output_container_path = ''
 
 # Configure blob storage account access key globally
-spark.conf.set(
-  "fs.azure.account.key.%s.blob.core.windows.net" % storage_name,
-  sas_key)
 
 output_container_path = "wasbs://%s@%s.blob.core.windows.net" % (output_container_name, storage_name) 
 output_blob_folder = "%s/" % output_container_path 
@@ -155,4 +111,6 @@ df_to_save = pd.DataFrame({'scores0': scores0,
                            'scores3': scores3,
                            'scores4': scores4,
                            'scores5': scores5,})
-dbutils.fs.put(f'{output_blob_folder}/{FILENAME}.csv', df_to_save.to_csv(), overwrite=True) ## got annoyed with mounts for blob-writing parquets 
+df_data = df_to_save.to_csv().encode() 
+upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
+
