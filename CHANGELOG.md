@@ -1,3 +1,6 @@
+#### v0.4.1 
+- regularizers-as-memory has a transfer-learning-centric executive summary 
+
 #### v0.4.0 
 - Progress made in regularizers-as-memory 
 
