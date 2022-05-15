@@ -60,7 +60,7 @@ class Model(nn.Module):
         self.hessian_sum = hessian_sum 
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
-        self.hessium_sum_low_rank_half = hessian_sum_low_rank_half
+        self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
@@ -163,8 +163,7 @@ class Model(nn.Module):
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
     
-    def convert_observations_to_memory_als(self, rank, max_iter=1000, eps=1e-3): 
-        ## TODO populate self.hessian_sum_low_rank_half 
+    def convert_observations_to_memory_als(self, rank, max_iter=1000, eps=1e-3):  
         ## extract gradient vectors 
         target_model = self.copy() 
         grads = [] 
@@ -186,7 +185,7 @@ class Model(nn.Module):
         laps = 0 
         col = 0 
         for grad in grads: 
-            beta[:,col] = grad 
+            beta[:,col] = grad[:,0] 
             col += 1 
             if col == rank: 
                 col = 0 
