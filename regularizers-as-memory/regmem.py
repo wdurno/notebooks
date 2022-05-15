@@ -38,6 +38,7 @@ class Model(nn.Module):
             lbfgs=LBFGS, 
             env_name=ENV_NAME,
             hessian_sum=None, 
+            hessian_sum_low_rank_half=None, 
             hessian_denominator=None, 
             hessian_center=None, 
             observations=[], 
@@ -59,6 +60,7 @@ class Model(nn.Module):
         self.hessian_sum = hessian_sum 
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
+        self.hessium_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
@@ -93,6 +95,7 @@ class Model(nn.Module):
                 lbfgs=self.lbfgs, 
                 env_name=self.env_name,
                 hessian_sum=self.hessian_sum.detach().clone() if self.hessian_sum is not None else None, 
+                hessian_sum_low_rank_half=self.hessian_sum_low_rank_half, 
                 hessian_denominator=self.hessian_denominator, ## this is an int or None, so it is copied via '=' 
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
@@ -160,6 +163,63 @@ class Model(nn.Module):
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
     
+    def convert_observations_to_memory_als(self, rank, max_iter=1000, eps=1e-3): 
+        ## TODO populate self.hessian_sum_low_rank_half 
+        ## extract gradient vectors 
+        target_model = self.copy() 
+        grads = [] 
+        for obs in self.observations: 
+            ## update hessian  
+            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
+            loss = F.smooth_l1_loss(predicted, target) 
+            loss.backward() 
+            grad_vec = torch.cat([p.grad.reshape([-1,1]) for p in self.parameters()]) 
+            grads.append(grad_vec) 
+            pass 
+        ## calculate initial beta estimate 
+        ## init strategy: average gradients in over beta columns 
+        if len(grads) < rank:
+            print('WARNING: fewer grads than rank - no conversion to memory will occur!')
+            return None 
+        p = int(grads[0].shape[0]) 
+        beta = torch.zeros(size=[p,rank]) 
+        laps = 0 
+        col = 0 
+        for grad in grads: 
+            beta[:,col] = grad 
+            col += 1 
+            if col == rank: 
+                col = 0 
+                laps += 1 
+                pass
+            pass 
+        beta = beta / float(laps) 
+        ## iterate to convergence 
+        continue_iterating = True 
+        total_iterations = 0 
+        while continue_iterating: 
+            ## iteration init tasks 
+            total_iterations += 1 
+            prev_beta = beta 
+            ## calculate new beta 
+            betaTbeta_inv = beta.transpose(0,1).matmul(beta).inverse() ## should be rank X rank matrix, so small and fast 
+            sum_betaT_delT_del = 0 
+            for grad in grads:
+                sum_betaT_delT_del += beta.transpose(0,1).matmul(grad).matmul(grad.transpose(0,1))
+                pass 
+            beta = betaTbeta_inv.matmul(sum_betaT_delT_del).transpose(0,1) 
+            ## check for convergence 
+            if (beta - prev_beta).abs().sum() < eps: 
+                continue_iterating = False 
+            ## check for iteration limit 
+            if total_iterations > max_iter: 
+                continue_iterating = False 
+                pass 
+            pass 
+        ## wipe observations, and use memory going forward instead 
+        self.clear_observations() 
+        pass 
+
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
         ## random sample 
         obs = self.observations 
@@ -199,12 +259,20 @@ class Model(nn.Module):
         prediction = predicted_rewards.gather(1, action) 
         ## calculate memory regularizer 
         regularizer = None 
-        if self.hessian_sum is not None and self.hessian_denominator is not None and self.hessian_center is not None: 
+        if (self.hessian_sum is not None or self.hessian_sum_low_rank_half is not None) and \
+                self.hessian_denominator is not None and \
+                self.hessian_center is not None: 
             t = self.get_parameter_vector() 
             #t0 = target_model.get_parameter_vector().detach() 
             t0 = self.hessian_center 
             ## quadratic form around matrix estimating fisher information 
-            regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum) 
+            if self.hessian_sum is not None:
+                ## p X p hessian 
+                regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum) 
+            elif self.hessian_sum_low_rank_half is not None: 
+                ## low-rank hessian 
+                regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum_low_rank_half).matmul(self.hessian_sum_low_rank_half.transpose(0,1)) 
+                pass
             regularizer = regularizer.matmul((t - t0).reshape([-1, 1]))
             regularizer *= .5 / self.hessian_denominator 
             regularizer = regularizer.reshape([])
