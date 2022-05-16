@@ -1,9 +1,13 @@
 import pandas as pd
 from az_blob_util import upload_to_blob_store
 import os 
+from pyspark import SparkContext
+from pyspark.sql import SparkSession 
+sc = SparkContext() 
+spark = SparkSession(sc) 
 
-SAMPLE_SIZE = 50 # 1000  
-ITERS=100
+SAMPLE_SIZE = 100 # DEBUGGING! 1000  
+ITERS = 1000
 
 def f(task_idx):
     import traceback 
@@ -28,14 +32,14 @@ def f(task_idx):
         ## condition 2 (experimental): Use memory, do discard data 
         condition_2_model.convert_observations_to_memory() 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 3 (experimental): Use memory, do discard data, use 1 eigenvector 
-        condition_3_model.convert_observations_to_memory(n_eigenvectors=1) 
+        ## condition 3 (experimental): Use memory, do discard data, use a rank-1 approximation  
+        condition_3_model.convert_observations_to_memory_als(rank=1) 
         condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 4 (experimental): Use memory, do discard data, use 2 eigenvectors 
-        condition_4_model.convert_observations_to_memory(n_eigenvectors=2) 
+        ## condition 4 (experimental): Use memory, do discard data, use a rank-2 approximation  
+        condition_4_model.convert_observations_to_memory_als(rank=2) 
         condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 5 (experimental): Use memory, do discard data, use 10 eigenvectors 
-        condition_5_model.convert_observations_to_memory(n_eigenvectors=10) 
+        ## condition 5 (experimental): Use memory, do discard data, use a rank-10 approximation 
+        condition_5_model.convert_observations_to_memory_als(rank=10) 
         condition_5_result_tuples_after = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
@@ -95,15 +99,12 @@ scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist(
 scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist() 
 
 ### save data 
-FILENAME = 'example-df.csv'
+FILENAME = 'df-experiment-3.csv'
 storage_name = 'databricksdataa'
 sas_key = os.environ['STORAGE_KEY']  
 output_container_name = 'data'
 
 # Configure blob storage account access key globally
-
-output_container_path = "wasbs://%s@%s.blob.core.windows.net" % (output_container_name, storage_name) 
-output_blob_folder = "%s/" % output_container_path 
 
 df_to_save = pd.DataFrame({'scores0': scores0, 
                            'scores1': scores1, 

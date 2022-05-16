@@ -175,11 +175,11 @@ class Model(nn.Module):
             grad_vec = torch.cat([p.grad.reshape([-1,1]) for p in self.parameters()]) 
             grads.append(grad_vec) 
             pass 
-        ## calculate initial beta estimate 
-        ## init strategy: average gradients in over beta columns 
+        ## check 
         if len(grads) < rank:
             print('WARNING: fewer grads than rank - no conversion to memory will occur!')
             return None 
+        ## init 
         p = int(grads[0].shape[0]) 
         beta = torch.zeros(size=[p,rank]) 
         laps = 0 
@@ -192,7 +192,8 @@ class Model(nn.Module):
                 laps += 1 
                 pass
             pass 
-        beta = beta / float(laps) 
+        beta = beta / float(laps)
+        beta = torch.normal(0, torch.ones([p,rank])) 
         ## iterate to convergence 
         continue_iterating = True 
         total_iterations = 0 
@@ -202,11 +203,12 @@ class Model(nn.Module):
             prev_beta = beta 
             ## calculate new beta 
             betaTbeta_inv = beta.transpose(0,1).matmul(beta).inverse() ## should be rank X rank matrix, so small and fast 
-            sum_betaT_delT_del = 0 
+            sum_betaT_del_delT = 0 
             for grad in grads:
-                sum_betaT_delT_del += beta.transpose(0,1).matmul(grad).matmul(grad.transpose(0,1))
+                sum_betaT_del_delT += beta.transpose(0,1).matmul(grad).matmul(grad.transpose(0,1))
                 pass 
-            beta = betaTbeta_inv.matmul(sum_betaT_delT_del).transpose(0,1) 
+            beta_tmp = betaTbeta_inv.matmul(sum_betaT_del_delT).transpose(0,1) 
+            beta = .5*beta_tmp + .5*beta ## avoid thrashing: D bT(bTb)^{-1} hat{b} = D => hat{b} = b 
             ## check for convergence 
             if (beta - prev_beta).abs().sum() < eps: 
                 continue_iterating = False 
