@@ -175,24 +175,20 @@ class Model(nn.Module):
             grad_vec = torch.cat([p.grad.reshape([-1,1]) for p in self.parameters()]) 
             grads.append(grad_vec) 
             pass 
+        ## als 
+        self.hessian_sum_low_rank_half = self.als(grads, rank, max_iter=max_iter, eps=eps)  
+        ## wipe observations, and use memory going forward instead 
+        self.clear_observations() 
+        pass 
+
+    @staticmethod 
+    def als(grads, rank, max_iter=1000, eps=1e-3): 
         ## check 
         if len(grads) < rank:
             print('WARNING: fewer grads than rank - no conversion to memory will occur!')
             return None 
         ## init 
         p = int(grads[0].shape[0]) 
-        beta = torch.zeros(size=[p,rank]) 
-        laps = 0 
-        col = 0 
-        for grad in grads: 
-            beta[:,col] = grad[:,0] 
-            col += 1 
-            if col == rank: 
-                col = 0 
-                laps += 1 
-                pass
-            pass 
-        beta = beta / float(laps)
         beta = torch.normal(0, torch.ones([p,rank])) 
         ## iterate to convergence 
         continue_iterating = True 
@@ -217,9 +213,7 @@ class Model(nn.Module):
                 continue_iterating = False 
                 pass 
             pass 
-        ## wipe observations, and use memory going forward instead 
-        self.clear_observations() 
-        pass 
+        return beta 
 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
         ## random sample 
