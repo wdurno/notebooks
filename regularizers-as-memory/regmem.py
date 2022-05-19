@@ -41,8 +41,9 @@ class Model(nn.Module):
             hessian_sum_low_rank_half=None, 
             hessian_denominator=None, 
             hessian_center=None, 
-            observations=[], 
-            total_iters=0): 
+            observations=[],
+            total_iters=0,
+            optimal_lambda=False): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -61,7 +62,8 @@ class Model(nn.Module):
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
-        self.total_iters = total_iters 
+        self.total_iters = total_iters
+        self.optimal_lambda = optimal_lambda 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
         self.fc1_bn = nn.BatchNorm1d(32) 
@@ -99,7 +101,8 @@ class Model(nn.Module):
                 hessian_denominator=self.hessian_denominator, ## this is an int or None, so it is copied via '=' 
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
-                total_iters=self.total_iters) 
+                total_iters=self.total_iters, 
+                optimal_lambda=self.optimal_lambda) 
         out.load_state_dict(self.state_dict()) 
         return out 
 
@@ -163,7 +166,8 @@ class Model(nn.Module):
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
     
-    def convert_observations_to_memory_als(self, rank, max_iter=1000, eps=1e-3):  
+    def convert_observations_to_memory_als(self, rank, max_iter=1000, eps=1e-3): 
+        ## DEPRECATED: DOES NOT WORK 
         ## extract gradient vectors 
         target_model = self.copy() 
         grads = [] 
@@ -183,6 +187,7 @@ class Model(nn.Module):
 
     @staticmethod 
     def als(grads, rank, max_iter=1000, eps=1e-3): 
+        ## DEPRECATED: DOES NOT WORK 
         ## check 
         if len(grads) < rank:
             print('WARNING: fewer grads than rank - no conversion to memory will occur!')
@@ -294,8 +299,11 @@ class Model(nn.Module):
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=batch_size) 
             mean_reward = predicted.mean() 
             #loss = F.mse_loss(predicted, target) 
-            loss = F.smooth_l1_loss(predicted, target) 
+            loss = F.smooth_l1_loss(predicted, target) ## avg loss  
             if regularizer is not None: 
+                if self.optimal_lambda:
+                    ## *= n_1/n_2 
+                    regularizer *= self.hessian_denominator/(self.total_iters - self.hessian_denominator) 
                 loss += regularizer 
             if l2_regularizer is not None: 
                 ## for experimental purposes only 
