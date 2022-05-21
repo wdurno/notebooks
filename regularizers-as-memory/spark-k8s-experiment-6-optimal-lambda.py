@@ -31,11 +31,11 @@ def f(task_idx):
         condition_1_model.convert_observations_to_memory() 
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 2 (experimental): Use memory, keep data, optimal lambda 
-        condition_2_model.optimal_lambda = lambda model: (model.hessian_denominator/(model.total_iters - model.hessian_denominator))
+        condition_2_model.regularizing_lambda_function = lambda model: (model.hessian_denominator/(model.total_iters - model.hessian_denominator))
         condition_2_model.convert_observations_to_memory() 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 3 (experimental): Use memory, keep data, custom lambda 
-        condition_3_model.optimal_lambda = lambda model: (model.hessian_denominator/model.total_iters)
+        condition_3_model.regularizing_lambda_function = lambda model: (model.hessian_denominator/model.total_iters)
         condition_3_model.convert_observations_to_memory() 
         condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
         ## merge before & after results 
