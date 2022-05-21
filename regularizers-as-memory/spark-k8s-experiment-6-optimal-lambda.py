@@ -85,7 +85,7 @@ df = w.toPandas()
 scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
 scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist()
 scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
-scores2 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
+scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
 
 ### save data 
 FILENAME = 'df-experiment-6.csv'
