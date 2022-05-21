@@ -165,60 +165,6 @@ class Model(nn.Module):
             vals[n_eigenvectors:] = 0  
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
-    
-    def convert_observations_to_memory_als(self, rank, max_iter=1000, eps=1e-3): 
-        ## DEPRECATED: DOES NOT WORK 
-        ## extract gradient vectors 
-        target_model = self.copy() 
-        grads = [] 
-        for obs in self.observations: 
-            ## update hessian  
-            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
-            loss = F.smooth_l1_loss(predicted, target) 
-            loss.backward() 
-            grad_vec = torch.cat([p.grad.reshape([-1,1]) for p in self.parameters()]) 
-            grads.append(grad_vec) 
-            pass 
-        ## als 
-        self.hessian_sum_low_rank_half = self.als(grads, rank, max_iter=max_iter, eps=eps)  
-        ## wipe observations, and use memory going forward instead 
-        self.clear_observations() 
-        pass 
-
-    @staticmethod 
-    def als(grads, rank, max_iter=1000, eps=1e-3): 
-        ## DEPRECATED: DOES NOT WORK 
-        ## check 
-        if len(grads) < rank:
-            print('WARNING: fewer grads than rank - no conversion to memory will occur!')
-            return None 
-        ## init 
-        p = int(grads[0].shape[0]) 
-        beta = torch.normal(0, torch.ones([p,rank])) 
-        ## iterate to convergence 
-        continue_iterating = True 
-        total_iterations = 0 
-        while continue_iterating: 
-            ## iteration init tasks 
-            total_iterations += 1 
-            prev_beta = beta 
-            ## calculate new beta 
-            betaTbeta_inv = beta.transpose(0,1).matmul(beta).inverse() ## should be rank X rank matrix, so small and fast 
-            sum_betaT_del_delT = 0 
-            for grad in grads:
-                sum_betaT_del_delT += beta.transpose(0,1).matmul(grad).matmul(grad.transpose(0,1))
-                pass 
-            beta_tmp = betaTbeta_inv.matmul(sum_betaT_del_delT).transpose(0,1) 
-            beta = .5*beta_tmp + .5*beta ## avoid thrashing: D bT(bTb)^{-1} hat{b} = D => hat{b} = b 
-            ## check for convergence 
-            if (beta - prev_beta).abs().sum() < eps: 
-                continue_iterating = False 
-            ## check for iteration limit 
-            if total_iterations > max_iter: 
-                continue_iterating = False 
-                pass 
-            pass 
-        return beta 
 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
         ## random sample 
@@ -282,7 +228,7 @@ class Model(nn.Module):
         return nn.utils.parameters_to_vector(self.parameters()) 
     
     def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None): 
-        if len(self.observations) < batch_size:
+        if len(self.observations) < batch_size: 
             ## do not optimize without sufficient sample size 
             return None, None, None 
         iter_n = 0 
@@ -301,9 +247,9 @@ class Model(nn.Module):
             #loss = F.mse_loss(predicted, target) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
             if regularizer is not None: 
-                if self.optimal_lambda:
-                    ## *= n_1/n_2 
-                    regularizer *= self.hessian_denominator/(self.total_iters - self.hessian_denominator) 
+                if self.optimal_lambda is not None:
+                    regularizer *= self.optimal_lambda(self) 
+                    pass 
                 loss += regularizer 
             if l2_regularizer is not None: 
                 ## for experimental purposes only 
