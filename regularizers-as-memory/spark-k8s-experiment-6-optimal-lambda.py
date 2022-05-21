@@ -47,7 +47,7 @@ def f(task_idx):
         condition_0_result_tuples = [(x[0], x[1], x[2], 0) for x in condition_0_result_tuples] 
         condition_1_result_tuples = [(x[0], x[1], x[2], 1) for x in condition_1_result_tuples] 
         condition_2_result_tuples = [(x[0], x[1], x[2], 2) for x in condition_2_result_tuples] 
-        condition_3_result_tuples = [(x[0], x[1], x[2], 2) for x in condition_3_result_tuples] 
+        condition_3_result_tuples = [(x[0], x[1], x[2], 3) for x in condition_3_result_tuples] 
         ## format output 
         out = [] 
         def append_results(result_tuples, out=out): 
