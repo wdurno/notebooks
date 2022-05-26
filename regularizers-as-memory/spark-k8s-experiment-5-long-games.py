@@ -1,8 +1,9 @@
 ## Experiment 5: Long games  
 ## Observe learning effect after longer gameplay 
+## WARNING: Requires EMPTY storage container "tmp" 
 
 import pandas as pd
-from az_blob_util import upload_to_blob_store
+from az_blob_util import upload_to_blob_store, download_from_blob_store, ls_blob_store 
 import os 
 from pyspark import SparkContext
 from pyspark.sql import SparkSession 
@@ -12,12 +13,14 @@ spark = SparkSession(sc)
 SAMPLE_SIZE = 1000  
 ITERS = 10000
 
-def f(task_idx):
+def map1(task_idx):
     import traceback 
     try:
         task_idx = int(task_idx) 
         ## run experiment 
         from regmem import Model 
+        from az_blob_util import upload_to_blob_store 
+        import os 
         condition_0_model = Model() 
         ## condition 0 (control): No use of memory, no discarding of data 
         condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
@@ -54,31 +57,55 @@ def f(task_idx):
             pass 
         append_results(condition_0_result_tuples) 
         append_results(condition_1_result_tuples) 
+        ## write out 
+        filename = f'result-{task_idx}.pkl'
+        sas_key = os.environ['STORAGE_KEY']
+        output_container_name = 'tmp'
+        upload_to_blob_store(pickle.dumps(out), filename, sas_key, output_container_name)  
     except Exception as e: 
         ## increase verbosity before failing 
         print(f'ERROR!\n{e}\n{traceback.format_exc()}')
         raise e 
-    return out 
+    return filename   
 
-x = sc.parallelize(list(range(SAMPLE_SIZE)), SAMPLE_SIZE) 
-y = x.flatMap(f) 
-schema = ['score', 'done', 'iter', 'task', 'condition'] 
-z = y.toDF(schema=schema) 
-w = z.groupBy('iter', 'condition').mean('score') 
-df = w.toPandas()
-scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
-scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
+def map2(filename): 
+    import os 
+    import pickle 
+    from az_blob_util import download_from_blob_store 
+    ## returns a list, use flatmap 
+    sas_key = os.environ['STORAGE_KEY]') 
+    container_name = 'tmp' 
+    x = download_from_blob_store(filename, sas_key, container_name) 
+    return pickle.loads(x) 
 
-### save data 
-FILENAME = 'df-experiment-5.csv'
-storage_name = 'databricksdataa'
-sas_key = os.environ['STORAGE_KEY']  
-output_container_name = 'data'
+def phase_1(): 
+    x = sc.parallelize(list(range(SAMPLE_SIZE)), SAMPLE_SIZE) 
+    y = x.map(map1) 
+    return y.collect() 
 
-# Configure blob storage account access key globally
+def phase_2(): 
+    ## config 
+    sas_key = os.environ['STORAGE_KEY'] 
+    input_container_name = 'tmp' 
+    output_container_name = 'data' 
+    ## get data 
+    filenames = ls_blob_store() 
+    y = filenames.flatMap(map2) 
+    ## process 
+    schema = ['score', 'done', 'iter', 'task', 'condition'] 
+    z = y.toDF(schema=schema) 
+    w = z.groupBy('iter', 'condition').mean('score') 
+    df = w.toPandas()
+    scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
+    scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
+    ### save data 
+    FILENAME = 'df-experiment-5.csv'
+    df_to_save = pd.DataFrame({'scores0': scores0, 
+                               'scores1': scores1})
+    df_data = df_to_save.to_csv().encode() 
+    upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
+    pass 
 
-df_to_save = pd.DataFrame({'scores0': scores0, 
-                           'scores1': scores1})
-df_data = df_to_save.to_csv().encode() 
-upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
-
+if __name__ == '__main__': 
+    phase_1() 
+    phase_2() 
