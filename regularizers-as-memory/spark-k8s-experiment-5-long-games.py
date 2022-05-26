@@ -7,8 +7,12 @@ from az_blob_util import upload_to_blob_store, download_from_blob_store, ls_blob
 import os 
 from pyspark import SparkContext
 from pyspark.sql import SparkSession 
-sc = SparkContext() 
-spark = SparkSession(sc) 
+try: 
+    sc = SparkContext() 
+    spark = SparkSession(sc) 
+except: 
+    ## sc + spark probably already exist 
+    pass  
 
 SAMPLE_SIZE = 1000  
 ITERS = 10000
@@ -21,6 +25,7 @@ def map1(task_idx):
         from regmem import Model 
         from az_blob_util import upload_to_blob_store 
         import os 
+        import pickle 
         condition_0_model = Model() 
         ## condition 0 (control): No use of memory, no discarding of data 
         condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
@@ -73,7 +78,7 @@ def map2(filename):
     import pickle 
     from az_blob_util import download_from_blob_store 
     ## returns a list, use flatmap 
-    sas_key = os.environ['STORAGE_KEY]') 
+    sas_key = os.environ['STORAGE_KEY']  
     container_name = 'tmp' 
     x = download_from_blob_store(filename, sas_key, container_name) 
     return pickle.loads(x) 
@@ -89,7 +94,8 @@ def phase_2():
     input_container_name = 'tmp' 
     output_container_name = 'data' 
     ## get data 
-    filenames = ls_blob_store() 
+    filenames = ls_blob_store('', sas_key, input_container_name) 
+    filenames = sc.parallelize(filenames, len(filenames)) 
     y = filenames.flatMap(map2) 
     ## process 
     schema = ['score', 'done', 'iter', 'task', 'condition'] 
