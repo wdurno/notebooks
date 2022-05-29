@@ -95,6 +95,8 @@ class Model(nn.Module):
         else: 
             self.observations = observations 
             pass 
+        ## set LSTM hidden values to zeros 
+        self.clear_short_term_memory() 
         self.env = None 
         if self.lbfgs: 
             ## Misbehavior observed with large `history_size`, ie. >20 
@@ -145,7 +147,7 @@ class Model(nn.Module):
         x = self.conv5(x) 
         x = self.conv5_bn(x) 
         x = torch.relu(x) 
-        x, self.hidden = self.lstm(x, self.hidden) ## TODO init self.hidden 
+        x, self.hidden = self.lstm(x, self.hidden) 
         x = torch.relu(x) 
         x = self.fc1(x)
         x = self.fc1_bn(x) 
@@ -165,6 +167,10 @@ class Model(nn.Module):
         self.observations.append(observation) 
         pass 
     
+    def clear_short_term_memory(self): 
+        self.hidden = torch.zeros([self.short_term_memory_length])
+        pass 
+
     def clear_observations(self): 
         self.observations = [] 
         pass 
@@ -376,9 +382,10 @@ class Model(nn.Module):
                 pass 
 
             if done: 
+                self.clear_short_term_memory() 
                 env_state = env.reset() 
-                env_state_list = [torch.tensor(env_state) for _ in range(self.short_term_memory_length)] 
-                env_state = torch.cat(env_state_list) 
+                env_state = env.render(mode='rgb_array')
+                env_state = np.asarray(Image.fromarray(env_state).resize((40,60)))
                 self.total_rewards.append(last_total_reward) 
                 last_total_reward = 0 
                 n_restarts += 1 
