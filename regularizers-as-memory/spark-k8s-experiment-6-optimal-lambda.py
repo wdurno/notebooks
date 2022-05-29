@@ -27,22 +27,22 @@ def f(task_idx):
         condition_3_model = condition_0_model.copy() 
         condition_4_model = condition_0_model.copy() 
         ## continue condition 0 (control), without application of memory and without discarding data 
-        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=2*ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 1 (control): Use memory, clear data, non-optimal lambda   
         condition_1_model.convert_observations_to_memory() 
-        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=2*ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 2 (experimental): Use memory, clear data, optimal lambda 
         condition_2_model.regularizing_lambda_function = lambda model: (model.hessian_denominator/(model.total_iters - model.hessian_denominator))
         condition_2_model.convert_observations_to_memory() 
-        condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_2_result_tuples_after = condition_2_model.simulate(total_iters=2*ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 3 (experimental): Use memory, clear data, custom lambda 
         condition_3_model.regularizing_lambda_function = lambda model: (model.hessian_denominator/model.total_iters)
         condition_3_model.convert_observations_to_memory() 
-        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
-        ## condition 4 (experimental): Use memory, clear data, near-optimal lambda = min(2, n1/n2)
-        condition_4_model.regularizing_lambda_function = lambda model: min(2., float(model.hessian_denominator/(model.total_iters - model.hessian_denominator))) 
+        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=2*ITERS, plot_prob_func=False, plot_rewards=False)
+        ## condition 4 (experimental): Use memory, clear data, near-optimal lambda = min(1, n1/n2)
+        condition_4_model.regularizing_lambda_function = lambda model: min(1., float(model.hessian_denominator/(model.total_iters - model.hessian_denominator))) 
         condition_4_model.convert_observations_to_memory()
-        condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_4_result_tuples_after = condition_4_model.simulate(total_iters=2*ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
