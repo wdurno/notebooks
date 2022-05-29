@@ -41,7 +41,7 @@ class Model(nn.Module):
             hessian_sum_low_rank_half=None, 
             hessian_denominator=None, 
             hessian_center=None, 
-            observations=[],
+            observations=None,
             total_iters=0,
             regularizing_lambda_function=None): 
         super(Model, self).__init__() 
@@ -71,7 +71,11 @@ class Model(nn.Module):
         self.fc2_bn = nn.BatchNorm1d(32) 
         self.fc3 = nn.Linear(32, n_actions) 
         ## init data structures 
-        self.observations = observations 
+        if observations is None: 
+            self.observations = [] 
+        else: 
+            self.observations = observations 
+            pass 
         self.env = None 
         if self.lbfgs: 
             ## Misbehavior observed with large `history_size`, ie. >20 
@@ -125,8 +129,8 @@ class Model(nn.Module):
         return int(predicted_reward_per_action_idx.argmax()) 
     
     def store_observation(self, observation): 
-        if len(observation) > self.max_sample: 
-            observation = observation[1:] 
+        if len(self.observations) > self.max_sample: 
+            self.observations = self.observations[1:] 
         self.observations.append(observation) 
         pass 
     
