@@ -28,18 +28,18 @@ def f(task_idx):
         condition_4_model = condition_0_model.copy() 
         ## continue condition 0 (control), without application of memory and without discarding data 
         condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 1 (control): Use memory, keep data, non-optimal lambda   
+        ## condition 1 (control): Use memory, clear data, non-optimal lambda   
         condition_1_model.convert_observations_to_memory() 
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 2 (experimental): Use memory, keep data, optimal lambda 
+        ## condition 2 (experimental): Use memory, clear data, optimal lambda 
         condition_2_model.regularizing_lambda_function = lambda model: (model.hessian_denominator/(model.total_iters - model.hessian_denominator))
         condition_2_model.convert_observations_to_memory() 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 3 (experimental): Use memory, keep data, custom lambda 
+        ## condition 3 (experimental): Use memory, clear data, custom lambda 
         condition_3_model.regularizing_lambda_function = lambda model: (model.hessian_denominator/model.total_iters)
         condition_3_model.convert_observations_to_memory() 
         condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
-        ## condition 4 (experimental): Use memory, keep data, optimal lambda bounded at 2
+        ## condition 4 (experimental): Use memory, clear data, near-optimal lambda = min(2, n1/n2)
         condition_4_model.regularizing_lambda_function = lambda model: min(2., float(model.hessian_denominator/(model.total_iters - model.hessian_denominator))) 
         condition_4_model.convert_observations_to_memory()
         condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 

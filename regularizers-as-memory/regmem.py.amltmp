@@ -43,7 +43,7 @@ class Model(nn.Module):
             hessian_center=None, 
             observations=[],
             total_iters=0,
-            optimal_lambda=False): 
+            regularizing_lambda_function=None): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -63,7 +63,7 @@ class Model(nn.Module):
         self.hessian_center = hessian_center 
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters
-        self.optimal_lambda = optimal_lambda 
+        self.regularizing_lambda_function = regularizing_lambda_function 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
         self.fc1_bn = nn.BatchNorm1d(32) 
@@ -102,7 +102,7 @@ class Model(nn.Module):
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
-                optimal_lambda=self.optimal_lambda) 
+                regularizing_lambda_function=self.regularizing_lambda_function) 
         out.load_state_dict(self.state_dict()) 
         return out 
 
@@ -247,8 +247,8 @@ class Model(nn.Module):
             #loss = F.mse_loss(predicted, target) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
             if regularizer is not None: 
-                if self.optimal_lambda is not None:
-                    regularizer *= self.optimal_lambda(self) 
+                if self.regularizing_lambda_function is not None:
+                    regularizer *= self.regularizing_lambda_function(self) 
                     pass 
                 loss += regularizer 
             if l2_regularizer is not None: 
