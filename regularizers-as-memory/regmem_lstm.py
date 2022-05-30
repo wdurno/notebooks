@@ -21,7 +21,7 @@ EXPLORE_PROBABILITY_FUNC = lambda idx: 0.99**idx
 BATCH_SIZE = 30 
 LEARNING_RATE = 0.001 
 GRAD_CLIP = 10.0 
-SHORT_TERM_MEMORY_LENGTH = 3 
+SHORT_TERM_MEMORY_LENGTH = 40 
 LBFGS = False 
 ENV_NAME = 'CartPole-v1' 
 
@@ -74,20 +74,20 @@ class Model(nn.Module):
         ## CCNs 
         ## input: (-1, 3, 40, 60) 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1) ## to (-1, 32, 38, 58) 
-        self.conv1_bn = nn.BatchNorm2d(32) 
+        #self.conv1_bn = nn.BatchNorm2d(32) 
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2) ## to (-1, 64, 18, 28) 
-        self.conv2_bn = nn.BatchNorm2d(64) 
+        #self.conv2_bn = nn.BatchNorm2d(64) 
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
-        self.conv3_bn = nn.BatchNorm2d(128) 
+        #self.conv3_bn = nn.BatchNorm2d(128) 
         self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
-        self.conv4_bn = nn.BatchNorm2d(256) 
+        #self.conv4_bn = nn.BatchNorm2d(256) 
         self.conv5 = nn.Conv2d(256, 32, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
-        self.conv5_bn = nn.BatchNorm2d(32) 
+        #self.conv5_bn = nn.BatchNorm2d(32) 
         ## LSTM  
         self.lstm = nn.LSTM(32*1*2, self.lstm_state_dim)  
         ## FCs 
         self.fc1 = nn.Linear(self.lstm_state_dim, 32) 
-        self.fc1_bn = nn.BatchNorm1d(32) 
+        #self.fc1_bn = nn.BatchNorm1d(32) 
         self.fc2 = nn.Linear(32, n_actions) 
         ## init data structures 
         if observations is None: 
@@ -127,30 +127,31 @@ class Model(nn.Module):
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
-                regularizing_lambda_function=self.regularizing_lambda_function) 
+                regularizing_lambda_function=self.regularizing_lambda_function, 
+                lstm_state_dim=self.lstm_state_dim) 
         out.load_state_dict(self.state_dict()) 
         return out 
 
     def forward(self, x): 
         x = self.conv1(x) 
-        x = self.conv1_bn(x) 
+        #x = self.conv1_bn(x) 
         x = torch.relu(x) 
         x = self.conv2(x) 
-        x = self.conv2_bn(x) 
+        #x = self.conv2_bn(x) 
         x = torch.relu(x) 
         x = self.conv3(x) 
-        x = self.conv3_bn(x) 
+        #x = self.conv3_bn(x) 
         x = torch.relu(x) 
         x = self.conv4(x) 
-        x = self.conv4_bn(x) 
+        #x = self.conv4_bn(x) 
         x = torch.relu(x) 
         x = self.conv5(x) 
-        x = self.conv5_bn(x) 
+        #x = self.conv5_bn(x) 
         x = torch.relu(x) 
         x, self.hidden = self.lstm(x, self.hidden) 
         x = torch.relu(x) 
         x = self.fc1(x)
-        x = self.fc1_bn(x) 
+        #x = self.fc1_bn(x) 
         x = torch.relu(x) 
         x = self.fc2(x) 
         return x 
@@ -168,7 +169,7 @@ class Model(nn.Module):
         pass 
     
     def clear_short_term_memory(self): 
-        self.hidden = torch.zeros([self.short_term_memory_length])
+        self.hidden = (torch.zeros([self.lstm_state_dim]), torch.zeros([self.lstm_state_dim])) 
         pass 
 
     def clear_observations(self): 
@@ -207,44 +208,79 @@ class Model(nn.Module):
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
 
+    def sample_observations(self, batch_size): 
+        ## sample indices between second observation and last, inclusive  
+        idx_list = random.sample(list(range(len(self.observations)))[1:], batch_size) 
+        out = [] 
+        for idx in idx_list: 
+            ## find starting position 
+            ## note: observations stores a series of time-sorted episodes  
+            ## iterate backward until you hit a halt, index 0, or too much distance 
+            start = idx 
+            continue_search = True 
+            while continue_search: 
+                start -= 1 
+                if start == 0:
+                    continue_search = False 
+                if self.observations[start][2]: 
+                    ## done == True 
+                    ## hit previous finish 
+                    continue_search = False 
+                    start += 1 
+                if idx - start > self.short_term_memory_length: 
+                    continue_search = False 
+                pass 
+            ## extract 
+            subsequence = [self.observations[i] for i in range(start, idx+1)] 
+            out.append(subsequence) 
+        return out 
+
+    @staticmethod 
+    def tensor_unsqueeze(x):
+        x = torch.Tensor(x) 
+        x = torch.unsqueeze(x,0) 
+        return 0 
+
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
-        ## TODO hard-rewrite needed for this... 
-        ## random sample 
+        ## random sample of memory sequences 
         obs = self.observations 
         if batch_size is not None: 
             if batch_size < len(self.observations): 
-                obs = random.sample(self.observations, batch_size) 
+                obs = self.sample_observations(batch_size) 
         if batch is not None: 
-            obs = batch 
-        ## unpack samples 
-        samples = [(torch.tensor(env_state).float(), \
-                torch.tensor(reward).float(), \
-                torch.tensor(done).int(), \
-                torch.tensor(prev_env_state).float(), \
-                torch.tensor(action).int()) for \
-                (env_state, reward, done, info, prev_env_state, action) in obs] 
-        ## build matrices 
-        env_state = torch.stack([obs[0] for obs in samples], dim=0) ## inserts dim 0 
-        observed_rewards = torch.stack([obs[1] for obs in samples], dim=0) 
-        done = torch.stack([obs[2] for obs in samples], dim=0) 
-        prev_env_state = torch.stack([obs[3] for obs in samples], dim=0) 
-        action = torch.stack([obs[4] for obs in samples], dim=0).reshape([-1, 1]).type(torch.int64) 
-        ## calculate target 
-        with torch.no_grad(): 
-            target_model.eval() 
-            predicted_rewards = target_model.forward(env_state) 
-            predicted_rewards = torch.max(predicted_rewards, dim=1, keepdim=True).values.reshape([-1]) 
-            target = observed_rewards + (1 - done) * self.discount * predicted_rewards 
-            target = target.reshape([-1, 1]).detach() 
+            obs = batch
+        ## construct target and prediction vectors 
+        prediction = [] 
+        target = [] 
+        for series in obs: 
+            ## observation structure: 
+            ## 0: env_state, 1: reward, 2: done, 3: info, 4: prev_env_state, 5: action, 6: prev_hidden, 7: hidden 
+            ## get initial hidden states 
+            self.hidden = tensor_unsqueeze(series[0][6]) 
+            target_model.hidden = tensor_unsqueeze(series[0][7]) 
+            for idx_o, o in enumerate(series): 
+                ## process sequences, updating internal states 
+                prev_env_state = tensor_unsqueeze(o[4]) 
+                env_state = tensor_unsqueeze(o[0]) 
+                p = self.forward(prev_env_state) 
+                t = target_model.forward(env_state) 
+                if idx_o + 1 == len(series): 
+                    ## if at end, populate prediction and target 
+                    action = tensor_unsqueeze(o[5]) 
+                    observed_reward = tensor_unsqueeze(o[1]) 
+                    done = tensor_unsqueeze(o[2]) 
+                    p = p.gather(1, action) 
+                    t = torch.max(t, dim=1, keepdim=True).values.reshape([-1]) 
+                    t = observed_reward + (1 - done) * self.discount * t 
+                    prediction.append(p) 
+                    target.append(t) 
+                    pass 
+                ## BATCH NORM FAILS on individual samples, so it has been disabled. 
+                ## I could enable it by padding sequences, allowing for batch processing. 
+                pass 
             pass 
-        ## calculate prediction 
-        self.zero_grad() 
-        if fit: 
-            self.train() 
-        else:
-            self.eval() 
-        predicted_rewards = self.forward(prev_env_state) 
-        prediction = predicted_rewards.gather(1, action) 
+        prediction = torch.cat(prediction) 
+        target = torch.cat(target) 
         ## calculate memory regularizer 
         regularizer = None 
         if (self.hessian_sum is not None or self.hessian_sum_low_rank_half is not None) and \
@@ -342,6 +378,7 @@ class Model(nn.Module):
         env_state = env.reset() 
         env_state = env.render(mode='rgb_array') 
         env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
+        self.clear_short_term_memory 
         last_start = 0 
         last_total_reward = 0 
         n_restarts = 0 
@@ -351,6 +388,7 @@ class Model(nn.Module):
         iters = tqdm(range(total_iters), disable=False, mininterval=tqdm_seconds, maxinterval=tqdm_seconds) 
         for iter_idx in iters: 
             prev_env_state = env_state 
+            prev_hidden = (self.hidden[0].detach(), self.hidden[1].detach())  
             if self.explore_probability_func(iter_idx) > np.random.uniform():  
                 ## explore 
                 action = env.action_space.sample()
@@ -370,7 +408,8 @@ class Model(nn.Module):
                 reward = 0 
                 pass 
             last_total_reward += reward 
-            observation = env_state, reward, done, info, prev_env_state, action, hidden 
+            ## TODO in an LSTM context, storing prev and current state and hidden is doubly-wasteful 
+            observation = env_state, reward, done, info, prev_env_state, action, prev_hidden, hidden 
             ## store for model fitting 
             self.store_observation(observation) 
             ## store for output 
