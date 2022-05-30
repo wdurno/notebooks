@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import random 
+from random import randrange 
 import gym 
 from tqdm import tqdm 
 import numpy as np 
@@ -74,20 +74,20 @@ class Model(nn.Module):
         ## CCNs 
         ## input: (-1, 3, 40, 60) 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1) ## to (-1, 32, 38, 58) 
-        #self.conv1_bn = nn.BatchNorm2d(32) 
+        self.conv1_bn = nn.BatchNorm2d(32) 
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2) ## to (-1, 64, 18, 28) 
-        #self.conv2_bn = nn.BatchNorm2d(64) 
+        self.conv2_bn = nn.BatchNorm2d(64) 
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
-        #self.conv3_bn = nn.BatchNorm2d(128) 
+        self.conv3_bn = nn.BatchNorm2d(128) 
         self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
-        #self.conv4_bn = nn.BatchNorm2d(256) 
+        self.conv4_bn = nn.BatchNorm2d(256) 
         self.conv5 = nn.Conv2d(256, 32, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
-        #self.conv5_bn = nn.BatchNorm2d(32) 
+        self.conv5_bn = nn.BatchNorm2d(32) 
         ## LSTM  
         self.lstm = nn.LSTM(32*1*2, self.lstm_state_dim)  
         ## FCs 
         self.fc1 = nn.Linear(self.lstm_state_dim, 32) 
-        #self.fc1_bn = nn.BatchNorm1d(32) 
+        self.fc1_bn = nn.BatchNorm1d(32) 
         self.fc2 = nn.Linear(32, n_actions) 
         ## init data structures 
         if observations is None: 
@@ -133,25 +133,34 @@ class Model(nn.Module):
         return out 
 
     def forward(self, x): 
+        ## x should be shape [series_idx, sample_idx, channel_idx, height_idx, width_idx] 
+        ## we'll use this shorthand: [L, N, C, H, W] <-- names should align to PyTorch's CNN and LSTM documentation  
+        ## first, we must reshape for CNNs 
+        L, N, C, H, W = tuple(x.shape) 
+        x = x.reshape([L*N, C, H, W]) 
         x = self.conv1(x) 
-        #x = self.conv1_bn(x) 
+        x = self.conv1_bn(x) 
         x = torch.relu(x) 
         x = self.conv2(x) 
-        #x = self.conv2_bn(x) 
+        x = self.conv2_bn(x) 
         x = torch.relu(x) 
         x = self.conv3(x) 
-        #x = self.conv3_bn(x) 
+        x = self.conv3_bn(x) 
         x = torch.relu(x) 
         x = self.conv4(x) 
-        #x = self.conv4_bn(x) 
+        x = self.conv4_bn(x) 
         x = torch.relu(x) 
         x = self.conv5(x) 
-        #x = self.conv5_bn(x) 
+        x = self.conv5_bn(x) 
         x = torch.relu(x) 
+        ## reshape for LSTM 
+        x = x.reshape([L, N, -1]) 
         x, self.hidden = self.lstm(x, self.hidden) 
+        ## extract last of series 
+        x = x[L-1, :, :] ## has shape [N, -1] 
         x = torch.relu(x) 
         x = self.fc1(x)
-        #x = self.fc1_bn(x) 
+        x = self.fc1_bn(x) 
         x = torch.relu(x) 
         x = self.fc2(x) 
         return x 
@@ -210,12 +219,22 @@ class Model(nn.Module):
 
     def sample_observations(self, batch_size): 
         ## sample indices between second observation and last, inclusive  
-        idx_list = random.sample(list(range(len(self.observations)))[1:], batch_size) 
-        out = [] 
-        for idx in idx_list: 
+        # observation structure: 0: reward, 1: done, 2: info, 3: prev_env_state, 4: action, 5: prev_hidden 
+        out = []
+        for _ in range(batch_size): 
             ## find starting position 
             ## note: observations stores a series of time-sorted episodes  
             ## iterate backward until you hit a halt, index 0, or too much distance 
+            idx = randrange(1, len(self.observations)) 
+            fail_count = 0 
+            while self.observations[idx-1][1]: 
+                ## must not be done 
+                idx = randrange(1, len(self.observations)) 
+                fail_count += 1 
+                if fail_count > 1000: 
+                    ## should almost-surely never occur 
+                    raise Exception('ERROR: Could not sample valid series of observations!') 
+                pass 
             start = idx 
             continue_search = True 
             while continue_search: 
@@ -227,19 +246,19 @@ class Model(nn.Module):
                     ## hit previous finish 
                     continue_search = False 
                     start += 1 
-                if idx - start > self.short_term_memory_length: 
+                if idx - start == self.short_term_memory_length: 
                     continue_search = False 
                 pass 
             ## extract 
+            ## sequences are +1 length for target network 
             subsequence = [self.observations[i] for i in range(start, idx+1)] 
+            if len(subsequence) < self.short_term_memory_length + 1: 
+                ## pad as needed 
+                subsequence = [subsequence[0]]*(self.short_term_memory_length - len(sequence) + 1) + sequence 
+                pass 
             out.append(subsequence) 
+            pass 
         return out 
-
-    @staticmethod 
-    def tensor_unsqueeze(x):
-        x = torch.Tensor(x) 
-        x = torch.unsqueeze(x,0) 
-        return 0 
 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
         ## random sample of memory sequences 
@@ -253,10 +272,12 @@ class Model(nn.Module):
         prediction = [] 
         target = [] 
         for series in obs: 
+            ## TODO convert to batches 
             ## observation structure: 
-            ## 0: env_state, 1: reward, 2: done, 3: info, 4: prev_env_state, 5: action, 6: prev_hidden, 7: hidden 
+            ## OLD: 0: env_state, 1: reward, 2: done, 3: info, 4: prev_env_state, 5: action, 6: prev_hidden, 7: hidden 
+            ## 0: reward, 1: done, 2: info, 3: prev_env_state, 4: action, 5: prev_hidden 
             ## get initial hidden states 
-            self.hidden = tensor_unsqueeze(series[0][6]) 
+            self.hidden = tensor_unsqueeze(series[0][6]) ## TODO remove unsqueeze 
             target_model.hidden = tensor_unsqueeze(series[0][7]) 
             for idx_o, o in enumerate(series): 
                 ## process sequences, updating internal states 
@@ -277,6 +298,7 @@ class Model(nn.Module):
                     pass 
                 ## BATCH NORM FAILS on individual samples, so it has been disabled. 
                 ## I could enable it by padding sequences, allowing for batch processing. 
+                ## TODO FIX: re-enable batch norm via sequence padding 
                 pass 
             pass 
         prediction = torch.cat(prediction) 
@@ -318,11 +340,11 @@ class Model(nn.Module):
         mean_reward = None 
         target_model = self.copy() 
         target_model.eval() 
+        self.train() 
         while continue_iterating: 
             prev_theta = self.get_parameter_vector() 
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=batch_size) 
             mean_reward = predicted.mean() 
-            #loss = F.mse_loss(predicted, target) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
             if regularizer is not None: 
                 if self.regularizing_lambda_function is not None:
@@ -378,6 +400,8 @@ class Model(nn.Module):
         env_state = env.reset() 
         env_state = env.render(mode='rgb_array') 
         env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
+        env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute(0, 3, 1, 2)/255. - .5 
+        sequence = [env_state]*self.short_term_memory_length 
         self.clear_short_term_memory 
         last_start = 0 
         last_total_reward = 0 
@@ -395,7 +419,8 @@ class Model(nn.Module):
             else: 
                 ## exploit 
                 self.eval() 
-                action = self.get_action(env_state) 
+                sequence_tensor = torch.cat(sequence).reshape([self.short_term_memory_length, 1, 3, 40, 60]) 
+                action = self.get_action(sequence_tensor) 
                 pass 
             env_state, reward, done, info = env.step(action) 
             ## get rgb array of state 
@@ -404,12 +429,18 @@ class Model(nn.Module):
             env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
             ## hidden 
             hidden = (self.hidden[0].detach(), self.hidden[1].detach()) 
+            ## do not reward failure 
             if done: 
                 reward = 0 
                 pass 
             last_total_reward += reward 
-            ## TODO in an LSTM context, storing prev and current state and hidden is doubly-wasteful 
-            observation = env_state, reward, done, info, prev_env_state, action, prev_hidden, hidden 
+            ## format env_states for pytorch 
+            env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5 
+            ## add to sequence 
+            sequence = sequence[1:] 
+            sequence.append(env_state) 
+            ## TODO efficient storage is in-use. plz update sampler 
+            observation = reward, done, info, prev_env_state, action, prev_hidden  
             ## store for model fitting 
             self.store_observation(observation) 
             ## store for output 
@@ -418,13 +449,17 @@ class Model(nn.Module):
 
             if iter_idx > 30 and iter_idx % 1 == 0: 
                 _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
+                self.hidden = hidden 
+                self.eval() 
                 pass 
 
             if done: 
                 self.clear_short_term_memory() 
                 env_state = env.reset() 
                 env_state = env.render(mode='rgb_array')
-                env_state = np.asarray(Image.fromarray(env_state).resize((40,60)))
+                env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
+                env_state = torch.Tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
+                sequence = [env_state]*self.short_term_memory_length 
                 self.total_rewards.append(last_total_reward) 
                 last_total_reward = 0 
                 n_restarts += 1 
