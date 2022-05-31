@@ -219,7 +219,7 @@ class Model(nn.Module):
 
     def sample_observations(self, batch_size): 
         ## sample indices between second observation and last, inclusive  
-        # observation structure: 0: reward, 1: done, 2: info, 3: prev_env_state, 4: action, 5: prev_hidden 
+        # observation structure: 0: reward, 1: done, 2: info, 3: env_state, 4: action, 5: hidden 
         out = []
         for _ in range(batch_size): 
             ## find starting position 
@@ -262,47 +262,70 @@ class Model(nn.Module):
 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
         ## random sample of memory sequences 
-        obs = self.observations 
         if batch_size is not None: 
             if batch_size < len(self.observations): 
-                obs = self.sample_observations(batch_size) 
+                sample = self.sample_observations(batch_size) 
         if batch is not None: 
-            obs = batch
+            sample = batch
         ## construct target and prediction vectors 
-        prediction = [] 
-        target = [] 
-        for series in obs: 
-            ## TODO convert to batches 
-            ## observation structure: 
-            ## OLD: 0: env_state, 1: reward, 2: done, 3: info, 4: prev_env_state, 5: action, 6: prev_hidden, 7: hidden 
-            ## 0: reward, 1: done, 2: info, 3: prev_env_state, 4: action, 5: prev_hidden 
-            ## get initial hidden states 
-            self.hidden = tensor_unsqueeze(series[0][6]) ## TODO remove unsqueeze 
-            target_model.hidden = tensor_unsqueeze(series[0][7]) 
-            for idx_o, o in enumerate(series): 
-                ## process sequences, updating internal states 
-                prev_env_state = tensor_unsqueeze(o[4]) 
-                env_state = tensor_unsqueeze(o[0]) 
-                p = self.forward(prev_env_state) 
-                t = target_model.forward(env_state) 
-                if idx_o + 1 == len(series): 
-                    ## if at end, populate prediction and target 
-                    action = tensor_unsqueeze(o[5]) 
-                    observed_reward = tensor_unsqueeze(o[1]) 
-                    done = tensor_unsqueeze(o[2]) 
-                    p = p.gather(1, action) 
-                    t = torch.max(t, dim=1, keepdim=True).values.reshape([-1]) 
-                    t = observed_reward + (1 - done) * self.discount * t 
-                    prediction.append(p) 
-                    target.append(t) 
-                    pass 
-                ## BATCH NORM FAILS on individual samples, so it has been disabled. 
-                ## I could enable it by padding sequences, allowing for batch processing. 
-                ## TODO FIX: re-enable batch norm via sequence padding 
+        ## observation structure: 
+        ##  0: reward, 1: done, 2: info, 3: env_state, 4: action, 5: hidden 
+        ## build state tensor 
+        state_series_list = [] 
+        for series in sample: 
+            series_list = [] 
+            for observation in series: 
+                env_state = observation[3] 
+                series_list.append(env_state) 
                 pass 
+            series_tensor = torch.stack(series_list) 
+            state_series_list.append(series_tensor) 
             pass 
-        prediction = torch.cat(prediction) 
-        target = torch.cat(target) 
+        state = torch.stack(state_series_list) 
+        ## state dimensions: [series_index, timestep_index, channel_index, height_index, width_index] 
+        ## model expects otherwise, permute to [timestep_index, series_index, channel_index, height_index, width_index] 
+        state = state.permute([1, 0, 2, 3, 4]) 
+        ## build initial hidden state tensors 
+        prev_hidden_list = [] 
+        hidden_list = [] 
+        for series in sample: 
+            ## all series have at least 2 actual observations 
+            prev_hidden = series[0][5] 
+            hidden = series[1][5] 
+            prev_hidden_list.append(prev_hidden) 
+            hidden_list.append(hidden) 
+            pass 
+        prev_hidden = torch.stack(prev_hidden_list) 
+        hidden = torch.stack(hidden_list) 
+        ## build reward tensor 
+        reward_list = [] 
+        for series in sample: 
+            reward = torch.Tensor(series[-1][0]) 
+            reward_list.append(reward) 
+            pass 
+        reward = torch.stack(reward_list) 
+        ## build done tensor 
+        done_list = [] 
+        for series in sample: 
+            done = torch.Tensor(int(series[-1][1])) 
+            done_list.append(done) 
+            pass 
+        done = torch.stack(done_list) 
+        ## build action tensor 
+        action_list = [] 
+        for series in sample: 
+            action = torch.Tensor(int(series[-1][4])) 
+            action_list.append(action) 
+            pass 
+        action = torch.stack(action) 
+        ## set hidden states 
+        self.hidden = prev_hidden 
+        target_model.hidden = hidden 
+        ## run predictions 
+        prediction = self.forward(state[:-1,:,:,:,:]).gather(1, action) 
+        t = target_model.forward(state[1:,:,:,:,:]) 
+        t = torch.max(t, dim=1, keepdim=True).values.reshape([-1]) 
+        target = reward + (1 - done) * self.discount * t 
         ## calculate memory regularizer 
         regularizer = None 
         if (self.hessian_sum is not None or self.hessian_sum_low_rank_half is not None) and \
@@ -403,6 +426,9 @@ class Model(nn.Module):
         env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute(0, 3, 1, 2)/255. - .5 
         sequence = [env_state]*self.short_term_memory_length 
         self.clear_short_term_memory 
+        ## store initial observation 
+        observation = 0, False, {}, env_state, 0, self.hidden 
+        self.store_observation(observation) 
         last_start = 0 
         last_total_reward = 0 
         n_restarts = 0 
@@ -439,8 +465,7 @@ class Model(nn.Module):
             ## add to sequence 
             sequence = sequence[1:] 
             sequence.append(env_state) 
-            ## TODO efficient storage is in-use. plz update sampler 
-            observation = reward, done, info, prev_env_state, action, prev_hidden  
+            observation = reward, done, info, env_state, action, hidden  
             ## store for model fitting 
             self.store_observation(observation) 
             ## store for output 
@@ -454,12 +479,14 @@ class Model(nn.Module):
                 pass 
 
             if done: 
-                self.clear_short_term_memory() 
                 env_state = env.reset() 
                 env_state = env.render(mode='rgb_array')
                 env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
                 env_state = torch.Tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
                 sequence = [env_state]*self.short_term_memory_length 
+                self.clear_short_term_memory() 
+                ## store initial observation 
+                obesrvation = 0, False, {}, env_state, 0, self.hidden 
                 self.total_rewards.append(last_total_reward) 
                 last_total_reward = 0 
                 n_restarts += 1 
