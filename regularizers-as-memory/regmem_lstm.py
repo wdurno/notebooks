@@ -70,6 +70,7 @@ class Model(nn.Module):
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters
         self.regularizing_lambda_function = regularizing_lambda_function 
+        self.lstm_state_dim = lstm_state_dim 
         ## init CNN + LSTM net  
         ## CCNs 
         ## input: (-1, 3, 40, 60) 
@@ -166,8 +167,6 @@ class Model(nn.Module):
         return x 
     
     def get_action(self, env_state): 
-        env_state = torch.tensor(env_state).float() 
-        env_state = env_state.reshape([1, -1]) 
         predicted_reward_per_action_idx = self.forward(env_state) 
         return int(predicted_reward_per_action_idx.argmax()) 
     
@@ -178,7 +177,7 @@ class Model(nn.Module):
         pass 
     
     def clear_short_term_memory(self): 
-        self.hidden = (torch.zeros([self.lstm_state_dim]), torch.zeros([self.lstm_state_dim])) 
+        self.hidden = (torch.zeros([1, 1, self.lstm_state_dim]), torch.zeros([1, 1, self.lstm_state_dim])) 
         pass 
 
     def clear_observations(self): 
@@ -254,7 +253,7 @@ class Model(nn.Module):
             subsequence = [self.observations[i] for i in range(start, idx+1)] 
             if len(subsequence) < self.short_term_memory_length + 1: 
                 ## pad as needed 
-                subsequence = [subsequence[0]]*(self.short_term_memory_length - len(sequence) + 1) + sequence 
+                subsequence = [subsequence[0]]*(self.short_term_memory_length - len(subsequence) + 1) + subsequence 
                 pass 
             out.append(subsequence) 
             pass 
@@ -278,7 +277,7 @@ class Model(nn.Module):
                 env_state = observation[3] 
                 series_list.append(env_state) 
                 pass 
-            series_tensor = torch.stack(series_list) 
+            series_tensor = torch.cat(series_list) 
             state_series_list.append(series_tensor) 
             pass 
         state = torch.stack(state_series_list) 
@@ -286,45 +285,53 @@ class Model(nn.Module):
         ## model expects otherwise, permute to [timestep_index, series_index, channel_index, height_index, width_index] 
         state = state.permute([1, 0, 2, 3, 4]) 
         ## build initial hidden state tensors 
-        prev_hidden_list = [] 
-        hidden_list = [] 
+        prev_hidden_hx_list = [] 
+        prev_hidden_cx_list = [] 
+        hidden_hx_list = [] 
+        hidden_cx_list = [] 
         for series in sample: 
             ## all series have at least 2 actual observations 
             prev_hidden = series[0][5] 
             hidden = series[1][5] 
-            prev_hidden_list.append(prev_hidden) 
-            hidden_list.append(hidden) 
+            prev_hidden_hx_list.append(prev_hidden[0]) 
+            prev_hidden_cx_list.append(prev_hidden[1]) 
+            hidden_hx_list.append(hidden[0]) 
+            hidden_cx_list.append(hidden[1]) 
             pass 
-        prev_hidden = torch.stack(prev_hidden_list) 
-        hidden = torch.stack(hidden_list) 
+        prev_hidden_hx = torch.cat(prev_hidden_hx_list, dim=1)  
+        prev_hidden_cx = torch.cat(prev_hidden_cx_list, dim=1) 
+        prev_hidden = (prev_hidden_hx, prev_hidden_cx) 
+        hidden_hx = torch.cat(hidden_hx_list, dim=1) 
+        hidden_cx = torch.cat(hidden_cx_list, dim=1) 
+        hidden = (hidden_hx, hidden_cx) 
         ## build reward tensor 
         reward_list = [] 
         for series in sample: 
-            reward = torch.Tensor(series[-1][0]) 
+            reward = torch.tensor([series[-1][0]]) 
             reward_list.append(reward) 
             pass 
         reward = torch.stack(reward_list) 
         ## build done tensor 
         done_list = [] 
         for series in sample: 
-            done = torch.Tensor(int(series[-1][1])) 
+            done = torch.tensor([int(series[-1][1])]) 
             done_list.append(done) 
             pass 
         done = torch.stack(done_list) 
         ## build action tensor 
         action_list = [] 
         for series in sample: 
-            action = torch.Tensor(int(series[-1][4])) 
+            action = torch.tensor([int(series[-1][4])]) 
             action_list.append(action) 
             pass 
-        action = torch.stack(action) 
+        action = torch.stack(action_list) 
         ## set hidden states 
         self.hidden = prev_hidden 
-        target_model.hidden = hidden 
+        target_model.hidden = hidden  
         ## run predictions 
         prediction = self.forward(state[:-1,:,:,:,:]).gather(1, action) 
         t = target_model.forward(state[1:,:,:,:,:]) 
-        t = torch.max(t, dim=1, keepdim=True).values.reshape([-1]) 
+        t = torch.max(t, dim=1, keepdim=True).values.reshape([-1, 1]) 
         target = reward + (1 - done) * self.discount * t 
         ## calculate memory regularizer 
         regularizer = None 
@@ -414,7 +421,7 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True, tqdm_seconds=10, l2_regularizer=None): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=10, l2_regularizer=None): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -482,7 +489,7 @@ class Model(nn.Module):
                 env_state = env.reset() 
                 env_state = env.render(mode='rgb_array')
                 env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
-                env_state = torch.Tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
+                env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
                 sequence = [env_state]*self.short_term_memory_length 
                 self.clear_short_term_memory() 
                 ## store initial observation 
