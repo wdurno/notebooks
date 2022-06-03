@@ -24,6 +24,8 @@ GRAD_CLIP = 10.0
 SHORT_TERM_MEMORY_LENGTH = 40 
 LBFGS = False 
 ENV_NAME = 'CartPole-v1' 
+DEVICE = torch.device('cuda') 
+#DEVICE = torch.device('cpu') 
 
 ## necessary for rgb_array renders while without videodrivers 
 os.environ["SDL_VIDEODRIVER"] = "dummy" 
@@ -107,6 +109,7 @@ class Model(nn.Module):
             ## LBFGS was giving nan parameters 
             self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate) 
             pass 
+        self.to(DEVICE) 
         pass 
     
     def copy(self): 
@@ -177,7 +180,7 @@ class Model(nn.Module):
         pass 
     
     def clear_short_term_memory(self): 
-        self.hidden = (torch.zeros([1, 1, self.lstm_state_dim]), torch.zeros([1, 1, self.lstm_state_dim])) 
+        self.hidden = (torch.zeros([1, 1, self.lstm_state_dim], device=DEVICE), torch.zeros([1, 1, self.lstm_state_dim], device=DEVICE)) 
         pass 
 
     def clear_observations(self): 
@@ -187,7 +190,7 @@ class Model(nn.Module):
     def convert_observations_to_memory(self, n_eigenvectors = None): 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
-        for obs in self.observations: 
+        for obs in self.observations: ## TODO skip invalid observations (ie. prev obs' done == True) 
             ## update hessian  
             predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
             loss = F.smooth_l1_loss(predicted, target) 
@@ -213,26 +216,33 @@ class Model(nn.Module):
             vals = eigs.eigenvalues.real
             vecs[:,n_eigenvectors:] = 0 
             vals[n_eigenvectors:] = 0  
-            self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
+            self.hessian_sum = vecs.matmul(torch.diag(vals, device=DEVICE)).matmul(vecs.transpose(0,1)) 
         pass 
 
-    def sample_observations(self, batch_size): 
+    def sample_observations(self, batch_size=30, batch=None): 
         ## sample indices between second observation and last, inclusive  
         # observation structure: 0: reward, 1: done, 2: info, 3: env_state, 4: action, 5: hidden 
-        out = []
-        for _ in range(batch_size): 
+        out = [] 
+        if batch is not None: 
+            ## batch should be a list of indices 
+            batch_size = len(batch) 
+        for i in range(batch_size): 
             ## find starting position 
             ## note: observations stores a series of time-sorted episodes  
             ## iterate backward until you hit a halt, index 0, or too much distance 
-            idx = randrange(1, len(self.observations)) 
-            fail_count = 0 
-            while self.observations[idx-1][1]: 
-                ## must not be done 
+            if batch is None: 
                 idx = randrange(1, len(self.observations)) 
-                fail_count += 1 
-                if fail_count > 1000: 
-                    ## should almost-surely never occur 
-                    raise Exception('ERROR: Could not sample valid series of observations!') 
+                fail_count = 0 
+                while self.observations[idx-1][1]: 
+                    ## must not be done 
+                    idx = randrange(1, len(self.observations)) 
+                    fail_count += 1 
+                    if fail_count > 1000: 
+                        ## should almost-surely never occur 
+                        raise Exception('ERROR: Could not sample valid series of observations!') 
+                    pass 
+            else: 
+                idx = batch[i] 
                 pass 
             start = idx 
             continue_search = True 
@@ -265,7 +275,8 @@ class Model(nn.Module):
             if batch_size < len(self.observations): 
                 sample = self.sample_observations(batch_size) 
         if batch is not None: 
-            sample = batch
+            sample = self.sample_observations(batch=batch) 
+            pass 
         ## construct target and prediction vectors 
         ## observation structure: 
         ##  0: reward, 1: done, 2: info, 3: env_state, 4: action, 5: hidden 
@@ -307,21 +318,21 @@ class Model(nn.Module):
         ## build reward tensor 
         reward_list = [] 
         for series in sample: 
-            reward = torch.tensor([series[-1][0]]) 
+            reward = torch.tensor([series[-1][0]], device=DEVICE) 
             reward_list.append(reward) 
             pass 
         reward = torch.stack(reward_list) 
         ## build done tensor 
         done_list = [] 
         for series in sample: 
-            done = torch.tensor([int(series[-1][1])]) 
+            done = torch.tensor([int(series[-1][1])], device=DEVICE) 
             done_list.append(done) 
             pass 
         done = torch.stack(done_list) 
         ## build action tensor 
         action_list = [] 
         for series in sample: 
-            action = torch.tensor([int(series[-1][4])]) 
+            action = torch.tensor([int(series[-1][4])], device=DEVICE) 
             action_list.append(action) 
             pass 
         action = torch.stack(action_list) 
@@ -333,6 +344,7 @@ class Model(nn.Module):
         t = target_model.forward(state[1:,:,:,:,:]) 
         t = torch.max(t, dim=1, keepdim=True).values.reshape([-1, 1]) 
         target = reward + (1 - done) * self.discount * t 
+        target = target.detach() 
         ## calculate memory regularizer 
         regularizer = None 
         if (self.hessian_sum is not None or self.hessian_sum_low_rank_half is not None) and \
@@ -430,7 +442,7 @@ class Model(nn.Module):
         env_state = env.reset() 
         env_state = env.render(mode='rgb_array') 
         env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
-        env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute(0, 3, 1, 2)/255. - .5 
+        env_state = torch.tensor(env_state, device=DEVICE).reshape([1, 40, 60, 3]).permute(0, 3, 1, 2)/255. - .5 
         sequence = [env_state]*self.short_term_memory_length 
         self.clear_short_term_memory 
         ## store initial observation 
@@ -468,7 +480,7 @@ class Model(nn.Module):
                 pass 
             last_total_reward += reward 
             ## format env_states for pytorch 
-            env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5 
+            env_state = torch.tensor(env_state, device=DEVICE).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5 
             ## add to sequence 
             sequence = sequence[1:] 
             sequence.append(env_state) 
@@ -489,7 +501,7 @@ class Model(nn.Module):
                 env_state = env.reset() 
                 env_state = env.render(mode='rgb_array')
                 env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
-                env_state = torch.tensor(env_state).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
+                env_state = torch.tensor(env_state, device=DEVICE).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
                 sequence = [env_state]*self.short_term_memory_length 
                 self.clear_short_term_memory() 
                 ## store initial observation 
