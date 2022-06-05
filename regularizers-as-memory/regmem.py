@@ -154,13 +154,15 @@ class Model(nn.Module):
             else: 
                 self.hessian_sum += outter_product 
                 self.hessian_denominator += 1 
-                pass 
+                pass
+            pass 
         ## center quadratic form on current estimate 
         self.hessian_center = target_model.get_parameter_vector().detach() 
         ## wipe observations, and use memory going forward instead 
         self.clear_observations() 
         ## for simulation purposes only - no computational benefit is derived from using this feature 
-        if n_eigenvectors is not None: 
+        if n_eigenvectors is not None and optim_batch_size is None: 
+            ## extract low-rank approximation via eigenvector derivation from full-rank matrix 
             eigs = torch.linalg.eig(self.hessian_sum) 
             ## extract and truncate 
             vecs = eigs.eigenvectors.real
@@ -170,7 +172,31 @@ class Model(nn.Module):
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
 
-    def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
+    def convert_observations_to_low_rank_memory_via_optim(self, rank, eps=1e-3, max_iter=10000, parameter_chunk_size=100, batch_size=100): 
+        paramter_dim = self.get_parameter_vector().shape 
+        if self.hessian_sum_low_rank_half is None: 
+            ## init estimate  
+            self.hessian_sum_low_rank_half = torch.normal(0, 1, size=(parameter_dim, rank)) 
+            pass 
+        ## translate all grads to a matrix 
+        grad_list = [] 
+        for _ in range(batch_size): 
+            obs_idx = random.randrange(0, len(self.observations)) 
+            obs = self.observations[obs_idx] 
+            ## update hessian
+            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
+            loss = F.smooth_l1_loss(predicted, target)
+            loss.backward()
+            grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()]) 
+            grad_list.append(grad_vec)  
+            pass 
+        grads = torch.cat(grad_list, dim=1) 
+        ### TODO this will not fit into memory. switch to a batched method. memorize continuously  
+        ## deny further optimization 
+        self.hessian_sum_low_rank_half = self.hessian_sum_low_rank_half.detach() 
+        pass  
+
+    def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None, optim_memorize=False): 
         ## random sample 
         obs = self.observations 
         if batch_size is not None: 
@@ -225,7 +251,8 @@ class Model(nn.Module):
                 pass
             regularizer = regularizer.matmul((t - t0).reshape([-1, 1]))
             regularizer *= .5 / self.hessian_denominator 
-            regularizer = regularizer.reshape([])
+            regularizer = regularizer.reshape([]) 
+        ## TODO optim_memorize continuously 
         return prediction, target, regularizer 
     
     def get_parameter_vector(self): 

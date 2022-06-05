@@ -189,21 +189,29 @@ class Model(nn.Module):
 
     def convert_observations_to_memory(self, n_eigenvectors = None): 
         ## convert current observations to a Hessian matrix 
-        target_model = self.copy() 
-        for obs in self.observations: ## TODO skip invalid observations (ie. prev obs' done == True) 
-            ## update hessian  
-            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
-            loss = F.smooth_l1_loss(predicted, target) 
-            loss.backward() 
-            grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
-            outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 
-            if self.hessian_sum is None or self.hessian_denominator is None: 
-                self.hessian_sum = outter_product 
-                self.hessian_denominator = 1 
-            else: 
-                self.hessian_sum += outter_product 
-                self.hessian_denominator += 1 
-                pass 
+        target_model = self.copy()
+        target_model.eval() 
+        self.eval() 
+        self.lstm.train() ## cudnn doesn't support grads with lstm.eval 
+        for obs_idx in range(1, len(self.observations)): 
+            ## check validity 
+            prev_obs = self.observations[obs_idx-1] 
+            prev_done = prev_obs[1] 
+            if not prev_done: 
+                ## observation is valid, proceed 
+                ## update hessian  
+                predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs_idx]) 
+                loss = F.smooth_l1_loss(predicted, target) 
+                loss.backward() 
+                grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
+                outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 
+                if self.hessian_sum is None or self.hessian_denominator is None: 
+                    self.hessian_sum = outter_product 
+                    self.hessian_denominator = 1 
+                else: 
+                    self.hessian_sum += outter_product 
+                    self.hessian_denominator += 1 
+                    pass 
         ## center quadratic form on current estimate 
         self.hessian_center = target_model.get_parameter_vector().detach() 
         ## wipe observations, and use memory going forward instead 

@@ -1,6 +1,5 @@
-## Experiment 7: Forgetting 
-## Observe catastrophic forgetting for an almost-stationy process.
-## It's just experiment 1 with 10X more samples, making subtle signals (hopefully) more statistically significant. 
+## Experiment 8: Relearning 
+## Converting observations to memory more than once 
 ## WARNING: Requires EMPTY storage container "tmp"!  
 
 import pandas as pd
@@ -23,7 +22,7 @@ def map1(task_idx):
     try:
         task_idx = int(task_idx) 
         ## run experiment 
-        from regmem_lstm import Model 
+        from regmem import Model 
         from az_blob_util import upload_to_blob_store 
         import os 
         import pickle 
@@ -33,18 +32,37 @@ def map1(task_idx):
         ## copy, creating other models before continuing 
         condition_1_model = condition_0_model.copy() 
         condition_2_model = condition_0_model.copy() 
-        ## continue condition 0 (control), without application of memory and without discarding data 
-        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 1 (control): No use of memory, do discard data 
-        condition_1_model.clear_observations() 
-        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 2 (experimental): Use memory, do discard data 
+        ## continue condition 0 (control) Use memory, do discard data, memorize once  
+        condition_0_model.convert_observations_to_memory() 
+        condition_0_result_tuples_after_1 = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_after_2 = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_after_3 = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        ## condition 1 (experimental): Use memory, do dicard data, memorize twice  
+        condition_1_model.convert_observations_to_memory() 
+        condition_1_result_tuples_after_1 = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_1_model.convert_observations_to_memory() 
+        condition_1_result_tuples_after_2 = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_1_result_tuples_after_3 = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        ## condition 2 (experimental): Use memory, do discard data, memorize thrice 
         condition_2_model.convert_observations_to_memory() 
-        condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_2_result_tuples_after_1 = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_2_model.convert_observations_to_memory() 
+        condition_2_result_tuples_after_2 = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_2_model.convert_observations_to_memory() 
+        condition_2_result_tuples_after_3 = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
-        condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
-        condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
-        condition_2_result_tuples = condition_0_result_tuples_before + condition_2_result_tuples_after 
+        condition_0_result_tuples = condition_0_result_tuples_before + \
+                condition_0_result_tuples_after_1 + \
+                condition_0_result_tuples_after_2 + \
+                condition_0_result_tuples_after_3 
+        condition_1_result_tuples = condition_0_result_tuples_before + \
+                condition_1_result_tuples_after_1 + \
+                condition_1_result_tuples_after_2 + \
+                condition_1_result_tuples_after_3 
+        condition_2_result_tuples = condition_0_result_tuples_before + \
+                condition_2_result_tuples_after_1 + \
+                condition_2_result_tuples_after_2 + \
+                condition_2_result_tuples_after_3 
         ## append condition codes 
         condition_0_result_tuples = [(x[0], x[1], x[2], 0) for x in condition_0_result_tuples] 
         condition_1_result_tuples = [(x[0], x[1], x[2], 1) for x in condition_1_result_tuples] 
@@ -114,7 +132,7 @@ def phase_2():
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
     scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
     ### save data 
-    FILENAME = 'df-experiment-7.csv'
+    FILENAME = 'df-experiment-8.csv'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1, 
                                'scores2': scores2}) 
