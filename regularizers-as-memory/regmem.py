@@ -23,6 +23,10 @@ SHORT_TERM_MEMORY_LENGTH = 3
 LBFGS = False 
 ENV_NAME = 'CartPole-v1' 
 
+class ParameterHider():
+    'a useful hack' 
+    pass 
+
 class Model(nn.Module): 
     def __init__(self, 
             input_dim=INPUT_DIM, 
@@ -39,6 +43,7 @@ class Model(nn.Module):
             env_name=ENV_NAME,
             hessian_sum=None, 
             hessian_sum_low_rank_half=None, 
+            hessian_rank=None, 
             hessian_denominator=None, 
             hessian_center=None, 
             observations=None,
@@ -62,6 +67,7 @@ class Model(nn.Module):
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
+        self.hessian_rank = hessian_rank 
         self.total_iters = total_iters
         self.regularizing_lambda_function = regularizing_lambda_function 
         ## init feed forward net 
@@ -84,6 +90,20 @@ class Model(nn.Module):
         else: 
             ## LBFGS was giving nan parameters 
             self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate) 
+            pass
+        ## count parameters 
+        self.parameter_dim = self.get_parameter_vector().shape[0] 
+        ## init optim low rank optimizer 
+        self.low_rank_optim = ParameterHider() 
+        self.low_rank_optim.parameter = None 
+        if self.hessian_sum_low_rank_half is not None: 
+            self.low_rank_optim.parameter = nn.Parameter(self.hessian_sum_low_rank_half) 
+        elif self.hessian_rank is not None: 
+            self.low_rank_optim.parameter = nn.Parameter(0, 1, size=(self.parameter_dim, self.hessian_rank)) 
+            ## self.hessian_sum_low_rank_half is not-yet set in this case, avoiding triggerring regularization 
+            pass 
+        if self.low_rank_optim.parameter is not None: 
+            self.low_rank_optim.optimizer = optim.Adam([self.low_rank_optim.parameter], lr=self.learning_rate)  
             pass 
         pass 
     
@@ -102,6 +122,7 @@ class Model(nn.Module):
                 env_name=self.env_name,
                 hessian_sum=self.hessian_sum.detach().clone() if self.hessian_sum is not None else None, 
                 hessian_sum_low_rank_half=self.hessian_sum_low_rank_half, 
+                hessian_rank=self.hessian_rank, 
                 hessian_denominator=self.hessian_denominator, ## this is an int or None, so it is copied via '=' 
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
@@ -172,26 +193,25 @@ class Model(nn.Module):
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
 
-    def convert_observations_to_low_rank_memory_via_optim(self, rank, eps=1e-3, max_iter=10000, parameter_chunk_size=100, batch_size=100): 
-        paramter_dim = self.get_parameter_vector().shape 
-        if self.hessian_sum_low_rank_half is None: 
-            ## init estimate  
-            self.hessian_sum_low_rank_half = torch.normal(0, 1, size=(parameter_dim, rank)) 
-            pass 
+    def convert_observations_to_low_rank_memory_via_optim(self, predicted, target, rank, eps=1e-3, max_iter=10000, parameter_chunk_size=100): 
         ## translate all grads to a matrix 
+        n = predicted.shape[0] 
         grad_list = [] 
-        for _ in range(batch_size): 
-            obs_idx = random.randrange(0, len(self.observations)) 
-            obs = self.observations[obs_idx] 
-            ## update hessian
-            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
-            loss = F.smooth_l1_loss(predicted, target)
-            loss.backward()
+        for idx in range(n): 
+            observation_loss = F.smooth_l1_loss(predicted[idx], target[idx]) 
+            observation_loss.backward() 
             grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()]) 
-            grad_list.append(grad_vec)  
+            grad_list.append(grad_vec) 
             pass 
-        grads = torch.cat(grad_list, dim=1) 
-        ### TODO this will not fit into memory. switch to a batched method. memorize continuously  
+        grads = torch.cat(grad_list, dim=1) ## p X n 
+        ### TODO this will not fit into memory. switch to a batched method. memorize continuously 
+        n_batches = self.parameter_dim // parameter_chunk_size + 1
+        err = 0. 
+        for row_batch_idx in range(n_batches): 
+            for col_batch_idx in range(n_bataches): 
+                param_batch = self. 
+                pass 
+            pass 
         ## deny further optimization 
         self.hessian_sum_low_rank_half = self.hessian_sum_low_rank_half.detach() 
         pass  

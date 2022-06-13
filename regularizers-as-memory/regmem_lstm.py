@@ -76,18 +76,18 @@ class Model(nn.Module):
         ## init CNN + LSTM net  
         ## CCNs 
         ## input: (-1, 3, 40, 60) 
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1) ## to (-1, 32, 38, 58) 
-        self.conv1_bn = nn.BatchNorm2d(32) 
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2) ## to (-1, 64, 18, 28) 
-        self.conv2_bn = nn.BatchNorm2d(64) 
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
-        self.conv3_bn = nn.BatchNorm2d(128) 
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
-        self.conv4_bn = nn.BatchNorm2d(256) 
-        self.conv5 = nn.Conv2d(256, 32, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
-        self.conv5_bn = nn.BatchNorm2d(32) 
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1) ## to (-1, 32, 38, 58) 
+        self.conv1_bn = nn.BatchNorm2d(16) 
+        self.conv2 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 64, 18, 28) 
+        self.conv2_bn = nn.BatchNorm2d(16) 
+        self.conv3 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
+        self.conv3_bn = nn.BatchNorm2d(16) 
+        self.conv4 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
+        self.conv4_bn = nn.BatchNorm2d(16) 
+        self.conv5 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
+        self.conv5_bn = nn.BatchNorm2d(16) 
         ## LSTM  
-        self.lstm = nn.LSTM(32*1*2, self.lstm_state_dim)  
+        self.lstm = nn.LSTM(16*1*2, self.lstm_state_dim)  
         ## FCs 
         self.fc1 = nn.Linear(self.lstm_state_dim, 32) 
         self.fc1_bn = nn.BatchNorm1d(32) 
@@ -108,7 +108,7 @@ class Model(nn.Module):
         else: 
             ## LBFGS was giving nan parameters 
             self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate) 
-            pass 
+            pass
         self.to(DEVICE) 
         pass 
     
@@ -204,7 +204,7 @@ class Model(nn.Module):
                 loss = F.smooth_l1_loss(predicted, target) 
                 loss.backward() 
                 grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
-                outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 
+                outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])).detach()   
                 if self.hessian_sum is None or self.hessian_denominator is None: 
                     self.hessian_sum = outter_product 
                     self.hessian_denominator = 1 
@@ -212,6 +212,8 @@ class Model(nn.Module):
                     self.hessian_sum += outter_product 
                     self.hessian_denominator += 1 
                     pass 
+                pass
+            pass 
         ## center quadratic form on current estimate 
         self.hessian_center = target_model.get_parameter_vector().detach() 
         ## wipe observations, and use memory going forward instead 
@@ -392,6 +394,7 @@ class Model(nn.Module):
         target_model.eval() 
         self.train() 
         while continue_iterating: 
+            self.zero_grad() 
             prev_theta = self.get_parameter_vector() 
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=batch_size) 
             mean_reward = predicted.mean() 
@@ -417,7 +420,7 @@ class Model(nn.Module):
                 self.optimizer.step(lambda: float(F.smooth_l1_loss(predicted, target))) 
             else:
                 self.optimizer.step() 
-                pass 
+                pass
             updated_theta = self.get_parameter_vector() 
             ## decide to continue iterating or not 
             if max_iter is not None: 
