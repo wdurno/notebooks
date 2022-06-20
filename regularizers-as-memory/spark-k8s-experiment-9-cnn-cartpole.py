@@ -1,19 +1,14 @@
-## Experiment 7: Forgetting 
-## Observe catastrophic forgetting for an almost-stationy process.
-## It's just experiment 1 with 10X more samples, making subtle signals (hopefully) more statistically significant. 
+## Experiment 9: CNN Cartpole 
+## Testing visual processing mechanisms interacting with memory 
 ## WARNING: Requires EMPTY storage container "tmp"!  
 
 import pandas as pd
 from az_blob_util import upload_to_blob_store, download_from_blob_store, ls_blob_store 
 import os 
-try: 
-    from pyspark import SparkContext
-    from pyspark.sql import SparkSession 
-    sc = SparkContext() 
-    spark = SparkSession(sc) 
-except: 
-    ## sc + spark probably already exist, or not using pyspark  
-    pass  
+from pyspark import SparkContext
+from pyspark.sql import SparkSession 
+sc = SparkContext() 
+spark = SparkSession(sc) 
 
 SAMPLE_SIZE = 1000  
 ITERS = 1000
@@ -23,7 +18,7 @@ def map1(task_idx):
     try:
         task_idx = int(task_idx) 
         ## run experiment 
-        from regmem_lstm import Model 
+        from regmem_cnn import Model 
         from az_blob_util import upload_to_blob_store 
         import os 
         import pickle 
@@ -40,7 +35,6 @@ def map1(task_idx):
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 2 (experimental): Use memory, do discard data 
         condition_2_model.convert_observations_to_memory() 
-        condition_2_model = condition_2_model.copy() ## hack: LSTMs behaved poorly under memory conversion 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 

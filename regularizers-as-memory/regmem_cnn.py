@@ -50,8 +50,7 @@ class Model(nn.Module):
             hessian_center=None, 
             observations=None,
             total_iters=0,
-            regularizing_lambda_function=None, 
-            lstm_state_dim=32): 
+            regularizing_lambda_function=None): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -72,9 +71,8 @@ class Model(nn.Module):
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters
         self.regularizing_lambda_function = regularizing_lambda_function 
-        self.lstm_state_dim = lstm_state_dim 
-        ## init CNN + LSTM net  
-        ## CCNs 
+        ## init CNNs 
+        ## 2D CCNs 
         ## input: (-1, 3, 40, 60) 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1) ## to (-1, 32, 38, 58) 
         self.conv1_bn = nn.BatchNorm2d(16) 
@@ -86,10 +84,16 @@ class Model(nn.Module):
         self.conv4_bn = nn.BatchNorm2d(16) 
         self.conv5 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
         self.conv5_bn = nn.BatchNorm2d(16) 
-        ## LSTM  
-        self.lstm = nn.LSTM(16*1*2, self.lstm_state_dim)  
+        ## 1D CNNs over time 
+        ## input (-1, 32, 40) 
+        self.conv6 = nn.Conv1d(16*1*2, 16, kernel_size=3, stride=2) ## to (-1, 16, 19) 
+        self.conv6_bn = nn.BatchNorm1d(16) 
+        self.conv7 = nn.Conv1d(16, 16, kernel_size=3, stride=2) ## to (-1, 16, 9) 
+        self.conv7_bn = nn.BatchNorm1d(16) 
+        self.conv8 = nn.Conv1d(16, 16, kernel_size=3, stride=2) ## to (-1, 16, 4), reshape to (-1, 16*4=64) 
+        self.conv8_bn = nn.BatchNorm1d(16) 
         ## FCs 
-        self.fc1 = nn.Linear(self.lstm_state_dim, 32) 
+        self.fc1 = nn.Linear(64, 32) 
         self.fc1_bn = nn.BatchNorm1d(32) 
         self.fc2 = nn.Linear(32, n_actions) 
         ## init data structures 
@@ -98,8 +102,6 @@ class Model(nn.Module):
         else: 
             self.observations = observations 
             pass 
-        ## set LSTM hidden values to zeros 
-        self.clear_short_term_memory() 
         self.env = None 
         if self.lbfgs: 
             ## Misbehavior observed with large `history_size`, ie. >20 
@@ -131,8 +133,7 @@ class Model(nn.Module):
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
-                regularizing_lambda_function=self.regularizing_lambda_function, 
-                lstm_state_dim=self.lstm_state_dim) 
+                regularizing_lambda_function=self.regularizing_lambda_function)
         out.load_state_dict(self.state_dict()) 
         return out 
 
@@ -157,12 +158,20 @@ class Model(nn.Module):
         x = self.conv5(x) 
         x = self.conv5_bn(x) 
         x = torch.relu(x) 
-        ## reshape for LSTM 
+        ## reshape for CNNs over time  
         x = x.reshape([L, N, -1]) 
-        x, self.hidden = self.lstm(x, self.hidden) 
-        ## extract last of series 
-        x = x[L-1, :, :] ## has shape [N, -1] 
+        x = x.transpose(0,1).transpose(1,2) ## [N, -1=32, L=40] 
+        x = self.conv6(x)
+        x = self.conv6_bn(x) 
         x = torch.relu(x) 
+        x = self.conv7(x)
+        x = self.conv7_bn(x) 
+        x = torch.relu(x) 
+        x = self.conv8(x)
+        x = self.conv8_bn(x) 
+        x = torch.relu(x) 
+        ## Dense 
+        x = x.reshape(N, 16*4) 
         x = self.fc1(x)
         x = self.fc1_bn(x) 
         x = torch.relu(x) 
@@ -179,10 +188,6 @@ class Model(nn.Module):
         self.observations.append(observation) 
         pass 
     
-    def clear_short_term_memory(self): 
-        self.hidden = (torch.zeros([1, 1, self.lstm_state_dim], device=DEVICE), torch.zeros([1, 1, self.lstm_state_dim], device=DEVICE)) 
-        pass 
-
     def clear_observations(self): 
         self.observations = [] 
         pass 
@@ -192,7 +197,6 @@ class Model(nn.Module):
         target_model = self.copy()
         target_model.eval() 
         self.eval() 
-        self.lstm.train() ## cudnn doesn't support grads with lstm.eval 
         for obs_idx in range(1, len(self.observations)): 
             ## check validity 
             prev_obs = self.observations[obs_idx-1] 
@@ -231,7 +235,7 @@ class Model(nn.Module):
 
     def sample_observations(self, batch_size=30, batch=None): 
         ## sample indices between second observation and last, inclusive  
-        # observation structure: 0: reward, 1: done, 2: info, 3: env_state, 4: action, 5: hidden 
+        # observation structure: 0: reward, 1: done, 2: info, 3: env_state, 4: action  
         out = [] 
         if batch is not None: 
             ## batch should be a list of indices 
@@ -289,7 +293,7 @@ class Model(nn.Module):
             pass 
         ## construct target and prediction vectors 
         ## observation structure: 
-        ##  0: reward, 1: done, 2: info, 3: env_state, 4: action, 5: hidden 
+        ##  0: reward, 1: done, 2: info, 3: env_state, 4: action  
         ## build state tensor 
         state_series_list = [] 
         for series in sample: 
@@ -305,26 +309,6 @@ class Model(nn.Module):
         ## state dimensions: [series_index, timestep_index, channel_index, height_index, width_index] 
         ## model expects otherwise, permute to [timestep_index, series_index, channel_index, height_index, width_index] 
         state = state.permute([1, 0, 2, 3, 4]) 
-        ## build initial hidden state tensors 
-        prev_hidden_hx_list = [] 
-        prev_hidden_cx_list = [] 
-        hidden_hx_list = [] 
-        hidden_cx_list = [] 
-        for series in sample: 
-            ## all series have at least 2 actual observations 
-            prev_hidden = series[0][5] 
-            hidden = series[1][5] 
-            prev_hidden_hx_list.append(prev_hidden[0]) 
-            prev_hidden_cx_list.append(prev_hidden[1]) 
-            hidden_hx_list.append(hidden[0]) 
-            hidden_cx_list.append(hidden[1]) 
-            pass 
-        prev_hidden_hx = torch.cat(prev_hidden_hx_list, dim=1)  
-        prev_hidden_cx = torch.cat(prev_hidden_cx_list, dim=1) 
-        prev_hidden = (prev_hidden_hx, prev_hidden_cx) 
-        hidden_hx = torch.cat(hidden_hx_list, dim=1) 
-        hidden_cx = torch.cat(hidden_cx_list, dim=1) 
-        hidden = (hidden_hx, hidden_cx) 
         ## build reward tensor 
         reward_list = [] 
         for series in sample: 
@@ -346,9 +330,6 @@ class Model(nn.Module):
             action_list.append(action) 
             pass 
         action = torch.stack(action_list) 
-        ## set hidden states 
-        self.hidden = prev_hidden 
-        target_model.hidden = hidden  
         ## run predictions 
         prediction = self.forward(state[:-1,:,:,:,:]).gather(1, action) 
         t = target_model.forward(state[1:,:,:,:,:]) 
@@ -361,7 +342,6 @@ class Model(nn.Module):
                 self.hessian_denominator is not None and \
                 self.hessian_center is not None: 
             t = self.get_parameter_vector() 
-            #t0 = target_model.get_parameter_vector().detach() 
             t0 = self.hessian_center 
             ## quadratic form around matrix estimating fisher information 
             if self.hessian_sum is not None:
@@ -455,9 +435,8 @@ class Model(nn.Module):
         env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
         env_state = torch.tensor(env_state, device=DEVICE).reshape([1, 40, 60, 3]).permute(0, 3, 1, 2)/255. - .5 
         sequence = [env_state]*self.short_term_memory_length 
-        self.clear_short_term_memory 
         ## store initial observation 
-        observation = 0, False, {}, env_state, 0, self.hidden 
+        observation = 0, False, {}, env_state, 0  
         self.store_observation(observation) 
         last_start = 0 
         last_total_reward = 0 
@@ -468,7 +447,6 @@ class Model(nn.Module):
         iters = tqdm(range(total_iters), disable=False, mininterval=tqdm_seconds, maxinterval=tqdm_seconds) 
         for iter_idx in iters: 
             prev_env_state = env_state 
-            prev_hidden = (self.hidden[0].detach(), self.hidden[1].detach())  
             if self.explore_probability_func(iter_idx) > np.random.uniform():  
                 ## explore 
                 action = env.action_space.sample()
@@ -483,8 +461,6 @@ class Model(nn.Module):
             env_state = env.render(mode='rgb_array') 
             ## compress 
             env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
-            ## hidden 
-            hidden = (self.hidden[0].detach(), self.hidden[1].detach()) 
             ## do not reward failure 
             if done: 
                 reward = 0 
@@ -495,7 +471,7 @@ class Model(nn.Module):
             ## add to sequence 
             sequence = sequence[1:] 
             sequence.append(env_state) 
-            observation = reward, done, info, env_state, action, hidden  
+            observation = reward, done, info, env_state, action  
             ## store for model fitting 
             self.store_observation(observation) 
             ## store for output 
@@ -504,7 +480,6 @@ class Model(nn.Module):
 
             if iter_idx > 30 and iter_idx % 1 == 0: 
                 _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
-                self.hidden = hidden 
                 self.eval() 
                 pass 
 
@@ -514,9 +489,8 @@ class Model(nn.Module):
                 env_state = np.asarray(Image.fromarray(env_state).resize((40,60))) 
                 env_state = torch.tensor(env_state, device=DEVICE).reshape([1, 40, 60, 3]).permute([0, 3, 1, 2])/255. - .5   
                 sequence = [env_state]*self.short_term_memory_length 
-                self.clear_short_term_memory() 
                 ## store initial observation 
-                obesrvation = 0, False, {}, env_state, 0, self.hidden 
+                obesrvation = 0, False, {}, env_state, 0  
                 self.total_rewards.append(last_total_reward) 
                 last_total_reward = 0 
                 n_restarts += 1 
