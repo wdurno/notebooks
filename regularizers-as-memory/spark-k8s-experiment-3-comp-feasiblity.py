@@ -6,7 +6,7 @@ from pyspark.sql import SparkSession
 sc = SparkContext() 
 spark = SparkSession(sc) 
 
-SAMPLE_SIZE = 100 # DEBUGGING! 1000  
+SAMPLE_SIZE = 1000  
 ITERS = 1000
 
 def f(task_idx):
@@ -24,23 +24,27 @@ def f(task_idx):
         condition_3_model = condition_0_model.copy() 
         condition_4_model = condition_0_model.copy() 
         condition_5_model = condition_0_model.copy() 
+        condition_6_model = condition_0_model.copy() 
         ## continue condition 0 trial, without application of memory and without discarding data 
         condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 1 (control): No use of memory, do discard data 
         condition_1_model.clear_observations() 
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 2 (experimental): Use memory, do discard data 
+        ## condition 2 (control): Use memory, do discard data 
         condition_2_model.convert_observations_to_memory() 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 3 (experimental): Use memory, do discard data, use a rank-1 approximation  
-        condition_3_model.convert_observations_to_memory_als(rank=1) 
+        ## condition 3 (control): Use memory, do discard data, use a rank-5 eigen-approximation 
+        condition_3_model.convert_observations_to_memory(n_eigenvectors=5, lanczos_rank=None)  
         condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 4 (experimental): Use memory, do discard data, use a rank-2 approximation  
-        condition_4_model.convert_observations_to_memory_als(rank=2) 
+        ## condition 4 (control): Use memory, do discard data, use a rank-10 eigen-approximation 
+        condition_4_model.convert_observations_to_memory(n_eigenvectors=10, lanczos_rank=None) 
         condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
-        ## condition 5 (experimental): Use memory, do discard data, use a rank-10 approximation 
-        condition_5_model.convert_observations_to_memory_als(rank=10) 
+        ## condition 5 (experimental): Use memory, do discard data, use a rank-5 Krylov approximation 
+        condition_5_model.convert_observations_to_memory(n_eigenvectors=None, lanczos_rank=5) 
         condition_5_result_tuples_after = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        ## condition 6 (experimental): Use memory, do discard data, use a rank-10 Kyrlov approximation 
+        condition_6_model.convert_observations_to_memory(n_eigenvectors=None, lanczos_rank=10) 
+        condition_6_result_tuples_after = condition_6_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
@@ -48,6 +52,7 @@ def f(task_idx):
         condition_3_result_tuples = condition_0_result_tuples_before + condition_3_result_tuples_after 
         condition_4_result_tuples = condition_0_result_tuples_before + condition_4_result_tuples_after 
         condition_5_result_tuples = condition_0_result_tuples_before + condition_5_result_tuples_after 
+        condition_6_result_tuples = condition_0_result_tuples_before + condition_6_result_tuples_after 
         ## append condition codes 
         condition_0_result_tuples = [(x[0], x[1], x[2], 0) for x in condition_0_result_tuples] 
         condition_1_result_tuples = [(x[0], x[1], x[2], 1) for x in condition_1_result_tuples] 
@@ -55,6 +60,7 @@ def f(task_idx):
         condition_3_result_tuples = [(x[0], x[1], x[2], 3) for x in condition_3_result_tuples] 
         condition_4_result_tuples = [(x[0], x[1], x[2], 4) for x in condition_4_result_tuples] 
         condition_5_result_tuples = [(x[0], x[1], x[2], 5) for x in condition_5_result_tuples] 
+        condition_6_result_tuples = [(x[0], x[1], x[2], 6) for x in condition_6_result_tuples] 
         ## format output 
         out = [] 
         def append_results(result_tuples, out=out): 
@@ -79,6 +85,7 @@ def f(task_idx):
         append_results(condition_3_result_tuples) 
         append_results(condition_4_result_tuples) 
         append_results(condition_5_result_tuples) 
+        append_results(condition_6_result_tuples) 
     except Exception as e: 
         ## increase verbosity before failing 
         print(f'ERROR!\n{e}\n{traceback.format_exc()}')
@@ -97,6 +104,7 @@ scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist(
 scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
 scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist() 
 scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist() 
+scores6 = df.loc[df['condition'] == 6].sort_values('iter')['avg(score)'].tolist()  
 
 ### save data 
 FILENAME = 'df-experiment-3.csv'
@@ -111,7 +119,8 @@ df_to_save = pd.DataFrame({'scores0': scores0,
                            'scores2': scores2,
                            'scores3': scores3,
                            'scores4': scores4,
-                           'scores5': scores5,})
+                           'scores5': scores5,
+                           'scores6': scores6}) 
 df_data = df_to_save.to_csv().encode() 
 upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
 

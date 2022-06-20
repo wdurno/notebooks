@@ -9,6 +9,7 @@ from tqdm import tqdm
 import numpy as np 
 import matplotlib.pyplot as plt 
 import copy 
+from lanczos import lanczos 
 
 INPUT_DIM = 4
 N_ACTIONS = 2
@@ -22,10 +23,6 @@ GRAD_CLIP = 10.0
 SHORT_TERM_MEMORY_LENGTH = 3 
 LBFGS = False 
 ENV_NAME = 'CartPole-v1' 
-
-class ParameterHider():
-    'a useful hack' 
-    pass 
 
 class Model(nn.Module): 
     def __init__(self, 
@@ -93,18 +90,6 @@ class Model(nn.Module):
             pass
         ## count parameters 
         self.parameter_dim = self.get_parameter_vector().shape[0] 
-        ## init optim low rank optimizer 
-        self.low_rank_optim = ParameterHider() 
-        self.low_rank_optim.parameter = None 
-        if self.hessian_sum_low_rank_half is not None: 
-            self.low_rank_optim.parameter = nn.Parameter(self.hessian_sum_low_rank_half) 
-        elif self.hessian_rank is not None: 
-            self.low_rank_optim.parameter = nn.Parameter(0, 1, size=(self.parameter_dim, self.hessian_rank)) 
-            ## self.hessian_sum_low_rank_half is not-yet set in this case, avoiding triggerring regularization 
-            pass 
-        if self.low_rank_optim.parameter is not None: 
-            self.low_rank_optim.optimizer = optim.Adam([self.low_rank_optim.parameter], lr=self.learning_rate)  
-            pass 
         pass 
     
     def copy(self): 
@@ -159,7 +144,7 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self, n_eigenvectors = None): 
+    def convert_observations_to_memory(self, n_eigenvectors=None, lanczos_rank=None): 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
         for obs in self.observations: 
@@ -181,8 +166,10 @@ class Model(nn.Module):
         self.hessian_center = target_model.get_parameter_vector().detach() 
         ## wipe observations, and use memory going forward instead 
         self.clear_observations() 
-        ## for simulation purposes only - no computational benefit is derived from using this feature 
-        if n_eigenvectors is not None and optim_batch_size is None: 
+        ## for simulation purposes only - no computational benefit is derived from using these features 
+        if lanczos_rank is not None: 
+            self.hessian_sum = torch.tensor(lanczos(self.hessian_sum.numpy(), lanczos_rank)).float()  
+        if n_eigenvectors is not None: 
             ## extract low-rank approximation via eigenvector derivation from full-rank matrix 
             eigs = torch.linalg.eig(self.hessian_sum) 
             ## extract and truncate 
@@ -192,29 +179,6 @@ class Model(nn.Module):
             vals[n_eigenvectors:] = 0  
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
-
-    def convert_observations_to_low_rank_memory_via_optim(self, predicted, target, rank, eps=1e-3, max_iter=10000, parameter_chunk_size=100): 
-        ## translate all grads to a matrix 
-        n = predicted.shape[0] 
-        grad_list = [] 
-        for idx in range(n): 
-            observation_loss = F.smooth_l1_loss(predicted[idx], target[idx]) 
-            observation_loss.backward() 
-            grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()]) 
-            grad_list.append(grad_vec) 
-            pass 
-        grads = torch.cat(grad_list, dim=1) ## p X n 
-        ### TODO this will not fit into memory. switch to a batched method. memorize continuously 
-        n_batches = self.parameter_dim // parameter_chunk_size + 1
-        err = 0. 
-        for row_batch_idx in range(n_batches): 
-            for col_batch_idx in range(n_bataches): 
-                param_batch = self. 
-                pass 
-            pass 
-        ## deny further optimization 
-        self.hessian_sum_low_rank_half = self.hessian_sum_low_rank_half.detach() 
-        pass  
 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None, optim_memorize=False): 
         ## random sample 
@@ -272,7 +236,6 @@ class Model(nn.Module):
             regularizer = regularizer.matmul((t - t0).reshape([-1, 1]))
             regularizer *= .5 / self.hessian_denominator 
             regularizer = regularizer.reshape([]) 
-        ## TODO optim_memorize continuously 
         return prediction, target, regularizer 
     
     def get_parameter_vector(self): 
