@@ -34,7 +34,7 @@ def map1(task_idx):
         condition_1_model.clear_observations() 
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 2 (experimental): Use memory, do discard data 
-        condition_2_model.convert_observations_to_memory() 
+        condition_2_model.convert_observations_to_memory(krylov_rank=10) 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 

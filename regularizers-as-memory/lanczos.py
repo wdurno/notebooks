@@ -37,7 +37,7 @@ def lanczos(AAT, r):
     VTVT = np.matmul(VTVT, np.transpose(V)) 
     return VTVT
 
-def l_lancoz(get_grad_generator, r, p):
+def l_lanczos(get_grad_generator, r, p):
     '''
     limited-memory Lanczos algorithm
     inputs:
@@ -50,19 +50,20 @@ def l_lancoz(get_grad_generator, r, p):
     def multiply_fisher_information(x):
         grad_generator = get_grad_generator() 
         out = 0. 
-        for g in grad_generator:
+        for g in grad_generator():
             #gTx = g.transpose(0,1).matmul(x) 
             #ggTx = g.matmul(gTx) 
             #out += ggTx 
             ## using one-liner to encourage garbage collection 
+            g = g.reshape([-1, 1]) 
             out += g.matmul(g.transpose(0,1).matmul(x)) 
             pass 
-        return out ## TODO divide by n? 
+        return out  
     vecs = [] 
     diags = [] 
     off_diags = [] 
     ## init 
-    v = torch.normal(0, torch.zeros([p, 1])) 
+    v = torch.normal(0, torch.ones([p, 1])) 
     v = v / torch.sqrt(v.transpose(0,1).matmul(v)) 
     ## next_v = AAT.matmul(v)  
     next_v = multiply_fisher_information(v) 
@@ -89,6 +90,7 @@ def l_lancoz(get_grad_generator, r, p):
     T = torch.diag(diags) + torch.diag(off_diags, -1) + torch.diag(off_diags, 1) 
     ## combine V & T into single matrix A 
     eigs = torch.linalg.eigh(T) 
-    sqrt_T = eigs.eigenvectors.matmul(torch.diag(torch.sqrt(eigs.eigenvalues))) 
+    positive_eigenvalues = torch.relu(eigs.eigenvalues) ## for sqrt 
+    sqrt_T = eigs.eigenvectors.matmul(torch.diag(torch.sqrt(positive_eigenvalues))).matmul(eigs.eigenvectors.transpose(0,1)) 
     A = V.matmul(sqrt_T) 
     return A 

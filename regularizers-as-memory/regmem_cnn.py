@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import copy 
 import os 
 from PIL import Image 
+from lanczos import l_lanczos 
 
 INPUT_DIM = 4
 N_ACTIONS = 2
@@ -24,7 +25,7 @@ GRAD_CLIP = 10.0
 SHORT_TERM_MEMORY_LENGTH = 40 
 LBFGS = False 
 ENV_NAME = 'CartPole-v1' 
-DEVICE = torch.device('cuda') 
+DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') 
 #DEVICE = torch.device('cpu') 
 
 ## necessary for rgb_array renders while without videodrivers 
@@ -78,17 +79,17 @@ class Model(nn.Module):
         self.conv1_bn = nn.BatchNorm2d(16) 
         self.conv2 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 64, 18, 28) 
         self.conv2_bn = nn.BatchNorm2d(16) 
-        self.conv3 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
-        self.conv3_bn = nn.BatchNorm2d(16) 
-        self.conv4 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
-        self.conv4_bn = nn.BatchNorm2d(16) 
-        self.conv5 = nn.Conv2d(16, 16, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
-        self.conv5_bn = nn.BatchNorm2d(16) 
+        self.conv3 = nn.Conv2d(16, 32, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
+        self.conv3_bn = nn.BatchNorm2d(32) 
+        self.conv4 = nn.Conv2d(32, 64, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
+        self.conv4_bn = nn.BatchNorm2d(64) 
+        self.conv5 = nn.Conv2d(64, 128, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
+        self.conv5_bn = nn.BatchNorm2d(128) 
         ## 1D CNNs over time 
         ## input (-1, 32, 40) 
-        self.conv6 = nn.Conv1d(16*1*2, 16, kernel_size=3, stride=2) ## to (-1, 16, 19) 
-        self.conv6_bn = nn.BatchNorm1d(16) 
-        self.conv7 = nn.Conv1d(16, 16, kernel_size=3, stride=2) ## to (-1, 16, 9) 
+        self.conv6 = nn.Conv1d(128*1*2, 32, kernel_size=3, stride=2) ## to (-1, 16, 19) 
+        self.conv6_bn = nn.BatchNorm1d(32) 
+        self.conv7 = nn.Conv1d(32, 16, kernel_size=3, stride=2) ## to (-1, 16, 9) 
         self.conv7_bn = nn.BatchNorm1d(16) 
         self.conv8 = nn.Conv1d(16, 16, kernel_size=3, stride=2) ## to (-1, 16, 4), reshape to (-1, 16*4=64) 
         self.conv8_bn = nn.BatchNorm1d(16) 
@@ -192,22 +193,24 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self, n_eigenvectors = None): 
+    def convert_observations_to_memory(self, n_eigenvectors = None, krylov_rank = None): 
         ## convert current observations to a Hessian matrix 
-        target_model = self.copy()
-        target_model.eval() 
-        self.eval() 
-        for obs_idx in range(1, len(self.observations)): 
-            ## check validity 
-            prev_obs = self.observations[obs_idx-1] 
-            prev_done = prev_obs[1] 
-            if not prev_done: 
-                ## observation is valid, proceed 
-                ## update hessian  
-                predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs_idx]) 
-                loss = F.smooth_l1_loss(predicted, target) 
-                loss.backward() 
-                grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
+        target_model = self.copy() 
+        get_grad_generator = self.__get_get_grad_generator(target_model) 
+        if krylov_rank is not None: 
+            ## limited-memory lanczos estimation of Fisher Information 
+            p = self.get_parameter_vector().detach().shape[0] 
+            if self.hessian_sum_low_rank_half is None: 
+                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p) 
+                self.hessian_denominator = len(self.observations) 
+            else: 
+                ## todo: implement low-rank merges 
+                raise ValueError('Low-Rank merges not-yet implemented!') 
+        else: 
+            ## full-rank Fisher Information representation 
+            ## can be extrememly memory intensive! 
+            grad_generator = get_grad_generator() 
+            for grad_vec in grad_generator(): 
                 outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])).detach()   
                 if self.hessian_sum is None or self.hessian_denominator is None: 
                     self.hessian_sum = outter_product 
@@ -224,6 +227,8 @@ class Model(nn.Module):
         self.clear_observations() 
         ## for simulation purposes only - no computational benefit is derived from using this feature 
         if n_eigenvectors is not None: 
+            if self.hessian_sum is None: 
+                raise ValueError('Full Rank Hessian sum is `None`! Cannot calculate Eigenvectors! Did you use a Krylov estimate?') 
             eigs = torch.linalg.eig(self.hessian_sum) 
             ## extract and truncate 
             vecs = eigs.eigenvectors.real
@@ -232,6 +237,29 @@ class Model(nn.Module):
             vals[n_eigenvectors:] = 0  
             self.hessian_sum = vecs.matmul(torch.diag(vals, device=DEVICE)).matmul(vecs.transpose(0,1)) 
         pass 
+
+    def __get_get_grad_generator(self, target_model): 
+        def get_grad_generator(): 
+            def grad_generator(): 
+                target_model.eval() 
+                self.eval() 
+                for obs_idx in range(1, len(self.observations)):
+                    ## check validity 
+                    prev_obs = self.observations[obs_idx-1]
+                    prev_done = prev_obs[1]
+                    if not prev_done:
+                        ## observation is valid, proceed 
+                        ## update hessian  
+                        predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs_idx])
+                        loss = F.smooth_l1_loss(predicted, target)
+                        loss.backward()
+                        grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
+                        yield grad_vec 
+                        pass 
+                    pass 
+                pass 
+            return grad_generator  
+        return get_grad_generator 
 
     def sample_observations(self, batch_size=30, batch=None): 
         ## sample indices between second observation and last, inclusive  
@@ -349,7 +377,7 @@ class Model(nn.Module):
                 regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum) 
             elif self.hessian_sum_low_rank_half is not None: 
                 ## low-rank hessian 
-                regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum_low_rank_half).matmul(self.hessian_sum_low_rank_half.transpose(0,1)) 
+                regularizer = ((t - t0).reshape([1, -1]).matmul(self.hessian_sum_low_rank_half)).matmul(self.hessian_sum_low_rank_half.transpose(0,1)) 
                 pass
             regularizer = regularizer.matmul((t - t0).reshape([-1, 1]))
             regularizer *= .5 / self.hessian_denominator 
