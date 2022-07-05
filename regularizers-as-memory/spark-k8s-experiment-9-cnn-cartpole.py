@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession
 sc = SparkContext() 
 spark = SparkSession(sc) 
 
-SAMPLE_SIZE = 1000  
+SAMPLE_SIZE = 100  
 ITERS = 1000
 
 def map1(task_idx):
@@ -24,7 +24,7 @@ def map1(task_idx):
         import pickle 
         condition_0_model = Model() 
         ## condition 0 (control): No use of memory, no discarding of data 
-        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=10000, plot_prob_func=False, plot_rewards=False) 
         ## copy, creating other models before continuing 
         condition_1_model = condition_0_model.copy() 
         condition_2_model = condition_0_model.copy() 
