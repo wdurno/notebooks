@@ -143,7 +143,7 @@ class Model(nn.Module):
         ## we'll use this shorthand: [L, N, C, H, W] <-- names should align to PyTorch's CNN and LSTM documentation  
         ## first, we must reshape for CNNs 
         L, N, C, H, W = tuple(x.shape) 
-        L_batches_in = x.unbind(x) 
+        L_batches_in = x.unbind() 
         L_batches_out = [] 
         for batch in L_batches_in: ## todo: not efficient, but better-guaranteed to work 
             x = self.conv1(batch) 
@@ -164,9 +164,8 @@ class Model(nn.Module):
             x = x.reshape([N, -1]) 
             L_batches_out.append(x) 
         ## reshape for CNNs over time  
-        x = torch.tack(L_batches_out) ## [L, N, -1=32] 
+        x = torch.stack(L_batches_out) ## [L, N, -1=32] 
         x = x.transpose(0,1).transpose(1,2) ## [N, -1=32, L] 
-        print(f'DEBUG {x.shape}')
         x = self.conv6(x)
         x = self.conv6_bn(x) 
         x = torch.relu(x) 
