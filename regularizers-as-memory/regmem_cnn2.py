@@ -20,9 +20,9 @@ DISCOUNT = .5 # .5 # .95
 EPS = 1e-5
 EXPLORE_PROBABILITY_FUNC = lambda idx: 0.99**idx 
 BATCH_SIZE = 30  
-LEARNING_RATE = 0.001 # 0.01 # 0.001  
+LEARNING_RATE = 0.01 # 0.01 # 0.001  
 GRAD_CLIP = 10.0 
-SHORT_TERM_MEMORY_LENGTH = 3 ## DEBUG 40 
+SHORT_TERM_MEMORY_LENGTH = 5 # 3 ## DEBUG 40 
 LBFGS = False 
 ENV_NAME = 'CartPole-v1' 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') 
@@ -90,7 +90,7 @@ class Model(nn.Module):
         #self.conv5_bn = nn.BatchNorm2d(256) 
         ## 1D CNNs over time 
         ## input (-1, 32, 40) 
-        self.conv6 = nn.Conv1d(256, 64, kernel_size=3, stride=2) ## to (-1, 16, 19) 
+        self.conv6 = nn.Conv1d(64*2, 64, kernel_size=3, stride=2) ## to (-1, 16, 19) 
         self.conv6_bn = nn.BatchNorm1d(64) 
         self.mp1d1 = nn.MaxPool1d(3, 2) 
         #self.conv7 = nn.Conv1d(64, 64, kernel_size=3, stride=2) ## to (-1, 16, 9) 
@@ -98,7 +98,7 @@ class Model(nn.Module):
         #self.conv8 = nn.Conv1d(64, 64, kernel_size=3, stride=2) ## to (-1, 16, 4), reshape to (-1, 16*4=64) 
         #self.conv8_bn = nn.BatchNorm1d(64) 
         ## FCs 
-        self.fc1 = nn.Linear(64*6, 64) 
+        self.fc1 = nn.Linear(64*2, 64) 
         self.fc1_bn = nn.BatchNorm1d(64) 
         self.fc2 = nn.Linear(64, n_actions) 
         #self.fc2_bn = nn.BatchNorm1d(64) 
@@ -171,14 +171,15 @@ class Model(nn.Module):
             #x = self.conv5(x) 
             #x = self.conv5_bn(x) 
             #x = torch.relu(x) 
-            x = x.reshape([-1]) ## TODO reshape's not great  
+            x = x.reshape([N, -1]) ## TODO reshape's not great  
             L_batches_out.append(x) 
         ## reshape for CNNs over time  
         x = torch.stack(L_batches_out) ## [L, N, -1] 
-        #x = x.permute(1, 2, 0) # x.transpose(0,1).transpose(1,2) ## [N, -1, L] ### TODO should be a permute  
-        #x = self.conv6(x)
-        #x = self.conv6_bn(x) 
-        #x = torch.relu(x) 
+        #x = x.permute(1, 2, 0) # x.transpose(0,1).transpose(1,2) ## [N, -1, L] ### TODO should be a permute 
+        x = x.permute(0, 2, 1) # [L, -1, N] 
+        x = self.conv6(x)
+        x = self.conv6_bn(x) 
+        x = torch.relu(x) 
         #x = self.mp1d1(x) 
         #x = self.conv7(x)
         #x = self.conv7_bn(x) 
@@ -187,7 +188,7 @@ class Model(nn.Module):
         #x = self.conv8_bn(x) 
         #x = torch.relu(x) 
         ## Dense 
-        #x = x.reshape([L, 64*6]) ## TODO L!!! not N 
+        x = x.reshape([L, -1]) ## TODO L!!! not N 
         x = self.fc1(x)
         x = self.fc1_bn(x) 
         x = torch.relu(x) 
@@ -195,6 +196,7 @@ class Model(nn.Module):
         #x = self.fc2_bn(x) 
         #x = torch.relu(x) 
         #x = self.fc3(x) 
+        #x = x*x*x 
         return x 
     
     def get_action(self, env_state): 
@@ -473,7 +475,7 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=1, l2_regularizer=None): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=.1, l2_regularizer=None): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -532,13 +534,10 @@ class Model(nn.Module):
             self.total_iters += 1 
             simulation_results.append((reward, done, self.total_iters)) 
 
-            if iter_idx > BATCH_SIZE and iter_idx % 1 == 0: 
+            if iter_idx > BATCH_SIZE+200 and iter_idx % 1 == 0: 
                 loss_f, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
                 self.eval() 
-                tr = 0. 
-                if len(self.total_rewards) > 0: 
-                    tr = self.total_rewards[-1] 
-                iters.set_description(f'loss: {loss_f}, mean_rwrd: {mean_reward}, ttl rwd: {tr}') 
+                iters.set_description(f'loss: {loss_f}, mean_rwrd: {mean_reward}, ttl rwd: {last_total_reward}') 
                 pass 
 
             if done: 
