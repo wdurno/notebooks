@@ -305,7 +305,7 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True, tqdm_seconds=10, l2_regularizer=None): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=10, l2_regularizer=None, game_modifier=0): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -332,11 +332,20 @@ class Model(nn.Module):
                 action = self.get_action(env_state) 
                 pass 
             env_state, reward, done, info = env.step(action) 
+            if game_modifier > 0: 
+                for _ in range(game_modifier): 
+                    if not done: 
+                        ## if not done, apply `action` iteratively 
+                        env_state, rwd, done, info = env.step(action) 
+                        pass 
+                    if not done: 
+                        reward += rwd ## mechanic allows zero reward at done 
+                    pass 
+            elif done: 
+                reward = 0
+                pass 
             env_state_list = env_state_list[1:] + [torch.tensor(env_state)] 
             env_state = torch.cat(env_state_list) 
-            if done: 
-                reward = 0 
-                pass 
             last_total_reward += reward 
             observation = env_state, reward, done, info, prev_env_state, action 
             ## store for model fitting 

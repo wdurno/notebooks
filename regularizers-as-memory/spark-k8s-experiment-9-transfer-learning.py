@@ -1,5 +1,5 @@
-## Experiment 9: CNN Cartpole 
-## Testing visual processing mechanisms interacting with memory 
+## Experiment 9: Transfer Learning 
+## pre-train on cartpole, then fit to modified cartpole 
 ## WARNING: Requires EMPTY storage container "tmp"!  
 
 import pandas as pd
@@ -7,10 +7,14 @@ from az_blob_util import upload_to_blob_store, download_from_blob_store, ls_blob
 import os 
 from pyspark import SparkContext
 from pyspark.sql import SparkSession 
-sc = SparkContext() 
-spark = SparkSession(sc) 
+try: 
+    sc = SparkContext() 
+    spark = SparkSession(sc) 
+except: 
+    ## sc + spark probably already exist 
+    pass  
 
-SAMPLE_SIZE = 100  
+SAMPLE_SIZE = 10000  
 ITERS = 1000
 
 def map1(task_idx):
@@ -18,32 +22,38 @@ def map1(task_idx):
     try:
         task_idx = int(task_idx) 
         ## run experiment 
-        from regmem_cnn import Model 
+        from regmem import Model 
         from az_blob_util import upload_to_blob_store 
         import os 
         import pickle 
         condition_0_model = Model() 
         ## condition 0 (control): No use of memory, no discarding of data 
-        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=3000, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS) 
         ## copy, creating other models before continuing 
         condition_1_model = condition_0_model.copy() 
         condition_2_model = condition_0_model.copy() 
+        condition_3_model = condition_0_model.copy() 
         ## continue condition 0 (control), without application of memory and without discarding data 
-        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, game_modifier=2) 
         ## condition 1 (control): No use of memory, do discard data 
         condition_1_model.clear_observations() 
-        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, game_modifier=2) 
         ## condition 2 (experimental): Use memory, do discard data 
-        condition_2_model.convert_observations_to_memory(krylov_rank=10) 
-        condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_2_model.convert_observations_to_memory() 
+        condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, game_modifier=2) 
+        ## condition 3 (experimental): Krylov memory, do discard data 
+        condition_3_model.convert_observations_to_memory(lanczos_rank=10) 
+        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, game_modifier=2) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
         condition_2_result_tuples = condition_0_result_tuples_before + condition_2_result_tuples_after 
+        condition_3_result_tuples = condition_0_result_tuples_before + condition_3_result_tuples_after 
         ## append condition codes 
         condition_0_result_tuples = [(x[0], x[1], x[2], 0) for x in condition_0_result_tuples] 
         condition_1_result_tuples = [(x[0], x[1], x[2], 1) for x in condition_1_result_tuples] 
         condition_2_result_tuples = [(x[0], x[1], x[2], 2) for x in condition_2_result_tuples] 
+        condition_3_result_tuples = [(x[0], x[1], x[2], 3) for x in condition_3_result_tuples] 
         ## format output 
         out = [] 
         def append_results(result_tuples, out=out): 
@@ -65,6 +75,7 @@ def map1(task_idx):
         append_results(condition_0_result_tuples) 
         append_results(condition_1_result_tuples) 
         append_results(condition_2_result_tuples) 
+        append_results(condition_3_result_tuples) 
         ## write out 
         filename = f'result-{task_idx}.pkl'
         sas_key = os.environ['STORAGE_KEY']
