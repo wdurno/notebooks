@@ -33,27 +33,57 @@ def map1(task_idx):
         condition_1_model = condition_0_model.copy() 
         condition_2_model = condition_0_model.copy() 
         condition_3_model = condition_0_model.copy() 
-        ## continue condition 0 (control), without application of memory and without discarding data 
+        condition_4_model = condition_0_model.copy() 
+        condition_5_model = condition_0_model.copy() 
+        condition_6_model = condition_0_model.copy()
+        condition_7_model = condition_0_model.copy()
+        condition_8_model = condition_0_model.copy()
+        ## continue condition 0 (control), no memory, keep data, game modifier of 2 
         condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, game_modifier=2) 
-        ## condition 1 (control): No use of memory, do discard data 
+        ## condition 1 (control): No memory, do discard data, game modifier of 2 
         condition_1_model.clear_observations() 
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, game_modifier=2) 
-        ## condition 2 (experimental): Use memory, do discard data 
+        ## condition 2 (experimental): Use memory, do discard data, game modifier of 2 
         condition_2_model.convert_observations_to_memory() 
         condition_2_result_tuples_after = condition_2_model.simulate(total_iters=ITERS, game_modifier=2) 
-        ## condition 3 (experimental): Krylov memory, do discard data 
-        condition_3_model.convert_observations_to_memory(lanczos_rank=10) 
-        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, game_modifier=2) 
+        ## condition 3 (control): No use of memory, do discard data, game modifier of 4
+        condition_3_model.clear_observations()
+        condition_3_result_tuples_after = condition_3_model.simulate(total_iters=ITERS, game_modifier=4) 
+        ## condition 4 (experimental): Use memory, do discard data, game modifier of 4 
+        condition_4_model.convert_observations_to_memory() 
+        condition_4_result_tuples_after = condition_4_model.simulate(total_iters=ITERS, game_modifier=4) 
+        ## condition 5 (control): No use of memory, do discard data, game modifier of 8
+        condition_5_model.clear_observations()
+        condition_5_result_tuples_after = condition_5_model.simulate(total_iters=ITERS, game_modifier=8) 
+        ## condition 6 (experimental): Use memory, do discard data, game modifier of 8
+        condition_6_model.convert_observations_to_memory() 
+        condition_6_result_tuples_after = condition_6_model.simulate(total_iters=ITERS, game_modifier=8) 
+        ## condition 7 (control): No use of memory, do discard data, game modifier of 16
+        condition_7_model.clear_observations()
+        condition_7_result_tuples_after = condition_7_model.simulate(total_iters=ITERS, game_modifier=16) 
+        ## condition 8 (experimental): Use memory, do discard data, game modifier of 16
+        condition_8_model.convert_observations_to_memory()
+        condition_8_result_tuples_after = condition_8_model.simulate(total_iters=ITERS, game_modifier=16) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
         condition_2_result_tuples = condition_0_result_tuples_before + condition_2_result_tuples_after 
         condition_3_result_tuples = condition_0_result_tuples_before + condition_3_result_tuples_after 
+        condition_4_result_tuples = condition_0_result_tuples_before + condition_4_result_tuples_after 
+        condition_5_result_tuples = condition_0_result_tuples_before + condition_5_result_tuples_after 
+        condition_6_result_tuples = condition_0_result_tuples_before + condition_6_result_tuples_after
+        condition_7_result_tuples = condition_0_result_tuples_before + condition_7_result_tuples_after
+        condition_8_result_tuples = condition_0_result_tuples_before + condition_8_result_tuples_after 
         ## append condition codes 
         condition_0_result_tuples = [(x[0], x[1], x[2], 0) for x in condition_0_result_tuples] 
         condition_1_result_tuples = [(x[0], x[1], x[2], 1) for x in condition_1_result_tuples] 
         condition_2_result_tuples = [(x[0], x[1], x[2], 2) for x in condition_2_result_tuples] 
         condition_3_result_tuples = [(x[0], x[1], x[2], 3) for x in condition_3_result_tuples] 
+        condition_4_result_tuples = [(x[0], x[1], x[2], 4) for x in condition_4_result_tuples]
+        condition_5_result_tuples = [(x[0], x[1], x[2], 5) for x in condition_5_result_tuples]
+        condition_6_result_tuples = [(x[0], x[1], x[2], 6) for x in condition_6_result_tuples]
+        condition_7_result_tuples = [(x[0], x[1], x[2], 7) for x in condition_7_result_tuples] 
+        condition_8_result_tuples = [(x[0], x[1], x[2], 8) for x in condition_8_result_tuples] 
         ## format output 
         out = [] 
         def append_results(result_tuples, out=out): 
@@ -75,7 +105,12 @@ def map1(task_idx):
         append_results(condition_0_result_tuples) 
         append_results(condition_1_result_tuples) 
         append_results(condition_2_result_tuples) 
-        append_results(condition_3_result_tuples) 
+        append_results(condition_3_result_tuples)
+        append_results(condition_4_result_tuples)
+        append_results(condition_5_result_tuples)
+        append_results(condition_6_result_tuples)
+        append_results(condition_7_result_tuples)  
+        append_results(condition_8_result_tuples) 
         ## write out 
         filename = f'result-{task_idx}.pkl'
         sas_key = os.environ['STORAGE_KEY']
@@ -118,12 +153,24 @@ def phase_2():
     df = w.toPandas()
     scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
-    scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
+    scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist()
+    scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
+    scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist()
+    scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist()
+    scores6 = df.loc[df['condition'] == 6].sort_values('iter')['avg(score)'].tolist()
+    scores7 = df.loc[df['condition'] == 7].sort_values('iter')['avg(score)'].tolist()
+    scores8 = df.loc[df['condition'] == 8].sort_values('iter')['avg(score)'].tolist() 
     ### save data 
     FILENAME = 'df-experiment-9.csv'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1, 
-                               'scores2': scores2}) 
+                               'scores2': scores2, 
+                               'scores3': scores3,
+                               'scores4': scores4,
+                               'scores5': scores5,
+                               'scores6': scores6,
+                               'scores7': scores7,
+                               'scores8': scores8}) 
     df_data = df_to_save.to_csv().encode() 
     upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
     pass 
