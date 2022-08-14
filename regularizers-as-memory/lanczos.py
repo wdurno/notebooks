@@ -50,7 +50,7 @@ def l_lanczos(get_grad_generator, r, p):
     def multiply_fisher_information(x):
         grad_generator = get_grad_generator() 
         out = 0. 
-        for g in grad_generator():
+        for g in grad_generator:
             #gTx = g.transpose(0,1).matmul(x) 
             #ggTx = g.matmul(gTx) 
             #out += ggTx 
