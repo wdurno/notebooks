@@ -37,7 +37,7 @@ def lanczos(AAT, r):
     VTVT = np.matmul(VTVT, np.transpose(V)) 
     return VTVT
 
-def l_lanczos(get_grad_generator, r, p):
+def l_lanczos(get_grad_generator, r, p, eps=0.):
     '''
     limited-memory Lanczos algorithm
     inputs:
@@ -57,6 +57,8 @@ def l_lanczos(get_grad_generator, r, p):
             ## using one-liner to encourage garbage collection 
             g = g.reshape([-1, 1]) 
             out += g.matmul(g.transpose(0,1).matmul(x)) 
+            if eps > 0.:
+                out += eps * x 
             pass 
         return out  
     vecs = [] 
