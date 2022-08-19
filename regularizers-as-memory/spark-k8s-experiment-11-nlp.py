@@ -11,11 +11,12 @@ sc = SparkContext()
 spark = SparkSession(sc) 
 
 SAMPLE_SIZE = 100  
-LAMBDA = 1e-1 
+LAMBDA = 1e1 
 ACC_FREQ=100
 RANDOM_LABEL_PROBABILITY=.0
 N_ITERS = 310
-N_TRANSFER_LEARNING_SIZE = 10 
+N_TRANSFER_LEARNING_SIZE = 10000 
+EXTRA_FIT_CYCLES=10000 
 
 def map1(task_idx):
     import traceback 
@@ -36,11 +37,11 @@ def map1(task_idx):
         model.fit(nlp_odd_train, n_iters=N_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
         model = model.copy() ## double-copy because I've seen `copy` influence behavior. So, we apply it to all cases.   
         ams_model = model.copy() 
-        ams_model.memorize(nlp_odd_train, memorization_size=N_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=1e1) ## observation: LAMBDA*krylov_eps seems to be an important convergence statistic  
+        ams_model.memorize(nlp_odd_train, memorization_size=N_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=1e2) 
         ams_model = ams_model.copy() 
         ## apply a small dataset 
-        model.fit(nlp_even_train, n_iters=N_ITERS+400, silence_tqdm=True, acc_frequency=ACC_FREQ, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
-        ams_model.fit(nlp_even_train, n_iters=N_ITERS+400, silence_tqdm=True, ams=LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
+        model.fit(nlp_even_train, n_iters=N_ITERS+EXTRA_FIT_CYCLES, silence_tqdm=True, acc_frequency=ACC_FREQ, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
+        ams_model.fit(nlp_even_train, n_iters=N_ITERS+EXTRA_FIT_CYCLES, silence_tqdm=True, ams=LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
         ## gather results 
         metric_0 = model.accs_low 
         metric_1 = model.accs_high 
@@ -93,6 +94,8 @@ def phase_1():
     return y.collect() 
 
 def phase_2(): 
+    import pandas as pd
+    import matplotlib.pyplot as plt
     ## config 
     sas_key = os.environ['STORAGE_KEY'] 
     input_container_name = 'tmp' 
@@ -110,14 +113,24 @@ def phase_2():
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
     scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
     scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
-    ### save data 
-    FILENAME = 'df-experiment-11.csv'
+    ## save data 
+    FILENAME = 'df-experiment-11'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1, 
                                'scores2': scores2,
                                'scores3': scores3}) 
     df_data = df_to_save.to_csv().encode() 
-    upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
+    upload_to_blob_store(df_data, FILENAME+'.csv', sas_key, output_container_name) 
+    ## save plot 
+    plt.plot(scores0, label='0') 
+    plt.plot(scores1, label='1') 
+    plt.plot(scores2, label='2') 
+    plt.plot(scores3, label='3') 
+    plt.legend() 
+    plt.savefig(FILENAME+'.png') 
+    with open(FILENAME+'.png', 'rb') as f: 
+        upload_to_blob_store(f.read(), FILENAME+'.png', sas_key, output_container_name) 
+        pass 
     pass 
 
 if __name__ == '__main__': 
