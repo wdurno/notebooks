@@ -11,7 +11,7 @@ sc = SparkContext()
 spark = SparkSession(sc) 
 
 SAMPLE_SIZE = 100  
-LAMBDA = 1e2 #1e1 
+LAMBDA = 1e6 #1e1 
 ACC_FREQ=100
 RANDOM_LABEL_PROBABILITY=.0
 N_ITERS = 310
@@ -44,7 +44,7 @@ def map1(task_idx):
         ams_model.fit(nlp_even_train, n_iters=EXTRA_FIT_CYCLES, silence_tqdm=True, ams=LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
         ## update memory, and continue fitting 
         ams_model.memorize(nlp_even_train, memorization_size=N_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=1.) 
-        ams_model.fit(nlp_even_train, n_iters=2*EXTRA_FIT_CYCLES, silence_tqdm=True, ams=100.*LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
+        ams_model.fit(nlp_even_train, n_iters=2*EXTRA_FIT_CYCLES, silence_tqdm=True, ams=1.*LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
         ## gather results 
         metric_0 = model.accs_low 
         metric_1 = model.accs_high 
@@ -117,7 +117,7 @@ def phase_2():
     scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
     scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
     ## save data 
-    FILENAME = 'df-experiment-11'
+    FILENAME = 'df-experiment-12'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1, 
                                'scores2': scores2,
