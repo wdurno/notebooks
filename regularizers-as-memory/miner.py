@@ -19,7 +19,7 @@ N_ACTIONS = 10
 MAX_SAMPLE = 100000
 DISCOUNT = .5 # .5 # .95 
 EPS = 1e-5
-EXPLORE_PROBABILITY_FUNC = lambda idx: 0.99**idx 
+EXPLORE_PROBABILITY_FUNC = lambda idx: 0.999**idx 
 BATCH_SIZE = 50  
 LEARNING_RATE = 0.001 # 0.01 # 0.001  
 GRAD_CLIP = 10.0 
@@ -75,7 +75,6 @@ class Model(nn.Module):
         self.regularizing_lambda_function = regularizing_lambda_function 
         ## init CNNs 
         ## 2D CCNs 
-        ## input: (-1, 3, 40, 60) 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=5, stride=3) ## to (-1, 32, 38, 58) 
         self.conv1_bn = nn.BatchNorm2d(64) 
         self.mp2d1 = nn.MaxPool2d(3, 2) 
@@ -84,26 +83,14 @@ class Model(nn.Module):
         self.mp2d2 = nn.MaxPool2d(3, 2) 
         self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2) ## to (-1, 128, 8, 13) 
         self.conv3_bn = nn.BatchNorm2d(256) 
-        #self.mp3 = nn.MaxPool2d(3, 2) 
-        #self.conv4 = nn.Conv2d(256, 256, kernel_size=3, stride=2) ## to (-1, 256, 3, 6) 
-        #self.conv4_bn = nn.BatchNorm2d(256) 
-        #self.conv5 = nn.Conv2d(256, 256, kernel_size=3, stride=2) ## to (-1, 32, 1, 2) 
-        #self.conv5_bn = nn.BatchNorm2d(256) 
         ## 1D CNNs over time 
-        ## input (-1, 32, 40) 
         self.conv6 = nn.Conv1d(256*16, 256, kernel_size=3, stride=2) ## to (-1, 16, 19) 
         self.conv6_bn = nn.BatchNorm1d(256) 
         self.mp1d1 = nn.MaxPool1d(3, 2) 
-        #self.conv7 = nn.Conv1d(64, 64, kernel_size=3, stride=2) ## to (-1, 16, 9) 
-        #self.conv7_bn = nn.BatchNorm1d(64) 
-        #self.conv8 = nn.Conv1d(64, 64, kernel_size=3, stride=2) ## to (-1, 16, 4), reshape to (-1, 16*4=64) 
-        #self.conv8_bn = nn.BatchNorm1d(64) 
         ## FCs 
         self.fc1 = nn.Linear(256*19 + 1, 64) # +1 for compass 
         self.fc1_bn = nn.BatchNorm1d(64) 
         self.fc2 = nn.Linear(64, n_actions) 
-        #self.fc2_bn = nn.BatchNorm1d(64) 
-        #self.fc3 = nn.Linear(64, n_actions) 
         ## init data structures 
         if observations is None: 
             self.observations = [] 
@@ -152,10 +139,10 @@ class Model(nn.Module):
         ## pov should be shape [series_idx, sample_idx, channel_idx, height_idx, width_idx] 
         ## we'll use this shorthand: [L, N, C, H, W] <-- names should align to PyTorch's CNN and LSTM documentation  
         ## first, we must reshape for CNNs 
-        L, N, C, H, W = tuple(pov.shape) ### TODO WARNING: CONFLICTS WITH SAMPLED ORDERING  
+        L, N, C, H, W = tuple(pov.shape) 
         L_batches_in = pov.unbind() 
         L_batches_out = [] 
-        for batch in L_batches_in: ## todo: not efficient, but better-guaranteed to work 
+        for batch in L_batches_in: ## TODO: not efficient, but better-guaranteed to work 
             pov = self.conv1(batch) 
             pov = self.conv1_bn(pov) 
             pov = torch.relu(pov) 
@@ -167,40 +154,21 @@ class Model(nn.Module):
             pov = self.conv3(pov) 
             pov = self.conv3_bn(pov) 
             pov = torch.relu(pov) 
-            #x = self.mp3(x) 
-            #x = self.conv4(x) 
-            #x = self.conv4_bn(x) 
-            #x = torch.relu(x) 
-            #x = self.conv5(x) 
-            #x = self.conv5_bn(x) 
-            #x = torch.relu(x) 
-            pov = pov.reshape([N, -1]) ## TODO reshape's not great  
+            pov = pov.reshape([N, -1]) 
             L_batches_out.append(pov) 
         ## reshape for CNNs over time  
         pov = torch.stack(L_batches_out) ## [L, N, -1] 
-        #x = x.permute(1, 2, 0) # x.transpose(0,1).transpose(1,2) ## [N, -1, L] ### TODO should be a permute 
         pov = pov.permute(0, 2, 1) # [L, -1, N] 
         pov = self.conv6(pov)
         pov = self.conv6_bn(pov) 
         pov = torch.relu(pov) 
-        #x = self.mp1d1(x) 
-        #x = self.conv7(x)
-        #x = self.conv7_bn(x) 
-        #x = torch.relu(x) 
-        #x = self.conv8(x)
-        #x = self.conv8_bn(x) 
-        #x = torch.relu(x) 
         ## Dense 
-        pov = pov.reshape([L, -1]) ## TODO L!!! not N 
+        pov = pov.reshape([L, -1]) 
         x = torch.cat([pov, compass], dim=1) 
         x = self.fc1(x)
         x = self.fc1_bn(x) 
         x = torch.relu(x) 
         x = self.fc2(x) 
-        #x = self.fc2_bn(x) 
-        #x = torch.relu(x) 
-        #x = self.fc3(x) 
-        #x = x*x*x 
         return x 
     
     def get_action(self, env_state): 
@@ -309,7 +277,7 @@ class Model(nn.Module):
                         raise Exception('ERROR: Could not sample valid series of observations!') 
                     pass 
             else: 
-                idx = batch[i] ## TODO is prev DONE OR zero ????  
+                idx = batch[i] 
                 pass 
             start = idx 
             continue_search = True 
@@ -317,7 +285,7 @@ class Model(nn.Module):
                 start -= 1 
                 if start == 0:
                     continue_search = False 
-                if self.observations[start][1]: ## TODO 2 is info!!!! not done~!!!!!  
+                if self.observations[start][1]: 
                     ## done == True 
                     ## hit previous finish 
                     continue_search = False 
@@ -372,7 +340,6 @@ class Model(nn.Module):
         compass = torch.cat(compass_series_list) 
         ## state dimensions: [series_index, timestep_index, channel_index, height_index, width_index] 
         ## model expects otherwise, permute to [timestep_index, series_index, channel_index, height_index, width_index] 
-        #state = state.permute([1, 0, 2, 3, 4]) ### TODO DONT DO THIS 
         ## build reward tensor 
         reward_list = [] 
         for series in sample: 
@@ -390,17 +357,16 @@ class Model(nn.Module):
         ## build action tensor 
         action_list = [] 
         for series in sample: 
-            action = torch.tensor([int(series[-2][4])], device=DEVICE) ## TODO wrong action ???? -2 needed ????  
+            action = torch.tensor([int(series[-2][4])], device=DEVICE) 
             action_list.append(action) 
             pass 
         action = torch.stack(action_list) 
         ## run predictions 
         prediction = self.forward({'pov': pov[:,:-1,:,:,:], 'compass': compass[:-1,:]}) 
-        prediction = prediction.gather(1, action) ## TODO truncated wrong dimension !!!!!  
+        prediction = prediction.gather(1, action) 
         t = target_model.forward({'pov': pov[:,1:,:,:,:], 'compass': compass[1:,:]}) 
         t = torch.max(t, dim=1, keepdim=True).values.reshape([-1, 1]) 
         target = reward + (1 - done) * self.discount * t 
-        #target = target.min(torch.tensor(100.)) ## TODO this shouldn't be necessary :( !!!! 
         target = target.detach() 
         ## calculate memory regularizer 
         regularizer = None 
@@ -430,15 +396,14 @@ class Model(nn.Module):
         ## more logic will be added as further games are integrated 
         return {
                 'attack': 1, 
-                'forward': int(action == 0), 
+                'forward': int(action in [0,4,5,8]), 
                 'back': int(action == 1), 
-                'camera': np.array([30.*int(action == 2) - 30.*int(action == 3), \
-                        -30.*int(action == 4) + 30.*int(action == 5)]), 
+                'camera': np.array([0., 30.*int(action == 2) - 30.*int(action == 3)]), 
                 'left': int(action == 6), 
                 'right': int(action == 7), 
-                'jump': int(action == 8), 
+                'jump': 1, 
                 'sneak': 0, 
-                'sprint': 0, 
+                'sprint': 1, 
                 'place': 'none'
                 }
 
@@ -521,7 +486,6 @@ class Model(nn.Module):
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
             pass
-        #DEBUGenvs = [] 
         env = gym.make(self.env_name) 
         env_state = env.reset() 
         env_state = self.__format_observation(env_state) 
@@ -585,3 +549,7 @@ class Model(nn.Module):
             plt.plot(self.total_rewards) 
             plt.show()
         return simulation_results 
+
+if __name__ == '__main__':
+    m = Model()
+    m.simulate() 
