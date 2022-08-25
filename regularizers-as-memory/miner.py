@@ -193,10 +193,10 @@ class Model(nn.Module):
             ## limited-memory lanczos estimation of Fisher Information 
             p = self.get_parameter_vector().detach().shape[0] 
             if self.hessian_sum_low_rank_half is None: 
-                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p) 
+                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p, device=DEVICE) 
                 self.hessian_denominator = len(self.observations) 
             else: 
-                ## todo: implement low-rank merges 
+                ## TODO: implement low-rank merges 
                 raise ValueError('Low-Rank merges not-yet implemented!') 
         else: 
             ## full-rank Fisher Information representation 

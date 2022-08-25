@@ -8,8 +8,8 @@ from pyspark.sql import SparkSession
 sc = SparkContext() 
 spark = SparkSession(sc) 
 
-SAMPLE_SIZE = 100  
-ITERS = 10000
+SAMPLE_SIZE = 2 #100  
+ITERS = 3000 #10000
 
 def map1(task_idx):
     import traceback 
@@ -32,6 +32,7 @@ def map1(task_idx):
         condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## condition 1 (control): Use of memory, do discard data 
         condition_1_model.convert_observations_to_memory(krylov_rank=10) 
+        condition_1_model.regularizing_lambda_function = lambda x: (ITERS * 100.) 
         condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
@@ -86,6 +87,7 @@ def phase_1():
     return y.collect() 
 
 def phase_2(): 
+    import matplotlib.pyplot as plt 
     ## config 
     sas_key = os.environ['STORAGE_KEY'] 
     input_container_name = 'tmp' 
@@ -102,11 +104,19 @@ def phase_2():
     scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
     ### save data 
-    FILENAME = 'df-experiment-13.csv'
+    FILENAME = 'df-experiment-13'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1})  
     df_data = df_to_save.to_csv().encode() 
-    upload_to_blob_store(df_data, FILENAME, sas_key, output_container_name) 
+    upload_to_blob_store(df_data, FILENAME+'.csv', sas_key, output_container_name)
+    ## save plot
+    plt.plot(scores0, label='0')
+    plt.plot(scores1, label='1')
+    plt.legend()
+    plt.savefig(FILENAME+'.png')
+    with open(FILENAME+'.png', 'rb') as f:
+        upload_to_blob_store(f.read(), FILENAME+'.png', sas_key, output_container_name)
+        pass
     pass 
 
 if __name__ == '__main__': 

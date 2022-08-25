@@ -37,7 +37,7 @@ def lanczos(AAT, r):
     VTVT = np.matmul(VTVT, np.transpose(V)) 
     return VTVT
 
-def l_lanczos(get_grad_generator, r, p, eps=0.):
+def l_lanczos(get_grad_generator, r, p, eps=0., device=None):
     '''
     limited-memory Lanczos algorithm
     inputs:
@@ -50,7 +50,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0.):
     def multiply_fisher_information(x):
         grad_generator = get_grad_generator() 
         out = 0. 
-        for g in grad_generator:
+        for g in grad_generator():
             #gTx = g.transpose(0,1).matmul(x) 
             #ggTx = g.matmul(gTx) 
             #out += ggTx 
@@ -66,6 +66,8 @@ def l_lanczos(get_grad_generator, r, p, eps=0.):
     off_diags = [] 
     ## init 
     v = torch.normal(0, torch.ones([p, 1])) 
+    if device is not None: 
+        v = v.to(device) 
     v = v / torch.sqrt(v.transpose(0,1).matmul(v)) 
     ## next_v = AAT.matmul(v)  
     next_v = multiply_fisher_information(v) 
@@ -90,6 +92,8 @@ def l_lanczos(get_grad_generator, r, p, eps=0.):
     diags = torch.tensor(diags).reshape([-1])
     off_diags = torch.tensor(off_diags).reshape([-1]) 
     T = torch.diag(diags) + torch.diag(off_diags, -1) + torch.diag(off_diags, 1) 
+    if device is not None: 
+        T = T.to(device) 
     ## combine V & T into single matrix A 
     eigs = torch.linalg.eigh(T) 
     positive_eigenvalues = torch.relu(eigs.eigenvalues) ## for sqrt 
