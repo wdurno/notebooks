@@ -115,7 +115,7 @@ class NLPDataset(Dataset):
     'converts a sequence of token indices into a dataset'
     def __init__(self, 
             token_list, 
-            sample_length=10 
+            sample_length=10, 
             ): 
         ## store content 
         self.token_list = torch.tensor(token_list) 
@@ -172,8 +172,10 @@ class EvenOrOddNLPDataset(Dataset):
         return self.nlp_dataset[idx] 
     pass 
 
-nlp_train = NLPDataset(shakes_tokens[:700000], sample_length=SHAKES_SERIES_LEN) 
-nlp_test = NLPDataset(shakes_tokens[700000:], sample_length=SHAKES_SERIES_LEN) 
+shakes_tokens_train = shakes_tokens[:700000] 
+shakes_tokens_test  = shakes_tokens[700000:] 
+nlp_train = NLPDataset(shakes_tokens_train, sample_length=SHAKES_SERIES_LEN) 
+nlp_test = NLPDataset(shakes_tokens_test, sample_length=SHAKES_SERIES_LEN) 
 #nlp_even_train = EvenOrOddNLPDataset(nlp_train, even=True, random_subset_size=N_TRANSFER_LEARNING_SIZE) ## subset demonstrates transfer learning 
 #nlp_odd_train = EvenOrOddNLPDataset(nlp_train, even=False) 
 #nlp_even_test = EvenOrOddNLPDataset(nlp_test, even=True) 
@@ -191,7 +193,7 @@ import torch.nn as nn
 import torch.optim as optim 
 import torch.nn.functional as F 
 
-from lanczos import l_lanczos 
+from lanczos import l_lanczos, combine_krylov_spaces  
 
 N_OUT = 10 
 LEARNING_RATE = 0.001 
@@ -428,11 +430,18 @@ class Model(nn.Module):
                 self.hessian_sum += (grad.matmul(grad.transpose(1, 0))).detach() 
                 self.hessian_denominator += 1 
                 pass 
-        else: 
+        elif self.hessian_sum_low_rank_half is None: 
             ## use Krylov method 
             p = int(self.get_parameter_vector().shape[0])  
             self.hessian_denominator += memorization_size 
             self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, r=krylov_rank, p=p, eps=krylov_eps) 
+        else: 
+            ## update Krylov space 
+            p = int(self.get_parameter_vector().shape[0]) 
+            self.hessian_denominator += memorization_size 
+            new_krylov_space = l_lanczos(get_grad_generator, r=krylov_rank, p=p, eps=krylov_eps) 
+            updated_krylov_space = combine_krylov_spaces(self.hessian_sum_low_rank_half, new_krylov_space, krylov_eps=krylov_eps) 
+            self.hessian_sum_low_rank_half = updated_krylov_space 
             pass 
         pass 
     def acc(self, dataset, batch_size=1000, drop_labels=[]): 
@@ -461,7 +470,7 @@ class Model(nn.Module):
                     grad = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()]) 
                     yield grad 
                 pass 
-            return grad_generator() 
+            return grad_generator  
         return get_grad_generator 
     def __get_loss(self, x, y): 
         y_hat = self.forward(x) 

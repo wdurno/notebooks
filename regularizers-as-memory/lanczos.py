@@ -2,6 +2,7 @@
 import numpy as np
 from scipy.linalg import block_diag 
 import torch 
+import traceback 
 
 def lanczos(AAT, r): 
     'Lanczos algorithm: produce AA^T = V T V^T' 
@@ -37,13 +38,15 @@ def lanczos(AAT, r):
     VTVT = np.matmul(VTVT, np.transpose(V)) 
     return VTVT
 
-def l_lanczos(get_grad_generator, r, p, eps=0., device=None):
+def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None):
     '''
     limited-memory Lanczos algorithm
     inputs:
     - get_grad_generator: a function that returns a grad sampler. grads are N(0,Fisher Information) distributed.
     - r: Krylov space rank
     - p: dimension of (p X p) Fisher Information 
+    - device: which device to execute on 
+    - mfi_alternate: an alternative function to replace the below `multiply_fisher_infromation` 
     outputs:
     - A: a (p X r) matrix, providing low-rank Fisher Information approximation AA^T
     '''
@@ -61,6 +64,9 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None):
                 out += eps * x 
             pass 
         return out  
+    if mfi_alternate is not None: 
+        multiply_fisher_information = mfi_alternate 
+        pass 
     vecs = [] 
     diags = [] 
     off_diags = [] 
@@ -100,3 +106,29 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None):
     sqrt_T = eigs.eigenvectors.matmul(torch.diag(torch.sqrt(positive_eigenvalues))).matmul(eigs.eigenvectors.transpose(0,1)) 
     A = V.matmul(sqrt_T) 
     return A 
+
+def combine_krylov_spaces(A, B, device=None, krylov_eps=0.): 
+    '''
+    Uses a modified Lanczos algorithm to combine Krylov bases `A` and `B`. 
+    inputs: 
+    - A: a Krylov basis, perhaps produced by `l_lanczos`, so must be a rectangular tensor 
+    - B: a Krylov basis, perhaps produced by `l_lanczos`, must be the same shape as `A` 
+    - device: which device to execute on 
+    outputs: 
+    - C: a combined Krylov basis 
+    '''
+    ## resize for stability 
+    m = max(A.max(), B.max()) 
+    A = A/m 
+    B = B/m 
+    ## get crackin' 
+    def mfi_alternate(x): 
+        x1 = A.matmul(A.transpose(0,1).matmul(x)) 
+        x2 = B.matmul(B.transpose(0,1).matmul(x)) 
+        if krylov_eps > 0.:
+            return x1 + x2 + krylov_eps * x 
+        return x1 + x2 
+    p, r = tuple(A.shape) 
+    C = l_lanczos(get_grad_generator=None, r=r, p=p, eps=krylov_eps, device=device, mfi_alternate=mfi_alternate)  
+    return C*m  
+

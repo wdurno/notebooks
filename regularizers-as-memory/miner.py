@@ -185,7 +185,7 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self, n_eigenvectors = None, krylov_rank = None): 
+    def convert_observations_to_memory(self, n_eigenvectors = None, krylov_rank = None, krylov_eps=0.): 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
         get_grad_generator = self.__get_get_grad_generator(target_model) 
@@ -193,7 +193,7 @@ class Model(nn.Module):
             ## limited-memory lanczos estimation of Fisher Information 
             p = self.get_parameter_vector().detach().shape[0] 
             if self.hessian_sum_low_rank_half is None: 
-                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p, device=DEVICE) 
+                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p, device=DEVICE, eps=krylov_eps) 
                 self.hessian_denominator = len(self.observations) 
             else: 
                 ## TODO: implement low-rank merges 
@@ -481,7 +481,7 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=.1, l2_regularizer=None): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=.1, l2_regularizer=None, fit_freq=10): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -526,7 +526,7 @@ class Model(nn.Module):
             self.total_iters += 1 
             simulation_results.append((reward, done, self.total_iters)) 
 
-            if iter_idx > BATCH_SIZE+200 and iter_idx % 1 == 0: 
+            if iter_idx > BATCH_SIZE+200 and iter_idx % fit_freq == 0: 
                 loss_f, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
                 self.eval() 
                 iters.set_description(f'loss: {loss_f}, mean_rwrd: {mean_reward}, ttl rwd: {last_total_reward}') 

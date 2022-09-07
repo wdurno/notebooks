@@ -8,8 +8,13 @@ from pyspark.sql import SparkSession
 sc = SparkContext() 
 spark = SparkSession(sc) 
 
-SAMPLE_SIZE = 2 #100  
-ITERS = 3000 #10000
+SAMPLE_SIZE = 8 #100  
+ITERS = 3000 
+FIT_FREQ = 1 
+LEARNING_RATE = 0.001 
+BATCH_SIZE = 50 
+LAMBDA = 1. 
+KRYLOV_EPS = 0. 
 
 def map1(task_idx):
     import traceback 
@@ -20,20 +25,21 @@ def map1(task_idx):
         from az_blob_util import upload_to_blob_store 
         import os 
         import pickle 
-        condition_0_model = Model(env_name='MineRLNavigateDense-v0') 
+        condition_0_model = Model(env_name='MineRLNavigateDense-v0', learning_rate=LEARNING_RATE, batch_size=BATCH_SIZE) 
         ## condition 0 (control): No use of memory, no discarding of data 
-        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_before = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False, \
+                fit_freq=FIT_FREQ) 
         ## copy, creating other models before continuing 
         condition_0_model = condition_0_model.copy() 
         condition_1_model = condition_0_model.copy() 
         condition_0_model.env_name = 'MineRLNavigateExtremeDense-v0' 
         condition_1_model.env_name = 'MineRLNavigateExtremeDense-v0'
         ## continue condition 0 (control), without application of memory and without discarding data 
-        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_0_result_tuples_after = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False, fit_freq=FIT_FREQ) 
         ## condition 1 (control): Use of memory, do discard data 
-        condition_1_model.convert_observations_to_memory(krylov_rank=10) 
-        condition_1_model.regularizing_lambda_function = lambda x: (ITERS * 100.) 
-        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        condition_1_model.convert_observations_to_memory(krylov_rank=10, krylov_eps=KRYLOV_EPS) 
+        condition_1_model.regularizing_lambda_function = lambda x: (LAMBDA) 
+        condition_1_result_tuples_after = condition_1_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False, fit_freq=FIT_FREQ) 
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + condition_0_result_tuples_after 
         condition_1_result_tuples = condition_0_result_tuples_before + condition_1_result_tuples_after 
