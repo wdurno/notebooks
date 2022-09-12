@@ -117,11 +117,6 @@ def combine_krylov_spaces(A, B, device=None, krylov_eps=0.):
     outputs: 
     - C: a combined Krylov basis 
     '''
-    ## resize for stability 
-    m = max(A.max(), B.max()) 
-    A = A/m 
-    B = B/m 
-    ## get crackin' 
     def mfi_alternate(x): 
         x1 = A.matmul(A.transpose(0,1).matmul(x)) 
         x2 = B.matmul(B.transpose(0,1).matmul(x)) 
@@ -130,5 +125,5 @@ def combine_krylov_spaces(A, B, device=None, krylov_eps=0.):
         return x1 + x2 
     p, r = tuple(A.shape) 
     C = l_lanczos(get_grad_generator=None, r=r, p=p, eps=krylov_eps, device=device, mfi_alternate=mfi_alternate)  
-    return C*m  
+    return C * .5  
 

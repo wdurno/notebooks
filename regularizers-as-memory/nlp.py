@@ -364,7 +364,7 @@ class Model(nn.Module):
         out.load_state_dict(self.state_dict()) 
         return out 
     def fit(self, training_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
-            random_label_probability=0., silence_tqdm=False, acc_frequency=1, halt_acc=None, nlp_even_test=None, nlp_odd_test=None): 
+            random_label_probability=0., silence_tqdm=False, acc_frequency=1, halt_acc=None, nlp_even_test=None, nlp_odd_test=None, l2_reg=None): 
         ''' 
         fit the model 
         inputs: 
@@ -383,8 +383,13 @@ class Model(nn.Module):
             loss = self.__get_loss(x, y) 
             if ams: 
                 reg = self.__get_regularizer() 
-                loss += ams * reg ## "+" because optimizer minimizes 
-                self.regs.append(float(ams * reg)) 
+                reg = ams * reg 
+                if l2_reg is not None and self.hessian_center is not None: 
+                    p = self.get_parameter_vector()
+                    p0 = self.hessian_center 
+                    reg += (l2_reg*(p - p0).transpose(0,1).matmul(p - p0)).reshape([]) 
+                loss += reg ## "+" because optimizer minimizes 
+                self.regs.append(float(reg)) 
             else: 
                 self.regs.append(0.) 
                 pass 

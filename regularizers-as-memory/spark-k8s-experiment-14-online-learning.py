@@ -9,12 +9,13 @@ sc = SparkContext()
 spark = SparkSession(sc) 
 
 N_EXPERIMENTAL_ITERATIONS = 100  
-LAMBDA = .00000001  
+LAMBDA = 1.  
 ACC_FREQ=10
-FIT_ITERS = 100 
+FIT_ITERS = 1000 
 SAMPLING_STRIDE = 10000 
 SAMPLING_WINDOW = 10000 
-KRYLOV_EPS = 1. 
+KRYLOV_EPS = 0. 
+L2_REG = .00001 ## centered at last memorized point 
 
 def map1(task_idx):
     import traceback 
@@ -26,6 +27,8 @@ def map1(task_idx):
         import os 
         import pickle 
         from tqdm import tqdm 
+        ## artificially reducing dataset size to speed-up experiments 
+        shakes_tokens_train = shakes_tokens_train[:100000] 
         ## define models 
         control_0_model = Model(net_type='nlp', batch_norm=False, log1p_reg=False) ## only fit to windowed data, and don't memorize 
         control_1_model = control_0_model.copy() ## only fit to windowed data, and do memorize 
@@ -40,10 +43,15 @@ def map1(task_idx):
             ## define training datasets 
             windowed_dataset_train = NLPDataset(token_list=shakes_tokens_train[idx:(idx+SAMPLING_WINDOW)], sample_length=SHAKES_SERIES_LEN) 
             cumulative_dataset_train = NLPDataset(token_list=shakes_tokens_train[:(idx+SAMPLING_WINDOW)], sample_length=SHAKES_SERIES_LEN) 
+            if idx < N/2: 
+                ## simulate pre-training 
+                windowed_dataset_train = cumulative_dataset_train 
+                pass 
             ## fit models 
             control_0_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
             control_1_model.fit(cumulative_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test)
-            experimental_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test, ams=LAMBDA*idx/N) 
+            experimental_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test, \
+                    ams=LAMBDA, l2_reg=L2_REG) 
             ## memorize 
             experimental_model.memorize(windowed_dataset_train, memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=KRYLOV_EPS) 
             pass 
