@@ -8,7 +8,7 @@ from pyspark.sql import SparkSession
 sc = SparkContext() 
 spark = SparkSession(sc) 
 
-N_EXPERIMENTAL_ITERATIONS = 100  
+N_EXPERIMENTAL_ITERATIONS = 1000  
 LAMBDA = 1.  
 ACC_FREQ=10
 FIT_ITERS = 1000 
@@ -43,17 +43,16 @@ def map1(task_idx):
             ## define training datasets 
             windowed_dataset_train = NLPDataset(token_list=shakes_tokens_train[idx:(idx+SAMPLING_WINDOW)], sample_length=SHAKES_SERIES_LEN) 
             cumulative_dataset_train = NLPDataset(token_list=shakes_tokens_train[:(idx+SAMPLING_WINDOW)], sample_length=SHAKES_SERIES_LEN) 
-            if idx < N/2: 
-                ## simulate pre-training 
-                windowed_dataset_train = cumulative_dataset_train 
-                pass 
             ## fit models 
-            control_0_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
-            control_1_model.fit(cumulative_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test)
-            experimental_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test, \
-                    ams=LAMBDA, l2_reg=L2_REG) 
+            control_0_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
+                    nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
+            control_1_model.fit(cumulative_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
+                    nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test)
+            idx_batch = experimental_model.fit(windowed_dataset_train, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
+                    nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test, ams=LAMBDA, l2_reg=L2_REG) 
             ## memorize 
-            experimental_model.memorize(windowed_dataset_train, memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=KRYLOV_EPS) 
+            experimental_model.memorize(windowed_dataset_train, memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=10, \
+                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
             pass 
         ## gather results 
         metric_0 = [(a+b)*.5 for a,b in zip(control_0_model.accs_low, control_0_model.accs_high)] ## TODO replace this ugly, approximate hack  

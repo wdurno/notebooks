@@ -372,14 +372,18 @@ class Model(nn.Module):
         - ams: use analytic memory system? if yes, set to lambda value 
         - drop_labels: omit these labels from training 
         - random_label_probability: probability of randomly selecting a label, instead of using the correct one 
+        outputs:
+        - idx_batch: returns a list of observation indices for optional, later memorization 
         side-effects: 
         - model parameter updates 
         ''' 
+        idx_batch = [] 
         pbar = tqdm(range(n_iters), disable=silence_tqdm) 
         for pbar_idx in pbar: 
             self.train() 
             self.zero_grad() 
-            x, y = self.__get_batch(training_dataset, drop_labels=drop_labels, random_label_probability=random_label_probability) 
+            x, y, idx_list = self.__get_batch(training_dataset, drop_labels=drop_labels, random_label_probability=random_label_probability) 
+            idx_batch.extend(idx_list) 
             loss = self.__get_loss(x, y) 
             if ams: 
                 reg = self.__get_regularizer() 
@@ -416,15 +420,22 @@ class Model(nn.Module):
                 pass 
             pbar.set_description(f'loss: {loss_f}') 
             pass 
-        pass 
+        return idx_batch  
     def memorize(self, dataset, drop_labels=[], memorization_size=MEMORIZATION_SIZE, 
-            random_label_probability=0., silence_tqdm=False, krylov_rank=0, krylov_eps=0.): 
+            random_label_probability=0., silence_tqdm=False, krylov_rank=0, krylov_eps=0., idx_batch=None): 
         self.eval() 
         if self.hessian_denominator is None: 
             self.hessian_denominator = 0. 
             pass 
         self.hessian_center = self.get_parameter_vector().detach() 
-        get_grad_generator = self.__get_get_grad_generator(dataset, n_grads=memorization_size, drop_labels=drop_labels, random_label_probability=random_label_probability) 
+        if idx_batch is not None: 
+            if memorization_size < len(idx_batch): 
+                ## compute times were annoyingly long, running a random sub-sample... 
+                idx_batch = random.sample(idx_batch, memorization_size) 
+                pass 
+            pass 
+        get_grad_generator = self.__get_get_grad_generator(dataset, n_grads=memorization_size, drop_labels=drop_labels, \
+                random_label_probability=random_label_probability, idx_batch=idx_batch) 
         if krylov_rank < 1: 
             ## use full-rank Information Matrix estimate 
             if self.hessian_sum is None: 
@@ -451,7 +462,7 @@ class Model(nn.Module):
         pass 
     def acc(self, dataset, batch_size=1000, drop_labels=[]): 
         self.eval() 
-        x, y = self.__get_batch(dataset, batch_size=batch_size, drop_labels=drop_labels) 
+        x, y, _ = self.__get_batch(dataset, batch_size=batch_size, drop_labels=drop_labels) 
         y_hat = self.forward(x) 
         acc = (y.argmax(dim=1) == y_hat.argmax(dim=1)).float().mean() 
         acc_f = float(acc) 
@@ -469,7 +480,7 @@ class Model(nn.Module):
             def grad_generator(): 
                 for _ in range(n_grads): 
                     self.zero_grad() 
-                    x, y = self.__get_batch(dataset, batch_size=1, **argv) 
+                    x, y, _ = self.__get_batch(dataset, batch_size=1, **argv) 
                     loss = self.__get_loss(x, y) 
                     loss.backward() 
                     grad = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()]) 
@@ -502,11 +513,19 @@ class Model(nn.Module):
         elif self.net_type in ['nlp']: 
             return self.__get_nlp_batch(dataset, batch_size=batch_size, **argv) 
         pass 
-    def __get_nlp_batch(self, dataset, batch_size=BATCH_SIZE, random_label_probability=0., drop_labels=[]): 
+    def __get_nlp_batch(self, dataset, batch_size=BATCH_SIZE, random_label_probability=0., drop_labels=[], idx_batch=None): 
         x_list = [] 
         y_list = [] 
-        for _ in range(batch_size): 
-            idx = random.randint(0, len(dataset)-1) 
+        idx_list = [] 
+        if idx_batch is not None: 
+            if batch_size < len(idx_batch): 
+                idx_batch = random.sample(idx_batch, batch_size)  
+        for i in range(batch_size): 
+            if idx_batch is None: 
+                idx = random.randint(0, len(dataset)-1) 
+            else:
+                idx = idx_batch[i] 
+                pass 
             x, y = dataset[idx] 
             #y = torch.tensor([1. if int(y) == idx else 0. for idx in range(N_SHAKES_OUT)]) ## one-hot representation 
             if random_label_probability > 0.: 
@@ -519,10 +538,11 @@ class Model(nn.Module):
             y = y.reshape([1, -1]) 
             x_list.append(x) 
             y_list.append(y) 
+            idx_list.append(idx) 
             pass 
         x = torch.cat(x_list, dim=0) 
         y = torch.cat(y_list, dim=0) 
-        return x, y  
+        return x, y, idx_list  
     def __get_mnist_batch(self, dataset, batch_size=BATCH_SIZE, drop_labels=[], random_label_probability=0.): 
         x_list = [] 
         y_list = [] 
