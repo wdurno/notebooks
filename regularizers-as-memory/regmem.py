@@ -45,7 +45,10 @@ class Model(nn.Module):
             hessian_center=None, 
             observations=None,
             total_iters=0,
-            regularizing_lambda_function=None): 
+            regularizing_lambda_function=None,
+            least_constrained_basis=None, 
+            least_constrained_subspace_parameters=None, 
+            eta_space=None): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -67,6 +70,9 @@ class Model(nn.Module):
         self.hessian_rank = hessian_rank 
         self.total_iters = total_iters
         self.regularizing_lambda_function = regularizing_lambda_function 
+        self.least_constrained_basis = least_constrained_basis 
+        self.least_constrained_subspace_parameters = least_constrained_subspace_parameters 
+        self.eta_space = eta_space 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
         self.fc1_bn = nn.BatchNorm1d(32) 
@@ -112,11 +118,16 @@ class Model(nn.Module):
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
-                regularizing_lambda_function=self.regularizing_lambda_function) 
+                regularizing_lambda_function=self.regularizing_lambda_function, 
+                eta_space=self.eta_space.copy() if self.eta_space is not None else None)  
         out.load_state_dict(self.state_dict()) 
         return out 
 
     def forward(self, x): 
+        if self.eta_space is not None: 
+            ## TODO this gets called a lot. Is there a better place to put it? 
+            self.eta_space.derive_theta_in_place(self.parameters()) 
+            pass 
         x = x.reshape([-1, self.input_dim * self.short_term_memory_length]) 
         x = self.fc1(x)
         x = self.fc1_bn(x) 
@@ -144,13 +155,23 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self, n_eigenvectors=None, lanczos_rank=None): 
+    def convert_observations_to_memory(self, n_eigenvectors=None, lanczos_rank=None, n_reparameterized_dims=None): 
+        if self.eta_space is not None: 
+            ## optimize eta via theta, not theta directly 
+            for p in self.parameters(): 
+                p.requires_grad = False 
+            pass 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
         for obs in self.observations: 
             ## update hessian  
             predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
             loss = F.smooth_l1_loss(predicted, target) 
+            if regularizer is not None: ## TODO function is duplicate -> package in a single function 
+                if self.regularizing_lambda_function is not None:
+                    regularizer *= self.regularizing_lambda_function(self)
+                    pass
+                loss += regularizer 
             loss.backward() 
             grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
             outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 
@@ -175,6 +196,14 @@ class Model(nn.Module):
             ## extract and truncate 
             vecs = eigs.eigenvectors.real
             vals = eigs.eigenvalues.real
+            if n_reparameterized_dims == None: 
+                eta_basis = torch.tensor(vecs[:, -n_reparameterized_dims:]) 
+                if self.eta_space is None: 
+                    self.eta_space = EtaSpace(basis=eta_basis, origin=self.hessian_center) 
+                else: 
+                    self.eta_space.update(basis=eta_basis, origin=self.hessian_center) 
+                    pass 
+                pass 
             vecs[:,n_eigenvectors:] = 0 
             vals[n_eigenvectors:] = 0  
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
@@ -260,7 +289,9 @@ class Model(nn.Module):
             mean_reward = predicted.mean() 
             #loss = F.mse_loss(predicted, target) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
-            if regularizer is not None: 
+            if regularizer is not None: # and self.eta_space is None: 
+                ## consider skipping if `eta_space is None`, because eta_space is orthogonal to memorized dimensions 
+                ## i'm keeping it here, because i sometimes use different regularizers 
                 if self.regularizing_lambda_function is not None:
                     regularizer *= self.regularizing_lambda_function(self) 
                     pass 
@@ -272,6 +303,10 @@ class Model(nn.Module):
                 dt = (t - t0).reshape([-1, 1])
                 loss += l2_regularizer * dt.transpose(0,1).matmul(dt).reshape([]) 
             loss_f = float(loss) 
+            if self.eta_space is not None: 
+                for p in self.parameters(): 
+                    p.requires_grad = False 
+                pass 
             loss.backward() 
             if not self.lbfgs: 
                 ## lbfgs really doesn't like this 
@@ -279,8 +314,10 @@ class Model(nn.Module):
             ## lbfgs must re-evaluate target, hence lambda 
             if self.lbfgs: 
                 self.optimizer.step(lambda: float(F.smooth_l1_loss(predicted, target))) 
-            else:
+            elif self.eta_space is None:
                 self.optimizer.step() 
+            else: 
+                self.eta_space.optim_step() 
                 pass 
             updated_theta = self.get_parameter_vector() 
             ## decide to continue iterating or not 
@@ -380,3 +417,47 @@ class Model(nn.Module):
             plt.plot(self.total_rewards) 
             plt.show()
         return simulation_results 
+    pass 
+
+class EtaSpace(): 
+    'a subspace paramerization in theta space' 
+    def __init__(self, basis, origin, learning_rate=LEARNING_RATE): 
+        '''
+        - basis: (tensor in R^2) n_rows = dim(theta), n_cols = dim(eta)
+        - origin: (tensor in theta space) Hessian center vector  
+        ''' 
+        self.basis = basis 
+        self.theta_dim = basis.shape[0] 
+        self.eta_dim = basis.shape[1] 
+        self.eta = nn.Parameter(torch.zeros([self.eta_dim, 1])) 
+        self.origin = origin 
+        if origin.shape[0] != self.theta_dim: 
+            raise Exception('ERROR: origin dimension and basis rows must equate!') 
+            pass 
+        self.learning_rate = learning_rate 
+        self.optimizer = optim.Adam([self.eta], learning_rate=learning_rate) 
+        pass 
+    def update_coordinates(self, basis, origin): 
+        if basis.shape[0] != self.theta_dim or \
+                basis.shape[1] != self.eta_dim or \
+                origin.shape[0] != self.theta_dim: 
+            raise Exception('ERROR: eta-space update must have matching dimensions!') 
+            pass 
+        self.basis = basis 
+        self.origin = origin 
+        pass 
+    def derive_theta_in_place(self, parameters_iterable): 
+        theta_vec = self.basis.matmul(self.eta) + self.origin 
+        nn.utils.vector_to_parameters(theta_vec, parameters_iterable) 
+        pass 
+    def optim_step(self): 
+        self.optimizer.step() 
+        pass 
+    def copy(self): 
+        return EtaSpace( 
+                basis=self.basis.detatch().copy(), 
+                origin=self.basis.detatch().copy(), 
+                learning_rate=self.learning_rate 
+                ) 
+    pass 
+
