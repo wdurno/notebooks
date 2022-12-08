@@ -10,15 +10,17 @@ import matplotlib.pyplot as plt
 import copy 
 import os 
 from PIL import Image 
-from lanczos import l_lanczos 
+from lanczos import l_lanczos, combine_krylov_spaces  
 from car_env.car_client import PiCarEnv 
 from car_env.constants import N_ACTIONS, N_CAMERA_DIRECTIONS  
 
 MAX_SAMPLE = 100000
 DISCOUNT = .5 # .5 # .95 
 EPS = 1e-5
-EXPLORE_PROBABILITY_FUNC = lambda idx: 0.999**idx 
-BATCH_SIZE = 50  
+#EXPLORE_PROBABILITY_FUNC = lambda idx: 0.999**idx ## lambda doesn't pickle 
+def EXPLORE_PROBABILITY_FUNC (idx):
+    return 0.99**idx 
+BATCH_SIZE = 25  
 LEARNING_RATE = 0.001 # 0.01 # 0.001  
 GRAD_CLIP = 10.0 
 SHORT_TERM_MEMORY_LENGTH = 40 
@@ -224,7 +226,7 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self, n_eigenvectors = None, krylov_rank = None, krylov_eps=0.): 
+    def convert_observations_to_memory(self, n_eigenvectors = None, krylov_rank = None, krylov_eps=0., disable_tqdm=True): 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
         get_grad_generator = self.__get_get_grad_generator(target_model) 
@@ -232,11 +234,17 @@ class Model(nn.Module):
             ## limited-memory lanczos estimation of Fisher Information 
             p = self.get_parameter_vector().detach().shape[0] 
             if self.hessian_sum_low_rank_half is None: 
-                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p, device=DEVICE, eps=krylov_eps) 
+                self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p, \
+                        device=DEVICE, eps=krylov_eps, disable_tqdm=disable_tqdm) 
                 self.hessian_denominator = len(self.observations) 
             else: 
-                ## TODO: implement low-rank merges 
-                raise ValueError('Low-Rank merges not-yet implemented!') 
+                ## Generate new Krylov space and update existing memory with modified Lanczos, combining both 
+                krylov_update = l_lanczos(get_grad_generator, krylov_rank, p, device=DEVICE, eps=krylov_eps, disable_tqdm=disable_tqdm) 
+                updated_krylov_space = combine_krylov_spaces(self.hessian_sum_low_rank_half, krylov_update, \
+                        device=DEVICE, krylov_eps=krylov_eps) 
+                self.hessian_sum_low_rank_half = updated_krylov_space 
+                self.hessian_denominator = len(self.observations) 
+                pass 
         else: 
             ## full-rank Fisher Information representation 
             ## can be extrememly memory intensive! 
@@ -439,7 +447,7 @@ class Model(nn.Module):
         out['camera'] = camera.int().reshape([1, 1]).to(DEVICE) ## make observations stackable 
         return out 
 
-    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None): 
+    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None, log1p_regularizer=False): 
         if len(self.observations) < batch_size: 
             ## do not optimize without sufficient sample size 
             return None, None, None 
@@ -463,7 +471,10 @@ class Model(nn.Module):
                 if self.regularizing_lambda_function is not None:
                     regularizer *= self.regularizing_lambda_function(self) 
                     pass 
-                loss += regularizer 
+                if log1p_regularizer: 
+                    regularizer = torch.log1p(regularizer) 
+                    pass 
+                loss += regularizer  
             if l2_regularizer is not None: 
                 ## for experimental purposes only 
                 t0 = self.hessian_center = target_model.get_parameter_vector().detach() 
@@ -504,8 +515,8 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=.1, l2_regularizer=None, \
-            fit_freq=10, manual_play=False): 
+    def simulate(self, host, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, \
+            tqdm_seconds=.1, l2_regularizer=None, fit_freq=10, manual_play=False, log1p_regularizer=False): 
         if manual_play: 
             pygame.init() 
             pygame.display.set_mode((100,100)) 
@@ -513,9 +524,9 @@ class Model(nn.Module):
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
             pass
-        env = gym.make(self.env_name) 
-        env_state = env.reset() 
-        env_state = self.__format_observation(env_state) 
+        env = PiCarEnv(host)  
+        pov, camera = env.reset() 
+        env_state = self.__format_observation(pov, camera) 
         sequence = {'pov': [env_state['pov']]*self.short_term_memory_length, 'camera': env_state['camera']} 
         ## store initial observation 
         observation = 0, False, {}, env_state, 0  
@@ -545,8 +556,10 @@ class Model(nn.Module):
                         pass
                     pass
                 pass 
-            env_state, reward, done, info = env.step(action) 
-            env_state = self.__format_observation(env_state) 
+            #env_state, reward, done, info = env.step(action) 
+            pov, camera, reward = env.step(action) 
+            done, info = False, {} 
+            env_state = self.__format_observation(pov, camera) 
             last_total_reward += reward 
             ## add to sequence 
             sequence['pov'] = sequence['pov'][1:] 
@@ -559,15 +572,15 @@ class Model(nn.Module):
             self.total_iters += 1 
             simulation_results.append((reward, done, self.total_iters)) 
 
-            if iter_idx > BATCH_SIZE+200 and iter_idx % fit_freq == 0: 
-                loss_f, halt_method, mean_reward = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
+            if iter_idx > BATCH_SIZE+50 and iter_idx % fit_freq == 0: 
+                loss_f, halt_method, mean_reward = self.optimize(max_iter=10, batch_size=self.batch_size, l2_regularizer=l2_regularizer, log1p_regularizer=log1p_regularizer) 
                 self.eval() 
                 iters.set_description(f'loss: {loss_f}, mean_rwrd: {mean_reward}, ttl rwd: {last_total_reward}') 
                 pass 
 
             if done: 
-                env_state = env.reset() 
-                env_state = self.__format_observation(env_state) 
+                pov, camera = env.reset() 
+                env_state = self.__format_observation(pov, camera) 
                 sequence = {'pov': [env_state['pov']]*self.short_term_memory_length, 'camera': env_state['camera']}  
                 ## store initial observation 
                 obesrvation = 0, False, {}, env_state, 0  
@@ -576,7 +589,7 @@ class Model(nn.Module):
                 n_restarts += 1 
                 pass 
             pass 
-        env.close() 
+        #env.close() 
 
         if manual_play: 
             pygame.display.quit() 
