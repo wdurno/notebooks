@@ -46,8 +46,6 @@ class Model(nn.Module):
             observations=None,
             total_iters=0,
             regularizing_lambda_function=None,
-            least_constrained_basis=None, 
-            least_constrained_subspace_parameters=None, 
             eta_space=None): 
         super(Model, self).__init__() 
         ## store config 
@@ -70,15 +68,18 @@ class Model(nn.Module):
         self.hessian_rank = hessian_rank 
         self.total_iters = total_iters
         self.regularizing_lambda_function = regularizing_lambda_function 
-        self.least_constrained_basis = least_constrained_basis 
-        self.least_constrained_subspace_parameters = least_constrained_subspace_parameters 
         self.eta_space = eta_space 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
+        self.pfc1 = PluggableLinear(self.fc1) 
         self.fc1_bn = nn.BatchNorm1d(32) 
+        self.pfc1_bn = PluggableBatchNorm1d(self.fc1_bn) 
         self.fc2 = nn.Linear(32, 32) 
+        self.pfc2 = PluggableLinear(self.fc2) 
         self.fc2_bn = nn.BatchNorm1d(32) 
+        self.pfc2_bn = PluggableBatchNorm1d(self.fc2_bn) 
         self.fc3 = nn.Linear(32, n_actions) 
+        self.pfc3 = PluggableLinear(self.fc3) 
         ## init data structures 
         if observations is None: 
             self.observations = [] 
@@ -96,6 +97,11 @@ class Model(nn.Module):
             pass
         ## count parameters 
         self.parameter_dim = self.get_parameter_vector().shape[0] 
+        ## store this for future overwrites 
+        self.parameter_names = [] 
+        for n, _ in self.named_parameters(): 
+            self.parameter_names.append(n) 
+            pass 
         pass 
     
     def copy(self): 
@@ -126,16 +132,17 @@ class Model(nn.Module):
     def forward(self, x): 
         if self.eta_space is not None: 
             ## TODO this gets called a lot. Is there a better place to put it? 
-            self.eta_space.derive_theta_in_place(self.parameters()) 
+            theta_vec = self.eta_space.derive_theta() 
+            self.assign_vec_to_params_as_tensors(theta_vec) 
             pass 
         x = x.reshape([-1, self.input_dim * self.short_term_memory_length]) 
-        x = self.fc1(x)
+        x = self.pfc1(x)
         x = self.fc1_bn(x) 
         x = torch.relu(x) 
-        x = self.fc2(x) 
+        x = self.pfc2(x) 
         x = self.fc2_bn(x)  
         x = torch.relu(x) 
-        x = self.fc3(x) 
+        x = self.pfc3(x) 
         x = x*x 
         return x 
     
@@ -165,7 +172,7 @@ class Model(nn.Module):
         target_model = self.copy() 
         for obs in self.observations: 
             ## update hessian  
-            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
+            predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
             loss = F.smooth_l1_loss(predicted, target) 
             if regularizer is not None: ## TODO function is duplicate -> package in a single function 
                 if self.regularizing_lambda_function is not None:
@@ -196,17 +203,34 @@ class Model(nn.Module):
             ## extract and truncate 
             vecs = eigs.eigenvectors.real
             vals = eigs.eigenvalues.real
-            if n_reparameterized_dims == None: 
+            if n_reparameterized_dims is not None: 
                 eta_basis = torch.tensor(vecs[:, -n_reparameterized_dims:]) 
                 if self.eta_space is None: 
                     self.eta_space = EtaSpace(basis=eta_basis, origin=self.hessian_center) 
                 else: 
-                    self.eta_space.update(basis=eta_basis, origin=self.hessian_center) 
+                    self.eta_space.update_coordinates(basis=eta_basis, origin=self.hessian_center) 
                     pass 
                 pass 
             vecs[:,n_eigenvectors:] = 0 
             vals[n_eigenvectors:] = 0  
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
+        pass 
+
+    def assign_vec_to_params_as_tensors(self, vec): 
+        ptr = 0 
+        for pn in self.parameter_names: 
+            ## find the parameter (or tensor) 
+            op_str, param_str = pn.split('.') ### example: 'fc1.weights' 
+            op = getattr(self, op_str) 
+            param = getattr(op, param_str) 
+            param_shape = param.shape 
+            param_params = torch.prod(torch.tensor(param_shape)) 
+            t = vec[ptr : ptr + param_params] ## tensor 
+            t = t.reshape(param_shape) 
+            ptr += param_params 
+            target_op = getattr(self, 'p'+op_str) ## 'p'+ modifies PluggableLinear, because nn.Linear rejects Tensors  
+            setattr(target_op, param_str, t) 
+            pass 
         pass 
 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None, optim_memorize=False): 
@@ -348,7 +372,7 @@ class Model(nn.Module):
             plt.show() 
             pass 
         env = gym.make(self.env_name) 
-        env_state = env.reset() 
+        env_state, _ = env.reset() 
         env_state_list = [torch.tensor(env_state) for _ in range(self.short_term_memory_length)] 
         env_state = torch.cat(env_state_list) 
         last_start = 0 
@@ -368,12 +392,14 @@ class Model(nn.Module):
                 self.eval() 
                 action = self.get_action(env_state) 
                 pass 
-            env_state, reward, done, info = env.step(action) 
+            env_state, reward, terminated, truncated, info = env.step(action) 
+            done = truncated or terminated  
             if game_modifier > 0: 
                 for _ in range(game_modifier): 
                     if not done: 
                         ## if not done, apply `action` iteratively 
-                        env_state, rwd, done, info = env.step(action) 
+                        env_state, rwd, terminated, truncated, info = env.step(action) 
+                        done = truncated or terminated 
                         pass 
                     if not done: 
                         reward += rwd ## mechanic allows zero reward at done 
@@ -403,7 +429,7 @@ class Model(nn.Module):
                 #pass 
 
             if done: 
-                env_state = env.reset() 
+                env_state, _ = env.reset() 
                 env_state_list = [torch.tensor(env_state) for _ in range(self.short_term_memory_length)] 
                 env_state = torch.cat(env_state_list) 
                 self.total_rewards.append(last_total_reward) 
@@ -435,7 +461,7 @@ class EtaSpace():
             raise Exception('ERROR: origin dimension and basis rows must equate!') 
             pass 
         self.learning_rate = learning_rate 
-        self.optimizer = optim.Adam([self.eta], learning_rate=learning_rate) 
+        self.optimizer = optim.Adam([self.eta], lr=learning_rate) 
         pass 
     def update_coordinates(self, basis, origin): 
         if basis.shape[0] != self.theta_dim or \
@@ -446,18 +472,56 @@ class EtaSpace():
         self.basis = basis 
         self.origin = origin 
         pass 
-    def derive_theta_in_place(self, parameters_iterable): 
-        theta_vec = self.basis.matmul(self.eta) + self.origin 
-        nn.utils.vector_to_parameters(theta_vec, parameters_iterable) 
-        pass 
+    def derive_theta(self): 
+        theta_vec = self.basis.matmul(self.eta) + self.origin.reshape([-1,1]) 
+        return theta_vec 
     def optim_step(self): 
         self.optimizer.step() 
         pass 
     def copy(self): 
         return EtaSpace( 
-                basis=self.basis.detatch().copy(), 
-                origin=self.basis.detatch().copy(), 
+                basis=self.basis.detach().clone(), 
+                origin=self.origin.detach().clone(), 
                 learning_rate=self.learning_rate 
+                ) 
+    pass 
+
+class PluggableLinear(): 
+    'nn.Linear, but parameters can be swapped-out with Tensors' 
+    def __init__(self, nnLinear): 
+        '''
+        First, initialize nn.Linear. 
+        Then, initialize this. 
+        ''' 
+        self.weight = nnLinear.weight 
+        self.bias = nnLinear.bias 
+        pass 
+    def __call__(self, x): 
+        return nn.functional.linear(x, self.weight, self.bias) 
+    pass 
+
+class PluggableBatchNorm1d(): 
+    'nn.BatchNorm1d, but parameters can be swapped-out with Tensors' 
+    def __init__(self, nnBatchNorm1d): 
+        self.running_mean = nnBatchNorm1d.running_mean 
+        self.running_var = nnBatchNorm1d.running_var 
+        self.weight = nnBatchNorm1d.weight 
+        self.bias = nnBatchNorm1d.bias 
+        self.nnBatchNorm1d = nnBatchNorm1d ## used to ref bools and floats, since they can only pass by value 
+        pass 
+    def __call__(self, x): 
+        training = self.nnBatchNorm1d.training 
+        momentum = self.nnBatchNorm1d.momentum 
+        eps = self.nnBatchNorm1d.eps 
+        return nn.functional.batch_norm(
+                x, 
+                running_mean=self.running_mean, 
+                running_var=self.running_var, 
+                weight=self.weight, 
+                bias=self.bias,
+                training=training, 
+                momentum=momentum, 
+                eps=eps
                 ) 
     pass 
 
