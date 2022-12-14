@@ -39,7 +39,7 @@ def lanczos(AAT, r):
     VTVT = np.matmul(VTVT, np.transpose(V)) 
     return VTVT
 
-def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None, disable_tqdm=True):
+def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None, disable_tqdm=True, calc_diag=False):
     '''
     limited-memory Lanczos algorithm
     inputs:
@@ -49,6 +49,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     - device: which device to execute on 
     - mfi_alternate: an alternative function to replace the below `multiply_fisher_infromation` 
     - disable_tqdm: if True, silence the progress bar 
+    - calc_diag: if True, calculate residual diagonal covariance vector 
     outputs:
     - A: a (p X r) matrix, providing low-rank Fisher Information approximation AA^T
     '''

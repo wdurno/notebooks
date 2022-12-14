@@ -27,6 +27,7 @@ SHORT_TERM_MEMORY_LENGTH = 40
 LBFGS = False 
 ENV_NAME = '' ## not used 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') 
+#DEVICE = torch.device('cpu') 
 
 ## necessary for rgb_array renders while without videodrivers 
 #os.environ["SDL_VIDEODRIVER"] = "dummy" 
@@ -49,6 +50,7 @@ class Model(nn.Module):
             hessian_sum_low_rank_half=None, 
             hessian_denominator=None, 
             hessian_center=None, 
+            hessian_residual_variances=None, 
             observations=None,
             total_iters=0,
             regularizing_lambda_function=None): 
@@ -69,6 +71,7 @@ class Model(nn.Module):
         self.hessian_sum = hessian_sum 
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
+        self.hessian_residual_variances = hessian_residual_variances 
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters
         self.regularizing_lambda_function = regularizing_lambda_function 
@@ -127,6 +130,7 @@ class Model(nn.Module):
                 hessian_sum_low_rank_half=self.hessian_sum_low_rank_half, 
                 hessian_denominator=self.hessian_denominator, ## this is an int or None, so it is copied via '=' 
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
+                hessian_residual_variances=self.hessian_residual_variances.detach().clone() if self.hessian_residual_variances is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
                 regularizing_lambda_function=self.regularizing_lambda_function)
@@ -234,16 +238,28 @@ class Model(nn.Module):
             ## limited-memory lanczos estimation of Fisher Information 
             p = self.get_parameter_vector().detach().shape[0] 
             if self.hessian_sum_low_rank_half is None: 
+                ## approximate hessian eigen-space 
                 self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, krylov_rank, p, \
                         device=DEVICE, eps=krylov_eps, disable_tqdm=disable_tqdm) 
+                ## calculate hessian diagonal 
+                hessian_sum_diagonal = self.__grad_sum(get_grad_generator()).to(DEVICE)  
+                self.hessian_residual_variances = hessian_sum_diagonal - self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half)   
+                self.hessian_residual_variances = self.hessian_residual_variances.maximum(torch.zeros(size=self.hessian_residual_variances.size(), device=DEVICE)) ## clean-up numerical errors, keep it all >= 0   
+                ## store total grads sampled 
                 self.hessian_denominator = len(self.observations) 
             else: 
                 ## Generate new Krylov space and update existing memory with modified Lanczos, combining both 
                 krylov_update = l_lanczos(get_grad_generator, krylov_rank, p, device=DEVICE, eps=krylov_eps, disable_tqdm=disable_tqdm) 
                 updated_krylov_space = combine_krylov_spaces(self.hessian_sum_low_rank_half, krylov_update, \
                         device=DEVICE, krylov_eps=krylov_eps) 
+                ## calc total diagonal variances 
+                total_diagonal_variances = self.hessian_residual_variances + self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half) 
+                total_diagonal_variances += self.__grad_sum(get_grad_generator()).to(DEVICE) ## additional_total_diagonals 
+                ## update 
                 self.hessian_sum_low_rank_half = updated_krylov_space 
-                self.hessian_denominator = len(self.observations) 
+                self.hessian_residual_variances = total_diagonal_variances - self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half) 
+                self.hessian_residual_variances = self.hessian_residual_variances.maximum(torch.zeros(size=self.hessian_residual_variances.size()).to(DEVICE)) 
+                self.hessian_denominator += len(self.observations) 
                 pass 
         else: 
             ## full-rank Fisher Information representation 
@@ -299,6 +315,21 @@ class Model(nn.Module):
                 pass 
             return grad_generator  
         return get_grad_generator 
+
+    def __grad_sum(self, grad_generator): 
+        ''' 
+        returns a sum of gradients. 
+        divide by n to get a FIM diagonal estimate 
+        ''' 
+        out = 0. 
+        for g in grad_generator(): 
+            out += g 
+            pass 
+        return out  
+
+    def __outer_product_diagonal(self, a, b): 
+        'numerically efficient caclulation of diag(a * b^T)' 
+        return (a*b).sum(dim=1) 
 
     def sample_observations(self, batch_size=30, batch=None): 
         ## sample indices between second observation and last, inclusive  
@@ -430,6 +461,9 @@ class Model(nn.Module):
                 ## low-rank hessian 
                 regularizer = ((t - t0).reshape([1, -1]).matmul(self.hessian_sum_low_rank_half)).matmul(self.hessian_sum_low_rank_half.transpose(0,1)) 
                 pass
+            if self.hessian_residual_variances is not None and regularizer is not None: 
+                regularizer += (t - t0) * self.hessian_residual_variances 
+                pass 
             regularizer = regularizer.matmul((t - t0).reshape([-1, 1]))
             regularizer *= .5 / self.hessian_denominator 
             regularizer = regularizer.reshape([])
