@@ -38,8 +38,9 @@ def map1(task_idx):
         ams_model.memorize(nlp_odd_train, memorization_size=N_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=1.)  
         ams_model = ams_model.copy() 
         ## apply a small dataset 
-        model.fit(nlp_even_train, n_iters=3*EXTRA_FIT_CYCLES, silence_tqdm=True, acc_frequency=ACC_FREQ, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
-        idx_batch = ams_model.fit(nlp_even_train, n_iters=EXTRA_FIT_CYCLES, silence_tqdm=True, ams=LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
+        model.fit(nlp_even_train, n_iters=5*EXTRA_FIT_CYCLES, silence_tqdm=True, acc_frequency=ACC_FREQ, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
+        _ = ams_model.fit(nlp_even_train, n_iters=1*EXTRA_FIT_CYCLES, silence_tqdm=True, ams=75.*LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) ## demonstrate retention 
+        idx_batch = ams_model.fit(nlp_even_train, n_iters=2*EXTRA_FIT_CYCLES, silence_tqdm=True, ams=1.*LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
         ## update memory, and continue fitting 
         ams_model.memorize(nlp_even_train, memorization_size=N_ITERS, silence_tqdm=True, krylov_rank=10, krylov_eps=1., idx_batch=idx_batch) 
         ams_model.fit(nlp_even_train, n_iters=2*EXTRA_FIT_CYCLES, silence_tqdm=True, ams=100.*LAMBDA, acc_frequency=ACC_FREQ, halt_acc=.0, random_label_probability=RANDOM_LABEL_PROBABILITY, nlp_even_test=nlp_even_test, nlp_odd_test=nlp_odd_test) 
@@ -61,7 +62,12 @@ def map1(task_idx):
                 acc = r[0] 
                 condition = r[1] 
                 ## return in-place 
-                out.append((acc, iter_idx, task_idx, condition))
+                t = (acc, iter_idx, task_idx, condition) 
+                if len(t) == 4: 
+                    out.append((acc, iter_idx, task_idx, condition))
+                else: 
+                    ## had 5 once, not sure why 
+                    print(f'WARNING: len(t) != 4, t: {t}') 
                 pass 
             pass 
         append_results(metric_0_tuples) 

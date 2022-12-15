@@ -254,7 +254,7 @@ class Model(nn.Module):
                         device=DEVICE, krylov_eps=krylov_eps) 
                 ## calc total diagonal variances 
                 total_diagonal_variances = self.hessian_residual_variances + self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half) 
-                total_diagonal_variances += self.__grad_sum(get_grad_generator()).to(DEVICE) ## additional_total_diagonals 
+                total_diagonal_variances += self.__grad_sum(get_grad_generator()).to(DEVICE) ## additional_total_diagonals # TODO just use combined krylov space to avoid this extra loop  
                 ## update 
                 self.hessian_sum_low_rank_half = updated_krylov_space 
                 self.hessian_residual_variances = total_diagonal_variances - self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half) 

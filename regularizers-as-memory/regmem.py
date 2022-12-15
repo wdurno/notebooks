@@ -174,11 +174,12 @@ class Model(nn.Module):
             ## update hessian  
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
             loss = F.smooth_l1_loss(predicted, target) 
-            if regularizer is not None: ## TODO function is duplicate -> package in a single function 
-                if self.regularizing_lambda_function is not None:
-                    regularizer *= self.regularizing_lambda_function(self)
-                    pass
-                loss += regularizer 
+            ## mis-behaved  
+            #if regularizer is not None: ## TODO function is duplicate -> package in a single function 
+            #    if self.regularizing_lambda_function is not None:
+            #        regularizer *= self.regularizing_lambda_function(self)
+            #        pass
+            #    loss += regularizer 
             loss.backward() 
             grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
             outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 

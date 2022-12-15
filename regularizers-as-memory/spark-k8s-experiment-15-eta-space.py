@@ -129,6 +129,8 @@ def phase_1():
     return y.collect() 
 
 def phase_2(): 
+    import pandas as pd
+    import matplotlib.pyplot as plt
     ## config 
     sas_key = os.environ['STORAGE_KEY'] 
     input_container_name = 'tmp' 
@@ -145,6 +147,7 @@ def phase_2():
     scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
     scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
+    scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
     ### save data 
     FILENAME = 'df-experiment-15'
     df_to_save = pd.DataFrame({'scores0': scores0, 

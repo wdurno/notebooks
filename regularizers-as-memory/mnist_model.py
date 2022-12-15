@@ -1,190 +1,57 @@
 ## build MNIST data 
 
 from tqdm import tqdm 
-#from torchvision import datasets, transforms 
+from torchvision import datasets, transforms 
 from torch.utils.data import Dataset 
 
 import matplotlib.pyplot as plt 
 import random 
 
-#transform=transforms.Compose([
-#    transforms.ToTensor(),
-#    transforms.Normalize((0.1307,), (0.3081,)) 
-#    ]) 
-#
-#dataset1 = datasets.MNIST('../../data', train=True, download=True, transform=transform) 
-#dataset2 = datasets.MNIST('../../data', train=False, transform=transform) 
-#
-#def subset_dataset(dataset, n, drop_labels=[]): 
-#    out = [] 
-#    for _ in range(n): 
-#        idx = random.randint(0, len(dataset)-1) 
-#        image, label = dataset[idx] 
-#        while label in drop_labels: 
-#            idx = random.randint(0, len(dataset)-1)  
-#            image, label = dataset[idx] 
-#            pass 
-#        out.append((image, label)) 
-#    return out 
-#
-#dataset1_0_to_4_n1000 = subset_dataset(dataset1, n=1000, drop_labels=[5,6,7,8,9]) 
-#dataset1_5_to_9_n1000 = subset_dataset(dataset1, n=1000, drop_labels=[0,1,2,3,4]) 
-#dataset1_5_to_9_n30 = subset_dataset(dataset1, n=60, drop_labels=[0,1,2,3,4]) 
-#dataset1_5_to_9_n30_1 = subset_dataset(dataset1, n=60, drop_labels=[0,1,2,3,4]) 
-#
-#dataset2_0_to_4_n1000 = subset_dataset(dataset2, n=1000, drop_labels=[5,6,7,8,9]) 
-#dataset2_5_to_9_n1000 = subset_dataset(dataset2, n=1000, drop_labels=[0,1,2,3,4]) 
-#
-#class BiasedDataset(Dataset):
-#    'sample from 5 to 9 with probability `p`'
-#    def __init__(self,
-#            p=.5
-#            ):
-#        self.p = p 
-#        pass  
-#    def __len__(self):
-#        return 1000 
-#    def __getitem__(self, idx): 
-#        d = dataset1_0_to_4_n1000
-#        if bool(torch.rand([]) < self.p):
-#            d = dataset1_5_to_9_n1000
-#            pass 
-#        image, label = d[idx] 
-#        return image, label 
-#    pass 
+transform=transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,)) 
+    ]) 
 
-## build NLP data 
+mnist_train = datasets.MNIST('../../data', train=True, download=True, transform=transform) 
+mnist_test = datasets.MNIST('../../data', train=False, transform=transform) 
+
+def subset_dataset(dataset, n, drop_labels=[]): 
+    out = [] 
+    for _ in range(n): 
+        idx = random.randint(0, len(dataset)-1) 
+        image, label = dataset[idx] 
+        while label in drop_labels: 
+            idx = random.randint(0, len(dataset)-1)  
+            image, label = dataset[idx] 
+            pass 
+        out.append((image, label)) 
+    return out 
+
+mnist_train_evens_n10k = subset_dataset(mnist_train, n=10000, drop_labels=[1,3,5,7,9]) 
+mnist_train_odds_n10k = subset_dataset(mnist_train, n=10000, drop_labels=[0,2,4,6,8]) 
+mnist_test_evens_n10k = subset_dataset(mnist_test, n=10000, drop_labels=[1,3,5,7,9]) 
+mnist_test_odds_n10k = subset_dataset(mnist_test, n=10000, drop_labels=[0,2,4,6,8]) 
+
+class BiasedDataset(Dataset):
+    'sample from 5 to 9 with probability `p`'
+    def __init__(self,
+            p=.5
+            ):
+        self.p = p 
+        pass  
+    def __len__(self):
+        return 1000 
+    def __getitem__(self, idx): 
+        d = dataset1_0_to_4_n1000
+        if bool(torch.rand([]) < self.p):
+            d = dataset1_5_to_9_n1000
+            pass 
+        image, label = d[idx] 
+        return image, label 
+    pass 
 
 import torch 
 import pickle 
-from collections import Counter 
-
-## You'll need to uncomment this before running `build_nlp_data` 
-#!pip install nltk
-
-def build_nlp_data():
-    import nltk
-    nltk.download('punkt')
-    import requests 
-    from nltk.tokenize import word_tokenize
-    shakespeare = requests.get('https://ocw.mit.edu/ans7870/6/6.006/s08/lecturenotes/files/t8.shakespeare.txt').text 
-    tokens = word_tokenize(shakespeare) 
-    unique_tokens = list(set(tokens)) 
-    map = dict(zip(unique_tokens, list(range(len(unique_tokens))))) 
-    tokens_as_ints = [] 
-    for token in tokens:
-        tokens_as_ints.append(map[token]) 
-        pass 
-    with open('shakespeare_tokens.pkl', 'wb') as f: 
-        pickle.dump(tokens_as_ints, f)
-        pass 
-    pass 
-
-RARE_TOKEN_CUTOFF = 10 
-MAX_TOKENS = 100 
-
-def load_shakes_tokens(): 
-    with open('shakespeare_tokens.pkl', 'rb') as f: 
-        shakes_tokens = pickle.load(f) 
-        pass 
-    ## map rare values to zero, then re-index tokens 
-    shakes_tokens = [t+1 for t in shakes_tokens] ## reserve 0 for rare tokens 
-    token_to_count_map = dict(Counter(shakes_tokens)) 
-    idx = 1
-    for token, count in token_to_count_map.items():
-        if count < RARE_TOKEN_CUTOFF: 
-            token_to_count_map[token] = 0 ## repurpose `count` to `new_index`
-        else: 
-            token_to_count_map[token] = idx 
-            idx += 1 
-            pass 
-        pass 
-    shakes_tokens = [token_to_count_map[token] for token in shakes_tokens] 
-    ## reduce number of tokens 
-    shakes_tokens = [ token % MAX_TOKENS for token in shakes_tokens] 
-    return shakes_tokens 
-
-#build_nlp_data() 
-shakes_tokens = load_shakes_tokens() 
-N_SHAKES_OUT = len(set(shakes_tokens)) 
-print(f'Number of unique tokens: {N_SHAKES_OUT}') 
-SHAKES_SERIES_LEN = 20 
-N_TRANSFER_LEARNING_SIZE = 10 
-
-class NLPDataset(Dataset):
-    'converts a sequence of token indices into a dataset'
-    def __init__(self, 
-            token_list, 
-            sample_length=10, 
-            ): 
-        ## store content 
-        self.token_list = torch.tensor(token_list) 
-        self.sample_length = sample_length 
-        self.n = len(token_list) - sample_length - 1 ## -1 for final token to be used as a label 
-        pass  
-    def __len__(self): 
-        return self.n 
-    def __getitem__(self, idx): 
-        x = self.token_list[idx:(idx+self.sample_length)] 
-        y = self.token_list[idx + self.sample_length] 
-        return x, y 
-    pass 
-
-class EvenOrOddNLPDataset(Dataset):
-    'subsamples an NLPDataset to either even or odd values'
-    def __init__(self, nlp_dataset, even=True, random_subset_size=None): 
-        self.nlp_dataset = nlp_dataset 
-        self.even = even 
-        even_odd_filter = None 
-        def even_odd_filter(value):
-            if even:
-                if value % 2 == 0: 
-                    return True 
-            else: ## odd 
-                if value % 2 == 1:
-                    return True 
-                pass 
-            return False 
-        if random_subset_size is None: 
-            self.indices = [idx for idx in range(len(nlp_dataset)) if even_odd_filter(int(nlp_dataset[idx][1]))] 
-        else:
-            ## subset the data randomly 
-            self.indices = [] 
-            for _ in range(random_subset_size): 
-                continue_loop = True 
-                while continue_loop: 
-                    idx = random.randint(0, len(nlp_dataset)-1) 
-                    if even_odd_filter(int(nlp_dataset[idx][1])): 
-                        ## found! add to indices 
-                        self.indices.append(idx) 
-                        ## stop looking 
-                        continue_loop = False 
-                        pass 
-                    pass 
-                pass 
-            pass
-        self.n = len(self.indices) 
-        pass 
-    def __len__(self): 
-        return self.n 
-    def __getitem__(self, idx): 
-        idx = self.indices[idx]  
-        return self.nlp_dataset[idx] 
-    pass 
-
-shakes_tokens_train = shakes_tokens[:700000] 
-shakes_tokens_test  = shakes_tokens[700000:] 
-nlp_train = NLPDataset(shakes_tokens_train, sample_length=SHAKES_SERIES_LEN) 
-nlp_test = NLPDataset(shakes_tokens_test, sample_length=SHAKES_SERIES_LEN) 
-#nlp_even_train = EvenOrOddNLPDataset(nlp_train, even=True, random_subset_size=N_TRANSFER_LEARNING_SIZE) ## subset demonstrates transfer learning 
-#nlp_odd_train = EvenOrOddNLPDataset(nlp_train, even=False) 
-#nlp_even_test = EvenOrOddNLPDataset(nlp_test, even=True) 
-#nlp_odd_test = EvenOrOddNLPDataset(nlp_test, even=False) 
-
-#print(f'len(nlp_even_train): {len(nlp_even_train)}, counts: {dict(Counter([int(nlp_even_train[idx][1]) for idx in range(len(nlp_even_train))]))}') 
-#print(f'len(nlp_odd_train): {len(nlp_odd_train)}, counts: {dict(Counter([int(nlp_odd_train[idx][1]) for idx in range(len(nlp_odd_train))]))}')
-#print(f'len(nlp_even_test): {len(nlp_even_test)}, counts: {dict(Counter([int(nlp_even_test[idx][1]) for idx in range(len(nlp_even_test))]))}')
-#print(f'len(nlp_odd_test): {len(nlp_odd_test)}, counts: {dict(Counter([int(nlp_odd_test[idx][1]) for idx in range(len(nlp_odd_test))]))}') 
 
 ## define model 
 
@@ -367,7 +234,7 @@ class Model(nn.Module):
         out.load_state_dict(self.state_dict()) 
         return out 
     def fit(self, training_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
-            random_label_probability=0., silence_tqdm=False, acc_frequency=1, halt_acc=None, nlp_even_test=None, nlp_odd_test=None, l2_reg=None): 
+            random_label_probability=0., silence_tqdm=False, acc_frequency=1, halt_acc=None, even_label_test_set=None, odd_label_test_set=None, l2_reg=None): 
         ''' 
         fit the model 
         inputs: 
@@ -406,11 +273,11 @@ class Model(nn.Module):
             self.optimizer.step() 
             if pbar_idx % acc_frequency == 0: 
                 if self.net_type in ['dense', 'dense_1', 'cnn']: 
-                    self.accs_low.append(self.acc(dataset2_0_to_4_n1000)) 
-                    self.accs_high.append(self.acc(dataset2_5_to_9_n1000)) 
-                elif self.net_type in ['nlp'] and nlp_even_test is not None and nlp_odd_test is not None: 
-                    self.accs_low.append(self.acc(nlp_odd_test, batch_size=100)) ## TODO small batch size for testing purposes 
-                    high_acc = self.acc(nlp_even_test, batch_size=100) 
+                    self.accs_low.append(self.acc(even_label_test_set)) 
+                    self.accs_high.append(self.acc(odd_label_test_set)) 
+                elif self.net_type in ['nlp'] and even_label_test_set is not None and odd_label_test_set is not None: 
+                    self.accs_low.append(self.acc(odd_label_test_set, batch_size=100)) ## TODO small batch size for testing purposes 
+                    high_acc = self.acc(even_label_test_set, batch_size=100) 
                     self.accs_high.append(high_acc) 
                     if halt_acc is not None: 
                         ## TODO WARNING: DATA LEAKAGE: fitting informed by test dataset.   
@@ -465,6 +332,8 @@ class Model(nn.Module):
             new_krylov_space = l_lanczos(get_grad_generator, r=krylov_rank, p=p, eps=krylov_eps) 
             updated_krylov_space = combine_krylov_spaces(self.hessian_sum_low_rank_half, new_krylov_space, krylov_eps=krylov_eps) 
             self.hessian_sum_low_rank_half = updated_krylov_space 
+            ## update diagonal 
+            total_diagonal_variances = self.hessian_residual_variances + self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half) 
             self.hessian_residual_variances = total_diagonal_variances - self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half)
             self.hessian_residual_variances = self.hessian_residual_variances.maximum(torch.zeros(size=self.hessian_residual_variances.size())) 
             pass 
@@ -568,9 +437,13 @@ class Model(nn.Module):
         x = torch.cat(x_list, dim=0) 
         y = torch.cat(y_list, dim=0) 
         return x, y, idx_list  
-    def __get_mnist_batch(self, dataset, batch_size=BATCH_SIZE, drop_labels=[], random_label_probability=0.): 
+    def __get_mnist_batch(self, dataset, batch_size=BATCH_SIZE, drop_labels=[], random_label_probability=0., idx_batch=None): 
         x_list = [] 
         y_list = [] 
+        idx_list = [] 
+        if idx_batch is not None:
+            if batch_size < len(idx_batch):
+                idx_batch = random.sample(idx_batch, batch_size) 
         for _ in range(batch_size): 
             idx = random.randint(0, len(dataset)-1) 
             while dataset[idx][1] in drop_labels: 
@@ -584,10 +457,11 @@ class Model(nn.Module):
             x, y = self.__build_decimal_datum(image, label)  
             x_list.append(x) 
             y_list.append(y) 
+            idx_list.append(idx) 
             pass 
         x = torch.cat(x_list, dim=0) 
         y = torch.cat(y_list, dim=0)  
-        return x, y 
+        return x, y, idx_list 
     def __build_decimal_datum(self, image, label): 
         'one-hot encode an image-label pair' 
         y = torch.tensor([1. if label == idx else 0. for idx in range(N_OUT)]) ## one-hot representation 
