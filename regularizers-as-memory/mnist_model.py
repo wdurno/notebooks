@@ -1,72 +1,94 @@
-## build MNIST data 
+## packages 
 
+import tempfile 
+import pickle
 from tqdm import tqdm 
-from torchvision import datasets, transforms 
-from torch.utils.data import Dataset 
-
-import matplotlib.pyplot as plt 
-import random 
-
-transform=transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,)) 
-    ]) 
-
-mnist_train = datasets.MNIST('../../data', train=True, download=True, transform=transform) 
-mnist_test = datasets.MNIST('../../data', train=False, transform=transform) 
-
-def subset_dataset(dataset, n, drop_labels=[]): 
-    out = [] 
-    for _ in range(n): 
-        idx = random.randint(0, len(dataset)-1) 
-        image, label = dataset[idx] 
-        while label in drop_labels: 
-            idx = random.randint(0, len(dataset)-1)  
-            image, label = dataset[idx] 
-            pass 
-        out.append((image, label)) 
-    return out 
-
-mnist_train_evens_n10k = subset_dataset(mnist_train, n=10000, drop_labels=[1,3,5,7,9]) 
-mnist_train_odds_n10k = subset_dataset(mnist_train, n=10000, drop_labels=[0,2,4,6,8]) 
-mnist_test_evens_n10k = subset_dataset(mnist_test, n=10000, drop_labels=[1,3,5,7,9]) 
-mnist_test_odds_n10k = subset_dataset(mnist_test, n=10000, drop_labels=[0,2,4,6,8]) 
-
-class BiasedDataset(Dataset):
-    'sample from 5 to 9 with probability `p`'
-    def __init__(self,
-            p=.5
-            ):
-        self.p = p 
-        pass  
-    def __len__(self):
-        return 1000 
-    def __getitem__(self, idx): 
-        d = dataset1_0_to_4_n1000
-        if bool(torch.rand([]) < self.p):
-            d = dataset1_5_to_9_n1000
-            pass 
-        image, label = d[idx] 
-        return image, label 
-    pass 
-
-import torch 
-import pickle 
-
-## define model 
+import matplotlib.pyplot as plt
+import random
+import os 
+import shutil 
+import zipfile 
 
 import torch 
 import torch.nn as nn 
 import torch.optim as optim 
 import torch.nn.functional as F 
+from torchvision import datasets, transforms
+from torch.utils.data import Dataset
 
-from lanczos import l_lanczos, combine_krylov_spaces  
+from lanczos import l_lanczos, combine_krylov_spaces 
+from az_blob_util import upload_to_blob_store, download_from_blob_store 
 
 N_OUT = 10 
 LEARNING_RATE = 0.001 
 BATCH_SIZE = 100
 TRAINING_ITERS = 1000 
 MEMORIZATION_SIZE = 1000 
+TRANSFORM = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,))
+    ])
+
+## data utils 
+
+def download_mnist_to_blob_storage(): 
+    with tempfile.TemporaryDirectory() as tmpdir: 
+        ## download and zip data 
+        data_path = os.path.join(tmpdir, 'mnist_data') 
+        print(f'downloading mnist to local path: {data_path}') 
+        mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=TRANSFORM) 
+        mnist_test = datasets.MNIST(data_path, train=False, transform=TRANSFORM) 
+        shutil.make_archive(data_path, 'zip', data_path) ## output path is data_path + '.zip'  
+        zip_path = data_path + '.zip' 
+        ## upload to blob storage 
+        filename='mnist_data.zip'
+        sas_key = os.environ['STORAGE_KEY']
+        output_container_name = 'data'
+        with open(zip_path, 'rb') as f: 
+            upload_to_blob_store(f.read(), filename, sas_key, output_container_name) 
+            pass 
+        pass 
+    pass 
+
+def subset_dataset(dataset, n, drop_labels=[]):
+    out = []
+    for _ in range(n):
+        idx = random.randint(0, len(dataset)-1)
+        image, label = dataset[idx]
+        while label in drop_labels:
+            idx = random.randint(0, len(dataset)-1)
+            image, label = dataset[idx]
+            pass
+        out.append((image, label))
+    return out
+
+def get_datasets(n=10000):  
+    ## download from blob store 
+    filename = 'mnist_data.zip' 
+    sas_key = os.environ['STORAGE_KEY'] 
+    container_name = 'data' 
+    x = download_from_blob_store(filename, sas_key, container_name) 
+    with tempfile.TemporaryDirectory() as tmpdir: 
+        ## unpack 
+        data_path = os.path.join(tmpdir, 'mnist_data') 
+        zip_path = data_path + '.zip' 
+        with open(zip_path, 'wb') as f: 
+            f.write(x) 
+            pass 
+        mnist_dir = os.path.join(data_path, 'mnist') 
+        with zipfile.ZipFile(zip_path, 'r') as zip_file: 
+            zip_file.extractall(mnist_dir) 
+        ## sample 
+        mnist_train = datasets.MNIST(mnist_dir, train=True, download=False, transform=TRANSFORM)
+        mnist_test = datasets.MNIST(mnist_dir, train=False, download=False, transform=TRANSFORM)
+        mnist_train_evens = subset_dataset(mnist_train, n=n, drop_labels=[1,3,5,7,9]) 
+        mnist_train_odds = subset_dataset(mnist_train, n=n, drop_labels=[0,2,4,6,8]) 
+        mnist_test_evens = subset_dataset(mnist_test, n=n, drop_labels=[1,3,5,7,9]) 
+        mnist_test_odds = subset_dataset(mnist_test, n=n, drop_labels=[0,2,4,6,8]) 
+        pass 
+    return mnist_train_evens, mnist_train_odds, mnist_test_evens, mnist_test_odds 
+
+## define model 
 
 class Model(nn.Module): 
     def __init__(self, 
