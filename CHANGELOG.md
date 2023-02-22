@@ -1,3 +1,6 @@
+#### v0.4.2 
+- regularizers-as-memory marked as redundant, having reproduced "Overcoming catastrophic forgetting in neural networks" (2017, Kirckpatrick et al., PNAS). 
+
 #### v0.4.1 
 - regularizers-as-memory has a transfer-learning-centric executive summary 
 

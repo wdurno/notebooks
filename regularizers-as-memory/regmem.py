@@ -9,6 +9,7 @@ from tqdm import tqdm
 import numpy as np 
 import matplotlib.pyplot as plt 
 import copy 
+from lanczos import lanczos 
 
 INPUT_DIM = 4
 N_ACTIONS = 2
@@ -38,10 +39,14 @@ class Model(nn.Module):
             lbfgs=LBFGS, 
             env_name=ENV_NAME,
             hessian_sum=None, 
+            hessian_sum_low_rank_half=None, 
+            hessian_rank=None, 
             hessian_denominator=None, 
             hessian_center=None, 
-            observations=[], 
-            total_iters=0): 
+            observations=None,
+            total_iters=0,
+            regularizing_lambda_function=None,
+            eta_space=None): 
         super(Model, self).__init__() 
         ## store config 
         self.input_dim = input_dim 
@@ -59,15 +64,28 @@ class Model(nn.Module):
         self.hessian_sum = hessian_sum 
         self.hessian_denominator = hessian_denominator
         self.hessian_center = hessian_center 
-        self.total_iters = total_iters 
+        self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
+        self.hessian_rank = hessian_rank 
+        self.total_iters = total_iters
+        self.regularizing_lambda_function = regularizing_lambda_function 
+        self.eta_space = eta_space 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
+        self.pfc1 = PluggableLinear(self.fc1) 
         self.fc1_bn = nn.BatchNorm1d(32) 
+        self.pfc1_bn = PluggableBatchNorm1d(self.fc1_bn) 
         self.fc2 = nn.Linear(32, 32) 
+        self.pfc2 = PluggableLinear(self.fc2) 
         self.fc2_bn = nn.BatchNorm1d(32) 
+        self.pfc2_bn = PluggableBatchNorm1d(self.fc2_bn) 
         self.fc3 = nn.Linear(32, n_actions) 
+        self.pfc3 = PluggableLinear(self.fc3) 
         ## init data structures 
-        self.observations = observations 
+        if observations is None: 
+            self.observations = [] 
+        else: 
+            self.observations = observations 
+            pass 
         self.env = None 
         if self.lbfgs: 
             ## Misbehavior observed with large `history_size`, ie. >20 
@@ -76,6 +94,13 @@ class Model(nn.Module):
         else: 
             ## LBFGS was giving nan parameters 
             self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate) 
+            pass
+        ## count parameters 
+        self.parameter_dim = self.get_parameter_vector().shape[0] 
+        ## store this for future overwrites 
+        self.parameter_names = [] 
+        for n, _ in self.named_parameters(): 
+            self.parameter_names.append(n) 
             pass 
         pass 
     
@@ -93,22 +118,31 @@ class Model(nn.Module):
                 lbfgs=self.lbfgs, 
                 env_name=self.env_name,
                 hessian_sum=self.hessian_sum.detach().clone() if self.hessian_sum is not None else None, 
+                hessian_sum_low_rank_half=self.hessian_sum_low_rank_half, 
+                hessian_rank=self.hessian_rank, 
                 hessian_denominator=self.hessian_denominator, ## this is an int or None, so it is copied via '=' 
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
-                total_iters=self.total_iters) 
+                total_iters=self.total_iters, 
+                regularizing_lambda_function=self.regularizing_lambda_function, 
+                eta_space=self.eta_space.copy() if self.eta_space is not None else None)  
         out.load_state_dict(self.state_dict()) 
         return out 
 
     def forward(self, x): 
+        if self.eta_space is not None: 
+            ## TODO this gets called a lot. Is there a better place to put it? 
+            theta_vec = self.eta_space.derive_theta() 
+            self.assign_vec_to_params_as_tensors(theta_vec) 
+            pass 
         x = x.reshape([-1, self.input_dim * self.short_term_memory_length]) 
-        x = self.fc1(x)
+        x = self.pfc1(x)
         x = self.fc1_bn(x) 
         x = torch.relu(x) 
-        x = self.fc2(x) 
+        x = self.pfc2(x) 
         x = self.fc2_bn(x)  
         x = torch.relu(x) 
-        x = self.fc3(x) 
+        x = self.pfc3(x) 
         x = x*x 
         return x 
     
@@ -119,8 +153,8 @@ class Model(nn.Module):
         return int(predicted_reward_per_action_idx.argmax()) 
     
     def store_observation(self, observation): 
-        if len(observation) > self.max_sample: 
-            observation = observation[1:] 
+        if len(self.observations) > self.max_sample: 
+            self.observations = self.observations[1:] 
         self.observations.append(observation) 
         pass 
     
@@ -128,13 +162,24 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def convert_observations_to_memory(self, n_eigenvectors = None): 
+    def convert_observations_to_memory(self, n_eigenvectors=None, lanczos_rank=None, n_reparameterized_dims=None): 
+        if self.eta_space is not None: 
+            ## optimize eta via theta, not theta directly 
+            for p in self.parameters(): 
+                p.requires_grad = False 
+            pass 
         ## convert current observations to a Hessian matrix 
         target_model = self.copy() 
         for obs in self.observations: 
             ## update hessian  
-            predicted, target, _ = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
+            predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=None, fit=False, batch=[obs]) 
             loss = F.smooth_l1_loss(predicted, target) 
+            ## mis-behaved  
+            #if regularizer is not None: ## TODO function is duplicate -> package in a single function 
+            #    if self.regularizing_lambda_function is not None:
+            #        regularizer *= self.regularizing_lambda_function(self)
+            #        pass
+            #    loss += regularizer 
             loss.backward() 
             grad_vec = torch.cat([p.grad.reshape([-1]) for p in self.parameters()]) 
             outter_product = grad_vec.reshape([-1,1]).matmul(grad_vec.reshape([1,-1])) 
@@ -144,23 +189,52 @@ class Model(nn.Module):
             else: 
                 self.hessian_sum += outter_product 
                 self.hessian_denominator += 1 
-                pass 
+                pass
+            pass 
         ## center quadratic form on current estimate 
         self.hessian_center = target_model.get_parameter_vector().detach() 
         ## wipe observations, and use memory going forward instead 
         self.clear_observations() 
-        ## for simulation purposes only - no computational benefit is derived from using this feature 
+        ## for simulation purposes only - no computational benefit is derived from using these features 
+        if lanczos_rank is not None: 
+            self.hessian_sum = torch.tensor(lanczos(self.hessian_sum.numpy(), lanczos_rank)).float()  
         if n_eigenvectors is not None: 
+            ## extract low-rank approximation via eigenvector derivation from full-rank matrix 
             eigs = torch.linalg.eig(self.hessian_sum) 
             ## extract and truncate 
             vecs = eigs.eigenvectors.real
             vals = eigs.eigenvalues.real
+            if n_reparameterized_dims is not None: 
+                eta_basis = torch.tensor(vecs[:, -n_reparameterized_dims:]) 
+                if self.eta_space is None: 
+                    self.eta_space = EtaSpace(basis=eta_basis, origin=self.hessian_center) 
+                else: 
+                    self.eta_space.update_coordinates(basis=eta_basis, origin=self.hessian_center) 
+                    pass 
+                pass 
             vecs[:,n_eigenvectors:] = 0 
             vals[n_eigenvectors:] = 0  
             self.hessian_sum = vecs.matmul(torch.diag(vals)).matmul(vecs.transpose(0,1)) 
         pass 
-    
-    def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None): 
+
+    def assign_vec_to_params_as_tensors(self, vec): 
+        ptr = 0 
+        for pn in self.parameter_names: 
+            ## find the parameter (or tensor) 
+            op_str, param_str = pn.split('.') ### example: 'fc1.weights' 
+            op = getattr(self, op_str) 
+            param = getattr(op, param_str) 
+            param_shape = param.shape 
+            param_params = torch.prod(torch.tensor(param_shape)) 
+            t = vec[ptr : ptr + param_params] ## tensor 
+            t = t.reshape(param_shape) 
+            ptr += param_params 
+            target_op = getattr(self, 'p'+op_str) ## 'p'+ modifies PluggableLinear, because nn.Linear rejects Tensors  
+            setattr(target_op, param_str, t) 
+            pass 
+        pass 
+
+    def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None, optim_memorize=False): 
         ## random sample 
         obs = self.observations 
         if batch_size is not None: 
@@ -199,22 +273,30 @@ class Model(nn.Module):
         prediction = predicted_rewards.gather(1, action) 
         ## calculate memory regularizer 
         regularizer = None 
-        if self.hessian_sum is not None and self.hessian_denominator is not None and self.hessian_center is not None: 
+        if (self.hessian_sum is not None or self.hessian_sum_low_rank_half is not None) and \
+                self.hessian_denominator is not None and \
+                self.hessian_center is not None: 
             t = self.get_parameter_vector() 
             #t0 = target_model.get_parameter_vector().detach() 
             t0 = self.hessian_center 
             ## quadratic form around matrix estimating fisher information 
-            regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum) 
+            if self.hessian_sum is not None:
+                ## p X p hessian 
+                regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum) 
+            elif self.hessian_sum_low_rank_half is not None: 
+                ## low-rank hessian 
+                regularizer = (t - t0).reshape([1, -1]).matmul(self.hessian_sum_low_rank_half).matmul(self.hessian_sum_low_rank_half.transpose(0,1)) 
+                pass
             regularizer = regularizer.matmul((t - t0).reshape([-1, 1]))
             regularizer *= .5 / self.hessian_denominator 
-            regularizer = regularizer.reshape([])
+            regularizer = regularizer.reshape([]) 
         return prediction, target, regularizer 
     
     def get_parameter_vector(self): 
         return nn.utils.parameters_to_vector(self.parameters()) 
     
     def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None): 
-        if len(self.observations) < batch_size:
+        if len(self.observations) < batch_size: 
             ## do not optimize without sufficient sample size 
             return None, None, None 
         iter_n = 0 
@@ -231,8 +313,13 @@ class Model(nn.Module):
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=batch_size) 
             mean_reward = predicted.mean() 
             #loss = F.mse_loss(predicted, target) 
-            loss = F.smooth_l1_loss(predicted, target) 
-            if regularizer is not None: 
+            loss = F.smooth_l1_loss(predicted, target) ## avg loss  
+            if regularizer is not None: # and self.eta_space is None: 
+                ## consider skipping if `eta_space is None`, because eta_space is orthogonal to memorized dimensions 
+                ## i'm keeping it here, because i sometimes use different regularizers 
+                if self.regularizing_lambda_function is not None:
+                    regularizer *= self.regularizing_lambda_function(self) 
+                    pass 
                 loss += regularizer 
             if l2_regularizer is not None: 
                 ## for experimental purposes only 
@@ -241,6 +328,10 @@ class Model(nn.Module):
                 dt = (t - t0).reshape([-1, 1])
                 loss += l2_regularizer * dt.transpose(0,1).matmul(dt).reshape([]) 
             loss_f = float(loss) 
+            if self.eta_space is not None: 
+                for p in self.parameters(): 
+                    p.requires_grad = False 
+                pass 
             loss.backward() 
             if not self.lbfgs: 
                 ## lbfgs really doesn't like this 
@@ -248,8 +339,10 @@ class Model(nn.Module):
             ## lbfgs must re-evaluate target, hence lambda 
             if self.lbfgs: 
                 self.optimizer.step(lambda: float(F.smooth_l1_loss(predicted, target))) 
-            else:
+            elif self.eta_space is None:
                 self.optimizer.step() 
+            else: 
+                self.eta_space.optim_step() 
                 pass 
             updated_theta = self.get_parameter_vector() 
             ## decide to continue iterating or not 
@@ -274,13 +367,13 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=True, plot_prob_func=True, tqdm_seconds=10, l2_regularizer=None): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=10, l2_regularizer=None, game_modifier=0): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
             pass 
         env = gym.make(self.env_name) 
-        env_state = env.reset() 
+        env_state, _ = env.reset() 
         env_state_list = [torch.tensor(env_state) for _ in range(self.short_term_memory_length)] 
         env_state = torch.cat(env_state_list) 
         last_start = 0 
@@ -300,12 +393,23 @@ class Model(nn.Module):
                 self.eval() 
                 action = self.get_action(env_state) 
                 pass 
-            env_state, reward, done, info = env.step(action) 
+            env_state, reward, terminated, truncated, info = env.step(action) 
+            done = truncated or terminated  
+            if game_modifier > 0: 
+                for _ in range(game_modifier): 
+                    if not done: 
+                        ## if not done, apply `action` iteratively 
+                        env_state, rwd, terminated, truncated, info = env.step(action) 
+                        done = truncated or terminated 
+                        pass 
+                    if not done: 
+                        reward += rwd ## mechanic allows zero reward at done 
+                    pass 
+            elif done: 
+                reward = 0
+                pass 
             env_state_list = env_state_list[1:] + [torch.tensor(env_state)] 
             env_state = torch.cat(env_state_list) 
-            if done: 
-                reward = 0 
-                pass 
             last_total_reward += reward 
             observation = env_state, reward, done, info, prev_env_state, action 
             ## store for model fitting 
@@ -326,7 +430,7 @@ class Model(nn.Module):
                 #pass 
 
             if done: 
-                env_state = env.reset() 
+                env_state, _ = env.reset() 
                 env_state_list = [torch.tensor(env_state) for _ in range(self.short_term_memory_length)] 
                 env_state = torch.cat(env_state_list) 
                 self.total_rewards.append(last_total_reward) 
@@ -340,3 +444,85 @@ class Model(nn.Module):
             plt.plot(self.total_rewards) 
             plt.show()
         return simulation_results 
+    pass 
+
+class EtaSpace(): 
+    'a subspace paramerization in theta space' 
+    def __init__(self, basis, origin, learning_rate=LEARNING_RATE): 
+        '''
+        - basis: (tensor in R^2) n_rows = dim(theta), n_cols = dim(eta)
+        - origin: (tensor in theta space) Hessian center vector  
+        ''' 
+        self.basis = basis 
+        self.theta_dim = basis.shape[0] 
+        self.eta_dim = basis.shape[1] 
+        self.eta = nn.Parameter(torch.zeros([self.eta_dim, 1])) 
+        self.origin = origin 
+        if origin.shape[0] != self.theta_dim: 
+            raise Exception('ERROR: origin dimension and basis rows must equate!') 
+            pass 
+        self.learning_rate = learning_rate 
+        self.optimizer = optim.Adam([self.eta], lr=learning_rate) 
+        pass 
+    def update_coordinates(self, basis, origin): 
+        if basis.shape[0] != self.theta_dim or \
+                basis.shape[1] != self.eta_dim or \
+                origin.shape[0] != self.theta_dim: 
+            raise Exception('ERROR: eta-space update must have matching dimensions!') 
+            pass 
+        self.basis = basis 
+        self.origin = origin 
+        pass 
+    def derive_theta(self): 
+        theta_vec = self.basis.matmul(self.eta) + self.origin.reshape([-1,1]) 
+        return theta_vec 
+    def optim_step(self): 
+        self.optimizer.step() 
+        pass 
+    def copy(self): 
+        return EtaSpace( 
+                basis=self.basis.detach().clone(), 
+                origin=self.origin.detach().clone(), 
+                learning_rate=self.learning_rate 
+                ) 
+    pass 
+
+class PluggableLinear(): 
+    'nn.Linear, but parameters can be swapped-out with Tensors' 
+    def __init__(self, nnLinear): 
+        '''
+        First, initialize nn.Linear. 
+        Then, initialize this. 
+        ''' 
+        self.weight = nnLinear.weight 
+        self.bias = nnLinear.bias 
+        pass 
+    def __call__(self, x): 
+        return nn.functional.linear(x, self.weight, self.bias) 
+    pass 
+
+class PluggableBatchNorm1d(): 
+    'nn.BatchNorm1d, but parameters can be swapped-out with Tensors' 
+    def __init__(self, nnBatchNorm1d): 
+        self.running_mean = nnBatchNorm1d.running_mean 
+        self.running_var = nnBatchNorm1d.running_var 
+        self.weight = nnBatchNorm1d.weight 
+        self.bias = nnBatchNorm1d.bias 
+        self.nnBatchNorm1d = nnBatchNorm1d ## used to ref bools and floats, since they can only pass by value 
+        pass 
+    def __call__(self, x): 
+        training = self.nnBatchNorm1d.training 
+        momentum = self.nnBatchNorm1d.momentum 
+        eps = self.nnBatchNorm1d.eps 
+        return nn.functional.batch_norm(
+                x, 
+                running_mean=self.running_mean, 
+                running_var=self.running_var, 
+                weight=self.weight, 
+                bias=self.bias,
+                training=training, 
+                momentum=momentum, 
+                eps=eps
+                ) 
+    pass 
+
