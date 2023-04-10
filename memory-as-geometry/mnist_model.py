@@ -15,7 +15,8 @@ import torch.nn as nn
 import torch.optim as optim 
 import torch.nn.functional as F 
 from torchvision import datasets, transforms
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset 
+from torch import autograd 
 
 from lanczos import l_lanczos, combine_krylov_spaces 
 from az_blob_util import upload_to_blob_store, download_from_blob_store 
@@ -80,14 +81,21 @@ def get_datasets(n=10000):
         with zipfile.ZipFile(zip_path, 'r') as zip_file: 
             zip_file.extractall(mnist_dir) 
         ## sample 
-        mnist_train = datasets.MNIST(mnist_dir, train=True, download=False, transform=TRANSFORM)
-        mnist_test = datasets.MNIST(mnist_dir, train=False, download=False, transform=TRANSFORM)
-        mnist_train_evens = subset_dataset(mnist_train, n=n, drop_labels=[1,3,5,7,9]) 
-        mnist_train_odds = subset_dataset(mnist_train, n=n, drop_labels=[0,2,4,6,8]) 
-        mnist_test_evens = subset_dataset(mnist_test, n=n, drop_labels=[1,3,5,7,9]) 
-        mnist_test_odds = subset_dataset(mnist_test, n=n, drop_labels=[0,2,4,6,8]) 
+        data_pack = {} 
+        mnist_train = datasets.MNIST(mnist_dir, train=True, download=False, transform=TRANSFORM) 
+        mnist_test = datasets.MNIST(mnist_dir, train=False, download=False, transform=TRANSFORM) 
+        data_pack['01_train'] = subset_dataset(mnist_train, n=n, drop_labels=[2,3,4,5,6,7,8,9]) 
+        data_pack['01_test']  = subset_dataset(mnist_test,  n=n, drop_labels=[2,3,4,5,6,7,8,9]) 
+        data_pack['23_train'] = subset_dataset(mnist_train, n=n, drop_labels=[0,1,4,5,6,7,8,9]) 
+        data_pack['23_test']  = subset_dataset(mnist_test,  n=n, drop_labels=[0,1,4,5,6,7,8,9]) 
+        data_pack['45_train'] = subset_dataset(mnist_train, n=n, drop_labels=[0,1,2,3,6,7,8,9]) 
+        data_pack['45_test']  = subset_dataset(mnist_test,  n=n, drop_labels=[0,1,2,3,6,7,8,9]) 
+        data_pack['67_train'] = subset_dataset(mnist_train, n=n, drop_labels=[0,1,2,3,4,5,8,9]) 
+        data_pack['67_test']  = subset_dataset(mnist_test,  n=n, drop_labels=[0,1,2,3,4,5,8,9]) 
+        data_pack['89_train'] = subset_dataset(mnist_train, n=n, drop_labels=[0,1,2,3,4,5,6,7]) 
+        data_pack['89_test']  = subset_dataset(mnist_test,  n=n, drop_labels=[0,1,2,3,4,5,6,7]) 
         pass 
-    return mnist_train_evens, mnist_train_odds, mnist_test_evens, mnist_test_odds 
+    return data_pack 
 
 def probability_merge_datasets(dataset1, dataset2, n, p): 
     'Randomly sample n obesrvations from dataset 1 & 2, sampling with probability p from dataset2.' 
@@ -103,10 +111,9 @@ def probability_merge_datasets(dataset1, dataset2, n, p):
 class Model(nn.Module): 
     def __init__(self, 
             losses=None, 
-            accs_odd=None,
-            accs_even=None, 
+            accs=None,
             regs=None, 
-            net_type='dense', 
+            net_type='cnn', 
             batch_norm=True, 
             hessian_sum=None,
             hessian_sum_low_rank_half = None, 
@@ -116,6 +123,7 @@ class Model(nn.Module):
             log1p_reg=False): 
         super(Model, self).__init__() 
         ## init params 
+        self.fl_params = None 
         if net_type == 'dense': 
             self.fc1 = nn.Linear(28*28, 8) 
             if batch_norm:
@@ -139,6 +147,12 @@ class Model(nn.Module):
             self.fc3 = nn.Linear(64, N_OUT) 
             self.sigmoid = nn.Sigmoid() 
         elif net_type == 'cnn': 
+            ## net structure 
+            ## conv1 -> conv2 -> fc1 -> fc2 
+            ## conv2 -> fl1 -> fl2 -> fc1 
+            ## where fl1 & fl2 are "frontal lobe" fc blocks 
+            ## 
+            ## conv 
             self.conv1 = nn.Conv2d(1, 8, kernel_size=6, stride=4) 
             if batch_norm: 
                 self.conv1_bn = nn.BatchNorm2d(8) 
@@ -147,7 +161,21 @@ class Model(nn.Module):
             if batch_norm: 
                 self.conv2_bn = nn.BatchNorm2d(32) 
             self.relu2 = nn.ReLU() 
-            self.fc1 = nn.Linear(16*2*2, 16) 
+            ## fl 
+            self.fl1 = nn.Linear(16*2*2, 32) 
+            self.fl1_relu = nn.ReLU() 
+            if batch_norm: 
+                self.fl1_bn = nn.BatchNorm1d(32) 
+            self.fl2 = nn.Linear(32, 16) 
+            self.fl2_relu = nn.ReLU() 
+            if batch_norm: 
+                self.fl2_bn = nn.BatchNorm1d(16) 
+            ## store fl parameters, enabling clearing 
+            self.fl_params = [] 
+            self.fl_params.extend(list(self.fl1.parameters())) 
+            self.fl_params.extend(list(self.fl2.parameters())) 
+            ## fc 
+            self.fc1 = nn.Linear(16*2*2 + 16, 16) 
             if batch_norm: 
                 self.fc1_bn = nn.BatchNorm1d(16) 
             self.relu3 = nn.ReLU() 
@@ -180,15 +208,10 @@ class Model(nn.Module):
         else: 
             self.losses = losses 
             pass 
-        if accs_odd  is None:
-            self.accs_odd = [] 
+        if accs  is None:
+            self.accs = [] 
         else: 
-            self.accs_odd = accs_odd 
-            pass 
-        if accs_even  is None: 
-            self.accs_even = [] 
-        else: 
-            self.accs_even = accs_even 
+            self.accs = accs 
             pass 
         if regs  is None: 
             self.regs = [] 
@@ -214,6 +237,7 @@ class Model(nn.Module):
             x = self.fc3(x) 
             x = self.sigmoid(x) 
         elif self.net_type == 'cnn': 
+            ## conv 
             x = self.conv1(x) 
             if self.batch_norm: 
                 x = self.conv1_bn(x) 
@@ -223,6 +247,17 @@ class Model(nn.Module):
                 x = self.conv2_bn(x) 
             x = self.relu2(x) 
             x = x.flatten(start_dim=1) 
+            ## fl 
+            y = self.fl1(x) 
+            if self.batch_norm: 
+                y = self.fl1_bn(y) 
+            y = self.fl1_relu(y) 
+            y = self.fl2(y) 
+            if self.batch_norm: 
+                y = self.fl2_bn(y) 
+            y = self.fl2_relu(y) 
+            ## fc 
+            x = torch.cat([x,y], dim=1) 
             x = self.fc1(x) 
             if self.batch_norm: 
                 x = self.fc1_bn(x) 
@@ -251,8 +286,7 @@ class Model(nn.Module):
     def copy(self): 
         out = Model( 
             losses=self.losses.copy(), 
-            accs_odd=self.accs_odd.copy(), 
-            accs_even=self.accs_even.copy(), 
+            accs=self.accs.copy(), 
             regs=self.regs.copy(), 
             net_type=self.net_type, 
             batch_norm=self.batch_norm, 
@@ -265,8 +299,8 @@ class Model(nn.Module):
         ) 
         out.load_state_dict(self.state_dict()) 
         return out 
-    def fit(self, training_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
-            random_label_probability=0., silence_tqdm=False, acc_frequency=1, halt_acc=None, even_label_test_set=None, odd_label_test_set=None, l2_reg=None): 
+    def fit(self, training_dataset, testing_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
+            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None): 
         ''' 
         fit the model 
         inputs: 
@@ -286,15 +320,19 @@ class Model(nn.Module):
             self.zero_grad() 
             x, y, idx_list = self.__get_batch(training_dataset, drop_labels=drop_labels, random_label_probability=random_label_probability) 
             idx_batch.extend(idx_list) 
-            loss = self.__get_loss(x, y) 
+            loss_vec = self.__get_loss(x, y, reduction='none') 
+            loss = loss_vec.mean() 
             reg = 0. 
             if ams and self.hessian_center is not None: 
                 reg += ams * self.__get_regularizer() 
             if l2_reg is not None and self.hessian_center is not None: 
                 p = self.get_parameter_vector()
                 p0 = self.hessian_center 
-                l2_loss = (l2_reg*(p - p0).transpose(0,1).matmul(p - p0)).reshape([]) ## TODO verify this works  
+                l2_loss = (l2_reg*(p - p0).transpose(0,1).matmul(p - p0)).reshape([])  
                 reg += l2_loss 
+                pass 
+            if fl_reg is not None: 
+                reg += fl_reg * self.__fl_norm(loss_vec) 
                 pass 
             loss += reg ## "+" because optimizer minimizes 
             self.regs.append(float(reg)) 
@@ -304,19 +342,9 @@ class Model(nn.Module):
             self.optimizer.step() 
             if pbar_idx % acc_frequency == 0: 
                 if self.net_type in ['dense', 'dense_1', 'cnn']: 
-                    self.accs_odd.append(self.acc(odd_label_test_set)) 
-                    self.accs_even.append(self.acc(even_label_test_set)) 
-                elif self.net_type in ['nlp'] and even_label_test_set is not None and odd_label_test_set is not None: 
-                    self.accs_odd.append(self.acc(odd_label_test_set, batch_size=100)) ## TODO small batch size for testing purposes 
-                    high_acc = self.acc(even_label_test_set, batch_size=100) 
-                    self.accs_even.append(high_acc) 
-                    if halt_acc is not None: 
-                        ## TODO WARNING: DATA LEAKAGE: fitting informed by test dataset.  
-                        ## THIS FEATURE DOES NOT YET PRODUCE LEGITIMATE RESULTS 
-                        if high_acc > halt_acc: 
-                            self.hessian_center = self.get_parameter_vector().detach() 
-                            halt_acc = high_acc
-                        pass 
+                    self.accs.append(self.acc(testing_dataset)) 
+                elif self.net_type in ['nlp']: 
+                    raise Exception('Error: Feature not implemented!') 
                     pass  
                 pass 
             pbar.set_description(f'loss: {loss_f}') 
@@ -369,6 +397,20 @@ class Model(nn.Module):
             self.hessian_residual_variances = self.hessian_residual_variances.maximum(torch.zeros(size=self.hessian_residual_variances.size()))  
             pass 
         pass 
+    def __fl_norm(self, loss_vec): 
+        'Frobenius norm of the information matrix, constrained to frontal lobe parameters' 
+        ## combute jacobian [ d loglik(x_i) / d p_j ] 
+        n = loss_vec.shape[0] 
+        log_density = -loss_vec 
+        J = [] 
+        for i in range(n): 
+            grad = autograd.grad(log_density[i], self.fl_params, create_graph=True, retain_graph=True, allow_unused=True) 
+            grad = torch.cat([g.flatten() for g in grad]) 
+            J.append(grad) 
+            pass 
+        J = torch.stack(J) 
+        ## take norm and return 
+        return J.mul(J).sum() / n 
     def __grad_sum(self, grad_generator):
         ''' 
         returns a sum of gradients. 
@@ -410,9 +452,12 @@ class Model(nn.Module):
                 pass 
             return grad_generator  
         return get_grad_generator 
-    def __get_loss(self, x, y): 
+    def __get_loss(self, x, y, reduction='mean'): 
         y_hat = self.forward(x) 
-        loss = F.smooth_l1_loss(y_hat, y) 
+        loss = F.smooth_l1_loss(y_hat, y, reduction=reduction) 
+        if reduction == 'none': 
+            ## convert to vector 
+            loss = loss.mean(dim=1)  
         return loss 
     def __get_regularizer(self): 
         if self.hessian_center is None: 

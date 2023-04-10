@@ -1,0 +1,36 @@
+azureuser@builder:~/spark-k8s$ kubectl exec -it spark-master-0 -- cat stdout
+downloading mnist to local path: /tmp/tmpw2b22i1l/mnist_data
+Downloading http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz
+Downloading http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/train-images-idx3-ubyte.gz
+100%|██████████| 9912422/9912422 [00:00<00:00, 413643394.70it/s]
+Extracting /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/train-images-idx3-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw
+
+Downloading http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz
+Downloading http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/train-labels-idx1-ubyte.gz
+100%|██████████| 28881/28881 [00:00<00:00, 133262589.47it/s]
+Extracting /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/train-labels-idx1-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw
+
+Downloading http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz
+Downloading http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/t10k-images-idx3-ubyte.gz
+100%|██████████| 1648877/1648877 [00:00<00:00, 250975881.72it/s]
+Extracting /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/t10k-images-idx3-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw
+
+Downloading http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz
+Downloading http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/t10k-labels-idx1-ubyte.gz
+100%|██████████| 4542/4542 [00:00<00:00, 27022026.62it/s]
+Extracting /tmp/tmpw2b22i1l/mnist_data/MNIST/raw/t10k-labels-idx1-ubyte.gz to /tmp/tmpw2b22i1l/mnist_data/MNIST/raw
+
+Traceback (most recent call last):
+  File "/work/spark_k8s_experiment_1_fl_norm.py", line 153, in <module>
+    phase_2()
+  File "/work/spark_k8s_experiment_1_fl_norm.py", line 137, in phase_2
+    'scores2': scores2})
+  File "/usr/local/lib/python3.7/dist-packages/pandas/core/frame.py", line 614, in __init__
+    mgr = dict_to_mgr(data, index, columns, dtype=dtype, copy=copy, typ=manager)
+  File "/usr/local/lib/python3.7/dist-packages/pandas/core/internals/construction.py", line 465, in dict_to_mgr
+    arrays, data_names, index, columns, dtype=dtype, typ=typ, consolidate=copy
+  File "/usr/local/lib/python3.7/dist-packages/pandas/core/internals/construction.py", line 119, in arrays_to_mgr
+    index = _extract_index(arrays)
+  File "/usr/local/lib/python3.7/dist-packages/pandas/core/internals/construction.py", line 635, in _extract_index
+    raise ValueError("All arrays must be of the same length")
+ValueError: All arrays must be of the same length
