@@ -124,6 +124,7 @@ class Model(nn.Module):
         super(Model, self).__init__() 
         ## init params 
         self.fl_params = None 
+        self.named_fl_params = None 
         if net_type == 'dense': 
             self.fc1 = nn.Linear(28*28, 8) 
             if batch_norm:
@@ -174,6 +175,9 @@ class Model(nn.Module):
             self.fl_params = [] 
             self.fl_params.extend(list(self.fl1.parameters())) 
             self.fl_params.extend(list(self.fl2.parameters())) 
+            self.named_fl_params = [] 
+            self.named_fl_params.extend(list(self.fl1.named_parameters())) 
+            self.named_fl_params.extend(list(self.fl2.named_parameters())) 
             ## fc 
             self.fc1 = nn.Linear(16*2*2 + 16, 16) 
             if batch_norm: 
@@ -300,7 +304,7 @@ class Model(nn.Module):
         out.load_state_dict(self.state_dict()) 
         return out 
     def fit(self, training_dataset, testing_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
-            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None): 
+            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None, parameters=None): 
         ''' 
         fit the model 
         inputs: 
@@ -313,6 +317,9 @@ class Model(nn.Module):
         side-effects: 
         - model parameter updates 
         ''' 
+        if parameters is None: 
+            parameters = list(self.parameters()) 
+            pass 
         idx_batch = [] 
         pbar = tqdm(range(n_iters), disable=silence_tqdm) 
         for pbar_idx in pbar: 
@@ -324,9 +331,9 @@ class Model(nn.Module):
             loss = loss_vec.mean() 
             reg = 0. 
             if ams and self.hessian_center is not None: 
-                reg += ams * self.__get_regularizer() 
-            if l2_reg is not None and self.hessian_center is not None: 
-                p = self.get_parameter_vector()
+                reg += ams * self.__get_regularizer(parameters=parameters) 
+            if l2_reg is not None and self.hessian_center is not None: ## TODO not used, consider removing  
+                p = self.get_parameter_vector(parameters=parameters) 
                 p0 = self.hessian_center 
                 l2_loss = (l2_reg*(p - p0).transpose(0,1).matmul(p - p0)).reshape([])  
                 reg += l2_loss 
@@ -351,12 +358,15 @@ class Model(nn.Module):
             pass 
         return idx_batch  
     def memorize(self, dataset, drop_labels=[], memorization_size=MEMORIZATION_SIZE, 
-            random_label_probability=0., silence_tqdm=False, krylov_rank=0, krylov_eps=0., idx_batch=None): 
+            random_label_probability=0., silence_tqdm=False, krylov_rank=0, krylov_eps=0., idx_batch=None, parameters=None): 
+        if parameters is None: 
+            parameters = list(self.parameters()) 
+            pass 
         self.eval() 
         if self.hessian_denominator is None: 
             self.hessian_denominator = 0. 
             pass 
-        self.hessian_center = self.get_parameter_vector().detach().clone()  
+        self.hessian_center = self.get_parameter_vector(parameters=parameters).detach().clone()  
         if idx_batch is not None: 
             if memorization_size < len(idx_batch): 
                 ## compute times were annoyingly long, running a random sub-sample... 
@@ -364,7 +374,7 @@ class Model(nn.Module):
                 pass 
             pass 
         get_grad_generator = self.__get_get_grad_generator(dataset, n_grads=memorization_size, drop_labels=drop_labels, \
-                random_label_probability=random_label_probability, idx_batch=idx_batch) 
+                random_label_probability=random_label_probability, idx_batch=idx_batch, parameters=parameters) 
         if krylov_rank < 1: 
             ## use full-rank Information Matrix estimate 
             if self.hessian_sum is None: 
@@ -377,7 +387,7 @@ class Model(nn.Module):
                 pass 
         elif self.hessian_sum_low_rank_half is None: 
             ## use Krylov method 
-            p = int(self.get_parameter_vector().shape[0])  
+            p = int(self.get_parameter_vector(parameters=parameters).shape[0])  
             self.hessian_denominator += len(idx_batch)   
             self.hessian_sum_low_rank_half = l_lanczos(get_grad_generator, r=krylov_rank, p=p, eps=krylov_eps) 
             ## calculate hessian diagonal 
@@ -386,7 +396,7 @@ class Model(nn.Module):
             self.hessian_residual_variances = self.hessian_residual_variances.maximum(torch.zeros(size=self.hessian_residual_variances.size())) ## clean-up numerical errors, keep it all >= e
         else: 
             ## update Krylov space 
-            p = int(self.get_parameter_vector().shape[0]) 
+            p = int(self.get_parameter_vector(parameters=parameters).shape[0]) 
             self.hessian_denominator += len(idx_batch)  
             new_krylov_space = l_lanczos(get_grad_generator, r=krylov_rank, p=p, eps=krylov_eps) 
             updated_krylov_space = combine_krylov_spaces(self.hessian_sum_low_rank_half, new_krylov_space, krylov_eps=krylov_eps) 
@@ -431,15 +441,21 @@ class Model(nn.Module):
         acc = (y.argmax(dim=1) == y_hat.argmax(dim=1)).float().mean() 
         acc_f = float(acc) 
         return acc_f 
-    def get_parameter_vector(self): 
-        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()]) 
+    def get_parameter_vector(self, parameters=None): 
+        if parameters is None: 
+            parameters = list(self.parameters()) 
+            pass 
+        return torch.cat([p.reshape([-1, 1]) for p in parameters]) 
     def save(self, path): 
         torch.save(self.state_dict(), path) 
         pass 
     def load(self, path): 
         self.load_state_dict(torch.load(path)) 
         pass 
-    def __get_get_grad_generator(self, dataset, n_grads, **argv):
+    def __get_get_grad_generator(self, dataset, n_grads, parameters=None, **argv): 
+        if parameters is None: 
+            parameters = list(self.parameters()) 
+            pass 
         def get_grad_generator(): 
             def grad_generator(): 
                 for _ in range(n_grads): 
@@ -447,7 +463,7 @@ class Model(nn.Module):
                     x, y, _ = self.__get_batch(dataset, batch_size=1, **argv) 
                     loss = self.__get_loss(x, y) 
                     loss.backward() 
-                    grad = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()]) 
+                    grad = torch.cat([p.grad.reshape([-1, 1]) for p in parameters]) 
                     yield grad 
                 pass 
             return grad_generator  
@@ -459,10 +475,13 @@ class Model(nn.Module):
             ## convert to vector 
             loss = loss.mean(dim=1)  
         return loss 
-    def __get_regularizer(self): 
+    def __get_regularizer(self, parameters=None): 
+        if parameters is None: 
+            parameters = list(self.parameters()) 
+            pass 
         if self.hessian_center is None: 
             return 0. 
-        p = self.get_parameter_vector() 
+        p = self.get_parameter_vector(parameters=parameters) 
         p0 = self.hessian_center 
         if self.hessian_sum_low_rank_half is None: 
             hess = self.hessian_sum  
