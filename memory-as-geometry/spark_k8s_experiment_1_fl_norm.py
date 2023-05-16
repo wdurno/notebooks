@@ -12,9 +12,9 @@ spark = SparkSession(sc)
 
 EXPERIMENT_ID = 1 
 N_EXPERIMENTAL_ITERATIONS = 100  
-LAMBDA = 100.   
+LAMBDA = 10000.   
 ACC_FREQ=10
-FIT_ITERS = 1000  
+FIT_ITERS = 100 # 1000 
 SUBSAMPLE_SIZE = 400 
 N = 1000  
 KRYLOV_EPS = 0. 
@@ -54,20 +54,28 @@ def map1(task_idx):
         ## fit 
         for idx, prefix in enumerate(BATCH_PREFIXES): 
             ## update test dataset 
+            print(f'{idx}/{len(BATCH_PREFIXES)} extending test dataset...')
             cumulative_test_dataset += datasets[f'{prefix}_test'] 
             ## run experiment 
+            print(f'{idx}/{len(BATCH_PREFIXES)} fitting case_0_model...') 
             _ = case_0_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} fitting case_1_model...') 
             idx_batch = case_1_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
                     ams=LAMBDA*N*idx) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_1_model memorizing...') 
             case_1_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
-                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch)
+                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first fit...') 
             idx_batch = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
                     ams=LAMBDA*N*idx, parameters=case_2_model_non_fl_params) ## TODO "parameters" name is terrible. only applies to memory  
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first memorization...') 
             case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
                     krylov_eps=KRYLOV_EPS, idx_batch=idx_batch, parameters=case_2_model_non_fl_params) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second fit...') 
             _ = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
-                    ams=LAMBDA*N*idx, fl_reg=LAMBDA*N, parameters=case_2_model_non_fl_params) 
+                    ams=LAMBDA*N*idx/100, fl_reg=LAMBDA*N*100, parameters=case_2_model_non_fl_params) 
             ## re-memorize to reflect information-reduced frontal lobe 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second memorization...') 
             case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
                     krylov_eps=KRYLOV_EPS, idx_batch=idx_batch, parameters=case_2_model_non_fl_params) 
             ## pad accs 
