@@ -304,7 +304,8 @@ class Model(nn.Module):
         out.load_state_dict(self.state_dict()) 
         return out 
     def fit(self, training_dataset, testing_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
-            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None, parameters=None): 
+            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None, parameters=None, 
+            information_minimum=None): 
         ''' 
         fit the model 
         inputs: 
@@ -316,7 +317,7 @@ class Model(nn.Module):
         - idx_batch: returns a list of observation indices for optional, later memorization 
         side-effects: 
         - model parameter updates 
-        ''' 
+        ''' ## TODO add grad masking when above a specified value 
         if parameters is None: 
             parameters = list(self.parameters()) 
             pass 
@@ -570,6 +571,27 @@ class Model(nn.Module):
             pass 
         y = y.reshape([1, -1]) 
         return x, y 
+    def get_information_diagonal(self): 
+        info_vec = None 
+        if self.hessian_sum is not None:
+            info_vec = torch.diag(self.hessian_sum)
+        elif self.hessian_sum_low_rank_half is not None:
+            info_vec = self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half)
+            info_vec += self.hessian_residual_variances
+            pass 
+        info_vec = info_vec / self.hessian_denominator 
+        return info_vec 
+    def __zero_grads_above_minimum_information(self, minimum_information): 
+        ## TODO implement  
+        info_vec = self.get_information_diagonal() 
+        ptr = 0 
+        ## parameter-wise grad zero-ing 
+        for param in self.parameters(): 
+            n = param.grad.shape[0] ## TODO assuming grads are vecs here. Verify!  
+            param.grad[info_vec[ptr:(ptr+n)] > minimum_information] = 0. 
+            ptr = n + 1 
+            pass 
+        pass 
     pass 
 
 

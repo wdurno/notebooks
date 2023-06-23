@@ -7,11 +7,14 @@ import os
 from time import time 
 from pyspark import SparkContext
 from pyspark.sql import SparkSession 
-sc = SparkContext() 
-spark = SparkSession(sc) 
+from pyspark.sql.functions import mean, stddev 
+if __name__ == '__main__':
+    sc = SparkContext() 
+    spark = SparkSession(sc) 
+    pass 
 
 EXPERIMENT_ID = 1 
-N_EXPERIMENTAL_ITERATIONS = 100  
+N_EXPERIMENTAL_ITERATIONS = 10 # 100  
 LAMBDA = 10000.   
 ACC_FREQ=10
 FIT_ITERS = 100 # 1000 
@@ -19,8 +22,9 @@ SUBSAMPLE_SIZE = 400
 N = 1000  
 KRYLOV_EPS = 0. 
 L2_REG = None  
-KRYLOV_RANK = 10 
-BATCH_PREFIXES = ['01', '23', '45', '67', '89']*2  
+KRYLOV_RANK = 2 
+BATCH_PREFIXES = ['01', '23', '45', '67', '89']*2 
+BATCH_PREFIXES = BATCH_PREFIXES[:2] ## TODO REMOVE! This just speeds-up testing! 
 EXPERIMENT_TIME = int(time()) 
 TEMP_CONTAINER_NAME = f'tmp-{EXPERIMENT_ID}-{EXPERIMENT_TIME}' 
 create_container(os.environ['STORAGE_KEY'] , TEMP_CONTAINER_NAME) 
@@ -68,7 +72,7 @@ def map1(task_idx):
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first fit...') 
             idx_batch = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
                     ams=LAMBDA*N*idx, parameters=case_2_model_non_fl_params) ## TODO "parameters" name is terrible. only applies to memory  
-            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first memorization...') 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first memorization...') ## TODO remove unneeded experimental cases  
             case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
                     krylov_eps=KRYLOV_EPS, idx_batch=idx_batch, parameters=case_2_model_non_fl_params) 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second fit...') 
@@ -105,11 +109,20 @@ def map1(task_idx):
         append_results(metric_0_tuples) 
         append_results(metric_1_tuples) 
         append_results(metric_2_tuples) 
-        ## write out 
+        ## write-out accuracies  
         filename = f'experiment-{EXPERIMENT_ID}-result-{task_idx}.pkl'
         sas_key = os.environ['STORAGE_KEY'] 
         output_container_name = TEMP_CONTAINER_NAME 
         upload_to_blob_store(pickle.dumps(out), filename, sas_key, output_container_name)  
+        ## write-out information diagonal 
+        filename = f'experiment-{EXPERIMENT_ID}-info-vec-{task_idx}.pkl'  
+        case_1_model_info_vec = case_1_model.get_information_diagonal() ## just using control for now... will do something more-impressive later 
+        info_df_rows = [] 
+        for param_idx, info_val in enumerate(case_1_model_info_vec.tolist()): 
+            info_val = float(info_val[0]) ## column vec is a list of single-element lists 
+            info_df_rows.append((param_idx, info_val, task_idx)) 
+            pass 
+        upload_to_blob_store(pickle.dumps(info_df_rows), filename, sas_key, output_container_name) 
     except Exception as e: 
         ## increase verbosity before failing 
         print(f'ERROR!\n{e}\n{traceback.format_exc()}')
@@ -127,11 +140,13 @@ def map2(filename):
     return pickle.loads(x) 
 
 def phase_1(): 
+    'fit models' 
     x = sc.parallelize(list(range(N_EXPERIMENTAL_ITERATIONS)), N_EXPERIMENTAL_ITERATIONS) 
     y = x.map(map1) 
     return y.collect() 
 
 def phase_2(): 
+    'aggregate accuracies' 
     import pandas as pd
     import matplotlib.pyplot as plt
     ## config 
@@ -159,16 +174,51 @@ def phase_2():
     df_data = df_to_save.to_csv().encode() 
     upload_to_blob_store(df_data, FILENAME+'.csv', sas_key, output_container_name) 
     ## save plot 
-    plt.plot(scores0, label='0') 
-    plt.plot(scores1, label='1') 
-    plt.plot(scores2, label='2') 
-    plt.legend() 
-    plt.savefig(FILENAME+'.png') 
+    fig, fig_ax = plt.subplots() 
+    fig_ax.plot(scores0, label='0') 
+    fig_ax.plot(scores1, label='1') 
+    fig_ax.plot(scores2, label='2') 
+    fig_ax.legend() 
+    fig.savefig(FILENAME+'.png') 
     with open(FILENAME+'.png', 'rb') as f: 
         upload_to_blob_store(f.read(), FILENAME+'.png', sas_key, output_container_name) 
         pass 
     pass 
 
+def phase_3(): 
+    'aggregate info vecs into mean and std vecs' 
+    ## get data 
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    ## config 
+    sas_key = os.environ['STORAGE_KEY']
+    input_container_name = TEMP_CONTAINER_NAME
+    output_container_name = 'data'
+    ## get data 
+    filenames = ls_blob_store('', sas_key, input_container_name)
+    filenames = [f for f in filenames if f.startswith(f'experiment-{EXPERIMENT_ID}-info-vec-') and f.endswith('.pkl')] 
+    filenames = sc.parallelize(filenames, len(filenames))
+    y = filenames.flatMap(map2) 
+    schema = ['param_idx', 'info_val', 'task_idx'] 
+    y = y.toDF(schema=schema) 
+    param_groups = y.groupBy('param_idx') 
+    aggs = param_groups.agg(mean('info_val'), stddev('info_val'))  
+    df = aggs.toPandas() 
+    means = df['avg(info_val)'].tolist() 
+    stds = (df['stddev_samp(info_val)'] + df['avg(info_val)']).tolist() 
+    fig, fig_ax = plt.subplots() 
+    fig_ax.plot(stds, label='means + stds') 
+    fig_ax.plot(means, label='means') 
+    fig_ax.legend() 
+    FILENAME = f'df-infos-{EXPERIMENT_ID}' 
+    fig.savefig(FILENAME+'.png') 
+    with open(FILENAME+'.png', 'rb') as f:
+        upload_to_blob_store(f.read(), FILENAME+'.png', sas_key, output_container_name)
+        pass
+    pass 
+
 if __name__ == '__main__': 
     phase_1() 
     phase_2() 
+    DEBUG = phase_3() 
+    print(DEBUG) ## TODO remove this! 
