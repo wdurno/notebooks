@@ -8,6 +8,7 @@ import random
 import os 
 import shutil 
 import zipfile
+import math 
 import numpy as np 
 
 import torch 
@@ -171,7 +172,7 @@ class Model(nn.Module):
             self.fl2_relu = nn.ReLU() 
             if batch_norm: 
                 self.fl2_bn = nn.BatchNorm1d(16) 
-            ## store fl parameters, enabling clearing 
+            ## store fl parameters, enabling clearing ## TODO get rid of this stuff, it doesn't work  
             self.fl_params = [] 
             self.fl_params.extend(list(self.fl1.parameters())) 
             self.fl_params.extend(list(self.fl2.parameters())) 
@@ -305,7 +306,7 @@ class Model(nn.Module):
         return out 
     def fit(self, training_dataset, testing_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
             random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None, parameters=None, 
-            information_minimum=None): 
+            information_minimum=None, high_info_prop=None): 
         ''' 
         fit the model 
         inputs: 
@@ -317,7 +318,7 @@ class Model(nn.Module):
         - idx_batch: returns a list of observation indices for optional, later memorization 
         side-effects: 
         - model parameter updates 
-        ''' ## TODO add grad masking when above a specified value 
+        ''' 
         if parameters is None: 
             parameters = list(self.parameters()) 
             pass 
@@ -347,6 +348,9 @@ class Model(nn.Module):
             loss_f = float(loss) 
             self.losses.append(loss_f) 
             loss.backward() 
+            if high_info_prop is not None: 
+                self.__zero_grads_above_minimum_information(self, high_info_proportion=high_info_prop) 
+                pass 
             self.optimizer.step() 
             if pbar_idx % acc_frequency == 0: 
                 if self.net_type in ['dense', 'dense_1', 'cnn']: 
@@ -581,14 +585,29 @@ class Model(nn.Module):
             pass 
         info_vec = info_vec / self.hessian_denominator 
         return info_vec 
-    def __zero_grads_above_minimum_information(self, minimum_information): 
-        ## TODO implement  
+    def __zero_grads_above_minimum_information(self, minimum_information=None, high_info_proportion=None): 
+        '''
+        Apply before `optimizer.step()` to avoid adjusting high-information parameters. 
+        if `minimum_information is not None`, then that cutoff is used. 
+        if `high_info_proportion is not None`, then a `high_info_proportion` proportion of highest-info parameters will be frozen. 
+            Expects a float in [0,1]. 
+            Example: .2 => 20% of the highest-info parameters will be frozen 
+        '''
         info_vec = self.get_information_diagonal() 
+        if info_vec is None: 
+            ## information not yet estimated 
+            return None 
+        if high_info_proportion is not None: 
+            info_vec_n = info_vec.shape[0] 
+            cut_off_idx = math.ceil(info_vec_n * high_info_proportion) 
+            sorted_info_vec = torch.sort(info_vec, descending=True) 
+            minimum_information = sorted_info_vec[cut_off_idx] 
+            pass 
         ptr = 0 
         ## parameter-wise grad zero-ing 
         for param in self.parameters(): 
             n = param.grad.shape[0] ## TODO assuming grads are vecs here. Verify!  
-            param.grad[info_vec[ptr:(ptr+n)] > minimum_information] = 0. 
+            param.grad[info_vec[ptr:(ptr+n)] >= minimum_information] = 0. 
             ptr = n + 1 
             pass 
         pass 

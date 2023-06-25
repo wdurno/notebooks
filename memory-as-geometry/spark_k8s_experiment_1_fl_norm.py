@@ -47,11 +47,9 @@ def map1(task_idx):
         ## get data 
         datasets = get_datasets(n=N) 
         ## define initial model  
-        case_0_model = Model(net_type='cnn', batch_norm=False, log1p_reg=False) ## control: don't memorize 
+        case_0_model = Model(net_type='dense', batch_norm=False, log1p_reg=False) ## control: don't memorize 
         case_1_model = case_0_model.copy() ## control: memorize 
         case_2_model = case_0_model.copy() ## experimental: memorize and clear frontal lobe 
-        case_2_model_fl_param_names = [p[0] for p in case_2_model.named_fl_params] 
-        case_2_model_non_fl_params = [p[1] for p in case_2_model.named_parameters() if p[0] not in case_2_model_fl_param_names] 
         ## test datasets are cumulative
         ## so we test against prior batches as well, thereby evaluating memory 
         cumulative_test_dataset = [] 
@@ -71,17 +69,17 @@ def map1(task_idx):
                     krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first fit...') 
             idx_batch = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
-                    ams=LAMBDA*N*idx, parameters=case_2_model_non_fl_params) ## TODO "parameters" name is terrible. only applies to memory  
+                    ams=LAMBDA*N*idx, high_info_prop=.2) 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first memorization...') ## TODO remove unneeded experimental cases  
             case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
-                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch, parameters=case_2_model_non_fl_params) 
+                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second fit...') 
             _ = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
-                    ams=LAMBDA*N*idx/100, fl_reg=LAMBDA*N*100, parameters=case_2_model_non_fl_params) 
+                    ams=LAMBDA*N*idx/100, fl_reg=LAMBDA*N*100) 
             ## re-memorize to reflect information-reduced frontal lobe 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second memorization...') 
             case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
-                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch, parameters=case_2_model_non_fl_params) 
+                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
             ## pad accs 
             case_2_accs_n = len(case_2_model.accs) 
             case_0_model.accs.extend([case_0_model.accs[-1]]*(case_2_accs_n - len(case_0_model.accs))) 
@@ -220,5 +218,4 @@ def phase_3():
 if __name__ == '__main__': 
     phase_1() 
     phase_2() 
-    DEBUG = phase_3() 
-    print(DEBUG) ## TODO remove this! 
+    phase_3() 
