@@ -305,7 +305,7 @@ class Model(nn.Module):
         out.load_state_dict(self.state_dict()) 
         return out 
     def fit(self, training_dataset, testing_dataset, n_iters=TRAINING_ITERS, ams=False, drop_labels=[], 
-            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, fl_reg=None, parameters=None, 
+            random_label_probability=0., silence_tqdm=False, acc_frequency=1, l2_reg=None, parameters=None, 
             information_minimum=None, high_info_prop=None): 
         ''' 
         fit the model 
@@ -339,9 +339,6 @@ class Model(nn.Module):
                 p0 = self.hessian_center 
                 l2_loss = (l2_reg*(p - p0).transpose(0,1).matmul(p - p0)).reshape([])  
                 reg += l2_loss 
-                pass 
-            if fl_reg is not None: 
-                reg += fl_reg * self.__fl_norm(loss_vec) 
                 pass 
             loss += reg ## "+" because optimizer minimizes 
             self.regs.append(float(reg)) 
@@ -412,20 +409,6 @@ class Model(nn.Module):
             self.hessian_residual_variances = self.hessian_residual_variances.maximum(torch.zeros(size=self.hessian_residual_variances.size()))  
             pass 
         pass 
-    def __fl_norm(self, loss_vec): 
-        'Frobenius norm of the information matrix, constrained to frontal lobe parameters' 
-        ## combute jacobian [ d loglik(x_i) / d p_j ] 
-        n = loss_vec.shape[0] 
-        log_density = -loss_vec 
-        J = [] 
-        for i in range(n): 
-            grad = autograd.grad(log_density[i], self.fl_params, create_graph=True, retain_graph=True, allow_unused=True) 
-            grad = torch.cat([g.flatten() for g in grad]) 
-            J.append(grad) 
-            pass 
-        J = torch.stack(J) 
-        ## take norm and return 
-        return J.mul(J).sum() / n 
     def __grad_sum(self, grad_generator):
         ''' 
         returns a sum of gradients. 
@@ -579,11 +562,12 @@ class Model(nn.Module):
         info_vec = None 
         if self.hessian_sum is not None:
             info_vec = torch.diag(self.hessian_sum)
+            info_vec = info_vec / self.hessian_denominator 
         elif self.hessian_sum_low_rank_half is not None:
             info_vec = self.__outer_product_diagonal(self.hessian_sum_low_rank_half, self.hessian_sum_low_rank_half)
             info_vec += self.hessian_residual_variances
+            info_vec = info_vec / self.hessian_denominator 
             pass 
-        info_vec = info_vec / self.hessian_denominator 
         return info_vec 
     def __zero_grads_above_minimum_information(self, minimum_information=None, high_info_proportion=None): 
         '''
@@ -600,14 +584,14 @@ class Model(nn.Module):
         if high_info_proportion is not None: 
             info_vec_n = info_vec.shape[0] 
             cut_off_idx = math.ceil(info_vec_n * high_info_proportion) 
-            sorted_info_vec = torch.sort(info_vec, descending=True) 
+            sorted_info_vec, _ = torch.sort(info_vec, descending=True) 
             minimum_information = sorted_info_vec[cut_off_idx] 
             pass 
         ptr = 0 
         ## parameter-wise grad zero-ing 
         for param in self.parameters(): 
-            n = param.grad.shape[0] ## TODO assuming grads are vecs here. Verify!  
-            param.grad[info_vec[ptr:(ptr+n)] >= minimum_information] = 0. 
+            n = torch.tensor(param.grad.shape).prod() ## number of parameters in the tensor  
+            param.grad[info_vec[ptr:(ptr+n)].reshape(param.grad.shape) >= minimum_information] = 0. 
             ptr = n + 1 
             pass 
         pass 

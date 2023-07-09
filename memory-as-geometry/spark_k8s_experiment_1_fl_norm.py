@@ -15,7 +15,8 @@ if __name__ == '__main__':
 
 EXPERIMENT_ID = 1 
 N_EXPERIMENTAL_ITERATIONS = 10 # 100  
-LAMBDA = 10000.   
+LAMBDA = 10000. 
+HIGH_INFO_PROP = .8 
 ACC_FREQ=10
 FIT_ITERS = 100 # 1000 
 SUBSAMPLE_SIZE = 400 
@@ -24,7 +25,6 @@ KRYLOV_EPS = 0.
 L2_REG = None  
 KRYLOV_RANK = 2 
 BATCH_PREFIXES = ['01', '23', '45', '67', '89']*2 
-BATCH_PREFIXES = BATCH_PREFIXES[:2] ## TODO REMOVE! This just speeds-up testing! 
 EXPERIMENT_TIME = int(time()) 
 TEMP_CONTAINER_NAME = f'tmp-{EXPERIMENT_ID}-{EXPERIMENT_TIME}' 
 create_container(os.environ['STORAGE_KEY'] , TEMP_CONTAINER_NAME) 
@@ -49,7 +49,8 @@ def map1(task_idx):
         ## define initial model  
         case_0_model = Model(net_type='dense', batch_norm=False, log1p_reg=False) ## control: don't memorize 
         case_1_model = case_0_model.copy() ## control: memorize 
-        case_2_model = case_0_model.copy() ## experimental: memorize and clear frontal lobe 
+        case_2_model = case_0_model.copy() ## experimental: high info freezing 
+        case_3_model = case_0_model.copy() ## experimetnal: memorize & high info freezing 
         ## test datasets are cumulative
         ## so we test against prior batches as well, thereby evaluating memory 
         cumulative_test_dataset = [] 
@@ -63,36 +64,33 @@ def map1(task_idx):
             _ = case_0_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ) 
             print(f'{idx}/{len(BATCH_PREFIXES)} fitting case_1_model...') 
             idx_batch = case_1_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
-                    ams=LAMBDA*N*idx) 
+                    ams=LAMBDA) 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_1_model memorizing...') 
             case_1_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
                     krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
             print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first fit...') 
             idx_batch = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
-                    ams=LAMBDA*N*idx, high_info_prop=.2) 
-            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first memorization...') ## TODO remove unneeded experimental cases  
+                    high_info_prop=HIGH_INFO_PROP) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model first memorization...')   
             case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
                     krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
-            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second fit...') 
-            _ = case_2_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
-                    ams=LAMBDA*N*idx/100, fl_reg=LAMBDA*N*100) 
-            ## re-memorize to reflect information-reduced frontal lobe 
-            print(f'{idx}/{len(BATCH_PREFIXES)} case_2_model second memorization...') 
-            case_2_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
-                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch) 
-            ## pad accs 
-            case_2_accs_n = len(case_2_model.accs) 
-            case_0_model.accs.extend([case_0_model.accs[-1]]*(case_2_accs_n - len(case_0_model.accs))) 
-            case_1_model.accs.extend([case_1_model.accs[-1]]*(case_2_accs_n - len(case_1_model.accs))) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_3_model first fit...')
+            idx_batch = case_3_model.fit(datasets[f'{prefix}_train'], cumulative_test_dataset, n_iters=FIT_ITERS, silence_tqdm=True, acc_frequency=ACC_FREQ, \
+                    ams=LAMBDA, high_info_prop=HIGH_INFO_PROP) 
+            print(f'{idx}/{len(BATCH_PREFIXES)} case_3_model first memorization...')
+            case_3_model.memorize(datasets[f'{prefix}_train'], memorization_size=FIT_ITERS, silence_tqdm=True, krylov_rank=KRYLOV_RANK, \
+                    krylov_eps=KRYLOV_EPS, idx_batch=idx_batch)
             pass 
         ## gather results 
         metric_0 = case_0_model.accs
         metric_1 = case_1_model.accs 
-        metric_2 = case_2_model.accs
+        metric_2 = case_2_model.accs 
+        metric_3 = case_3_model.accs 
         ## append condition codes 
         metric_0_tuples = [(x, 0) for x in metric_0] 
         metric_1_tuples = [(x, 1) for x in metric_1] 
         metric_2_tuples = [(x, 2) for x in metric_2] 
+        metric_3_tuples = [(x, 3) for x in metric_3] 
         ## format output 
         out = [] 
         def append_results(result_tuples, out=out): 
@@ -107,6 +105,7 @@ def map1(task_idx):
         append_results(metric_0_tuples) 
         append_results(metric_1_tuples) 
         append_results(metric_2_tuples) 
+        append_results(metric_3_tuples) 
         ## write-out accuracies  
         filename = f'experiment-{EXPERIMENT_ID}-result-{task_idx}.pkl'
         sas_key = os.environ['STORAGE_KEY'] 
@@ -164,11 +163,13 @@ def phase_2():
     scores0 = df.loc[df['condition'] == 0].sort_values('iter')['avg(score)'].tolist() 
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
     scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
+    scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
     ## save data 
     FILENAME = f'df-experiment-{EXPERIMENT_ID}'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1,
-                               'scores2': scores2}) 
+                               'scores2': scores2, 
+                               'scores3': scores3}) 
     df_data = df_to_save.to_csv().encode() 
     upload_to_blob_store(df_data, FILENAME+'.csv', sas_key, output_container_name) 
     ## save plot 
@@ -176,6 +177,7 @@ def phase_2():
     fig_ax.plot(scores0, label='0') 
     fig_ax.plot(scores1, label='1') 
     fig_ax.plot(scores2, label='2') 
+    fig_ax.plot(scores3, label='3') 
     fig_ax.legend() 
     fig.savefig(FILENAME+'.png') 
     with open(FILENAME+'.png', 'rb') as f: 
