@@ -19,10 +19,10 @@ EPS = 1e-5
 #EXPLORE_PROBABILITY_FUNC = lambda idx: 0.999**idx ## lambda doesn't pickle 
 def EXPLORE_PROBABILITY_FUNC (idx):
     return 0.99**idx 
-BATCH_SIZE = 25  
+BATCH_SIZE = 12  
 LEARNING_RATE = 0.001 # 0.01 # 0.001  
 GRAD_CLIP = 10.0 
-SHORT_TERM_MEMORY_LENGTH = 40 
+SHORT_TERM_MEMORY_LENGTH = 8 
 LBFGS = False 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') 
 #DEVICE = torch.device('cpu') 
@@ -68,27 +68,35 @@ class Model(nn.Module):
         ## init resnet 
         self.resnet = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True) 
         ## shrink via dense net before adding camera embedding 
-        self.fc1  = nn.Linaer(1000, 128) 
+        self.fc1  = nn.Linear(1000, 128) 
         self.fc1_bn = nn.BatchNorm1d(128) 
+        ## conv1d over time 
+        self.conv1 = nn.Conv1d(128, 64, 3) 
+        self.conv1_bn = nn.BatchNorm1d(64) 
+        self.conv2 = nn.Conv1d(64, 32, 3) 
+        self.conv2_bn = nn.BatchNorm1d(32) 
+        self.conv3 = nn.Conv1d(32, 18, 3) 
+        self.conv3_bn = nn.BatchNorm1d(18) 
         ## camera embedding 
-        self.embedding = nn.Embedding(self.n_camera_directions, 128) 
+        self.embedding = nn.Embedding(self.n_camera_directions, 18) 
         ## FCs 
-        self.fc2 = nn.Linear(128+128, 64) ## + 64 for camera embedding vec 
-        self.fc2_bn = nn.BatchNorm1d(64) 
-        self.fc3 = nn.Linear(64, n_actions) 
+        self.fc2 = nn.Linear(18*3, 18) ## + 64 for camera embedding vec 
+        self.fc2_bn = nn.BatchNorm1d(18) 
+        self.fc3 = nn.Linear(18, n_actions) 
         ## init data structures 
         if observations is None: 
             self.observations = [] 
         else: 
             self.observations = observations 
             pass 
+        named_parameters = [t[1] for t in self.named_parameters()]
         if self.lbfgs: 
             ## Misbehavior observed with large `history_size`, ie. >20 
             ## RAM req = O(history_size * model_dim) 
-            self.optimizer = optim.LBFGS(self.named_parameters(), history_size=5) 
+            self.optimizer = optim.LBFGS(named_parameters, history_size=5) 
         else: 
             ## LBFGS was giving nan parameters 
-            self.optimizer = optim.Adam(self.named_parameters(), lr=self.learning_rate) 
+            self.optimizer = optim.Adam(named_parameters, lr=self.learning_rate) 
             pass
         self.to(DEVICE) 
         pass 
@@ -105,8 +113,8 @@ class Model(nn.Module):
                 grad_clip=self.grad_clip, 
                 short_term_memory_length=self.short_term_memory_length, 
                 lbfgs=self.lbfgs, 
-                memorized_hessian_approximation = self.memorized_hessian_approximation
-                memorized_parameters = self.memorized_parameters
+                memorized_hessian_approximation = self.memorized_hessian_approximation, 
+                memorized_parameters = self.memorized_parameters, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
                 regularizing_lambda_function=self.regularizing_lambda_function)
@@ -118,39 +126,36 @@ class Model(nn.Module):
         pov = x['pov'] 
         camera = x['camera'] 
         ## pov should be shape [series_idx, sample_idx, channel_idx, height_idx, width_idx] 
-        ## we'll use this shorthand: [L, N, C, H, W] <-- names should align to PyTorch's CNN and LSTM documentation  
-        ## first, we must reshape for CNNs 
-        L, N, C, H, W = tuple(pov.shape) 
-        L_batches_in = pov.unbind() 
-        L_batches_out = [] 
-        for batch in L_batches_in: ## TODO: optimize! current form is not efficient, but guaranteed to work 
-            pov = self.conv1(batch) 
-            pov = self.conv1_bn(pov) 
-            pov = torch.relu(pov) 
-            #pov = self.mp2d1(pov)  
-            pov = self.conv2(pov) 
-            pov = self.conv2_bn(pov) 
-            pov = torch.relu(pov) 
-            #pov = self.mp2d2(pov) 
-            pov = self.conv3(pov) 
-            pov = self.conv3_bn(pov) 
-            pov = torch.relu(pov) 
-            pov = pov.reshape([N, -1]) 
-            L_batches_out.append(pov) 
-        ## reshape for CNNs over time  
-        pov = torch.stack(L_batches_out) ## [L, N, -1] 
-        pov = pov.permute(0, 2, 1) # [L, -1, N] 
-        pov = self.conv6(pov)
-        pov = self.conv6_bn(pov) 
+        ## we'll use this shorthand: [N, L, C, H, W] <-- names should align to PyTorch's CNN and LSTM documentation  
+        N, L, C, H, W = tuple(pov.shape) 
+        N_list_of_povs = pov.unbind(dim=0) 
+        pov = torch.cat(N_list_of_povs, dim=0) ## shape: N*L, C, H, W 
+        ## visual processing 
+        pov = self.resnet(pov) ## expects H = W = 224  
+        pov = self.fc1(pov) 
+        pov = self.fc1_bn(pov) 
         pov = torch.relu(pov) 
-        ## Dense 
-        pov = pov.reshape([L, -1]) 
-        camera_vec = self.embedding(camera).squeeze(dim=1) ## [N, 1, 64] -> [N, 64] 
+        ## time processing 
+        L_list_of_povs = pov.split(self.short_term_memory_length, dim=0) 
+        pov = torch.stack(L_list_of_povs, dim=0) ## shape: N, L, 128 
+        pov = pov.permute([0, 2, 1]) ## shape: N, 128, L
+        pov = self.conv1(pov) 
+        pov = self.conv1_bn(pov) 
+        pov = torch.relu(pov) 
+        pov = self.conv2(pov) 
+        pov = self.conv2_bn(pov) 
+        pov = torch.relu(pov) 
+        pov = self.conv3(pov) 
+        pov = self.conv3_bn(pov) 
+        pov = torch.relu(pov) ## shape: N, 18, L=2 (assuming SHORT_TERM_MEMORY_LENGTH = 8) 
+        ## strategic processing 
+        pov = pov.reshape([N, 18*2]) 
+        camera_vec = self.embedding(camera).squeeze(dim=1) ## [N, 1, 18] -> [N, 18] 
         x = torch.cat([pov, camera_vec], dim=1) 
-        x = self.fc1(x)
-        x = self.fc1_bn(x) 
+        x = self.fc2(x)
+        x = self.fc2_bn(x) 
         x = torch.relu(x) 
-        x = self.fc2(x) 
+        x = self.fc3(x) 
         return x 
     
     def load_car_env_data(self, dir_path): 
@@ -206,7 +211,7 @@ class Model(nn.Module):
         self.observations = [] 
         pass 
 
-    def memorize(self, resnet_multiplier=1., disable_tqdm=True): 
+    def memorize(self, resnet_multiplier=1.): 
         'Update sufficient statistics. Only apply near a convergence point.' 
         ## init, if needed 
         if self.memorized_hessian_approximation is None: 
