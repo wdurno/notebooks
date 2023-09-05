@@ -16,7 +16,7 @@ if __name__ == '__main__':
 EXPERIMENT_ID = 1 
 N_EXPERIMENTAL_ITERATIONS = 10 # 100  
 FIT_ITERS = 2*50 ## must be divisible 
-SUBSAMPLE_SIZE = 20 
+SUBSAMPLE_SIZE = 10 
 EXPERIMENT_TIME = int(time()) 
 TEMP_CONTAINER_NAME = f'tmp-{EXPERIMENT_ID}-{EXPERIMENT_TIME}' 
 create_container(os.environ['STORAGE_KEY'] , TEMP_CONTAINER_NAME) 
@@ -56,6 +56,13 @@ def map1(task_idx):
         for _ in range(FIT_ITERS//2): ## consolidate 
             base_accs.append(base_model.fit(batch_size=100, train_data=mnist_train_not_9, eval_dataset=mnist_test_not_9, memorize=True)) 
             pass 
+        ## control: no transfer learning 
+        print('running control 0...') 
+        accs_0 = [] 
+        control_model = Classifier() 
+        for _ in range(FIT_ITERS): 
+            accs_0.append(control_model.fit(train_data=mnist_train_small_subset, use_memory=False, eval_dataset=mnist_test_9)) 
+            pass 
         ## control: infinite lambda (classic transfer learning) 
         print('running control 1...') 
         accs_1 = [] 
@@ -65,22 +72,22 @@ def map1(task_idx):
             pass 
         ## experimental 1: lambda = 1. 
         print('running first experiment...') 
-        lmbda = 1. 
+        lmbda = 1000. 
         accs_2 = [] 
         experimental_model = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=False) 
         for _ in range(FIT_ITERS): 
-            accs_2.append(control_model.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
+            accs_2.append(experimental_model.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
             pass 
         ## experimental 2: lambda = .01 
         print('running second experiment...') 
-        lmbda = .01 
+        lmbda = 10. 
         accs_3 = [] 
         experimental_model = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=False) 
         for _ in range(FIT_ITERS): 
-            accs_3.append(control_model.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
+            accs_3.append(experimental_model.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
             pass 
         ## gather results 
-        metric_0 = base_accs 
+        metric_0 = accs_0 
         metric_1 = accs_1 
         metric_2 = accs_2
         metric_3 = accs_3 

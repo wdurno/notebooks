@@ -21,7 +21,7 @@ from az_blob_util import upload_to_blob_store, download_from_blob_store
 
 MNIST_DIM = 28 
 LEARNING_RATE = 1e-3 
-EMBEDDING_DIM = 20 
+EMBEDDING_DIM = 20 ## this parameter must be tuned in experiments. it's very impactful 
 
 ## data utils 
 
