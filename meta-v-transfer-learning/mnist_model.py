@@ -19,6 +19,10 @@ import random
 
 from az_blob_util import upload_to_blob_store, download_from_blob_store 
 
+MNIST_DIM = 28 
+LEARNING_RATE = 1e-3 
+EMBEDDING_DIM = 20 
+
 ## data utils 
 
 def download_mnist_to_blob_storage(): 
@@ -58,8 +62,8 @@ def get_datasets():
             zip_file.extractall(mnist_dir) 
         ## sample 
         data_pack = {} 
-        mnist_train = datasets.MNIST(mnist_dir, train=True, download=False, transform=TRANSFORM) 
-        mnist_test = datasets.MNIST(mnist_dir, train=False, download=False, transform=TRANSFORM) 
+        mnist_train = datasets.MNIST(mnist_dir, train=True, download=False) 
+        mnist_test = datasets.MNIST(mnist_dir, train=False, download=False) 
         pass 
     return mnist_train, mnist_test  
 
@@ -155,9 +159,9 @@ class Classifier(nn.Module):
         x = self.softmax(x) 
         return x 
     def fit(self, 
-            iters=FIT_ITERS, 
-            batch_size=BATCH_SIZE, 
-            eval_size=EVAL_SIZE, 
+            iters=100, 
+            batch_size=100, 
+            eval_size=1000, 
             train_data=None, 
             memorize=False, 
             use_memory=False, 

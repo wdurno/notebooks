@@ -50,11 +50,11 @@ def map1(task_idx):
         print('fitting base model...') 
         base_model = Classifier() 
         base_accs = [] 
-        for _ in range(FIT_ITERS/2): ## burn-in 
-            base_accs.append(big_model.fit(batch_size=100, train_data=mnist_train_not_9, eval_dataset=mnist_test_not_9)) 
+        for _ in range(FIT_ITERS//2): ## burn-in 
+            base_accs.append(base_model.fit(batch_size=100, train_data=mnist_train_not_9, eval_dataset=mnist_test_not_9)) 
             pass 
-        for _ in range(FIT_ITERS/2): ## consolidate 
-            base_accs.append(big_model.fit(batch_size=100, train_data=mnist_train_not_9, eval_dataset=mnist_test_not_9, memorize=True)) 
+        for _ in range(FIT_ITERS//2): ## consolidate 
+            base_accs.append(base_model.fit(batch_size=100, train_data=mnist_train_not_9, eval_dataset=mnist_test_not_9, memorize=True)) 
             pass 
         ## control: infinite lambda (classic transfer learning) 
         print('running control 1...') 
