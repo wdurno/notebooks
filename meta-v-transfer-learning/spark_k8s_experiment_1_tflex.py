@@ -33,6 +33,7 @@ def map1(task_idx):
         ## run experiment 
         from mnist_model import Classifier, get_datasets, sample 
         from az_blob_util import upload_to_blob_store 
+        import torch.nn as nn 
         import os 
         import pickle 
         from tqdm import tqdm 
@@ -59,32 +60,32 @@ def map1(task_idx):
         ## control: no transfer learning 
         print('running control 0...') 
         accs_0 = [] 
-        control_model = Classifier() 
+        control_model_0 = Classifier() 
         for _ in range(FIT_ITERS): 
-            accs_0.append(control_model.fit(train_data=mnist_train_small_subset, use_memory=False, eval_dataset=mnist_test_9)) 
+            accs_0.append(control_model_0.fit(train_data=mnist_train_small_subset, use_memory=False, eval_dataset=mnist_test_9)) 
             pass 
         ## control: infinite lambda (classic transfer learning) 
         print('running control 1...') 
         accs_1 = [] 
-        control_model = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=True) 
+        control_model_1 = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=True) 
         for _ in range(FIT_ITERS): 
-            accs_1.append(control_model.fit(train_data=mnist_train_small_subset, use_memory=True, eval_dataset=mnist_test_9)) 
+            accs_1.append(control_model_1.fit(train_data=mnist_train_small_subset, use_memory=True, eval_dataset=mnist_test_9)) 
             pass 
         ## experimental 1: lambda = 1. 
         print('running first experiment...') 
         lmbda = 1000. 
         accs_2 = [] 
-        experimental_model = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=False) 
+        experimental_model_2 = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=False) 
         for _ in range(FIT_ITERS): 
-            accs_2.append(experimental_model.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
+            accs_2.append(experimental_model_2.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
             pass 
         ## experimental 2: lambda = .01 
         print('running second experiment...') 
         lmbda = 10. 
         accs_3 = [] 
-        experimental_model = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=False) 
+        experimental_model_3 = Classifier(base_layer_transfer=base_model.base_layer, infinite_lambda=False) 
         for _ in range(FIT_ITERS): 
-            accs_3.append(experimental_model.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
+            accs_3.append(experimental_model_3.fit(train_data=mnist_train_small_subset, use_memory=lmbda, eval_dataset=mnist_test_9)) 
             pass 
         ## gather results 
         metric_0 = accs_0 
@@ -116,6 +117,17 @@ def map1(task_idx):
         sas_key = os.environ['STORAGE_KEY'] 
         output_container_name = TEMP_CONTAINER_NAME 
         upload_to_blob_store(pickle.dumps(out), filename, sas_key, output_container_name)  
+        ## write-out information diagonal 
+        filename = f'experiment-{EXPERIMENT_ID}-estimate-over-variance-{task_idx}.pkl'  
+        ## pull experimental model for validation 
+        info_vec = base_model.base_layer.info_vector().reshape([-1]).tolist()   
+        param_vec = base_model.base_layer.parameter_vector().reshape([-1]).tolist() 
+        estimate_over_variance_df_rows = [] 
+        for param_idx in range(len(param_vec)): 
+            estimate_over_variance = float(param_vec[param_idx]) * float(info_vec[param_idx]) ## info ~= 1/var 
+            estimate_over_variance_df_rows.append((param_idx, estimate_over_variance, task_idx)) 
+            pass 
+        upload_to_blob_store(pickle.dumps(estimate_over_variance_df_rows), filename, sas_key, output_container_name) 
     except Exception as e: 
         ## increase verbosity before failing 
         print(f'ERROR!\n{e}\n{traceback.format_exc()}')
@@ -181,6 +193,39 @@ def phase_2():
         pass 
     pass 
 
+def phase_3(): 
+    'aggregate info vecs into mean and std vecs' 
+    ## get data 
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    ## config 
+    sas_key = os.environ['STORAGE_KEY']
+    input_container_name = TEMP_CONTAINER_NAME
+    output_container_name = 'data'
+    ## get data 
+    filenames = ls_blob_store('', sas_key, input_container_name)
+    filenames = [f for f in filenames if f.startswith(f'experiment-{EXPERIMENT_ID}-estimate-over-variance-') and f.endswith('.pkl')] 
+    filenames = sc.parallelize(filenames, len(filenames))
+    y = filenames.flatMap(map2) 
+    schema = ['param_idx', 'estimate_over_variance', 'task_idx'] 
+    y = y.toDF(schema=schema) 
+    param_groups = y.groupBy('param_idx') 
+    aggs = param_groups.agg(mean('estimate_over_variance'), stddev('estimate_over_variance'))  
+    df = aggs.toPandas() 
+    means = df['avg(estimate_over_variance)'].tolist() 
+    stds = (df['stddev_samp(estimate_over_variance)'] + df['avg(estimate_over_variance)']).tolist() 
+    fig, fig_ax = plt.subplots() 
+    fig_ax.plot(stds, label='means + stds') 
+    fig_ax.plot(means, label='means') 
+    fig_ax.legend() 
+    FILENAME = f'df-estimates-over-variances-{EXPERIMENT_ID}' 
+    fig.savefig(FILENAME+'.png') 
+    with open(FILENAME+'.png', 'rb') as f:
+        upload_to_blob_store(f.read(), FILENAME+'.png', sas_key, output_container_name)
+        pass
+    pass 
+
 if __name__ == '__main__': 
     phase_1() 
     phase_2() 
+    phase_3() 

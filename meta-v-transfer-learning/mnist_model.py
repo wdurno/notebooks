@@ -105,6 +105,7 @@ class BaseLayer(nn.Module):
         ## memory 
         self.hessian_approximation = None 
         self.hessian_center = None 
+        self.total_observations = 0. 
         pass 
     def forward(self, 
             x): 
@@ -122,7 +123,12 @@ class BaseLayer(nn.Module):
             self.hessian_approximation += hessian_approx * size  
             pass 
         self.hessian_center = nn.utils.parameters_to_vector(self.parameters()).detach() 
+        self.total_observations += size 
         pass 
+    def parameter_vector(self): 
+        return nn.utils.parameters_to_vector(self.parameters()) 
+    def info_vector(self): 
+        return self.hessian_approximation / self.total_observations 
     pass 
 
 class Classifier(nn.Module): 
