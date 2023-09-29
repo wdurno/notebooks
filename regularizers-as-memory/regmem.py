@@ -45,6 +45,7 @@ class Model(nn.Module):
             hessian_center=None, 
             observations=None,
             total_iters=0,
+            info_prop_regularizer=None, 
             regularizing_lambda_function=None,
             eta_space=None): 
         super(Model, self).__init__() 
@@ -67,6 +68,7 @@ class Model(nn.Module):
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.hessian_rank = hessian_rank 
         self.total_iters = total_iters
+        self.info_prop_regularizer = info_prop_regularizer
         self.regularizing_lambda_function = regularizing_lambda_function 
         self.eta_space = eta_space 
         ## init feed forward net 
@@ -124,6 +126,7 @@ class Model(nn.Module):
                 hessian_center=self.hessian_center.detach().clone() if self.hessian_center is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
+                info_prop_regularizer=self.info_prop_regularizer, 
                 regularizing_lambda_function=self.regularizing_lambda_function, 
                 eta_space=self.eta_space.copy() if self.eta_space is not None else None)  
         out.load_state_dict(self.state_dict()) 
@@ -234,6 +237,28 @@ class Model(nn.Module):
             pass 
         pass 
 
+    def zero_grads_on_high_info_dims(self, proportion_zeroed): 
+        ## ONLY WORKS FOR FULL HESSIANS 
+        if self.hessian_sum is None: 
+            return None 
+        ## find info cut-off point 
+        info_vec = torch.diag(self.hessian_sum) 
+        info_vec_sorted = torch.sort(info_vec, descending=True) 
+        p = info_vec_sorted.shape[0] 
+        info_max = info_vec_sorted[int(p * proportion_zeroed)] ## zero grads when info above this value 
+        ## apply cut-off to grads 
+        ptr = 0 
+        for p in self.parameters(): 
+            ## zero when above cut-off 
+            grad_shape = p.grad.shape 
+            grad_total_dims = torch.prod(torch.tensor(grad_shape)) 
+            info_tensor = info_vec[ptr : ptr + grad_total_dims].reshape(grad_shape) 
+            p.grad[info_tensor > info_max] = 0. 
+            ## increment pointer 
+            ptr += grad_total_dims 
+            pass 
+        pass 
+
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None, optim_memorize=False): 
         ## random sample 
         obs = self.observations 
@@ -295,7 +320,7 @@ class Model(nn.Module):
     def get_parameter_vector(self): 
         return nn.utils.parameters_to_vector(self.parameters()) 
     
-    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None): 
+    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None, high_info_proportion=None): 
         if len(self.observations) < batch_size: 
             ## do not optimize without sufficient sample size 
             return None, None, None 
@@ -314,7 +339,7 @@ class Model(nn.Module):
             mean_reward = predicted.mean() 
             #loss = F.mse_loss(predicted, target) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
-            if regularizer is not None: # and self.eta_space is None: 
+            if regularizer is not None and high_info_proportion is None: # and self.eta_space is None: 
                 ## consider skipping if `eta_space is None`, because eta_space is orthogonal to memorized dimensions 
                 ## i'm keeping it here, because i sometimes use different regularizers 
                 if self.regularizing_lambda_function is not None:
@@ -339,10 +364,13 @@ class Model(nn.Module):
             ## lbfgs must re-evaluate target, hence lambda 
             if self.lbfgs: 
                 self.optimizer.step(lambda: float(F.smooth_l1_loss(predicted, target))) 
-            elif self.eta_space is None:
+            elif self.eta_space is not None:
+                self.eta_space.optim_step()  
+            elif high_info_proportion is not None: 
+                self.zero_grads_on_high_info_dims(high_info_proportion) 
                 self.optimizer.step() 
             else: 
-                self.eta_space.optim_step() 
+                self.optimizer.step() 
                 pass 
             updated_theta = self.get_parameter_vector() 
             ## decide to continue iterating or not 
@@ -367,7 +395,8 @@ class Model(nn.Module):
             pass 
         return loss_f, halt_method, mean_reward  
     
-    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=10, l2_regularizer=None, game_modifier=0): 
+    def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=10, l2_regularizer=None, \
+            game_modifier=0, silence_tqdm=True, high_info_proportion=None): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -382,7 +411,7 @@ class Model(nn.Module):
         self.total_rewards = [] 
         simulation_results = [] 
         ## run experiment 
-        iters = tqdm(range(total_iters), disable=False, mininterval=tqdm_seconds, maxinterval=tqdm_seconds) 
+        iters = tqdm(range(total_iters), disable=silence_tqdm, mininterval=tqdm_seconds, maxinterval=tqdm_seconds) 
         for iter_idx in iters: 
             prev_env_state = env_state 
             if self.explore_probability_func(iter_idx) > np.random.uniform(): ## TODO move to get_action 
@@ -419,7 +448,7 @@ class Model(nn.Module):
             simulation_results.append((reward, done, self.total_iters)) 
 
             if iter_idx > 30 and iter_idx % 1 == 0: 
-                _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer) 
+                _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer, high_info_proportion=high_info_proportion) 
                 pass 
                 #loss = float(loss) 
                 #mean_reward = float(mean_reward) 

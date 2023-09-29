@@ -1,5 +1,10 @@
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
+def create_container(connect_str, container_name):
+    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+    blob_service_client.create_container(name=container_name)
+    pass
+
 def upload_to_blob_store(data_as_bytes, remote_file_path, connect_str, container_name):
     '''
     data_as_bytes: upload these bytes as blob
