@@ -243,7 +243,7 @@ class Model(nn.Module):
             return None 
         ## find info cut-off point 
         info_vec = torch.diag(self.hessian_sum) 
-        info_vec_sorted = torch.sort(info_vec, descending=True) 
+        info_vec_sorted = torch.sort(info_vec, descending=True).values 
         p = info_vec_sorted.shape[0] 
         info_max = info_vec_sorted[int(p * proportion_zeroed)] ## zero grads when info above this value 
         ## apply cut-off to grads 
@@ -396,7 +396,7 @@ class Model(nn.Module):
         return loss_f, halt_method, mean_reward  
     
     def simulate(self, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, tqdm_seconds=10, l2_regularizer=None, \
-            game_modifier=0, silence_tqdm=True, high_info_proportion=None): 
+            game_modifier=0, silence_tqdm=True, high_info_proportion=None, memorization_frequency=None): 
         if plot_prob_func: 
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
@@ -447,16 +447,20 @@ class Model(nn.Module):
             self.total_iters += 1 
             simulation_results.append((reward, done, self.total_iters)) 
 
-            if iter_idx > 30 and iter_idx % 1 == 0: 
+            if len(self.observations) > self.batch_size and iter_idx % 1 == 0: ## online learning may not optimize as frequently!  
                 _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer, high_info_proportion=high_info_proportion) 
                 pass 
-                #loss = float(loss) 
-                #mean_reward = float(mean_reward) 
-                #param_nan = self.get_parameter_vector().isnan().sum() 
-                ## too many print statements 
-                #iters.set_description(f'n_restarts: {n_restarts}, last_total_reward: {last_total_reward}, '+\
-                #    f'loss: {round(loss,4)}, halt: {halt_method}, mean_reward: {round(mean_reward,2)}, action: {action}') 
-                #pass 
+
+            if memorization_frequency is not None: 
+                if memorization_frequency > self.batch_size:
+                    if memorization_frequency < len(self.observations): 
+                        self.convert_observations_to_memory() 
+                        pass 
+                    pass 
+                else: 
+                    raise Exception('memorization_frequency must be greater than batch_size!') 
+                    pass 
+                pass 
 
             if done: 
                 env_state, _ = env.reset() 
