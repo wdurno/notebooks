@@ -50,6 +50,8 @@ def map1(task_idx):
         condition_1_model = condition_0_model.copy()
         condition_2_model = condition_0_model.copy()
         condition_3_model = condition_0_model.copy() 
+        condition_4_model = condition_0_model.copy() 
+        condition_5_model = condition_0_model.copy() 
         ## continue condition 0 (control) Use memory, do discard data 
         condition_0_model.convert_observations_to_memory() 
         condition_0_result_tuples_after_1 = condition_0_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
@@ -79,7 +81,7 @@ def map1(task_idx):
         condition_2_model.regularizing_lambda_function = get_regularizing_lambda_function(condition_2_model, p, multiplier=0.1) 
         condition_2_model.convert_observations_to_memory()
         condition_2_result_tuples_after_3 = condition_2_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
-        ## condition 2 (experimental): Use memory, do discard data, perhaps optimal lambda * 10.0 
+        ## condition 3 (experimental): Use memory, do discard data, perhaps optimal lambda * 10.0 
         condition_3_model.convert_observations_to_memory()
         p = condition_3_model.get_parameter_vector().detach()
         condition_3_result_tuples_after_1 = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
@@ -89,7 +91,18 @@ def map1(task_idx):
         condition_3_result_tuples_after_2 = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
         condition_3_model.regularizing_lambda_function = get_regularizing_lambda_function(condition_3_model, p, multiplier=10.0) 
         condition_3_model.convert_observations_to_memory()
-        condition_3_result_tuples_after_3 = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
+        condition_3_result_tuples_after_3 = condition_3_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False) 
+        ## continue condition 4 (control) No memory, do not discard data
+        condition_4_result_tuples_after_1 = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
+        condition_4_result_tuples_after_2 = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
+        condition_4_result_tuples_after_3 = condition_4_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
+        ## continue condition 5 (control) Use memory, do discard data
+        condition_5_model.clear_observations()
+        condition_5_result_tuples_after_1 = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
+        condition_5_model.clear_observations()
+        condition_5_result_tuples_after_2 = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
+        condition_5_model.clear_observations()
+        condition_5_result_tuples_after_3 = condition_5_model.simulate(total_iters=ITERS, plot_prob_func=False, plot_rewards=False)
         ## merge before & after results 
         condition_0_result_tuples = condition_0_result_tuples_before + \
                 condition_0_result_tuples_after_1 + \
@@ -107,11 +120,21 @@ def map1(task_idx):
                 condition_3_result_tuples_after_1 + \
                 condition_3_result_tuples_after_2 + \
                 condition_3_result_tuples_after_3
+        condition_4_result_tuples = condition_0_result_tuples_before + \
+                condition_4_result_tuples_after_1 + \
+                condition_4_result_tuples_after_2 + \
+                condition_4_result_tuples_after_3
+        condition_5_result_tuples = condition_0_result_tuples_before + \
+                condition_5_result_tuples_after_1 + \
+                condition_5_result_tuples_after_2 + \
+                condition_5_result_tuples_after_3
         ## append condition codes
         condition_0_result_tuples = [(x[0], x[1], x[2], 0) for x in condition_0_result_tuples]
         condition_1_result_tuples = [(x[0], x[1], x[2], 1) for x in condition_1_result_tuples]
         condition_2_result_tuples = [(x[0], x[1], x[2], 2) for x in condition_2_result_tuples]
         condition_3_result_tuples = [(x[0], x[1], x[2], 3) for x in condition_3_result_tuples]
+        condition_4_result_tuples = [(x[0], x[1], x[2], 4) for x in condition_4_result_tuples]
+        condition_5_result_tuples = [(x[0], x[1], x[2], 5) for x in condition_5_result_tuples]
         ## format output
         out = []
         def append_results(result_tuples, out=out):
@@ -134,6 +157,8 @@ def map1(task_idx):
         append_results(condition_1_result_tuples)
         append_results(condition_2_result_tuples)
         append_results(condition_3_result_tuples)
+        append_results(condition_4_result_tuples)
+        append_results(condition_5_result_tuples)
         ## write out 
         filename = f'experiment-{EXPERIMENT_ID}-result-{task_idx}.pkl'
         sas_key = os.environ['STORAGE_KEY']
@@ -181,19 +206,25 @@ def phase_2():
     scores1 = df.loc[df['condition'] == 1].sort_values('iter')['avg(score)'].tolist() 
     scores2 = df.loc[df['condition'] == 2].sort_values('iter')['avg(score)'].tolist() 
     scores3 = df.loc[df['condition'] == 3].sort_values('iter')['avg(score)'].tolist() 
+    scores4 = df.loc[df['condition'] == 4].sort_values('iter')['avg(score)'].tolist()
+    scores5 = df.loc[df['condition'] == 5].sort_values('iter')['avg(score)'].tolist()
     ## save data 
     FILENAME = f'df-experiment-{EXPERIMENT_ID}'
     df_to_save = pd.DataFrame({'scores0': scores0, 
                                'scores1': scores1,
                                'scores2': scores2,
-                               'scores5': scores3}) 
+                               'scores3': scores3,
+                               'scores4': scores4,
+                               'scores5': scores5}) 
     df_data = df_to_save.to_csv().encode() 
     upload_to_blob_store(df_data, FILENAME+'.csv', sas_key, output_container_name) 
     ## save plot 
-    plt.plot(scores0, label='0') 
-    plt.plot(scores1, label='1') 
-    plt.plot(scores2, label='2') 
-    plt.plot(scores3, label='3') 
+    plt.plot(scores0, label='lambda = 1') 
+    plt.plot(scores1, label='lambda = optimal') 
+    plt.plot(scores2, label='lambda = optimal / 10') 
+    plt.plot(scores3, label='lambda = optimal * 10') 
+    plt.plot(scores4, label='No memory, discard data') 
+    plt.plot(scores5, label='No memory, keep data') 
     plt.legend() 
     plt.savefig(FILENAME+'.png') 
     with open(FILENAME+'.png', 'rb') as f: 
