@@ -46,7 +46,7 @@ class Model(nn.Module):
             observations=None,
             total_iters=0,
             info_prop_regularizer=None, 
-            regularizing_lambda_function=None,
+            regularizing_lambda_function=None, 
             eta_space=None): 
         super(Model, self).__init__() 
         ## store config 
@@ -447,7 +447,7 @@ class Model(nn.Module):
             self.total_iters += 1 
             simulation_results.append((reward, done, self.total_iters)) 
 
-            if len(self.observations) > self.batch_size and iter_idx % 1 == 0: ## online learning may not optimize as frequently!  
+            if len(self.observations) > self.batch_size and iter_idx % 1 == 0: ## online learning may not optimize as frequently! 
                 _ = self.optimize(max_iter=1, batch_size=self.batch_size, l2_regularizer=l2_regularizer, high_info_proportion=high_info_proportion) 
                 pass 
 
