@@ -6,7 +6,8 @@ from random import randrange, sample
 import gym 
 from tqdm import tqdm 
 import numpy as np 
-import matplotlib.pyplot as plt 
+from matplotlib import pyplot as plt
+from matplotlib.patches import Circle 
 import copy 
 import os 
 from PIL import Image 
@@ -110,7 +111,17 @@ class Model(nn.Module):
             ## LBFGS was giving nan parameters 
             self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate) 
             pass
+        ## ensure everything is on the same device 
         self.to(DEVICE) 
+        if self.hessian_sum is not None: 
+            self.hessian_sum = self.hessian_sum.to(DEVICE) 
+        if self.hessian_center is not None: 
+            self.hessian_center = self.hessian_center.to(DEVICE) 
+        if self.hessian_residual_variances is not None: 
+            self.hessian_residual_variances = self.hessian_residual_variances.to(DEVICE) 
+        if self.hessian_sum_low_rank_half is not None: 
+            self.hessian_sum_low_rank_half = self.hessian_sum_low_rank_half.to(DEVICE) 
+            pass 
         pass 
     
     def copy(self): 
@@ -277,7 +288,7 @@ class Model(nn.Module):
                 pass
             pass 
         ## center quadratic form on current estimate 
-        self.hessian_center = target_model.get_parameter_vector().detach() 
+        self.hessian_center = target_model.get_parameter_vector().detach().to(DEVICE) 
         ## wipe observations, and use memory going forward instead 
         self.clear_observations() 
         ## for simulation purposes only - no computational benefit is derived from using this feature 
@@ -550,7 +561,8 @@ class Model(nn.Module):
         return loss_f, halt_method, mean_reward  
     
     def simulate(self, host, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, \
-            tqdm_seconds=.1, l2_regularizer=None, fit_freq=10, manual_play=False, log1p_regularizer=False): 
+            tqdm_seconds=.1, l2_regularizer=None, fit_freq=10, manual_play=False, log1p_regularizer=False, \
+            memory_write_location='/tmp'): 
         if manual_play: 
             pygame.init() 
             pygame.display.set_mode((100,100)) 
@@ -558,13 +570,14 @@ class Model(nn.Module):
             plt.plot([self.explore_probability_func(idx) for idx in range(total_iters)]) 
             plt.show() 
             pass
-        env = PiCarEnv(host)  
+        env = PiCarEnv(host, memory_length=total_iters-1, memory_write_location=memory_write_location)
         pov, camera = env.reset() 
         env_state = self.__format_observation(pov, camera) 
         sequence = {'pov': [env_state['pov']]*self.short_term_memory_length, 'camera': env_state['camera']} 
         ## store initial observation 
         observation = 0, False, {}, env_state, 0  
         self.store_observation(observation) 
+        env.memorize() ## saves observations for writing to disk 
         last_start = 0 
         last_total_reward = 0 
         n_restarts = 0 
@@ -602,6 +615,7 @@ class Model(nn.Module):
             observation = reward, done, info, env_state, action  
             ## store for model fitting 
             self.store_observation(observation) 
+            env.memorize() ## saves observations for writing to disk 
             ## store for output 
             self.total_iters += 1 
             simulation_results.append((reward, done, self.total_iters)) 
