@@ -39,22 +39,25 @@ def map1(task_idx):
         import pickle
         import zipfile 
         import random 
+        from time import time 
         from tqdm import tqdm
         ## download data, unzip, write to disk  
         sas_key = os.environ['STORAGE_KEY']
-        container_name = TEMP_CONTAINER_NAME
-        car_data_zip_bytes = download_from_blob_store(CAR_DATA_ZIP, sas_key, container_name) 
+        car_data_zip_bytes = download_from_blob_store(CAR_DATA_ZIP, sas_key, 'data') 
         data_dir = f'/tmp/car{task_idx}' 
         zip_path = os.path.join(data_dir, 'car.zip') 
         unzip_path = os.path.join(data_dir, 'unzipped') 
         os.mkdir(data_dir) 
         with open(zip_path, 'wb') as f: 
             f.write(car_data_zip_bytes) 
-            pass  
+            pass 
+
         with zipfile.ZipFile(zip_path) as zip_ref: 
             zip_ref.extractall(unzip_path) 
             pass 
+
         ## randomly divide into test and train 
+        unzip_path = os.path.join(unzip_path, 'car') 
         data_files = os.listdir(unzip_path) 
         data_files = [os.path.join(unzip_path, f) for f in data_files] 
         random.shuffle(data_files) 
@@ -70,18 +73,22 @@ def map1(task_idx):
         ## or just have 1 big training dataset 
         data_files.sort() 
         ## run experiment 
-        for i in range(data_files): 
+        for i in range(len(data_files)): 
+            print(f'[{time()}] task {task_idx} fitting dataset {i} of {len(data_files)}...') 
             ## load data 
             condition_0_model.load_car_env_data(data_files[i]) 
             condition_1_model.load_car_env_data(data_files[i]) 
             ## fit 
             n = len(data_files[i][0]) ## TODO this is probably wrong 
-            for _ in range(n//MAX_ITERS+1): 
+            for j in range(n//MAX_ITERS+1): 
+                print(f'[{time()}] running optimization iteration {j} of {n//MAX_ITERS+1}...')
                 _ = condition_0_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE) ## consider using an eval dataset  
                 _ = condition_1_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE) 
                 pass 
             ## memorize 
-            condition_1_model.convert_observations_to_memory(krylov_rank=KRYLOV_RANK, disable_tqdm=True)
+            print(f'[{time()}] memorizing...') 
+            condition_1_model.convert_observations_to_memory(krylov_rank=KRYLOV_RANK, disable_tqdm=True) 
+            print(f'[{time()}] memorization complete!') 
             pass 
         ## append condition codes
         condition_0_result_tuples = [(r, False, i, 0) for i, r in enumerate(condition_0_model.mean_rewards)] 

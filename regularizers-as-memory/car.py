@@ -11,9 +11,50 @@ from matplotlib.patches import Circle
 import copy 
 import os 
 from PIL import Image 
-from lanczos import l_lanczos, combine_krylov_spaces  
-from car_env.car_client import PiCarEnv 
-from car_env.constants import N_ACTIONS, N_CAMERA_DIRECTIONS  
+from lanczos import l_lanczos, combine_krylov_spaces 
+try: 
+    from car_env.car_client import PiCarEnv 
+    from car_env.constants import N_ACTIONS, N_CAMERA_DIRECTIONS  
+except ImportError: 
+    ## used in spark-k8s scaling due to deep conflicts 
+    print('WARNING: could not load `car_env` - mitigating! Simulation will fail!') 
+    import pickle 
+    N_ACTIONS = 8
+    N_CAMERA_DIRECTIONS = 4 
+    SCREEN_HEIGHT = 2*60 
+    BALL_SIZE_MIN = SCREEN_HEIGHT/10 
+    BALL_SIZE_MAX = SCREEN_HEIGHT/3 
+    class PiCarEnv: 
+        @staticmethod 
+        def load_memory(filepath): 
+            with open(filepath, 'rb') as f: 
+                data = pickle.load(f) 
+                pass 
+            unstacked_arrays = PiCarEnv.__unstack(data[0]) 
+            unstacked_data = (
+                    unstacked_arrays, ## images 
+                    data[1], ## actions 
+                    data[2], ## ball x locations 
+                    data[3], ## ball radii 
+                    data[4]  ## camera positions 
+                    ) 
+            return unstacked_data 
+        @staticmethod 
+        def __unstack(a, axis = 0):
+            return [np.squeeze(e, axis) for e in np.split(a, a.shape[axis], axis = axis)] 
+        @staticmethod 
+        def get_reward(r): 
+            ball_radius = r 
+            ## reward being close to the ball 
+            if ball_radius >= BALL_SIZE_MIN and ball_radius <= BALL_SIZE_MAX: 
+                return(ball_radius - BALL_SIZE_MIN ) / (BALL_SIZE_MAX - BALL_SIZE_MIN) 
+            elif ball_radius > BALL_SIZE_MAX: 
+                ## slight punishment for being too close 
+                return min(1. + (BALL_SIZE_MAX - ball_radius)/20., -.1) 
+                pass 
+            return 0.
+        pass 
+    pass 
 
 MAX_SAMPLE = 100000
 DISCOUNT = .5 # .5 # .95 
@@ -104,10 +145,10 @@ class Model(nn.Module):
         else: 
             self.observations = observations 
             pass 
-        if mean_reward is None: 
-            self.mean_reward = [] 
+        if mean_rewards is None: 
+            self.mean_rewards = [] 
         else: 
-            self.mean_reward = mean_reward.copy() 
+            self.mean_rewards = mean_rewards.copy() 
             pass 
         self.env = None 
         if self.lbfgs: 
@@ -207,9 +248,18 @@ class Model(nn.Module):
         - this agent's memory buffer is populated 
         '''
         ## scan the directory for .pkl files to load 
-        candidate_files = os.listdir(dir_path) 
-        files_to_load = [f for f in candidate_files if f.endswith('.pkl')] 
-        paths = [os.path.join(dir_path, f) for f in files_to_load] 
+        try: 
+            candidate_files = os.listdir(dir_path) 
+            files_to_load = [f for f in candidate_files if f.endswith('.pkl')] 
+            paths = [os.path.join(dir_path, f) for f in files_to_load] 
+        except NotADirectoryError: 
+            if dir_path.endswith('.pkl'): 
+                ## its just one pickle file 
+                paths = [dir_path] 
+            else: 
+                raise Exception('ERROR: `dir_path` must be a directory or a .pkl file!') 
+                pass 
+            pass 
         for path in paths: 
             ## load and upack data  
             data = PiCarEnv.load_memory(path) 
