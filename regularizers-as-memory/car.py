@@ -54,6 +54,7 @@ class Model(nn.Module):
             hessian_residual_variances=None, 
             observations=None,
             total_iters=0,
+            mean_rewards=None, 
             regularizing_lambda_function=None): 
         super(Model, self).__init__() 
         ## store config 
@@ -75,6 +76,7 @@ class Model(nn.Module):
         self.hessian_residual_variances = hessian_residual_variances 
         self.hessian_sum_low_rank_half = hessian_sum_low_rank_half
         self.total_iters = total_iters
+        self.mean_rewards = mean_rewards 
         self.regularizing_lambda_function = regularizing_lambda_function 
         ## init CNNs 
         ## 2D CCNs 
@@ -101,6 +103,11 @@ class Model(nn.Module):
             self.observations = [] 
         else: 
             self.observations = observations 
+            pass 
+        if mean_reward is None: 
+            self.mean_reward = [] 
+        else: 
+            self.mean_reward = mean_reward.copy() 
             pass 
         self.env = None 
         if self.lbfgs: 
@@ -144,6 +151,7 @@ class Model(nn.Module):
                 hessian_residual_variances=self.hessian_residual_variances.detach().clone() if self.hessian_residual_variances is not None else None, 
                 observations=self.observations.copy(), 
                 total_iters=self.total_iters, 
+                mean_rewards=self.mean_rewards.copy(), 
                 regularizing_lambda_function=self.regularizing_lambda_function)
         out.load_state_dict(self.state_dict()) 
         return out 
@@ -511,6 +519,7 @@ class Model(nn.Module):
             prev_theta = self.get_parameter_vector() 
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=batch_size) 
             mean_reward = predicted.mean() 
+            self.mean_rewards.append(mean_reward) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
             if regularizer is not None: 
                 if self.regularizing_lambda_function is not None:
@@ -562,7 +571,7 @@ class Model(nn.Module):
     
     def simulate(self, host, fit=True, total_iters=10000, plot_rewards=False, plot_prob_func=False, \
             tqdm_seconds=.1, l2_regularizer=None, fit_freq=10, manual_play=False, log1p_regularizer=False, \
-            memory_write_location='/tmp'): 
+            memory_write_location='/tmp', eval_pkl_path=None): 
         if manual_play: 
             pygame.init() 
             pygame.display.set_mode((100,100)) 
