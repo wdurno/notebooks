@@ -14,7 +14,7 @@ spark = SparkSession(sc)
 
 EXPERIMENT_ID = 23  
 CAR_DATA_ZIP = 'car.zip' 
-N_EXPERIMENTAL_ITERATIONS = 1000  
+N_EXPERIMENTAL_ITERATIONS = 100 # 1000 ## TODO DEBUGGING VALUE  
 LAMBDA = 1.   
 MAX_ITERS = 10 
 BATCH_SIZE = 25 
@@ -79,8 +79,8 @@ def map1(task_idx):
             condition_0_model.load_car_env_data(data_files[i]) 
             condition_1_model.load_car_env_data(data_files[i]) 
             ## fit 
-            n = len(data_files[i][0]) ## TODO this is probably wrong 
-            for j in range(n//MAX_ITERS+1): 
+            n = 200  
+            for j in range(5): # range(n//MAX_ITERS+1): ## TODO DEBUGGING VALUE 
                 print(f'[{time()}] running optimization iteration {j} of {n//MAX_ITERS+1}...')
                 _ = condition_0_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE) ## consider using an eval dataset  
                 _ = condition_1_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE) 

@@ -569,7 +569,7 @@ class Model(nn.Module):
             prev_theta = self.get_parameter_vector() 
             predicted, target, regularizer = self.__memory_replay(target_model=target_model, batch_size=batch_size) 
             mean_reward = predicted.mean() 
-            self.mean_rewards.append(mean_reward) 
+            self.mean_rewards.append(float(mean_reward)) 
             loss = F.smooth_l1_loss(predicted, target) ## avg loss  
             if regularizer is not None: 
                 if self.regularizing_lambda_function is not None:
