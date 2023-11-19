@@ -550,7 +550,7 @@ class Model(nn.Module):
         out['camera'] = camera.int().reshape([1, 1]).to(DEVICE) ## make observations stackable 
         return out 
 
-    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None, log1p_regularizer=False): 
+    def optimize(self, max_iter=None, batch_size=None, l2_regularizer=None, log1p_regularizer=False, lmbda=None): 
         if len(self.observations) < batch_size: 
             ## do not optimize without sufficient sample size 
             return None, None, None 
@@ -577,6 +577,9 @@ class Model(nn.Module):
                     pass 
                 if log1p_regularizer: 
                     regularizer = torch.log1p(regularizer) 
+                    pass 
+                if lmbda is not None: 
+                    regularizer = lmbda * regularizer 
                     pass 
                 loss += regularizer  
             if l2_regularizer is not None: 

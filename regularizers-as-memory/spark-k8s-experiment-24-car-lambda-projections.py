@@ -1,4 +1,4 @@
-## Experiment 23: Offline RL with PiCar data 
+## Experiment 23: Offline RL with PiCar data, but with optimal lambda projections 
 ## 
 ## Hypothesis: Optimal learning effects are observable in offline learning in a new game. 
 
@@ -12,10 +12,9 @@ from pyspark.sql import SparkSession
 sc = SparkContext() 
 spark = SparkSession(sc) 
 
-EXPERIMENT_ID = 23  
+EXPERIMENT_ID = 24  
 CAR_DATA_ZIP = 'car.zip' 
-N_EXPERIMENTAL_ITERATIONS = 10 # 1000 ## TODO DEBUGGING VALUE  
-LAMBDA = 1.   
+N_EXPERIMENTAL_ITERATIONS = 5 
 MAX_ITERS = 10 
 BATCH_SIZE = 25 
 KRYLOV_RANK = 10
@@ -27,6 +26,19 @@ print(f'Working from container: {TEMP_CONTAINER_NAME}')
 ## download mnist once, then distribute via blob storage 
 ## this isn't just a courtesy, because the download is rate-limited 
 download_mnist_to_blob_storage() 
+
+def project_lambda(model, prior_parameter_vector, multiplier=1.0):
+    if prior_parameter_vector is None: 
+        return None 
+    nB = 1.
+    current_parameter_vector = model.get_parameter_vector()
+    param_delta = (current_parameter_vector - prior_parameter_vector).reshape([-1, 1])
+    low_rank_part = param_delta.transpose(0,1).matmul(model.hessian_sum_low_rank_half) 
+    error_part = param_delta.transpose(0,1) * model.hessian_residual_variances.sqrt() 
+    lambda_estimate = low_rank_part.matmul(low_rank_part.transpose(0,1)) + error_part.matmul(error_part.transpose(0,1)) 
+    lambda_estimate = lambda_estimate.reshape([]).abs().detach() 
+    lambda_estimate *= nB * multiplier 
+    return lambda_estimate
 
 def map1(task_idx):
     import traceback 
@@ -72,6 +84,8 @@ def map1(task_idx):
         condition_1_model = condition_0_model.copy() 
         ## or just have 1 big training dataset 
         data_files.sort() 
+        ## store prior parameters 
+        condition_1_model_prior_parameter = None 
         ## run experiment 
         for i in range(len(data_files)): 
             print(f'[{time()}] task {task_idx} fitting dataset {i} of {len(data_files)}...') 
@@ -80,11 +94,13 @@ def map1(task_idx):
             condition_1_model.load_car_env_data(data_files[i]) 
             ## fit 
             n = 200  
-            for j in range(n//MAX_ITERS+1): 
+            for j in range(n//MAX_ITERS+1):  
                 print(f'[{time()}] running optimization iteration {j} of {n//MAX_ITERS+1}...')
                 _ = condition_0_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE) ## consider using an eval dataset  
-                _ = condition_1_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE) 
+                _ = condition_1_model.optimize(max_iter=MAX_ITERS, batch_size=BATCH_SIZE, lmbda=project_lambda(condition_1_model, condition_1_model_prior_parameter)) 
                 pass 
+            ## store prior parameters 
+            condition_1_model_prior_parameter = condition_1_model.get_parameter_vector().detach() 
             ## memorize 
             print(f'[{time()}] memorizing...') 
             condition_1_model.convert_observations_to_memory(krylov_rank=KRYLOV_RANK, disable_tqdm=True) 
