@@ -7,7 +7,6 @@ MAX_LENGTH=1024
 MAX_RESPONSE=100 
 AVG_TOKENS_PER_WORD=3  
 MODEL='gpt2'
-#MODEL='gpt2-xl' ## too slow for local testing 
 
 tokenizer = GPT2Tokenizer.from_pretrained(MODEL)
 model = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=tokenizer.eos_token_id)

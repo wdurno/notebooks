@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.distributions import Categorical 
 import random 
 import gym 
 from tqdm import tqdm 
@@ -47,6 +48,7 @@ class Model(nn.Module):
             total_iters=0,
             info_prop_regularizer=None, 
             regularizing_lambda_function=None, 
+            actor_critic=False, 
             eta_space=None): 
         super(Model, self).__init__() 
         ## store config 
@@ -70,6 +72,7 @@ class Model(nn.Module):
         self.total_iters = total_iters
         self.info_prop_regularizer = info_prop_regularizer
         self.regularizing_lambda_function = regularizing_lambda_function 
+        self.actor_critic = actor_critic 
         self.eta_space = eta_space 
         ## init feed forward net 
         self.fc1 = nn.Linear(input_dim * short_term_memory_length, 32) 
@@ -82,6 +85,10 @@ class Model(nn.Module):
         self.pfc2_bn = PluggableBatchNorm1d(self.fc2_bn) 
         self.fc3 = nn.Linear(32, n_actions) 
         self.pfc3 = PluggableLinear(self.fc3) 
+        if self.actor_critic: 
+            self.fc3_ac = nn.Linear(32, 1) 
+            self.pfc3_ac = PluggableLinear(self.fc3_ac) 
+            pass 
         ## init data structures 
         if observations is None: 
             self.observations = [] 
@@ -128,6 +135,7 @@ class Model(nn.Module):
                 total_iters=self.total_iters, 
                 info_prop_regularizer=self.info_prop_regularizer, 
                 regularizing_lambda_function=self.regularizing_lambda_function, 
+                actor_critic=self.actor_critic, 
                 eta_space=self.eta_space.copy() if self.eta_space is not None else None)  
         out.load_state_dict(self.state_dict()) 
         return out 
@@ -145,11 +153,20 @@ class Model(nn.Module):
         x = self.pfc2(x) 
         x = self.fc2_bn(x)  
         x = torch.relu(x) 
+        if self.actor_critic: 
+            probability_logits = self.pfc3(x) # prior to softmax 
+            predicted_state_value = self.pfc3_ac(x)**2   
+            return probability_logits, predicted_state_value  
         x = self.pfc3(x) 
         x = x*x 
         return x 
     
     def get_action(self, env_state): 
+        if self.actor_critic: 
+            probability_logits, _ = self.forward(env_state) 
+            p = torch.softmax(probability_logits) 
+            action_idx = Categorical(p).sample()  
+            return int(action_id) 
         env_state = torch.tensor(env_state).float() 
         env_state = env_state.reshape([1, -1]) 
         predicted_reward_per_action_idx = self.forward(env_state) 
@@ -259,6 +276,13 @@ class Model(nn.Module):
             pass 
         pass 
 
+    ## TODO memory replay cannot be applied to actor-critic 
+    ## because V(s_t) is the estimated value of the highest-value 
+    ## action. The highest-value action will change as model 
+    ## fitting progresses. So, observations need to be integrated 
+    ## near-immediately. I have need to solve small batch 
+    ## size integration first, before I can conquor actor-critic 
+    ## models. 
     def __memory_replay(self, target_model, batch_size=None, fit=True, batch=None, optim_memorize=False): 
         ## random sample 
         obs = self.observations 
