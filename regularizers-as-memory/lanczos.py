@@ -112,7 +112,17 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     positive_eigenvalues = torch.relu(eigs.eigenvalues) ## for sqrt 
     sqrt_T = eigs.eigenvectors.matmul(torch.diag(torch.sqrt(positive_eigenvalues))).matmul(eigs.eigenvectors.transpose(0,1)) 
     A = V.matmul(sqrt_T) 
-    return A 
+    if not calc_diag: 
+        return A 
+    ## calc diagonal_residual = diag(Fisher Information - AA^T) 
+    grad_generator = get_grad_generator() 
+    diagonal_residual = 0. 
+    for g in grad_generator(): 
+        diagonal_residual += g*g ## sums to N*diag(Fisher Information) 
+        pass 
+    diagonal_residual -= (A*A).sum(dim=1) 
+    diagonal_residual[diagonal_residual < 0.] = 0. ## handle tiny numerical errors 
+    return A, diagonal_residual 
 
 def combine_krylov_spaces(A, B, device=None, krylov_eps=0.): 
     '''
@@ -132,5 +142,5 @@ def combine_krylov_spaces(A, B, device=None, krylov_eps=0.):
         return x1 + x2 
     p, r = tuple(A.shape) 
     C = l_lanczos(get_grad_generator=None, r=r, p=p, eps=krylov_eps, device=device, mfi_alternate=mfi_alternate)  
-    return C * .5  
+    return C   
 
