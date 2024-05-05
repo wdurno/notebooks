@@ -102,6 +102,7 @@ class SSRAgent(nn.Module):
         ## N * Fisher Information \approx AA^T + resid 
         self.ssr_model_dimension = None 
         self.replay_buffer = replay_buffer 
+        self.ssr_param_iterable = None ## must be set by concretizing class  
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
@@ -161,7 +162,8 @@ class SSRAgent(nn.Module):
         ## also, `ssr_n` becomes vague as we iteratively apply optimal lambda 
         return lmbda * .5 * ssr_sum / self.ssr_n  
     def __get_param(self): 
-        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0) 
+        'only for SSR calculations'
+        return torch.cat([p.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0) 
     def __get_get_grad_generator(self, n=None): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
@@ -180,7 +182,7 @@ class SSRAgent(nn.Module):
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
                     loss.backward() 
-                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0) 
+                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0) 
                     yield grad_vec 
                     pass
                 pass 
