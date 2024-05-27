@@ -96,13 +96,15 @@ class SSRAgent(nn.Module):
         self.ssr_rank = ssr_rank 
         self.ssr_low_rank_matrix = None ## =: A 
         self.ssr_residual_diagonal = None ## =: resid 
+        ## N * Fisher Information \approx AA^T + resid 
         self.ssr_center = None 
         self.ssr_prev_center = None 
         self.ssr_n = None 
-        ## N * Fisher Information \approx AA^T + resid 
+        self.ssr_cov_trace = None 
+        self.ssr_cov_n = None 
         self.ssr_model_dimension = None 
         self.replay_buffer = replay_buffer 
-        self.ssr_param_iterable = None ## must be set by concretizing class  
+        self.ssr_param_iterable = None ## must be set by concretizing class 
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
@@ -112,7 +114,7 @@ class SSRAgent(nn.Module):
             n = len(self.replay_buffer) 
             pass 
         self.ssr_prev_center = self.ssr_center 
-        self.ssr_center = self.__get_param() ## elliptical centroid 
+        self.ssr_center = self.__get_param().clone().detach() ## elliptical centroid 
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
             pass 
@@ -128,15 +130,22 @@ class SSRAgent(nn.Module):
             self.ssr_residual_diagonal += ssr_residual_diagonal 
             self.ssr_n += n 
             pass 
+        if self.ssr_prev_center is not None:
+            dt = self.ssr_center - self.ssr_prev_center 
+            if self.ssr_cov_trace is None:
+                self.ssr_cov_trace = (dt * dt).sum()
+                self.ssr_cov_n = 1
+            else:
+                self.ssr_cov_trace += (dt * dt).sum()
+                self.ssr_cov_n += 1
+                pass
+            pass 
         pass 
     def ssr(self, lmbda=None): 
         '''Get the ssr regularizer. If `lmbda is None`, `lmbda` will be set to 1 when `self.ssr_prev_center is None`, 
         otherwise `lmbda` will be the approximately optimal `n_A` value.'''
         if self.ssr_low_rank_matrix is None: 
             return 0. 
-        if lmbda is None: 
-            lmbda = 1. 
-            pass 
         p = self.__get_param() 
         p0 = self.ssr_center 
         d = p - p0 
@@ -146,24 +155,31 @@ class SSRAgent(nn.Module):
         ATd = dTA.transpose(0,1) 
         dTresd = (d * res).transpose(0,1).matmul(d) 
         ssr_sum = dTA.matmul(ATd) + dTresd 
+        ssr_mean = ssr_sum / self.ssr_n 
         if lmbda is None: 
-            if self.ssr_prev_center is None: 
-                lmbda = 1. 
-            else: 
-                ## approximately optimal lambda 
-                dt = p0 - self.ssr_prev_center 
-                dtTA = dt.transpose(0,1).matmul(A) 
-                ATdt = dtTA.transpose(0,1) 
-                dtTresdt = (dt * res).transpose(0,1).matmul(dt) 
-                lmbda = dtTA.matmul(ATdt) + dtTresdt 
-                pass 
+            lmbda = self.optimal_lambda() 
+        return lmbda * .5 * ssr_mean ## TODO numerically stabilize with exp(log(...))  
+        pass 
+    def optimal_lambda(self, pi_min=0., pi_max=1.): 
+        "a rough approximation of lambda's optimal value" 
+        if self.ssr_cov_trace is None: 
+            return 0. 
+        p0 = self.ssr_center 
+        dt = p0 - self.ssr_prev_center 
+        dt2_sum = (dt * dt).sum() 
+        fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
+        pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
+        if pi < pi_min: 
+            pi = pi_min 
+        if pi > pi_max: 
+            pi = pi_max 
             pass 
-        ## no average, because we're using the log lik  
-        ## also, `ssr_n` becomes vague as we iteratively apply optimal lambda 
-        return lmbda * .5 * ssr_sum / self.ssr_n  
-    def __get_param(self): 
+        ## lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
+        lmbda = 1. - pi ## use average log likelihood 
+        return lmbda  
+    def __get_param(self):
         'only for SSR calculations'
-        return torch.cat([p.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0) 
+        return torch.cat([p.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0)
     def __get_get_grad_generator(self, n=None): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
@@ -182,7 +198,7 @@ class SSRAgent(nn.Module):
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
                     loss.backward() 
-                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0) 
+                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0).clone().detach()  
                     yield grad_vec 
                     pass
                 pass 

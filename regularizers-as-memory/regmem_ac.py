@@ -18,11 +18,11 @@ class Actor(SSRAgent):
         self.fc3 = nn.Linear(128, action_dim) 
         self.buffer = Object() 
         self.buffer.target_critic = target_critic ## buffer stops param sharing (ie. in `state_dict`) 
+        ssr_param_iterable = [p for p in self.parameters()]
         if target_critic is not None: 
-            ssr_param_iterable = [p for p in self.parameters()] 
             ssr_param_iterable.extend([p for p in self.buffer.target_critic.parameters()]) 
-            self.ssr_param_iterable = ssr_param_iterable 
             pass 
+        self.ssr_param_iterable = ssr_param_iterable 
         pass 
     def forward(self, state): 
         x = torch.relu(self.fc1(state)) 
@@ -124,7 +124,8 @@ def simulate(iters=5000, mem_iters=None, buffer_min=1000):
                 transitions = replay_buffer.sample(batch_size=256) 
     
                 # Calculate the critic loss 
-                critic_loss = critic.loss(transitions) + critic.ssr() 
+                pi_B = 1. - critic.optimal_lambda() 
+                critic_loss = pi_B * critic.loss(transitions)/256 + critic.ssr() 
     
                 # Update the critic network 
                 critic_optimizer.zero_grad() 
@@ -132,8 +133,8 @@ def simulate(iters=5000, mem_iters=None, buffer_min=1000):
                 critic_optimizer.step() 
                 
                 # Calculate the actor loss 
-                ## TODO cannot simply de-activate this SSR, o.w. data is lost. MUST repair it. 
-                actor_loss = actor.loss(transitions) + actor.ssr()  
+                pi_B = 1. - actor.optimal_lambda() 
+                actor_loss = pi_B * actor.loss(transitions)/256 + actor.ssr()  
     
                 # Update the actor network 
                 actor_optimizer.zero_grad() 
