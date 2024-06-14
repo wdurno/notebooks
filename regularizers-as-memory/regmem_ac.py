@@ -104,6 +104,11 @@ def simulate(iters=5000, mem_iters=None, buffer_min=1000):
         
         cumulative_reward = 0 
         while True: 
+            actor.eval() 
+            critic.eval() 
+            target_actor.eval() 
+            target_critic.eval() 
+
             action = actor(torch.tensor(state)) 
             if np.random.binomial(1, max(0,50-episode_idx)/50) > 0: 
                 ## random action 
@@ -124,6 +129,7 @@ def simulate(iters=5000, mem_iters=None, buffer_min=1000):
                 transitions = replay_buffer.sample(batch_size=256) 
     
                 # Calculate the critic loss 
+                critic.train() 
                 pi_B = 1. - critic.optimal_lambda() 
                 critic_loss = pi_B * critic.loss(transitions)/256 + critic.ssr() 
     
@@ -133,8 +139,10 @@ def simulate(iters=5000, mem_iters=None, buffer_min=1000):
                 critic_optimizer.step() 
                 
                 # Calculate the actor loss 
+                critic.eval() 
+                actor.train() 
                 pi_B = 1. - actor.optimal_lambda() 
-                actor_loss = pi_B * actor.loss(transitions)/256 + actor.ssr()  
+                actor_loss = pi_B * actor.loss(transitions)/256 #+ actor.ssr() ## TODO can I use this? 
     
                 # Update the actor network 
                 actor_optimizer.zero_grad() 

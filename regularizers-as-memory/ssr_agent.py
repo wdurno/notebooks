@@ -175,7 +175,7 @@ class SSRAgent(nn.Module):
             pi = pi_max 
             pass 
         ## lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
-        lmbda = 1. - pi ## use average log likelihood 
+        lmbda = 1. - pi ## dropping ssr_n as constant under optimization  
         return lmbda  
     def __get_param(self):
         'only for SSR calculations'
@@ -195,6 +195,7 @@ class SSRAgent(nn.Module):
             def grad_generator(): 
                 self.eval() 
                 for idx in range(n): 
+                    self.zero_grad() 
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
                     loss.backward() 
