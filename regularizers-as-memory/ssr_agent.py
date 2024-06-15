@@ -158,7 +158,7 @@ class SSRAgent(nn.Module):
         ssr_mean = ssr_sum / self.ssr_n 
         if lmbda is None: 
             lmbda = self.optimal_lambda() 
-        return lmbda * .5 * ssr_mean ## TODO numerically stabilize with exp(log(...))  
+        return lmbda * .5 * ssr_mean ## TODO move lmbda out  
         pass 
     def optimal_lambda(self, pi_min=0., pi_max=1.): 
         "a rough approximation of lambda's optimal value" 
@@ -166,7 +166,7 @@ class SSRAgent(nn.Module):
             return 0. 
         p0 = self.ssr_center 
         dt = p0 - self.ssr_prev_center 
-        dt2_sum = (dt * dt).sum() 
+        dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
         fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
         pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
         if pi < pi_min: 
