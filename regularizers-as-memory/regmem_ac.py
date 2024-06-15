@@ -19,9 +19,9 @@ class Actor(SSRAgent):
         self.buffer = Object() 
         self.buffer.target_critic = target_critic ## buffer stops param sharing (ie. in `state_dict`) 
         ssr_param_iterable = [p for p in self.parameters()]
-        if target_critic is not None: 
-            ssr_param_iterable.extend([p for p in self.buffer.target_critic.parameters()]) 
-            pass 
+        #if target_critic is not None: ## TODO remove this properly 
+        #    ssr_param_iterable.extend([p for p in self.buffer.target_critic.parameters()]) 
+        #    pass 
         self.ssr_param_iterable = ssr_param_iterable 
         pass 
     def forward(self, state): 
@@ -142,7 +142,7 @@ def simulate(iters=5000, mem_iters=None, buffer_min=1000):
                 critic.eval() 
                 actor.train() 
                 pi_B = 1. - actor.optimal_lambda() 
-                actor_loss = pi_B * actor.loss(transitions)/256 #+ actor.ssr() ## TODO can I use this? 
+                actor_loss = pi_B * actor.loss(transitions)/256 + actor.ssr()  
     
                 # Update the actor network 
                 actor_optimizer.zero_grad() 
