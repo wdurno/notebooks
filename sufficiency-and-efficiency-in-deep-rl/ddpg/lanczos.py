@@ -120,9 +120,9 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     for g in grad_generator(): 
         diagonal_residual += g*g ## sums to N*diag(Fisher Information) 
         pass 
-    diagonal_residual -= (A*A).sum(dim=1) 
+    diagonal_residual -= (A*A).sum(dim=1).reshape([-1,1]) 
     diagonal_residual[diagonal_residual < 0.] = 0. ## handle tiny numerical errors 
-    return A, diagonal_residual 
+    return A, diagonal_residual.reshape([-1,1]) 
 
 def combine_krylov_spaces(A, B, device=None, krylov_eps=0.): 
     '''
