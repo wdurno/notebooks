@@ -85,7 +85,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     next_v = multiply_fisher_information(v) 
     diag = next_v.transpose(0,1).matmul(v) 
     next_v = next_v - diag * v 
-    vecs.append(v) 
+    vecs.append(v) ## wiki says to add this vector, even before FI multiplication  
     diags.append(diag) 
     pbar = tqdm(range(r-1), disable=disable_tqdm) 
     for _ in pbar: 
@@ -118,11 +118,12 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     grad_generator = get_grad_generator() 
     diagonal_residual = 0. 
     for g in grad_generator(): 
+        g = g.reshape([-1,1]) 
         diagonal_residual += g*g ## sums to N*diag(Fisher Information) 
         pass 
-    diagonal_residual -= (A*A).sum(dim=1) 
+    diagonal_residual -= (A*A).sum(dim=1).reshape([-1,1]) 
     diagonal_residual[diagonal_residual < 0.] = 0. ## handle tiny numerical errors 
-    return A, diagonal_residual 
+    return A, diagonal_residual.reshape([-1,1])  
 
 def combine_krylov_spaces(A, B, device=None, krylov_eps=0.): 
     '''
@@ -143,5 +144,4 @@ def combine_krylov_spaces(A, B, device=None, krylov_eps=0.):
     p, r = tuple(A.shape) 
     C = l_lanczos(get_grad_generator=None, r=r, p=p, eps=krylov_eps, device=device, mfi_alternate=mfi_alternate)  
     return C   
-
 
