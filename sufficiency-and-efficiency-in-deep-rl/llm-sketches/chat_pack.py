@@ -6,7 +6,7 @@ from regmem_ac import Actor, Object
 
 MAX_LENGTH=1024  
 MAX_RESPONSE=100 
-AVG_TOKENS_PER_WORD=3  
+BATCH_SIZE=10 
 MODEL='gpt2'
 PROMPT = '''INSTRUCTIONS:
 You are an AI Assistant, meaning you are an artificial intelligence. 
@@ -74,6 +74,7 @@ def truncate_after(full_str, truncator):
 def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT): 
     '''Send `query` to the LLM. 
     If you have an existing transcript, plug it into `transcript`.'''
+    actor.eval() 
     model = actor.llm 
     ## score 
     score = 0. 
@@ -113,11 +114,12 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
         reward_list.append(reward) ## final zero needs to be updated with score from next query 
         pass 
     transitions = Object() 
-    transitions.state = torch.stack(state_list) 
-    print(f'DEBUG 1: {transitions.state.shape}') 
+    transitions.state = torch.stack(state_list)
     transitions.next_state = torch.stack(next_state_list) 
     transitions.reward = torch.cat(reward_list) 
-    transitions.action = actor(transitions.state) ## prob logits ## TODO OOMs consider model.eval or batching  
+    with torch.no_grad(): ## stops memory explosions 
+        transitions.action = torch.cat([actor(x) for x in transitions.state.split(BATCH_SIZE)]) 
+        pass 
     out = {
             'output_text': output_text, 
             'updated_transcript': transcript + output_text, 
@@ -125,18 +127,6 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
             'transitions': transitions 
             } 
     return out 
-    new_text = output_text[len(transcript):] 
-    ## curate
-    new_text = truncate_after(new_text, 'AI Assistant:') 
-    new_text = truncate_after(new_text, 'User:') 
-    if file_pointer is not None: 
-        ## save data 
-        user_data = json.dumps({'User': query, 'score': score}) 
-        ai_data = json.dumps({'AI Assistant': new_text}) 
-        file_pointer.write(user_data + '\n' + ai_data + '\n') 
-        file_pointer.flush() 
-        pass 
-    return new_text, transcript + new_text 
 
 def chat_loop(model, file_pointer=None): 
     transcript = None 
