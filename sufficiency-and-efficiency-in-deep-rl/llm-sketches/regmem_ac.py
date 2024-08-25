@@ -24,8 +24,7 @@ ACTION_DIM = 50257 # == token dimension
 TOKENIZER_EOS_TOKEN_ID = ACTION_DIM - 1 
 
 class Actor(SSRAgent):
-    def __init__(self, state_dim, action_dim=ACTION_DIM, target_critic=None, replay_buffer=None, ssr_rank=2): 
-        ## TODO state and action dim not used here, consider removing  
+    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=2): 
         super(Actor, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## prob logits are action space 
         self.buffer = Object() 
