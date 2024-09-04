@@ -2,6 +2,7 @@ import torch
 from transformers import GPT2LMHeadModel, GPT2Tokenizer, pipeline  
 from time import time 
 import json 
+from replay_buffer import ReplayBuffer 
 from regmem_ac import Actor, Object 
 
 MAX_LENGTH=1024  
@@ -119,12 +120,15 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
         reward_list.append(reward) ## final zero needs to be updated with score from next query 
         pass 
     transitions = Object() 
-    transitions.state = torch.stack(state_list)
-    transitions.next_state = torch.stack(next_state_list) 
-    transitions.reward = torch.cat(reward_list) 
+    transitions.state = torch.stack(state_list) ## .to(cpu) ## keep on GPU for fast action calculation 
+    transitions.next_state = torch.stack(next_state_list).to(cpu) 
+    transitions.reward = torch.cat(reward_list).to(cpu) 
+    transitions.done = torch.cat(done_list).to(cpu) 
     with torch.no_grad(): ## stops memory explosions 
         transitions.action = torch.cat([actor(x).to(cpu) for x in transitions.state.split(BATCH_SIZE)]) ## to cpu   
         pass 
+    transitions.state = transitions.state.to(cpu) ## finally get it on the cpu  
+    ## package outputs 
     out = {
             'output_text': output_text, 
             'updated_transcript': transcript + output_text, 
@@ -132,19 +136,6 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
             'transitions': transitions 
             } 
     return out 
-
-def chat_loop(model, file_pointer=None): 
-    transcript = None 
-    print('Please say something to your AI Assistant') 
-    while True: 
-        print('User:') 
-        query = input() 
-        x = chat(model, query, transcript) 
-        output, transcript = x['output_text'], x['updated_transcript'] 
-        print('AI Assistant:') 
-        print(output) 
-        pass 
-    pass 
 
 if __name__ == '__main__': 
     ## init 
@@ -161,13 +152,16 @@ if __name__ == '__main__':
             query = input() 
             ## process 
             out  = chat(actor, query, transcript) 
-            out_text, transcript, tr = out['output_text'], out['updated_transcript'], out['transitions'] 
+            out_text, transcript, tr, score = out['output_text'], out['updated_transcript'], out['transitions'], out['score'] 
+            if replay_buffer.n > 0: 
+                replay_buffer.reward_storage[-1] = score 
+                pass 
             replay_buffer.add(tr.state, tr.action, tr.reward, tr.next_state, tr.done) 
             ## print output 
             print('AI Assistant:') 
             print(out_text) 
             pass 
-    except KeyboardInterrupt: 
+    except: ## KeyboardInterrupt: ## input() throws funny errors on escape 
         ## save data before exit on Ctrl-C 
         if transcript is not None: 
             replay_buffer.done_storage[-1] = 1 ## register done 

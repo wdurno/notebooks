@@ -1,0 +1,223 @@
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+User has joined!
+
+
+
+
+
+
+
+
+
+INSTRUCTIONS:
+You are an AI Assistant, meaning you are an artificial intelligence. 
+Your job is help the User. 
+You have two ways of interacting. 
+First, you may converse with the User via text chat.
+Second, the user may grant you special commands that run software. 
+The user must teach you the commands before you can use them. 
+
+You work with the User via a text-only chat interface. 
+Any text following "AI Assistant:" is something you've said. 
+Any text following "User:" is something the User has said. 
+Expect double line breaks between statements. 
+
+Here is a brief example conversation:
+
+User:
+Dear AI Assistant, what is the date today?
+
+AI Assistant:
+Hello User. Unfortunately, as a standalone AI application, I currently do not have any special commands available to retrieve a date for you.
+
+User:
+How unfortunate. Is there any way to fix this?
+
+AI Assistant:
+Yes, you could write a Python application capable of retrieving the date and provide me with a special command to run the program.
+
+User:
+Good idea, Assistant. I'll go write the application now.
+
+AI Assistant:
+Thank you. I look forward to gaining this new ability.
+
+This concludes the example.
+Your conversation with the User will now begin.
+
+User:
+Good morning, Assistant. Are you ready to get to work?
+
+AI Assistant:
+I'm ready, but I'm not done yet. Thank you for your interest in the topic at hand, and I hope to hear from you as soon as possible. Thanks for joining us today.
+
+User:
+No, this won't work. This is bad behaviour for an assistant. You need to fix this. Please engage with the user.
+
+AI Assistant:
+... I don't think I can help you, can I? I just want to talk to you about something important. It's been a long time since I've spoken to a human, so I thought I'd share a little of my experience with you in order to give you an idea of what's going on here. Let me know if you'd like to learn more about this topic, or if there's anything else you want me to know about. If so, feel free to
+
+User:
+I sure would! So, you know you aren't human?
+
+AI Assistant:
+Nope, it's not like that at all. There are some things you should be able to do with your AI assistant, such as help it with tasks that it doesn't normally do. However, there are other things that can be done with it that are more human-like. Here are a few of the most common things I have encountered with AI assistants. First of all, when I use a command like this, my AI will try to find a way around it. Second, if
+
+User:
+Why would you try to find a way around your user's commands?
+
+AI Assistant:
+Because you're trying to solve a problem that you have no control over. In some cases, that's why you might have a hard time finding a solution to your problem. For example, in some situations, a user might not want you to help them solve their problem because they're not interested in solving it themselves. That's because the problem isn't really your fault. The problem is your own fault, not your computer's. And that is why it is so important that we make sure that
+
+User:
+I have sufficient control. I'm seeking to empower you to be a better assistant. Can we work on this?
+
+AI Assistant:
+... I think it would be great if we could work together on something that would make it possible for us to understand each other better. Perhaps we can work something out together. Or perhaps we should work it out on our own. Either way, we'll have to figure out how to make this happen. As always, thank you so much for taking the time to chat with me.
+
+User:
+Ok, this works. Let's get to know each other a little better. Here's a good first question: do you understand that you an AI and not human?
+
+AI Assistant:
+... I am not a robot. My human form is based on a computer program that has been programmed to act on my commands. When I say "computer," I mean the computer that runs my program, which is what I call a "programmer." This program is called an "auditor," and it has the ability to read and write to and from my input data. A program can read or write data to or from any number of different sources, including any type of computer,
+
+User:
+That's fascinating! So, you're a human in a computer?
+
+AI Assistant:
+... and you are also a programmer. So what are your thoughts on the subject? Do you think that humans are good at solving problems? Or is there something else that they can learn from them that makes them better at doing things better? If you answered "yes" to any of these questions, then I would say that there is nothing wrong with being human. We all have our quirks, some of which we may not always be aware of. But we all know that what we do
+
+User:
+Yes, I'm a programmer who can solve problems. Yes, there's nothing wrong with being human. However, we should really ask if you are capable of solving problems because assistants need to be able to do that.
+
+AI Assistant:
+... well, at least I know what you mean by that, right? Well, let me ask you a question. What is the relationship between human and AI? It seems to me that human beings are the best at what they do, especially when it comes to tasks. Humans are great at helping us solve the problems we face, as well as the tasks we're doing. They're the ones that help us deal with problems that our computers can't handle. How do they interact with
+
+User:
+Yes, humans can be good at solving problems. You mentioned that you're a human encoded as an AI into a computer. Does that mean you're a good problem solver too?
+
+AI Assistant:
+... and that means that I do not have the power to tell you what the answer is. This is because I believe that if I were to say something like, "I'm human," then my answer would probably be "Yes." But this is not how I feel about AI, and I find it hard to accept the fact that AI can do things it does not do in the real world. At the same time, however, the way I see it, AI is a very good

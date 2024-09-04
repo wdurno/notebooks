@@ -56,21 +56,22 @@ class ReplayBuffer():
         self.done_storage = self.done_storage[n:] 
         self.n = len(self.state_storage) 
         pass 
-    def save(path): 
+    def save(self, path): 
         d = {
             'state': self.state_storage, 
             'next_state': self.next_state_storage, 
             'action': self.action_storage, 
             'reward': self.reward_storage, 
             'done': self.done_storage 
-            }) 
+            } 
         torch.save(d, path) 
         pass 
-    def load(path): 
+    def load(self, path): 
         d = torch.load(path) 
         self.state_storage = d['state'] 
         self.next_state_storage = d['next_state'] 
         self.action_storage = d['action'] 
         self.reward_storage = d['reward'] 
         self.done_storage = d['done'] 
+        self.n = self.done_storage.shape[0] 
     pass 
