@@ -47,6 +47,8 @@ PROMPT = ('...waiting for User to join...\n\n'*62) + 'User has joined!\n\n\n\n\n
 
 tokenizer = GPT2Tokenizer.from_pretrained(MODEL)
 sentiment_analysis_model = pipeline(model="finiteautomata/bertweet-base-sentiment-analysis") 
+gpu = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+cpu = torch.device('cpu') 
 
 def get_new_model(): 
     return Actor() 
@@ -91,11 +93,14 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
     ## encode and truncate 
     tokenized_transcript = tokenizer.encode(transcript, return_tensors='pt') 
     cut = MAX_LENGTH - MAX_RESPONSE 
-    if tokenized_transcript.shape[1] > cut : 
+    if tokenized_transcript.shape[1] > cut: 
         tokenized_transcript = tokenized_transcript[:,(tokenized_transcript.shape[1] - cut):] 
         pass 
+    ## to gpu 
+    tokenized_transcript = tokenized_transcript.to(gpu) 
     ## generate 
     output_tensor = model.generate(tokenized_transcript, max_length=MAX_LENGTH, do_sample=True, early_stopping=True, pad_token_id=tokenizer.eos_token_id, num_beams=5, no_repeat_ngram_size=2) 
+    ## decode 
     output_text = tokenizer.decode(output_tensor[0][924:], skip_special_tokens=True) 
     ## translate to RL transitions 
     state_list = [] 
@@ -109,7 +114,7 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
         next_state = output_tensor[0][(idx-cut+1):(idx+1)] 
         next_state_list.append(next_state) 
         done = torch.tensor([0]) 
-        done_list.append(done) ## always zero. Need to catch `Ctrl+C` and update final zero  
+        done_list.append(done) ## always zero. Need to catch `Ctrl+C` and update final zero, done below  
         reward = torch.tensor([0.]) 
         reward_list.append(reward) ## final zero needs to be updated with score from next query 
         pass 
@@ -118,7 +123,7 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
     transitions.next_state = torch.stack(next_state_list) 
     transitions.reward = torch.cat(reward_list) 
     with torch.no_grad(): ## stops memory explosions 
-        transitions.action = torch.cat([actor(x) for x in transitions.state.split(BATCH_SIZE)]) 
+        transitions.action = torch.cat([actor(x).to(cpu) for x in transitions.state.split(BATCH_SIZE)]) ## to cpu   
         pass 
     out = {
             'output_text': output_text, 
@@ -134,15 +139,44 @@ def chat_loop(model, file_pointer=None):
     while True: 
         print('User:') 
         query = input() 
-        output, transcript = chat(model, query, transcript, file_pointer=file_pointer) 
+        x = chat(model, query, transcript) 
+        output, transcript = x['output_text'], x['updated_transcript'] 
         print('AI Assistant:') 
         print(output) 
         pass 
     pass 
 
 if __name__ == '__main__': 
-    actor = get_new_model() 
-    with open(f'data/chat-log-{int(time())}.json', 'w') as f: 
-        chat_loop(actor, file_pointer=f) 
+    ## init 
+    print('End this conversation and save data with Ctrl-C.') 
+    print('Please say something to your AI Assistant.') 
+    actor = get_new_model().to(gpu) ## TODO need to be able to load updated models 
+    transcript = None  
+    replay_buffer = ReplayBuffer() 
+    try: 
+        ## chat loop 
+        while True: 
+            ## get user query 
+            print('User:') 
+            query = input() 
+            ## process 
+            out  = chat(actor, query, transcript) 
+            out_text, transcript, tr = out['output_text'], out['updated_transcript'], out['transitions'] 
+            replay_buffer.add(tr.state, tr.action, tr.reward, tr.next_state, tr.done) 
+            ## print output 
+            print('AI Assistant:') 
+            print(out_text) 
+            pass 
+    except KeyboardInterrupt: 
+        ## save data before exit on Ctrl-C 
+        if transcript is not None: 
+            replay_buffer.done_storage[-1] = 1 ## register done 
+            t = int(time()) 
+            print(f'Saving data with timestamp {t}...') 
+            with open(f'data/chat-log-{t}.txt', 'w') as f: 
+                f.write(transcript) 
+                pass 
+            replay_buffer.save(f'data/chat-game-data-{t}.pt') 
+            pass 
         pass 
     pass 
