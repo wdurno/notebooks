@@ -18,10 +18,12 @@ MAX_LENGTH=1024
 MAX_RESPONSE=100
 AVG_TOKENS_PER_WORD=3
 MODEL='gpt2' 
+GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+CPU = torch.device('cpu') 
 
 ## CONSTANTS 
-ACTION_DIM = 50257 # == token dimension 
-TOKENIZER_EOS_TOKEN_ID = ACTION_DIM - 1 
+ACTION_DIM = 768 # == token dimension 
+TOKENIZER_EOS_TOKEN_ID = 50257 - 1 
 
 class Actor(SSRAgent):
     def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=2): 
@@ -29,11 +31,10 @@ class Actor(SSRAgent):
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## prob logits are action space 
         self.buffer = Object() 
         self.buffer.target_critic = target_critic ## buffer stops param sharing (ie. in `state_dict`) 
-        ssr_param_iterable = [p for p in self.parameters()]
-        self.ssr_param_iterable = ssr_param_iterable 
         pass 
     def forward(self, state): 
-        action = self.llm(state)[0][:,-1,:] ## [n, 50257] = [n, ACTION_DIM] 
+        ## action = self.llm(state)[0][:,-1,:] ## [n, 50257] = [n, ACTION_DIM] ## Too much data! 
+        action = last_hidden(self.llm, state) ## [n, 768] 
         return action
     def loss(self, transitions, target_critic=None): 
         if target_critic is None: 
@@ -44,7 +45,7 @@ class Actor(SSRAgent):
     pass 
 
 class Critic(SSRAgent):
-    def __init__(self, state_dim, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=2): 
+    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=2): 
         super(Critic, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## last hidden state + action -> Q 
         self.fc1 = nn.Linear(768 + ACTION_DIM, 32) ## last_hidden dim + action dim  
@@ -53,10 +54,9 @@ class Critic(SSRAgent):
         self.buffer = Object() 
         self.buffer.target_actor = target_actor 
         self.buffer.target_critic = target_critic 
-        self.ssr_param_iterable = [p for p in self.parameters()]  
         pass 
     def forward(self, state, action):
-        x = self.__last_hidden(self.llm, state) 
+        x = last_hidden(self.llm, state) 
         x = torch.cat([x, action], dim=1) 
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
@@ -76,43 +76,122 @@ class Critic(SSRAgent):
         current_Q = self(transitions.state, transitions.action) 
         # Calculate the critic loss
         return torch.sum((target_Q - current_Q).pow(2)) ## log lik, not average log lik 
-    def __last_hidden(
-        model,
-        input_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None):
-        r"""
-        COPIED AND MODIFIED FROM `https://github.com/huggingface/transformers/blob/v4.35.2/src/transformers/models/gpt2/modeling_gpt2.py#L1049`.
-        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
-        return_dict = return_dict if return_dict is not None else True
-        transformer_outputs = model.transformer(
-            input_ids,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        return transformer_outputs['last_hidden_state'][:,-1,:] ## dim: [n, 768] 
     pass 
+
+class GPT2ActorCritic(): 
+    def __init__(self, device=GPU): 
+        self.device = device 
+        self.replay_buffer = ReplayBuffer() 
+        self.actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
+        self.critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        self.actor_optimizer = optim.Adam(actor.parameters(), lr=1e-5) 
+        self.critic_optimizer = optim.Adam(critic.parameters(), lr=1e-3) 
+        pass 
+    def save(self, path): 
+        actor.save(path) 
+        critic.save(path) 
+        pass 
+    def load(self, path): 
+        actor.load(path) 
+        critic.load(path) 
+        pass 
+    def load_transitions(self, path): 
+        self.replay_buffer.load(path) 
+        pass 
+    def fit_iter(self, batch_size=256, p_gpt_loss=-1.): 
+        if len(self.replay_buffer) < batch_size: 
+            warnings.warn('skipping fit_iter due to short replay_buffer!') 
+            pass 
+        ## Sample a batch of transitions from the replay buffer 
+        transitions = replay_buffer.sample(batch_size=batch_size, device=GPU) 
+        ## Calculate the critic loss 
+        critic.train()
+        pi_B = 1. - critic.optimal_lambda()
+        critic_loss = pi_B * critic.loss(transitions)/batch_size + critic.ssr() 
+        if p_gpt_loss > 0.: 
+            critic_loss = (1 - p_gpt_loss) * critic_loss + p_gpt_loss * critic.llm(transitions.state).loss 
+            pass 
+        ## Update the critic network 
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+        ## Calculate the actor loss 
+        critic.eval()
+        actor.train()
+        pi_B = 1. - actor.optimal_lambda()
+        actor_loss = pi_B * actor.loss(transitions)/batch_size + actor.ssr() 
+        if p_gpt_loss > 0.:
+            actor_loss = (1 - p_gpt_loss) * actor_loss + p_gpt_loss * actor.llm(transitions.state).loss
+        ## Update the actor network 
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step() 
+        pass 
+    def fit_loop(self, n_iters=100): 
+        ## set target models 
+        target_actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
+        target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        target_actor.eval() 
+        target_critic.eval() 
+        self.actor.target_critic = target_critic 
+        self.critic.target_actor = target_actor 
+        self.critic.target_critic = target_critic 
+        ## loop over fit iters 
+        for _ in range(n_iters): 
+            ## update target models 
+            target_actor.load_state_dict(actor.state_dict()) 
+            target_critic.load_state_dict(critic.state_dict()) 
+            ## iterate 
+            fit_iter() 
+            pass 
+        ## clear memory of target models  
+        self.actor.target_critic = None 
+        self.critic.target_actor = None 
+        self.critic.target_critic = None 
+        pass 
+    def memorize(self): 
+        actor.memorize() 
+        critic.memorize() 
+        replay_buffer.clear() 
+        pass 
+    pass 
+
+def last_hidden( 
+    model,
+    input_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+    attention_mask: Optional[torch.FloatTensor] = None,
+    token_type_ids: Optional[torch.LongTensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    head_mask: Optional[torch.FloatTensor] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None):
+    r"""Get the last hidden state after processing a sequence. 
+    COPIED AND MODIFIED FROM `https://github.com/huggingface/transformers/blob/v4.35.2/src/transformers/models/gpt2/modeling_gpt2.py#L1049`.
+    labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+        Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+        config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
+        `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+    """
+    return_dict = return_dict if return_dict is not None else True
+    transformer_outputs = model.transformer(
+        input_ids,
+        past_key_values=past_key_values,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids,
+        position_ids=position_ids,
+        head_mask=head_mask,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+    return transformer_outputs['last_hidden_state'][:,-1,:] ## dim: [n, 768] 
 
 # Define the environment 
 env = gym.make('CartPole-v1') 

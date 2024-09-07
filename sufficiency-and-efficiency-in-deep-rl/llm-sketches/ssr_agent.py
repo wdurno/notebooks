@@ -104,7 +104,37 @@ class SSRAgent(nn.Module):
         self.ssr_cov_n = None 
         self.ssr_model_dimension = None 
         self.replay_buffer = replay_buffer 
-        self.ssr_param_iterable = None ## must be set by concretizing class 
+        pass 
+    def ssr_dict(self): 
+        d = {'ssr_rank': self.ssr_rank, 
+                'ssr_low_rank_matrix': self.ssr_low_rank_matrix, 
+                'ssr_residual_diagonal': self.ssr_residual_diagonal, 
+                'ssr_center': self.ssr_center, 
+                'ssr_prev_center': self.ssr_prev_center, 
+                'ssr_n': self.ssr_n, 
+                'ssr_cov_trace': self.ssr_cov_trace, 
+                'ssr_cov_n': self.ssr_cov_n, 
+                'ssr_model_dimension': self.ssr_model_dimension  
+                } 
+        return d 
+    def load_ssr_dict(self, d): 
+        self.ssr_rank = d['ssr_rank'] 
+        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
+        self.ssr_residual_matrix = d['ssr_residual_matrix'] 
+        self.ssr_center = d['ssr_center'] 
+        self.ssr_prev_center = d['ssr_prev_center'] 
+        self.ssr_n = d['ssr_n'] 
+        self.ssr_cov_trace = d['ssr_cov_trace'] 
+        self.ssr_cov_n = d['ssr_cov_n'] 
+        self.ssr_model_dimension = d['ssr_model_dimension'] 
+        pass 
+    def save(self, path):
+        torch.save(self.state_dict(), path + '-state.pt')
+        torch.save(self.ssr_dict(), path + '-ssr.pt')
+        pass 
+    def load(self, path): 
+        self.load_state_dict(torch.load(path + '-state.pt')) 
+        self.load_ssr_dict(torch.load(path + '-ssr.pt')) 
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
@@ -179,7 +209,7 @@ class SSRAgent(nn.Module):
         return lmbda  
     def __get_param(self):
         'only for SSR calculations'
-        return torch.cat([p.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0)
+        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)
     def __get_get_grad_generator(self, n=None): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
@@ -199,7 +229,7 @@ class SSRAgent(nn.Module):
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
                     loss.backward() 
-                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.ssr_param_iterable], dim=0).clone().detach()  
+                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0).clone().detach()  
                     yield grad_vec 
                     pass
                 pass 

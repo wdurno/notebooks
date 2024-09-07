@@ -33,16 +33,16 @@ class ReplayBuffer():
         self.done_storage = torch.cat([self.done_storage, done]) 
         self.n += 1 
         pass 
-    def sample(self, batch_size=32, idx_list=None): 
+    def sample(self, batch_size=32, idx_list=None, device=torch.device('cpu')): 
         if idx_list is None: 
             idx_list = torch.randint(0, self.n, [batch_size]) 
             pass  
         out = Object() ## transitions 
-        out.state = self.state_storage[idx_list] 
-        out.next_state = self.next_state_storage[idx_list] 
-        out.action = self.action_storage[idx_list] 
-        out.reward = self.reward_storage[idx_list] 
-        out.done = self.done_storage[idx_list] 
+        out.state = self.state_storage[idx_list].to(device) 
+        out.next_state = self.next_state_storage[idx_list].to(device) 
+        out.action = self.action_storage[idx_list].to(device) 
+        out.reward = self.reward_storage[idx_list].to(device) 
+        out.done = self.done_storage[idx_list].to(device) 
         return out 
     def clear(self, n=None): 
         'clears first `n` transitions, or all if `n is None`'
@@ -68,10 +68,14 @@ class ReplayBuffer():
         pass 
     def load(self, path): 
         d = torch.load(path) 
-        self.state_storage = d['state'] 
-        self.next_state_storage = d['next_state'] 
-        self.action_storage = d['action'] 
-        self.reward_storage = d['reward'] 
-        self.done_storage = d['done'] 
-        self.n = self.done_storage.shape[0] 
+        self.state_storage = torch.cat([self.state_storage, d['state'].type(torch.int64)]) ## ints get loaded as floats, so casting 
+        self.next_state_storage = torch.cat([self.next_state_storage, d['next_state'].type(torch.int64)]) 
+        self.action_storage = torch.cat([self.action_storage, d['action']]) 
+        self.reward_storage = torch.cat([self.reward_storage, d['reward']]) 
+        self.done_storage = torch.cat([self.done_storage, d['done'].type(torch.int64)]) 
+        self.n += d['done'].shape[0] 
+        if self.n > self.capacity: 
+            self.clear(self.n - self.capacity) 
+            pass 
+        pass 
     pass 
