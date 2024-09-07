@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn 
 import torch.optim as optim 
 from typing import Optional, Tuple  
-from ssr_agent import SSRAgent, ReplayBuffer, Object 
+from ssr_agent import SSRAgent 
+from replay_buffer import Object, ReplayBuffer 
 from transformers import GPT2LMHeadModel, GPT2Tokenizer, pipeline 
 
 ## Hyperparameters 
@@ -20,6 +21,7 @@ AVG_TOKENS_PER_WORD=3
 MODEL='gpt2' 
 GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 CPU = torch.device('cpu') 
+GPU = CPU ## TODO OOM debugging 
 
 ## CONSTANTS 
 ACTION_DIM = 768 # == token dimension 
@@ -31,9 +33,9 @@ class Actor(SSRAgent):
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## prob logits are action space 
         self.buffer = Object() 
         self.buffer.target_critic = target_critic ## buffer stops param sharing (ie. in `state_dict`) 
+        self.p_gpt2_loss = -1. ## proportional weight given to gpt2 loss relative to actor critic loss ## TODO move to SSRAgent.loss and .memorize with **kwargs 
         pass 
     def forward(self, state): 
-        ## action = self.llm(state)[0][:,-1,:] ## [n, 50257] = [n, ACTION_DIM] ## Too much data! 
         action = last_hidden(self.llm, state) ## [n, 768] 
         return action
     def loss(self, transitions, target_critic=None): 
@@ -41,7 +43,11 @@ class Actor(SSRAgent):
             target_critic = self.buffer.target_critic 
         if target_critic is None: 
             raise ValueError('ERROR: this model has no associated critic!') 
-        return -torch.sum(target_critic(transitions.state, self(transitions.state))) ## log lik, not average log lik 
+        loss = -torch.sum(target_critic(transitions.state, self(transitions.state))) ## log lik, not average log lik 
+        if self.p_gpt2_loss > 0.: 
+            ## the actor must retain meaningful text generation capabilities 
+            loss = (1 - self.p_gpt2_loss) * loss + self.p_gpt2_loss * self.llm(transitions.state, labels=transitions.state).loss 
+        return loss  
     pass 
 
 class Critic(SSRAgent):
@@ -49,8 +55,8 @@ class Critic(SSRAgent):
         super(Critic, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## last hidden state + action -> Q 
         self.fc1 = nn.Linear(768 + ACTION_DIM, 32) ## last_hidden dim + action dim  
-        self.fc2 = nn.Linear(256, 16) 
-        self.fc3 = nn.Linear(128, 1) 
+        self.fc2 = nn.Linear(32, 16) 
+        self.fc3 = nn.Linear(16, 1) 
         self.buffer = Object() 
         self.buffer.target_actor = target_actor 
         self.buffer.target_critic = target_critic 
@@ -75,7 +81,8 @@ class Critic(SSRAgent):
         # Calculate the current Q-values
         current_Q = self(transitions.state, transitions.action) 
         # Calculate the critic loss
-        return torch.sum((target_Q - current_Q).pow(2)) ## log lik, not average log lik 
+        loss = torch.sum((target_Q - current_Q).pow(2)) ## log lik, not average log lik 
+        return loss 
     pass 
 
 class GPT2ActorCritic(): 
@@ -84,8 +91,8 @@ class GPT2ActorCritic():
         self.replay_buffer = ReplayBuffer() 
         self.actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
         self.critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
-        self.actor_optimizer = optim.Adam(actor.parameters(), lr=1e-5) 
-        self.critic_optimizer = optim.Adam(critic.parameters(), lr=1e-3) 
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=1e-5) 
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3) 
         pass 
     def save(self, path): 
         actor.save(path) 
@@ -98,56 +105,55 @@ class GPT2ActorCritic():
     def load_transitions(self, path): 
         self.replay_buffer.load(path) 
         pass 
-    def fit_iter(self, batch_size=256, p_gpt_loss=-1.): 
+    def fit_iter(self, batch_size=256, p_gpt2_loss=-1.): 
         if len(self.replay_buffer) < batch_size: 
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
             pass 
         ## Sample a batch of transitions from the replay buffer 
-        transitions = replay_buffer.sample(batch_size=batch_size, device=GPU) 
+        transitions = self.replay_buffer.sample(batch_size=batch_size, device=GPU) 
         ## Calculate the critic loss 
-        critic.train()
-        pi_B = 1. - critic.optimal_lambda()
-        critic_loss = pi_B * critic.loss(transitions)/batch_size + critic.ssr() 
-        if p_gpt_loss > 0.: 
-            critic_loss = (1 - p_gpt_loss) * critic_loss + p_gpt_loss * critic.llm(transitions.state).loss 
-            pass 
+        self.critic.train()
+        pi_B = 1. - self.critic.optimal_lambda()
+        critic_loss = pi_B * self.critic.loss(transitions)/batch_size + self.critic.ssr() 
         ## Update the critic network 
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
-        self.critic_optimizer.step()
+        self.critic_optimizer.step() 
         ## Calculate the actor loss 
-        critic.eval()
-        actor.train()
-        pi_B = 1. - actor.optimal_lambda()
-        actor_loss = pi_B * actor.loss(transitions)/batch_size + actor.ssr() 
-        if p_gpt_loss > 0.:
-            actor_loss = (1 - p_gpt_loss) * actor_loss + p_gpt_loss * actor.llm(transitions.state).loss
+        self.critic.eval()
+        self.actor.train()
+        pi_B = 1. - self.actor.optimal_lambda()
+        actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr() ## TODO OOM  
+        if p_gpt2_loss > 0.: 
+            self.actor.p_gpt2_loss = p_gpt2_loss 
+            pass 
         ## Update the actor network 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step() 
         pass 
-    def fit_loop(self, n_iters=100): 
+        pass 
+    def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1): 
         ## set target models 
         target_actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
         target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
         target_actor.eval() 
         target_critic.eval() 
-        self.actor.target_critic = target_critic 
-        self.critic.target_actor = target_actor 
-        self.critic.target_critic = target_critic 
+        self.actor.buffer.target_critic = target_critic 
+        self.critic.buffer.target_actor = target_actor 
+        self.critic.buffer.target_critic = target_critic 
         ## loop over fit iters 
         for _ in range(n_iters): 
             ## update target models 
-            target_actor.load_state_dict(actor.state_dict()) 
-            target_critic.load_state_dict(critic.state_dict()) 
+            target_actor.load_state_dict(self.actor.state_dict()) 
+            target_critic.load_state_dict(self.critic.state_dict()) 
             ## iterate 
-            fit_iter() 
+            self.fit_iter(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) 
             pass 
         ## clear memory of target models  
-        self.actor.target_critic = None 
-        self.critic.target_actor = None 
-        self.critic.target_critic = None 
+        self.actor.buffer.target_critic = None 
+        self.critic.buffer.target_actor = None 
+        self.critic.buffer.target_critic = None 
         pass 
     def memorize(self): 
         actor.memorize() 

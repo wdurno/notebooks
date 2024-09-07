@@ -7,11 +7,11 @@ class ReplayBuffer():
     def __init__(self, capacity=10000): 
         self.n = 0 
         self.capacity = capacity 
-        self.state_storage = torch.tensor([]) 
+        self.state_storage = torch.tensor([]).type(torch.int64) 
         self.action_storage = torch.tensor([]) 
         self.reward_storage = torch.tensor([]) 
-        self.next_state_storage = torch.tensor([]) 
-        self.done_storage = torch.tensor([]) 
+        self.next_state_storage = torch.tensor([]).type(torch.int64) 
+        self.done_storage = torch.tensor([]).type(torch.int64) 
         pass 
     def __len__(self):
          return self.n 
