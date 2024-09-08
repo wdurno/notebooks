@@ -27,9 +27,10 @@ ACTION_DIM = 768 # == token dimension
 TOKENIZER_EOS_TOKEN_ID = 50257 - 1 
 
 class Actor(SSRAgent):
-    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=2): 
+    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=2, device=GPU): 
         super(Actor, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
-        self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## final hidden layer are action space  
+        self.device = device 
+        self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID).to(device) ## final hidden layer are action space  
         self.buffer = Object() 
         self.buffer.target_critic = target_critic ## buffer stops param sharing (ie. in `state_dict`) 
         self.p_gpt2_loss = -1. ## proportional weight given to gpt2 loss relative to actor critic loss ## TODO move to SSRAgent.loss and .memorize with **kwargs 
@@ -43,6 +44,7 @@ class Actor(SSRAgent):
             transitions.next_state = transitions.next_state.to(self.device)
             transitions.reward = transitions.reward.to(self.device) 
             transitions.done = transitions.done.to(self.device) 
+            transitions.action = transitions.action.to(self.device) 
         if target_critic is None: 
             target_critic = self.buffer.target_critic 
         if target_critic is None: 
@@ -55,12 +57,13 @@ class Actor(SSRAgent):
     pass 
 
 class Critic(SSRAgent):
-    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=2): 
+    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=2, device=GPU): 
         super(Critic, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
-        self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## last hidden state + action -> Q 
-        self.fc1 = nn.Linear(768 + ACTION_DIM, 32) ## last_hidden dim + action dim  
-        self.fc2 = nn.Linear(32, 16) 
-        self.fc3 = nn.Linear(16, 1) 
+        self.device = device 
+        self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID).to(device) ## last hidden state + action -> Q 
+        self.fc1 = nn.Linear(768 + ACTION_DIM, 32, device=device) ## last_hidden dim + action dim  
+        self.fc2 = nn.Linear(32, 16, device=device) 
+        self.fc3 = nn.Linear(16, 1, device=device) 
         self.buffer = Object() 
         self.buffer.target_actor = target_actor 
         self.buffer.target_critic = target_critic 
@@ -78,6 +81,7 @@ class Critic(SSRAgent):
             transitions.next_state = transitions.next_state.to(self.device)
             transitions.reward = transitions.reward.to(self.device)
             transitions.done = transitions.done.to(self.device) 
+            transitions.action = transitions.action.to(self.device) 
         if target_actor is None: 
             target_actor = self.buffer.target_actor 
         if target_critic is None: 
@@ -98,8 +102,8 @@ class GPT2ActorCritic():
     def __init__(self, device=GPU, ssr_rank=2): 
         self.device = device 
         self.replay_buffer = ReplayBuffer() 
-        self.actor = Actor(replay_buffer=self.replay_buffer, ssr_rank=ssr_rank).to(self.device) 
-        self.critic = Critic(replay_buffer=self.replay_buffer, ssr_rank=ssr_rank).to(self.device) 
+        self.actor = Actor(replay_buffer=self.replay_buffer, ssr_rank=ssr_rank, device=self.device) 
+        self.critic = Critic(replay_buffer=self.replay_buffer, ssr_rank=ssr_rank, device=self.device) 
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=1e-5) 
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3) 
         pass 
@@ -166,8 +170,8 @@ class GPT2ActorCritic():
         pass
     def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1, progress_bar=True): 
         ## set target models 
-        self.critic.buffer.target_actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
-        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        self.critic.buffer.target_actor = Actor(replay_buffer=self.replay_buffer, device=self.device)
+        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer, device=self.device) 
         self.critic.buffer.target_actor.eval() 
         self.critic.buffer.target_critic.eval() 
         self.actor.buffer.target_critic = self.critic 
@@ -200,8 +204,8 @@ class GPT2ActorCritic():
         self.actor.memorize() 
         self.actor.buffer.target_critic = None 
         ## critic 
-        self.critic.buffer.target_actor = self.actor()  
-        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        self.critic.buffer.target_actor = self.actor 
+        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer, device=self.device) 
         self.critic.buffer.target_actor.eval() 
         self.critic.buffer.target_critic.eval() 
         self.critic.buffer.target_critic.load_state_dict(self.critic.state_dict()) 

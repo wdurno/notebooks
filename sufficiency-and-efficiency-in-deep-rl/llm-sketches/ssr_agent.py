@@ -77,7 +77,7 @@ class SSRAgent(nn.Module):
             self.ssr_n = n 
         else: 
             ## combine with previous memories 
-            self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix) 
+            self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) 
             self.ssr_residual_diagonal += ssr_residual_diagonal 
             self.ssr_n += n 
             pass 

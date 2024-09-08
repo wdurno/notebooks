@@ -73,45 +73,48 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     if mfi_alternate is not None: 
         multiply_fisher_information = mfi_alternate 
         pass 
-    vecs = [] 
-    diags = [] 
-    off_diags = [] 
-    ## init 
-    v = torch.normal(0, torch.ones([p, 1])) 
-    if device is not None: 
-        v = v.to(device) 
-    v = v / torch.sqrt(v.transpose(0,1).matmul(v)) 
-    ## next_v = AAT.matmul(v)  
-    next_v = multiply_fisher_information(v) 
-    diag = next_v.transpose(0,1).matmul(v) 
-    next_v = next_v - diag * v 
-    vecs.append(v) ## wiki says to add this vector, even before FI multiplication  
-    diags.append(diag) 
-    pbar = tqdm(range(r-1), disable=disable_tqdm) 
-    for _ in pbar: 
-        prev_v = v 
-        off_diag = torch.sqrt(next_v.transpose(0,1).matmul(next_v))
-        v = next_v / off_diag  
+    def get_A(): ## using functions to force garbage collection  
+        vecs = [] 
+        diags = [] 
+        off_diags = [] 
+        ## init 
+        v = torch.normal(0, torch.ones([p, 1])) 
+        if device is not None: 
+            v = v.to(device) 
+        v = v / torch.sqrt(v.transpose(0,1).matmul(v)) 
         ## next_v = AAT.matmul(v)  
         next_v = multiply_fisher_information(v) 
         diag = next_v.transpose(0,1).matmul(v) 
-        next_v = next_v - diag * v - off_diag * prev_v 
-        vecs.append(v) 
+        next_v = next_v - diag * v 
+        vecs.append(v) ## wiki says to add this vector, even before FI multiplication  
         diags.append(diag) 
-        off_diags.append(off_diag) 
-        pass 
-    ## build it 
-    V = torch.cat(vecs, dim=1) 
-    diags = torch.tensor(diags).reshape([-1])
-    off_diags = torch.tensor(off_diags).reshape([-1]) 
-    T = torch.diag(diags) + torch.diag(off_diags, -1) + torch.diag(off_diags, 1) 
-    if device is not None: 
-        T = T.to(device) 
-    ## combine V & T into single matrix A 
-    eigs = torch.linalg.eigh(T) 
-    positive_eigenvalues = torch.relu(eigs.eigenvalues) ## for sqrt 
-    sqrt_T = eigs.eigenvectors.matmul(torch.diag(torch.sqrt(positive_eigenvalues))).matmul(eigs.eigenvectors.transpose(0,1)) 
-    A = V.matmul(sqrt_T) 
+        pbar = tqdm(range(r-1), disable=disable_tqdm) 
+        for _ in pbar: 
+            prev_v = v 
+            off_diag = torch.sqrt(next_v.transpose(0,1).matmul(next_v))
+            v = next_v / off_diag  
+            ## next_v = AAT.matmul(v)  
+            next_v = multiply_fisher_information(v) 
+            diag = next_v.transpose(0,1).matmul(v) 
+            next_v = next_v - diag * v - off_diag * prev_v 
+            vecs.append(v) 
+            diags.append(diag) 
+            off_diags.append(off_diag) 
+            pass 
+        ## build it 
+        V = torch.cat(vecs, dim=1) 
+        diags = torch.tensor(diags).reshape([-1])
+        off_diags = torch.tensor(off_diags).reshape([-1]) 
+        T = torch.diag(diags) + torch.diag(off_diags, -1) + torch.diag(off_diags, 1) 
+        if device is not None: 
+            T = T.to(device) 
+        ## combine V & T into single matrix A 
+        eigs = torch.linalg.eigh(T) 
+        positive_eigenvalues = torch.relu(eigs.eigenvalues) ## for sqrt 
+        sqrt_T = eigs.eigenvectors.matmul(torch.diag(torch.sqrt(positive_eigenvalues))).matmul(eigs.eigenvectors.transpose(0,1)) 
+        A = V.matmul(sqrt_T) 
+        return A 
+    A = get_A() 
     if not calc_diag: 
         return A 
     ## calc diagonal_residual = diag(Fisher Information - AA^T) 
