@@ -21,7 +21,6 @@ AVG_TOKENS_PER_WORD=3
 MODEL='gpt2' 
 GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 CPU = torch.device('cpu') 
-GPU = CPU ## TODO OOM debugging 
 
 ## CONSTANTS 
 ACTION_DIM = 768 # == token dimension 
@@ -108,7 +107,7 @@ class GPT2ActorCritic():
     def fit_iter(self, batch_size=256, p_gpt2_loss=-1.): 
         if len(self.replay_buffer) < batch_size: 
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
-            pass 
+            pass  
         ## Sample a batch of transitions from the replay buffer 
         transitions = self.replay_buffer.sample(batch_size=batch_size, device=GPU) 
         ## Calculate the critic loss 
@@ -123,7 +122,7 @@ class GPT2ActorCritic():
         self.critic.eval()
         self.actor.train()
         pi_B = 1. - self.actor.optimal_lambda()
-        actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr() ## TODO OOM  
+        actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr() ## TODO manually average gradients to avoid OOMs over large batches   
         if p_gpt2_loss > 0.: 
             self.actor.p_gpt2_loss = p_gpt2_loss 
             pass 
@@ -131,7 +130,6 @@ class GPT2ActorCritic():
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step() 
-        pass 
         pass 
     def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1): 
         ## set target models 

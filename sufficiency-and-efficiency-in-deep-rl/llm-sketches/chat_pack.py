@@ -5,7 +5,7 @@ import json
 from replay_buffer import ReplayBuffer 
 from regmem_ac import Actor, Object 
 
-MAX_LENGTH=1024  
+MAX_LENGTH=512  
 MAX_RESPONSE=100 
 BATCH_SIZE=10 
 MODEL='gpt2'
@@ -44,7 +44,7 @@ Thank you. I look forward to gaining this new ability.
 
 This concludes the example.
 Your conversation with the User will now begin.''' ## 294 tokens  
-PROMPT = ('...waiting for User to join...\n\n'*62) + 'User has joined!\n\n\n\n\n\n\n\n\n\n' + PROMPT ## 924 = 1024 - 100 tokens  
+PROMPT = ('...waiting for User to join...\n\n'*11) + 'User has joined!\n\n\n\n' + PROMPT ## 412 = 512 - 100 tokens  
 
 tokenizer = GPT2Tokenizer.from_pretrained(MODEL)
 sentiment_analysis_model = pipeline(model="finiteautomata/bertweet-base-sentiment-analysis") 
@@ -102,7 +102,7 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
     ## generate 
     output_tensor = model.generate(tokenized_transcript, max_length=MAX_LENGTH, do_sample=True, early_stopping=True, pad_token_id=tokenizer.eos_token_id, num_beams=5, no_repeat_ngram_size=2) 
     ## decode 
-    output_text = tokenizer.decode(output_tensor[0][924:], skip_special_tokens=True) 
+    output_text = tokenizer.decode(output_tensor[0][(MAX_LENGTH - MAX_RESPONSE):], skip_special_tokens=True) 
     ## translate to RL transitions 
     state_list = [] 
     next_state_list = [] 
