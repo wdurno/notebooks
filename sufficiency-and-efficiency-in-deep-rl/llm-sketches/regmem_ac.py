@@ -1,5 +1,3 @@
-## cartpole with actor crtic via ddpg 
-
 import random 
 import numpy as np 
 from math import prod 
@@ -29,9 +27,9 @@ ACTION_DIM = 768 # == token dimension
 TOKENIZER_EOS_TOKEN_ID = 50257 - 1 
 
 class Actor(SSRAgent):
-    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=1): 
+    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=2): 
         super(Actor, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
-        self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## prob logits are action space 
+        self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## final hidden layer are action space  
         self.buffer = Object() 
         self.buffer.target_critic = target_critic ## buffer stops param sharing (ie. in `state_dict`) 
         self.p_gpt2_loss = -1. ## proportional weight given to gpt2 loss relative to actor critic loss ## TODO move to SSRAgent.loss and .memorize with **kwargs 
@@ -40,6 +38,11 @@ class Actor(SSRAgent):
         action = last_hidden(self.llm, state) ## [n, 768] 
         return action
     def loss(self, transitions, target_critic=None): 
+        if transitions.state.device != self.device: 
+            transitions.state = transitions.state.to(self.device) 
+            transitions.next_state = transitions.next_state.to(self.device)
+            transitions.reward = transitions.reward.to(self.device) 
+            transitions.done = transitions.done.to(self.device) 
         if target_critic is None: 
             target_critic = self.buffer.target_critic 
         if target_critic is None: 
@@ -52,7 +55,7 @@ class Actor(SSRAgent):
     pass 
 
 class Critic(SSRAgent):
-    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=1): 
+    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=2): 
         super(Critic, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## last hidden state + action -> Q 
         self.fc1 = nn.Linear(768 + ACTION_DIM, 32) ## last_hidden dim + action dim  
@@ -70,6 +73,11 @@ class Critic(SSRAgent):
         value = self.fc3(x)
         return value
     def loss(self, transitions, target_actor=None, target_critic=None): 
+        if transitions.state.device != self.device: 
+            transitions.state = transitions.state.to(self.device)
+            transitions.next_state = transitions.next_state.to(self.device)
+            transitions.reward = transitions.reward.to(self.device)
+            transitions.done = transitions.done.to(self.device) 
         if target_actor is None: 
             target_actor = self.buffer.target_actor 
         if target_critic is None: 
@@ -87,11 +95,11 @@ class Critic(SSRAgent):
     pass 
 
 class GPT2ActorCritic(): 
-    def __init__(self, device=GPU): 
+    def __init__(self, device=GPU, ssr_rank=2): 
         self.device = device 
         self.replay_buffer = ReplayBuffer() 
-        self.actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
-        self.critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        self.actor = Actor(replay_buffer=self.replay_buffer, ssr_rank=ssr_rank).to(self.device) 
+        self.critic = Critic(replay_buffer=self.replay_buffer, ssr_rank=ssr_rank).to(self.device) 
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=1e-5) 
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3) 
         pass 
@@ -106,13 +114,12 @@ class GPT2ActorCritic():
     def load_transitions(self, path): 
         self.replay_buffer.load(path) 
         pass 
-    def fit_iter(self, batch_size=256, p_gpt2_loss=-1., progress_bar=True): 
+    def fit_iter_critic(self, batch_size=256, p_gpt2_loss=-1.): 
         if len(self.replay_buffer) < batch_size: 
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
             pass 
         critic_grad = 0. 
-        actor_grad = 0. 
-        for _ in tqdm(range(batch_size), disable=not progress_bar): 
+        for _ in range(batch_size): 
             ## Sample a batch of transitions from the replay buffer 
             transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average 
             ## Calculate the critic loss 
@@ -123,47 +130,62 @@ class GPT2ActorCritic():
             self.critic_optimizer.zero_grad()
             critic_loss.backward() 
             critic_grad += self.__vectorize_grad(self.critic) 
-            ## Calculate the actor loss 
-            self.critic.eval()
-            self.actor.train()
-            pi_B = 1. - self.actor.optimal_lambda()
-            actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr() 
-            if p_gpt2_loss > 0.: 
-                self.actor.p_gpt2_loss = p_gpt2_loss 
-                pass 
-            ## Update the actor network 
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward() 
-            actor_grad += self.__vectorize_grad(self.actor) 
             pass 
         ## average grads 
         critic_grad /= batch_size 
-        actor_grad /= batch_size 
         ## apply grads 
         self.__insert_grad_vec(self.critic, critic_grad) 
-        self.__insert_grad_vec(self.actor, actor_grad) 
         self.critic_optimizer.step() 
-        self.actor_optimizer.step() 
         pass 
-    def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1): 
+    def fit_iter_actor(self, batch_size=256, p_gpt2_loss=-1.):
+        if len(self.replay_buffer) < batch_size:
+            warnings.warn('skipping fit_iter due to short replay_buffer!')
+            pass
+        actor_grad = 0.
+        for _ in range(batch_size):
+            ## Sample a batch of transitions from the replay buffer
+            transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average
+            ## Calculate the actor loss
+            self.critic.eval()
+            self.actor.train()
+            pi_B = 1. - self.actor.optimal_lambda()
+            actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr()
+            if p_gpt2_loss > 0.:
+                self.actor.p_gpt2_loss = p_gpt2_loss
+                pass
+            ## Update the actor network
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            actor_grad += self.__vectorize_grad(self.actor)
+            pass
+        ## average grads
+        actor_grad /= batch_size
+        ## apply grads
+        self.__insert_grad_vec(self.actor, actor_grad)
+        self.actor_optimizer.step()
+        pass
+    def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1, progress_bar=True): 
         ## set target models 
-        target_actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
-        target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
-        target_actor.eval() 
-        target_critic.eval() 
-        self.actor.buffer.target_critic = target_critic 
-        self.critic.buffer.target_actor = target_actor 
-        self.critic.buffer.target_critic = target_critic 
+        self.critic.buffer.target_actor = Actor(replay_buffer=self.replay_buffer).to(self.device) 
+        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        self.critic.buffer.target_actor.eval() 
+        self.critic.buffer.target_critic.eval() 
+        self.actor.buffer.target_critic = self.critic 
         ## loop over fit iters 
-        for _ in range(n_iters): 
+        for _ in tqdm(range(n_iters), disable=not progress_bar): 
+            ## move targets to GPU 
+            self.critic.buffer.target_actor = self.critic.buffer.target_actor.to(self.device) 
+            self.critic.buffer.target_critic = self.critic.buffer.target_critic.to(self.device) 
             ## update target models 
-            target_actor.load_state_dict(self.actor.state_dict()) 
-            target_critic.load_state_dict(self.critic.state_dict()) 
-            ## iterate 
-            self.fit_iter(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) 
-            ## clear GPU RAM ## TODO another OOM right here. This isn't cutting it  
-            gc.collect() 
-            torch.cuda.empty_cache() 
+            self.critic.buffer.target_actor.load_state_dict(self.actor.state_dict()) 
+            self.critic.buffer.target_critic.load_state_dict(self.critic.state_dict()) 
+            ## iterate critic 
+            self.fit_iter_critic(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) ## scope end activates garbage collection 
+            ## move targets back to CPU, clearing space from GPU 
+            self.critic.buffer.target_actor = self.critic.buffer.target_actor.to(CPU) 
+            self.critic.buffer.target_critic = self.critic.buffer.target_critic.to(CPU) 
+            ## iterate actor 
+            self.fit_iter_actor(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) 
             pass 
         ## clear memory of target models  
         self.actor.buffer.target_critic = None 
@@ -171,9 +193,24 @@ class GPT2ActorCritic():
         self.critic.buffer.target_critic = None 
         pass 
     def memorize(self): 
-        actor.memorize() 
-        critic.memorize() 
-        replay_buffer.clear() 
+        ## actor 
+        self.actor.buffer.target_critic = self.critic 
+        self.actor.buffer.target_critic.eval() 
+        self.actor.train() 
+        self.actor.memorize() 
+        self.actor.buffer.target_critic = None 
+        ## critic 
+        self.critic.buffer.target_actor = self.actor()  
+        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer).to(self.device) 
+        self.critic.buffer.target_actor.eval() 
+        self.critic.buffer.target_critic.eval() 
+        self.critic.buffer.target_critic.load_state_dict(self.critic.state_dict()) 
+        self.critic.train() 
+        self.critic.memorize() 
+        self.critic.buffer.target_actor = None 
+        self.critic.buffer.target_critic = None 
+        ## clear buffer of memorized transitions 
+        self.replay_buffer.clear() 
         pass 
     def pad_gpt_memory(self, info=100.): 
         self.__pad_gpt_memory_for_model(self.actor, info=info) 

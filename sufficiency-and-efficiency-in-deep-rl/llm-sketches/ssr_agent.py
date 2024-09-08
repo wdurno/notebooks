@@ -11,6 +11,7 @@ from lanczos import l_lanczos, combine_krylov_spaces
 class SSRAgent(nn.Module): 
     def __init__(self, replay_buffer, ssr_rank=2): 
         super(SSRAgent, self).__init__() 
+        self.device = None 
         self.ssr_rank = ssr_rank 
         self.ssr_low_rank_matrix = None ## =: A 
         self.ssr_residual_diagonal = None ## =: resid 
@@ -24,7 +25,8 @@ class SSRAgent(nn.Module):
         self.replay_buffer = replay_buffer 
         pass 
     def ssr_dict(self): 
-        d = {'ssr_rank': self.ssr_rank, 
+        d = {'device': self.device,
+                'ssr_rank': self.ssr_rank, 
                 'ssr_low_rank_matrix': self.ssr_low_rank_matrix, 
                 'ssr_residual_diagonal': self.ssr_residual_diagonal, 
                 'ssr_center': self.ssr_center, 
@@ -36,6 +38,7 @@ class SSRAgent(nn.Module):
                 } 
         return d 
     def load_ssr_dict(self, d): 
+        self.device = d['device'] 
         self.ssr_rank = d['ssr_rank'] 
         self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
         self.ssr_residual_matrix = d['ssr_residual_matrix'] 
@@ -66,7 +69,7 @@ class SSRAgent(nn.Module):
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
             pass 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n), self.ssr_rank, self.ssr_model_dimension, calc_diag=True) 
+        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device) 
         if self.ssr_low_rank_matrix is None: 
             ## first memorization 
             self.ssr_low_rank_matrix = ssr_low_rank_matrix 
