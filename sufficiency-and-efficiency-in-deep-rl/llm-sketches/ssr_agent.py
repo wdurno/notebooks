@@ -47,12 +47,12 @@ class SSRAgent(nn.Module):
         self.ssr_model_dimension = d['ssr_model_dimension'] 
         pass 
     def save(self, path):
-        torch.save(self.state_dict(), path + '-state.pt')
-        torch.save(self.ssr_dict(), path + '-ssr.pt')
+        torch.save(self.state_dict(), path + '.state.pt')
+        torch.save(self.ssr_dict(), path + '.ssr.pt')
         pass 
     def load(self, path): 
-        self.load_state_dict(torch.load(path + '-state.pt')) 
-        self.load_ssr_dict(torch.load(path + '-ssr.pt')) 
+        self.load_state_dict(torch.load(path + '.state.pt')) 
+        self.load_ssr_dict(torch.load(path + '.ssr.pt')) 
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
@@ -62,7 +62,7 @@ class SSRAgent(nn.Module):
             n = len(self.replay_buffer) 
             pass 
         self.ssr_prev_center = self.ssr_center 
-        self.ssr_center = self.__get_param().clone().detach() ## elliptical centroid 
+        self.ssr_center = self.get_param().clone().detach() ## elliptical centroid 
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
             pass 
@@ -94,7 +94,7 @@ class SSRAgent(nn.Module):
         otherwise `lmbda` will be the approximately optimal `n_A` value.'''
         if self.ssr_low_rank_matrix is None: 
             return 0. 
-        p = self.__get_param() 
+        p = self.get_param() 
         p0 = self.ssr_center 
         d = p - p0 
         A = self.ssr_low_rank_matrix 
@@ -125,7 +125,7 @@ class SSRAgent(nn.Module):
         ## lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
         lmbda = 1. - pi ## dropping ssr_n as constant under optimization  
         return lmbda  
-    def __get_param(self):
+    def get_param(self):
         'only for SSR calculations'
         return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)
     def __get_get_grad_generator(self, n=None): 

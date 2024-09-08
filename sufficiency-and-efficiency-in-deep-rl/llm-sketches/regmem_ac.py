@@ -3,7 +3,8 @@
 import random 
 import numpy as np 
 from math import prod 
-import gym 
+from tqdm import tqdm 
+import gc 
 import torch 
 import torch.nn as nn 
 import torch.optim as optim 
@@ -28,7 +29,7 @@ ACTION_DIM = 768 # == token dimension
 TOKENIZER_EOS_TOKEN_ID = 50257 - 1 
 
 class Actor(SSRAgent):
-    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=2): 
+    def __init__(self, target_critic=None, replay_buffer=None, ssr_rank=1): 
         super(Actor, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## prob logits are action space 
         self.buffer = Object() 
@@ -51,7 +52,7 @@ class Actor(SSRAgent):
     pass 
 
 class Critic(SSRAgent):
-    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=2): 
+    def __init__(self, action_dim=ACTION_DIM, target_actor=None, target_critic=None, replay_buffer=None, ssr_rank=1): 
         super(Critic, self).__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank) 
         self.llm = GPT2LMHeadModel.from_pretrained(MODEL, pad_token_id=TOKENIZER_EOS_TOKEN_ID) ## last hidden state + action -> Q 
         self.fc1 = nn.Linear(768 + ACTION_DIM, 32) ## last_hidden dim + action dim  
@@ -95,23 +96,23 @@ class GPT2ActorCritic():
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3) 
         pass 
     def save(self, path): 
-        actor.save(path) 
-        critic.save(path) 
+        self.actor.save(path+'.actor') 
+        self.critic.save(path+'.critic') 
         pass 
     def load(self, path): 
-        actor.load(path) 
-        critic.load(path) 
+        self.actor.load(path+'.actor') 
+        self.critic.load(path+'.critic') 
         pass 
     def load_transitions(self, path): 
         self.replay_buffer.load(path) 
         pass 
-    def fit_iter(self, batch_size=256, p_gpt2_loss=-1.): 
+    def fit_iter(self, batch_size=256, p_gpt2_loss=-1., progress_bar=True): 
         if len(self.replay_buffer) < batch_size: 
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
             pass 
         critic_grad = 0. 
         actor_grad = 0. 
-        for _ in range(batch_size): 
+        for _ in tqdm(range(batch_size), disable=not progress_bar): 
             ## Sample a batch of transitions from the replay buffer 
             transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average 
             ## Calculate the critic loss 
@@ -160,6 +161,9 @@ class GPT2ActorCritic():
             target_critic.load_state_dict(self.critic.state_dict()) 
             ## iterate 
             self.fit_iter(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) 
+            ## clear GPU RAM ## TODO another OOM right here. This isn't cutting it  
+            gc.collect() 
+            torch.cuda.empty_cache() 
             pass 
         ## clear memory of target models  
         self.actor.buffer.target_critic = None 
@@ -170,6 +174,35 @@ class GPT2ActorCritic():
         actor.memorize() 
         critic.memorize() 
         replay_buffer.clear() 
+        pass 
+    def pad_gpt_memory(self, info=100.): 
+        self.__pad_gpt_memory_for_model(self.actor, info=info) 
+        self.__pad_gpt_memory_for_model(self.critic, info=info) 
+        pass 
+    def __pad_gpt_memory_for_model(self, model, info=100.): 
+        ## build padded diagonal 
+        vec = [] 
+        for p in model.named_parameters(): 
+            if p[0].startswith('llm.transformer'): 
+                vec.append(torch.ones(p[1].reshape([-1,1]).shape)) 
+            else: 
+                vec.append(torch.zeros(p[1].reshape([-1,1]).shape)) 
+                pass 
+            pass 
+        model.ssr_residual_diagonal = info * torch.cat(vec) 
+        ## get remaining values 
+        if model.ssr_center is None: 
+            ## init vals 
+            model.ssr_residual_diagonal = info * torch.cat(vec).to(self.device)   
+            model.ssr_n = info
+            model.ssr_model_dimension = model.ssr_residual_diagonal.shape[0] 
+            model.ssr_low_rank_matrix = torch.zeros([model.ssr_model_dimension, model.ssr_rank]).to(self.device) 
+        else: 
+            ## add info 
+            model.ssr_residual_diagonal += info * torch.cat(vec).to(self.device) 
+            model.ssr_n += info
+            pass 
+        model.ssr_center = model.get_param().clone().detach() 
         pass 
     @staticmethod 
     def __vectorize_grad(model): 
@@ -222,100 +255,3 @@ def last_hidden(
     )
     return transformer_outputs['last_hidden_state'][:,-1,:] ## dim: [n, 768] 
 
-# Define the environment 
-env = gym.make('CartPole-v1') 
-
-def simulate(iters=5000, mem_iters=None, buffer_min=1000): 
-    '''Runs an Actor Crtiic experiment for `iters` iterations. 
-    Returns a list of cumulative rewards. 
-    Memorizes every `mem_iters` iterations, or never if `None`. 
-    ''' 
-    output_tuples = [] ## (cumulative_reward, iter_idx)  
-
-    # Create the replay buffer 
-    replay_buffer = ReplayBuffer(capacity=100000) ## TODO this ReplayBuffer needs to store sequences  
-    
-    # Create the actor and critic networks
-    target_critic = Critic(state_dim=4, action_dim=1) 
-    target_actor = Actor(state_dim=4, action_dim=1) 
-    critic = Critic(state_dim=4, action_dim=1, target_critic=target_critic, target_actor=target_actor, replay_buffer=replay_buffer) 
-    actor = Actor(state_dim=4, action_dim=1, target_critic=critic, replay_buffer=replay_buffer) 
-    
-    # Define the optimizers
-    actor_optimizer = optim.Adam(actor.parameters(), lr=1e-5)
-    critic_optimizer = optim.Adam(critic.parameters(), lr=1e-3)
-    
-    episode_idx = 0 
-    iter_idx = 0 
-    # Train the agent
-    while iter_idx < iters: 
-        episode_idx += 1 
-        state, _ = env.reset() 
-        target_actor.load_state_dict(actor.state_dict()) 
-        target_critic.load_state_dict(critic.state_dict()) 
-        
-        cumulative_reward = 0 
-        while True: 
-            actor.eval() 
-            critic.eval() 
-            target_actor.eval() 
-            target_critic.eval() 
-
-            action = actor(torch.tensor(state)) 
-            if np.random.binomial(1, max(0,50-episode_idx)/50) > 0: 
-                ## random action 
-                action = torch.tensor(np.random.uniform(low=-1., high=1.)).reshape([1]) 
-                pass 
-            
-            action_p = action.item() * .5 + .5 
-            action_int = np.random.binomial(1, action_p) ## must be 0 or 1 
-            next_state, reward, done, _, _ = env.step(action_int) 
-    
-            replay_buffer.add(state, action, reward, next_state, done) 
-            
-            cumulative_reward += reward 
-            output_tuples.append((cumulative_reward, iter_idx)) 
-    
-            if len(replay_buffer) > 256: 
-                # Sample a batch of transitions from the replay buffer 
-                transitions = replay_buffer.sample(batch_size=256) 
-    
-                # Calculate the critic loss 
-                critic.train() 
-                pi_B = 1. - critic.optimal_lambda() 
-                critic_loss = pi_B * critic.loss(transitions)/256 + critic.ssr() 
-    
-                # Update the critic network 
-                critic_optimizer.zero_grad() 
-                critic_loss.backward() 
-                critic_optimizer.step() 
-                
-                # Calculate the actor loss 
-                critic.eval() 
-                actor.train() 
-                pi_B = 1. - actor.optimal_lambda() 
-                actor_loss = pi_B * actor.loss(transitions)/256 + actor.ssr()  
-    
-                # Update the actor network 
-                actor_optimizer.zero_grad() 
-                actor_loss.backward() 
-                actor_optimizer.step() 
-
-                if mem_iters is not None: 
-                    if len(replay_buffer) >= buffer_min + mem_iters: 
-                        actor.memorize(mem_iters) 
-                        critic.memorize(mem_iters) 
-                        replay_buffer.clear(mem_iters) 
-                        pass 
-                    pass 
-                pass
-    
-            state = next_state 
-            iter_idx += 1 
-    
-            if done or iter_idx > iters:
-                ## start new episode 
-                break
-            pass 
-        pass 
-    return output_tuples  

@@ -4,6 +4,7 @@ from time import time
 import json 
 from replay_buffer import ReplayBuffer 
 from regmem_ac import Actor, Object 
+import argparse 
 
 MAX_LENGTH=512  
 MAX_RESPONSE=100 
@@ -138,12 +139,18 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
     return out 
 
 if __name__ == '__main__': 
+    parser = argparse.ArgumentParser(description='Converse with GPT2 or RL-modified-GPT2 to generate data for reinforcement learning.') 
+    parser.add_argument('path', 'Load an Actor model with a prefix path. Example: models/mv1.', default=None) 
+    args = parser.parse_args() 
     ## init 
-    print('End this conversation and save data with Ctrl-C.') 
-    print('Please say something to your AI Assistant.') 
-    actor = get_new_model().to(gpu) ## TODO need to be able to load updated models 
+    actor = get_new_model().to(gpu) 
+    if args.path is not None: 
+        actor.load(args.path+'.actor') 
+        pass 
     transcript = None  
     replay_buffer = ReplayBuffer() 
+    print('End this conversation and save data with Ctrl-C.') 
+    print('Please say something to your AI Assistant.') 
     try: 
         ## chat loop 
         while True: 
