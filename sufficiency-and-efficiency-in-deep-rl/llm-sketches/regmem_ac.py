@@ -2,6 +2,7 @@
 
 import random 
 import numpy as np 
+from math import prod 
 import gym 
 import torch 
 import torch.nn as nn 
@@ -107,28 +108,40 @@ class GPT2ActorCritic():
     def fit_iter(self, batch_size=256, p_gpt2_loss=-1.): 
         if len(self.replay_buffer) < batch_size: 
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
-            pass  
-        ## Sample a batch of transitions from the replay buffer 
-        transitions = self.replay_buffer.sample(batch_size=batch_size, device=GPU) 
-        ## Calculate the critic loss 
-        self.critic.train()
-        pi_B = 1. - self.critic.optimal_lambda()
-        critic_loss = pi_B * self.critic.loss(transitions)/batch_size + self.critic.ssr() 
-        ## Update the critic network 
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step() 
-        ## Calculate the actor loss 
-        self.critic.eval()
-        self.actor.train()
-        pi_B = 1. - self.actor.optimal_lambda()
-        actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr() ## TODO manually average gradients to avoid OOMs over large batches   
-        if p_gpt2_loss > 0.: 
-            self.actor.p_gpt2_loss = p_gpt2_loss 
             pass 
-        ## Update the actor network 
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
+        critic_grad = 0. 
+        actor_grad = 0. 
+        for _ in range(batch_size): 
+            ## Sample a batch of transitions from the replay buffer 
+            transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average 
+            ## Calculate the critic loss 
+            self.critic.train()
+            pi_B = 1. - self.critic.optimal_lambda()
+            critic_loss = pi_B * self.critic.loss(transitions)/batch_size + self.critic.ssr() 
+            ## Update the critic network 
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward() 
+            critic_grad += self.__vectorize_grad(self.critic) 
+            ## Calculate the actor loss 
+            self.critic.eval()
+            self.actor.train()
+            pi_B = 1. - self.actor.optimal_lambda()
+            actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr() 
+            if p_gpt2_loss > 0.: 
+                self.actor.p_gpt2_loss = p_gpt2_loss 
+                pass 
+            ## Update the actor network 
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward() 
+            actor_grad += self.__vectorize_grad(self.actor) 
+            pass 
+        ## average grads 
+        critic_grad /= batch_size 
+        actor_grad /= batch_size 
+        ## apply grads 
+        self.__insert_grad_vec(self.critic, critic_grad) 
+        self.__insert_grad_vec(self.actor, actor_grad) 
+        self.critic_optimizer.step() 
         self.actor_optimizer.step() 
         pass 
     def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1): 
@@ -157,6 +170,18 @@ class GPT2ActorCritic():
         actor.memorize() 
         critic.memorize() 
         replay_buffer.clear() 
+        pass 
+    @staticmethod 
+    def __vectorize_grad(model): 
+        return torch.cat([p.grad.reshape([-1]) for p in model.parameters()]) 
+    @staticmethod 
+    def __insert_grad_vec(model, vec): 
+        ptr = 0 
+        for p in model.parameters(): 
+            n = prod(p.shape) 
+            p.grad = vec[ptr:(ptr+n)].reshape(p.shape) 
+            ptr += n 
+            pass 
         pass 
     pass 
 
