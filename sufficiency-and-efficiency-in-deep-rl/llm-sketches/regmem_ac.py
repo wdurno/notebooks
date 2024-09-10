@@ -205,10 +205,8 @@ class GPT2ActorCritic():
         self.actor.buffer.target_critic = None 
         ## critic 
         self.critic.buffer.target_actor = self.actor 
-        self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer, device=self.device) 
+        self.critic.buffer.target_critic = self.critic 
         self.critic.buffer.target_actor.eval() 
-        self.critic.buffer.target_critic.eval() 
-        self.critic.buffer.target_critic.load_state_dict(self.critic.state_dict()) 
         self.critic.train() 
         self.critic.memorize() 
         self.critic.buffer.target_actor = None 
