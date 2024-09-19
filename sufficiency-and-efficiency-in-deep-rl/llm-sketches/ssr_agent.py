@@ -41,7 +41,7 @@ class SSRAgent(nn.Module):
         self.device = d['device'] 
         self.ssr_rank = d['ssr_rank'] 
         self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
-        self.ssr_residual_matrix = d['ssr_residual_matrix'] 
+        self.ssr_residual_diagonal = d['ssr_residual_diagonal'] 
         self.ssr_center = d['ssr_center'] 
         self.ssr_prev_center = d['ssr_prev_center'] 
         self.ssr_n = d['ssr_n'] 

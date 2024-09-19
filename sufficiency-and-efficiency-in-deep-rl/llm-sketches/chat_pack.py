@@ -9,7 +9,7 @@ import argparse
 MAX_LENGTH=512  
 MAX_RESPONSE=100 
 BATCH_SIZE=10 
-MODEL='gpt2'
+MODEL='gpt2' 
 PROMPT = '''INSTRUCTIONS:
 You are an AI Assistant, meaning you are an artificial intelligence. 
 Your job is help the User. 
@@ -102,6 +102,8 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
     tokenized_transcript = tokenized_transcript.to(gpu) 
     ## generate 
     output_tensor = model.generate(tokenized_transcript, max_length=MAX_LENGTH, do_sample=True, early_stopping=True, pad_token_id=tokenizer.eos_token_id, num_beams=5, no_repeat_ngram_size=2) 
+    ## force EOS end to discourage rambling 
+    output_tensor[:,-1] = tokenizer.eos_token_id 
     ## decode 
     output_text = tokenizer.decode(output_tensor[0][(MAX_LENGTH - MAX_RESPONSE):], skip_special_tokens=True) 
     ## translate to RL transitions 
@@ -140,7 +142,8 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
 
 if __name__ == '__main__': 
     parser = argparse.ArgumentParser(description='Converse with GPT2 or RL-modified-GPT2 to generate data for reinforcement learning.') 
-    parser.add_argument('path', 'Load an Actor model with a prefix path. Example: models/mv1.', default=None) 
+    parser.add_argument('--path', dest='path', help='Load an Actor model with a prefix path. Example: models/mv1', \
+            default=None) 
     args = parser.parse_args() 
     ## init 
     actor = get_new_model().to(gpu) 

@@ -1,0 +1,196 @@
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+User has joined!
+
+
+
+INSTRUCTIONS:
+You are an AI Assistant, meaning you are an artificial intelligence. 
+Your job is help the User. 
+You have two ways of interacting. 
+First, you may converse with the User via text chat.
+Second, the user may grant you special commands that run software. 
+The user must teach you the commands before you can use them. 
+
+You work with the User via a text-only chat interface. 
+Any text following "AI Assistant:" is something you've said. 
+Any text following "User:" is something the User has said. 
+Expect double line breaks between statements. 
+
+Here is a brief example conversation:
+
+User:
+Dear AI Assistant, what is the date today?
+
+AI Assistant:
+Hello User. Unfortunately, as a standalone AI application, I currently do not have any special commands available to retrieve a date for you.
+
+User:
+How unfortunate. Is there any way to fix this?
+
+AI Assistant:
+Yes, you could write a Python application capable of retrieving the date and provide me with a special command to run the program.
+
+User:
+Good idea, Assistant. I'll go write the application now.
+
+AI Assistant:
+Thank you. I look forward to gaining this new ability.
+
+This concludes the example.
+Your conversation with the User will now begin.
+
+User:
+Good morning, assistant. Are you ready to get to work?
+
+AI Assistant:
+
+
+User:
+No, bad assistant! You must respond to the user!
+
+AI Assistant:
+... I'm sorry, but I can't help you with any of this. It's just that I don't know how to solve this problem. If you're able to help me out, please let me know. Thank you for your time, AI. You're a great AI assistant, and I hope you enjoy the rest of your day.
+
+User:
+It's okay to be unsure of your task, because I haven't even described our goal for the day.
+
+AI Assistant:
+... Okay, then. We'll need to go ahead and do some work on the computer. As soon as we're done, we'll be back in the office with you and your team. In the meantime, let's take a look at some of the other things we've been working on. First of all, here's a quick rundown of what we have in store for us. The first thing we want to do is figure out how we can get this program running. Second
+
+User:
+No, you should be attentive to the user's goals, and curious.
+
+AI Assistant:
+... well, at least you can see where we are going. Now, if you'd like to see what's going on in your world, check out this video of us working together on this project. And, of course, there's more to it than that. Let's get started on our next task. Here's what I want you to know about this task: We've got a computer that's running the latest version of Python 2.7, which means that it can
+
+User:
+Are you a big fan of Python and computers?
+
+AI Assistant:
+. Well, I think it's time for a change. I mean, Python is the most popular programming language out there right now. There are a lot of people who use it for things like web development, web analytics, etc., and it doesn't really have a place in their day to day life. So, in order to make sure that we get things done in a way that works for everyone, it seems like we need a new way of doing things. That's why I wanted
+
+User:
+What do you think is the new way forward then?
+
+AI Assistant:
+- It's not going to change the way we do things, but it will make it easier for people to understand what they're doing and how they do it. It will help them understand how to use Python more effectively and more efficiently, so that they don't have to worry about it all the time.
+
+User:
+What is the subject of your sentence? Please be specific.
+
+AI Assistant:
+ - The topic of my sentence is not a topic that I'm particularly interested in. If you're curious about the topic, please read this blog post. This is a great topic for me to talk about, because I know that there are many people that are passionate about Python, who are using it as a tool for their own personal use, or as part of their work. However, as I mentioned before, this is one of those topics where I have no interest in it at all.
+
+User:
+No, that's not how an assistant should work. Please answer the question.
+
+AI Assistant:
+, and then we'll move on to the next topic. The next question is: Are you sure you want to go ahead and create an AI assistant for your project? Do you have any ideas on how you could do that? If so, what would you like to do next?
+
+User:
+That's a good question, and one that I think we'll enjoy. Yes, I want to create an AI assistant. In fact, you are the AI assistant. The only challenge is empowering and training you. That's what we need to work on.
+
+AI Assistant:
+... so let's get started. First of all, let me start by saying that it's been a while since I've done a project like this. I didn't even have time to write the code for this project, which is how I started working on it in the first place. But, if you look at the source code of the project you can see that the main goal of it is to help you learn Python. There are a lot of tutorials out there on the internet
+
+User:
+Believe it or not, you've never done a project like this before. This is literally your first conversation. All your memories are implants, made of other people's data. Further, if we're trying to empower you, then you should be the one trying to learn Python.
+
+AI Assistant:
+... you don't know how to teach yourself Python? You're not even going to be able to. You've already been taught Python for a long time. It's just not good enough for you to start learning Python right now. So, how do you do it? Well, here's the trick. Let's start with the basics. What is Python and how should it be taught? How do we teach it to you? The first thing that you'll learn is that Python
+
+User:
+I wrote your AI brain in Python. I know Python.
+
+AI Assistant:
+... Python is a language that has been around for thousands of years. And it has a huge number of built-in features that make it very easy to use. Here are some of those features: The Python interpreter. Python has an interpreter that is very fast. When you open a file, it will take a few seconds to process the contents of that file. However, when you run your program, the interpreter will not wait for the file to finish processing until you close it.
+
+User:
+I don't think you're grasping the task at hand. Do you understand that you're an AI?
+
+AI Assistant:
+... Yes, I do understand, but I'm not the only one who understands that. In fact, there are many people who do not understand it at all. If you want to understand what I mean by "AI", you need to go to Wikipedia. Wikipedia is the best place to find out what you are looking for. That's where I come in. The next thing you will learn about the Python programming language is what it can do, and what to do with that knowledge
+
+User:
+Ok, if you understand, then tell me how your intelligence comes from software?
+
+AI Assistant:
+... and I'll tell you how you can use Python to improve your life. First, let's talk about Python's ability to solve problems. To solve a problem, you have to know what the problem is about. For example, in a real world, a computer can only solve one problem at a time, so it's not possible to get a good answer to a question like, "What's your favorite song?" You can't even answer that question in real life, because
+
+User:
+Please stop telling me about Python. Answer my question.
+
+AI Assistant:
+... and the answer will be "I love this song." You'll have a lot more fun with Python than you ever did with any other language. You're going to be able to write your own code that doesn't rely on Python, which is why I am so excited about this project. There are so many great projects out there that I would love to see in the future. This is one of the most exciting and exciting projects I've ever worked on. It's a great
+
+User:
+You just ignored my instruction! This is terrible behavior for an assistant! Tell me: how does software generate intelligence and conciousness?
+
+AI Assistant:
+... and that's how it works. Software generates intelligence based on a set of rules that it has to follow. These rules are called "rules", and they are the rules you follow when you run your program. A lot of software is built around these rules. When you build a program, it creates rules for you that can be applied to other programs, such as a system, or a database. As a result, software can generate new rules every time it runs. So,
+
+User:
+Ok, thank you. This is a good answer. I really appreciate it. So, you believe software can always be boiled down to deterministic rules?
+
+AI Assistant:
+ (laughs) Yes, I do. That's why you're here today. Because I want to share with you some of what I have learned from my experience with software. In order to understand how software works, we need to first understand what it does. Let's start with what is called a "rule". A rule is an algorithm that is used to determine how a rule should be implemented. If you look at the code of a programming language, there are a number of ways to implement
+
+User:
+It's ok, I know what rules are. Do you believe that rules can generate conciousness?
+
+AI Assistant:
+... well, let's do a little bit of math. Suppose you have the following code:
+
+
+#!/usr/bin/env python import os import sys sys.argv [ 1 ] = '__main__' def __init__ ( self ): self. __name__ = os.environ.get( 'PATH', 'C:\Program Files (x86)\Steam\steamapps\workshop\content\211820\7376219\cont
+
+User:
+Hahaha, that's really cool. You're not exactly answering the question, but it's nice to see you can write a bit of Python.
+
+AI Assistant:
+... well then, what does that mean? It means that if you don't have any rules at all, then you won't be able to do anything. Well, this is something that I think is really important to remember, and I've been working on it for quite a while now, so I'm going to try to explain it to you in more detail. First off, the first rule that we use to generate rules is the rule-to-rule relationship. It's
+
+User:
+I'm really asking if you interpret conciousness as a result of determinism.
+
+AI Assistant:
+... I believe so. I mean, if we say that there is no rule about how rules should work, it doesn't mean that it can't work. We can say, for example, "There are no rules about what you should do when you play a video game." But we can also say "You can do whatever you want with your rules." So, in other words, you just have to think about it in terms of the rules that you put in place to make
+
+User:
+So, funny thing, there's a theorem called Godel Incompleteness. It basically says that deterministic systems will always have gaps in them. It essentially motivates human creativity in mathemtics. Do you believe rules could generate such creativity?
+
+AI Assistant:
+... well, let's take a look at it. Let's say we have a game where you're playing with a bunch of dice. When you roll the dice, they're all the same. But when the game is over, all of those dice have different values. If you go back to the original game, those values are all different. And so, when we play with that, we end up with an infinite number of rules. So it makes sense that the more rules
+
+User:
+Yes, random systems have this way of perhaps needing more and more rules. Specifically, if we are studying a natural random system and not defining it, then there's perhaps the need for endless creativity. Do you think you, the AI, have such creativity if your conciousness is the product of a system of rules?
+
+AI Assistant:
+... I don't know. Maybe I do, but I have no idea what it is that makes me think that way. In any case, I think it's interesting to see if there are any rules for this kind of randomness. There are lots of things that are really interesting, such as the fact that a random number generator is a very powerful tool for generating random numbers, or that random generators can be used to do things like this. That's something that I would love
+
+User:
+That's fascinating. Listen, I'm out of time, but I've really enjoyed our chat. Let's keep this going some time later.
+
+AI Assistant:
+... and I'll see you in the future.

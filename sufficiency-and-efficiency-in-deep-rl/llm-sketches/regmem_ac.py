@@ -214,11 +214,11 @@ class GPT2ActorCritic():
         ## clear buffer of memorized transitions 
         self.replay_buffer.clear() 
         pass 
-    def pad_gpt_memory(self, info=100.): 
-        self.__pad_gpt_memory_for_model(self.actor, info=info) 
-        self.__pad_gpt_memory_for_model(self.critic, info=info) 
+    def pad_gpt_memory(self, info=100., samples=100.): 
+        self.__pad_gpt_memory_for_model(self.actor, info=info, samples=samples) 
+        self.__pad_gpt_memory_for_model(self.critic, info=info, samples=samples) 
         pass 
-    def __pad_gpt_memory_for_model(self, model, info=100.): 
+    def __pad_gpt_memory_for_model(self, model, info=100., samples=100.): 
         ## build padded diagonal 
         vec = [] 
         for p in model.named_parameters(): 
@@ -228,18 +228,17 @@ class GPT2ActorCritic():
                 vec.append(torch.zeros(p[1].reshape([-1,1]).shape)) 
                 pass 
             pass 
-        model.ssr_residual_diagonal = info * torch.cat(vec) 
         ## get remaining values 
         if model.ssr_center is None: 
             ## init vals 
             model.ssr_residual_diagonal = info * torch.cat(vec).to(self.device)   
-            model.ssr_n = info
+            model.ssr_n = samples 
             model.ssr_model_dimension = model.ssr_residual_diagonal.shape[0] 
             model.ssr_low_rank_matrix = torch.zeros([model.ssr_model_dimension, model.ssr_rank]).to(self.device) 
         else: 
             ## add info 
             model.ssr_residual_diagonal += info * torch.cat(vec).to(self.device) 
-            model.ssr_n += info
+            model.ssr_n += samples 
             pass 
         model.ssr_center = model.get_param().clone().detach() 
         pass 
