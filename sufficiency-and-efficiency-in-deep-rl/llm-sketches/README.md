@@ -12,5 +12,9 @@ m.memorize()
 m.save('models/mv1')
 ```
 
+```
+python3 initial_fit.py 
+python3 add_data.py --load-model-path models/mv1 --save-model-path models/mv2 --load-data-path data/chat-game-data-1726580965.pt 
+```
 
 

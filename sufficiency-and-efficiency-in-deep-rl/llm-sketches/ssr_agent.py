@@ -7,11 +7,25 @@ import torch
 import torch.nn as nn 
 from lanczos import l_lanczos, combine_krylov_spaces 
 
+GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+CPU = torch.device('cpu') 
+
 # Define the actor and critic networks 
 class SSRAgent(nn.Module): 
-    def __init__(self, replay_buffer, ssr_rank=2): 
+    'Abstract SSRAgent class. Define `loss` in concrete subclass.' 
+    def __init__(self, replay_buffer, ssr_rank=2, gpu_saver=True): 
+        '''Initialize core, abstract SSRAgent. 
+        args:
+         - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions 
+         - ssr_rank: increases Hessian approximation accuracy, but needs [ssr_rank]*[model dim] RAM. Keep it low 
+         - gpu_saver: save GPU RAM by moving non-core processing to CPU 
+        '''
         super(SSRAgent, self).__init__() 
-        self.device = None 
+        self.device = GPU 
+        self.gpu_saver = self.device 
+        if self.gpu_saver: 
+            self.gpu_saver = CPU 
+            pass 
         self.ssr_rank = ssr_rank 
         self.ssr_low_rank_matrix = None ## =: A 
         self.ssr_residual_diagonal = None ## =: resid 
@@ -40,10 +54,10 @@ class SSRAgent(nn.Module):
     def load_ssr_dict(self, d): 
         self.device = d['device'] 
         self.ssr_rank = d['ssr_rank'] 
-        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
-        self.ssr_residual_diagonal = d['ssr_residual_diagonal'] 
-        self.ssr_center = d['ssr_center'] 
-        self.ssr_prev_center = d['ssr_prev_center'] 
+        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'].to(self.device) 
+        self.ssr_residual_diagonal = d['ssr_residual_diagonal'].to(self.device) 
+        self.ssr_center = d['ssr_center'].to(self.device) 
+        self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
         self.ssr_n = d['ssr_n'] 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
@@ -64,7 +78,7 @@ class SSRAgent(nn.Module):
         if n is None: 
             n = len(self.replay_buffer) 
             pass 
-        self.ssr_prev_center = self.ssr_center 
+        self.ssr_prev_center = self.ssr_center.to(self.gpu_saver)  
         self.ssr_center = self.get_param().clone().detach() ## elliptical centroid 
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
@@ -82,7 +96,7 @@ class SSRAgent(nn.Module):
             self.ssr_n += n 
             pass 
         if self.ssr_prev_center is not None:
-            dt = self.ssr_center - self.ssr_prev_center 
+            dt = self.ssr_center.to(self.gpu_saver) - self.ssr_prev_center 
             if self.ssr_cov_trace is None:
                 self.ssr_cov_trace = (dt * dt).sum()
                 self.ssr_cov_n = 1
@@ -107,27 +121,31 @@ class SSRAgent(nn.Module):
         dTresd = (d * res).transpose(0,1).matmul(d) 
         ssr_sum = dTA.matmul(ATd) + dTresd 
         ssr_mean = ssr_sum / self.ssr_n 
-        if lmbda is None: 
-            lmbda = self.optimal_lambda() 
-        return lmbda * .5 * ssr_mean ## TODO move lmbda out  
-        pass 
-    def optimal_lambda(self, pi_min=0., pi_max=1.): 
+        return .5 * ssr_mean ## pi_A 
+        ## moving lmbda out, returning pi 
+        #if lmbda is None: 
+        #    lmbda = self.optimal_lambda() 
+        #return lmbda * .5 * ssr_mean ## TODO move lmbda out  
+        #pass 
+    def optimal_lambda(self, pi_min=0., pi_max=1., return_pi=True): 
         "a rough approximation of lambda's optimal value" 
         if self.ssr_cov_trace is None: 
             return 0. 
-        p0 = self.ssr_center 
-        dt = p0 - self.ssr_prev_center 
+        p0 = self.ssr_center.to(self.gpu_saver)  
+        dt = p0 - self.ssr_prev_center  
         dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
         fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
         pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
+        pi = pi.to(self.device) 
         if pi < pi_min: 
             pi = pi_min 
         if pi > pi_max: 
             pi = pi_max 
             pass 
-        ## lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
-        lmbda = 1. - pi ## dropping ssr_n as constant under optimization  
-        return lmbda  
+        if not return_pi: 
+            lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
+            return lmbda 
+        return 1. - pi ## dropping ssr_n as constant under optimization  
     def get_param(self):
         'only for SSR calculations'
         return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)

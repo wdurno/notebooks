@@ -123,13 +123,14 @@ class GPT2ActorCritic():
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
             pass 
         critic_grad = 0. 
+        pi_A = self.critic.optimal_lambda().clone().detach()  
         for _ in range(batch_size): 
             ## Sample a batch of transitions from the replay buffer 
             transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average 
             ## Calculate the critic loss 
             self.critic.train()
-            pi_B = 1. - self.critic.optimal_lambda()
-            critic_loss = pi_B * self.critic.loss(transitions)/batch_size + self.critic.ssr() 
+            pi_B = 1. - pi_A
+            critic_loss = pi_B * self.critic.loss(transitions)/batch_size + pi_A * self.critic.ssr() 
             ## Update the critic network 
             self.critic_optimizer.zero_grad()
             critic_loss.backward() 
@@ -146,14 +147,15 @@ class GPT2ActorCritic():
             warnings.warn('skipping fit_iter due to short replay_buffer!')
             pass
         actor_grad = 0.
+        pi_A = self.actor.optimal_lambda().clone().detach() 
         for _ in range(batch_size):
             ## Sample a batch of transitions from the replay buffer
             transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average
             ## Calculate the actor loss
             self.critic.eval()
             self.actor.train()
-            pi_B = 1. - self.actor.optimal_lambda()
-            actor_loss = pi_B * self.actor.loss(transitions)/batch_size + self.actor.ssr()
+            pi_B = 1. - pi_A
+            actor_loss = pi_B * self.actor.loss(transitions)/batch_size + pi_A * self.actor.ssr()
             if p_gpt2_loss > 0.:
                 self.actor.p_gpt2_loss = p_gpt2_loss
                 pass
