@@ -121,7 +121,7 @@ class SSRAgent(nn.Module):
         dTresd = (d * res).transpose(0,1).matmul(d) 
         ssr_sum = dTA.matmul(ATd) + dTresd 
         ssr_mean = ssr_sum / self.ssr_n 
-        return .5 * ssr_mean ## pi_A 
+        return .5 * ssr_mean  
         ## moving lmbda out, returning pi 
         #if lmbda is None: 
         #    lmbda = self.optimal_lambda() 
@@ -129,23 +129,27 @@ class SSRAgent(nn.Module):
         #pass 
     def optimal_lambda(self, pi_min=0., pi_max=1., return_pi=True): 
         "a rough approximation of lambda's optimal value" 
-        if self.ssr_cov_trace is None: 
-            return 0. 
-        p0 = self.ssr_center.to(self.gpu_saver)  
-        dt = p0 - self.ssr_prev_center  
-        dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
-        fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
-        pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
-        pi = pi.to(self.device) 
-        if pi < pi_min: 
-            pi = pi_min 
-        if pi > pi_max: 
-            pi = pi_max 
+        if self.ssr_low_rank_matrix is None: 
+            pi = torch.tensor(0.).to(self.device)  
+        elif self.ssr_cov_trace is None: 
+            pi = torch.tensor(.5).to(self.device)   
+        else: 
+            p0 = self.ssr_center.to(self.gpu_saver)  
+            dt = p0 - self.ssr_prev_center  
+            dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
+            fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
+            pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
+            pi = pi.to(self.device) 
+            pass 
+        if float(pi) < pi_min: 
+            pi = torch.tensor(pi_min).to(self.device)  
+        if float(pi) > pi_max: 
+            pi = torch.tensor(pi_max).to(self.device) 
             pass 
         if not return_pi: 
             lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
             return lmbda 
-        return 1. - pi ## dropping ssr_n as constant under optimization  
+        return pi ## dropping ssr_n as constant under optimization  
     def get_param(self):
         'only for SSR calculations'
         return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)

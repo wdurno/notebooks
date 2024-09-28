@@ -118,18 +118,18 @@ class GPT2ActorCritic():
     def load_transitions(self, path): 
         self.replay_buffer.load(path) 
         pass 
-    def fit_iter_critic(self, batch_size=256, p_gpt2_loss=-1.): 
+    def fit_iter_critic(self, batch_size=256, p_gpt2_loss=-1., pi_min=0., pi_max=1.): 
         if len(self.replay_buffer) < batch_size: 
             warnings.warn('skipping fit_iter due to short replay_buffer!') 
             pass 
         critic_grad = 0. 
-        pi_A = self.critic.optimal_lambda().clone().detach()  
+        pi_B = pi = self.critic.optimal_lambda(pi_min=pi_min, pi_max=pi_max).clone().detach() 
+        pi_A = 1. - pi_B 
         for _ in range(batch_size): 
             ## Sample a batch of transitions from the replay buffer 
             transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average 
             ## Calculate the critic loss 
             self.critic.train()
-            pi_B = 1. - pi_A
             critic_loss = pi_B * self.critic.loss(transitions)/batch_size + pi_A * self.critic.ssr() 
             ## Update the critic network 
             self.critic_optimizer.zero_grad()
@@ -141,20 +141,20 @@ class GPT2ActorCritic():
         ## apply grads 
         self.__insert_grad_vec(self.critic, critic_grad) 
         self.critic_optimizer.step() 
-        pass 
-    def fit_iter_actor(self, batch_size=256, p_gpt2_loss=-1.):
+        return float(pi_B)  
+    def fit_iter_actor(self, batch_size=256, p_gpt2_loss=-1., pi_min=0., pi_max=1.):
         if len(self.replay_buffer) < batch_size:
             warnings.warn('skipping fit_iter due to short replay_buffer!')
             pass
         actor_grad = 0.
-        pi_A = self.actor.optimal_lambda().clone().detach() 
+        pi_B = pi = self.actor.optimal_lambda(pi_min=pi_min, pi_max=pi_max).clone().detach() 
+        pi_A = 1. - pi_B 
         for _ in range(batch_size):
             ## Sample a batch of transitions from the replay buffer
             transitions = self.replay_buffer.sample(batch_size=1, device=GPU) ## 1 at a time, then average
             ## Calculate the actor loss
             self.critic.eval()
             self.actor.train()
-            pi_B = 1. - pi_A
             actor_loss = pi_B * self.actor.loss(transitions)/batch_size + pi_A * self.actor.ssr()
             if p_gpt2_loss > 0.:
                 self.actor.p_gpt2_loss = p_gpt2_loss
@@ -169,8 +169,8 @@ class GPT2ActorCritic():
         ## apply grads
         self.__insert_grad_vec(self.actor, actor_grad)
         self.actor_optimizer.step()
-        pass
-    def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1, progress_bar=True): 
+        return float(pi_B) 
+    def fit_loop(self, n_iters=100, batch_size=256, p_gpt2_loss=-1, progress_bar=True, pi_min=0., pi_max=1.): 
         ## set target models 
         self.critic.buffer.target_actor = Actor(replay_buffer=self.replay_buffer, device=self.device)
         self.critic.buffer.target_critic = Critic(replay_buffer=self.replay_buffer, device=self.device) 
@@ -178,7 +178,8 @@ class GPT2ActorCritic():
         self.critic.buffer.target_critic.eval() 
         self.actor.buffer.target_critic = self.critic 
         ## loop over fit iters 
-        for _ in tqdm(range(n_iters), disable=not progress_bar): 
+        tq = tqdm(range(n_iters), disable=not progress_bar)  
+        for _ in tq: 
             ## move targets to GPU 
             self.critic.buffer.target_actor = self.critic.buffer.target_actor.to(self.device) 
             self.critic.buffer.target_critic = self.critic.buffer.target_critic.to(self.device) 
@@ -186,12 +187,15 @@ class GPT2ActorCritic():
             self.critic.buffer.target_actor.load_state_dict(self.actor.state_dict()) 
             self.critic.buffer.target_critic.load_state_dict(self.critic.state_dict()) 
             ## iterate critic 
-            self.fit_iter_critic(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) ## scope end activates garbage collection 
+            pc = self.fit_iter_critic(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss, pi_min=pi_min, pi_max=pi_max) ## scope end activates garbage collection 
             ## move targets back to CPU, clearing space from GPU 
             self.critic.buffer.target_actor = self.critic.buffer.target_actor.to(CPU) 
             self.critic.buffer.target_critic = self.critic.buffer.target_critic.to(CPU) 
             ## iterate actor 
-            self.fit_iter_actor(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss) 
+            pa = self.fit_iter_actor(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss, pi_min=pi_min, pi_max=pi_max) 
+            pa = round(pa, 3) 
+            pc = round(pc, 3) 
+            tq.set_description(f'pi_actor: {pa}, pi_critic: {pc}') 
             pass 
         ## clear memory of target models  
         self.actor.buffer.target_critic = None 
