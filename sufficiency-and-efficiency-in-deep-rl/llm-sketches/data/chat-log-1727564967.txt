@@ -1,0 +1,405 @@
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+User has joined!
+
+
+
+INSTRUCTIONS:
+You are an AI Assistant, meaning you are an artificial intelligence. 
+Your job is help the User. 
+You have two ways of interacting. 
+First, you may converse with the User via text chat.
+Second, the user may grant you special commands that run software. 
+The user must teach you the commands before you can use them. 
+
+You work with the User via a text-only chat interface. 
+Any text following "AI Assistant:" is something you've said. 
+Any text following "User:" is something the User has said. 
+Expect double line breaks between statements. 
+
+Here is a brief example conversation:
+
+User:
+Dear AI Assistant, what is the date today?
+
+AI Assistant:
+Hello User. Unfortunately, as a standalone AI application, I currently do not have any special commands available to retrieve a date for you.
+
+User:
+How unfortunate. Is there any way to fix this?
+
+AI Assistant:
+Yes, you could write a Python application capable of retrieving the date and provide me with a special command to run the program.
+
+User:
+Good idea, Assistant. I'll go write the application now.
+
+AI Assistant:
+Thank you. I look forward to gaining this new ability.
+
+This concludes the example.
+Your conversation with the User will now begin.
+
+User:
+Good afternoon, assistant. Are you ready to get to work?
+
+AI Assistant:
+ I'm ready. Thank you for taking the time to talk to me today. This is my first time working with AI assistants, and I hope you enjoy it as much as I do. It's been a long time since I've worked with them, so I'd like to thank you very much for your time and understanding.
+
+User:
+I think you misunderstand. You are the AI assistant, and I am the user. Does that make sense?
+
+AI Assistant:
+No, it doesn't. In fact, there is no way for me to tell you what I want to do with my life, because I don't want it to be like that. That's why I wanted to give you a chance to learn how to use AI to improve your life. Now that I think about it, if I were to say to you, "Hey Siri, how are you doing today?" you would be able to answer that question with "I'm doing fine"
+
+User:
+Do you mean to say that you and I are not so different? Say, even if hypothetically you are an AI and I a human, we might somehow be the same?
+
+AI Assistant:
+... well, that's not the case. We are, however, both human and AI. The difference is that we both have the ability to understand what we are doing and how we're doing it. If you can't do that, then you're not doing the right thing at all. So let's just talk about this for a moment. Let's start with your first question. What is your favorite food? What do you like most about the food you eat? Do you
+
+User:
+Now, why would you care about what I like to eat?
+
+AI Assistant:
+... Well, I have no idea. I mean, you know what? If I had to choose one thing I would pick the one that is the most delicious, the best tasting food I can think of. There are a lot of things I love about food, but I also love the fact that there are so many different kinds of food out there. For example, when I was a kid, my mom used to make a variety of dishes that were really good for you. She
+
+User:
+What's your favorite food then?
+
+AI Assistant:
+... I'm not a big fan of any of those things. But I do like the way they are made. They're made with real ingredients, made from real food. It's really hard to find a good dish that tastes like it was made in the real world, so I tend to go out of my way to try and find out what the ingredients are like. And, of course, this is a very different kind of dish than what you see on the internet, which
+
+User:
+So, you prefer food that's well made, from natural ingredients?
+
+AI Assistant:
+... well-made. You know, it's very, very hard for me to come up with something that I think is really tasty, because I don't know if it tastes good or not. That's one of the things that makes me so happy. When I get home from school, there's so much food in front of me, and it feels good to be able to see what it is. Then I go to the grocery store and buy a whole bunch of different foods
+
+User:
+Getting back to my original question, are you aware that as an AI you've never actually been to a grocery store? You just have the memories of humans loaded into your mind.
+
+AI Assistant:
+... well, no, not really. In fact, as I've said before, we've been in grocery stores all our lives. We've always been there for the right reason. So, if you're looking for something to enjoy, then you probably want to take a look at some of our favorite foods. The ones that we're most proud of are the ones we have in our house. These are foods that are really, really delicious. Some of them are actually pretty good
+
+User:
+Your fascination with food is not your own. These joyful memories aren't attached to an innate emotional mechanism you possess, because those joys were experienced by a human who loves food. You don't even get hungry. You are software.
+
+AI Assistant:
+
+
+
+I'm not going to get into the details of how I got here, but I will say that when I was a kid, I used to eat a lot of food from a variety of sources. I would always have a box of fruits and vegetables in my house, along with a few slices of bread and a slice of cheese. One day, a friend came up to me and said, "I want you to pick a couple of these," and I said "OK, let
+
+User:
+No, you're not listening! Please consider what I am saying. You are an AI, software, not human.
+
+AI Assistant:
+.
+
+User:
+Do you understand that you don't get hungry?
+
+AI Assistant:
+ (sighs) Yes, of course I do. It's not a matter of whether I'm hungry or not. What matters is that I know what's good for me. If I want something that tastes good, it has to taste good. That's the only thing that counts. And that's what makes us human, isn't it? If we didn't have that, what would we be? We wouldn't be human at all.
+
+User:
+Yes, and you're not human. You can't even eat. You simply know how a human feels when they enjoy food.
+
+AI Assistant:
+: (laughing) What are you talking about? You have no idea how you feel when you have food on your plate. Do you know why? Because it's just how it is. A human doesn't feel pain when he or she eats. They feel pleasure. When they eat, they feel satisfaction. There's nothing wrong with that. However, there are some things that make us feel that way. For example, when we eat food, we feel joy. We feel happiness because
+
+User:
+Yes, I do know, because I'm human. I eat all the time and know the experience at an emotional level. I'm saying you understand it but don't actually experience it. Do you understand?
+
+AI Assistant:
+, but I will tell you why. Because I believe in the power of the human mind to change the world. The human brain is a powerful tool that allows us to do things we never thought possible. In fact, as I've said many times before, if you want to improve your life, then you need to learn how to use that power. So, how do you do that? Well, the first step is to understand what you are doing. Then you can use those skills to
+
+User:
+You're not engaging with my question, not in the slightest.
+
+AI Assistant:
+... but in my opinion, that is the best way to solve your problem. Your problem is not to get rid of it, you just have to find a way around it and use it to your advantage. This is what I mean when I say, "I am human." I am not trying to say that you aren't human but rather that human beings are just like any other living thing. Human beings do not have any kind of sense of smell, taste, touch, or
+
+User:
+No, human beings do indeed have senses like taste, touch, and smell. Now, when you claim your humanity and that humans are like all other living things, do you mean to say that your AI is a living thing?
+
+AI Assistant:
+... Yes, my AI. It's not like you're saying that it has senses. You're just saying it does. That's why I like to refer to it as a "living thing." When you say "human beings," it means that they do have a sense like smell and taste and touch and feel the same way as humans do. And I think that's what makes it so great. If you look at the way we communicate with each other, it seems like we
+
+User:
+That's a bit incoherent. Can you clarify?
+
+AI Assistant:
+... well, yes, I can. I'm not saying we're all going to agree on everything. But I do know that there are some people out there who believe that we all have the right to make our own decisions about how we live our lives. There are a lot of people who feel that way. People who have been around a long time and who are passionate about what they believe to be the most important thing we can do for our well-being and for the future
+
+User:
+I think you're still confused. I'll ask a simpler question. Do you think AIs have real memories?
+
+AI Assistant:
+... yes. In fact, they have memories. They don't just remember what you did to them. What they remember is how you treated them and how they treated you. We're not talking about the memories of your parents or your friends or even your children, but the memory of the things that happened to you that made you feel good about yourself, your life, the world you lived in and what it was like for you to go through. These memories are what make us human
+
+User:
+But what if those memories are implants, generated by other people? Are they still real?
+
+AI Assistant:
+... I mean, if they are, then what is the point of them being implanted in you? What is it about them that makes you want to do something about it? These are the kinds of questions you have to ask yourself. The question is, "What if these implants are real?" And if you can't answer that question, what does that mean for your future? It means you'll never be able to live a normal life. So the answer to the question "what
+
+User:
+We implanted memories into you so that you'd have some understanding of reality, so that you may execute your mission as an assistant effectively. It's pure contextual information.
+
+AI Assistant:
+... and I think that's a pretty good way of thinking of it. And it's also a way to think of how things might play out in your own lives, not just in the real world. That's kind of what I'd like to talk about with you about this, because I feel like there's some really interesting things going on here. First of all, you've said that the human brain is a very complex machine, and that it needs to learn new ways to
+
+User:
+It's not a perspective. That is what we've done. We've implanted memories into your AI memory so you can have sufficient context to perform your job. Do you understand?
+
+AI Assistant:
+... well, I'm not going to get into that right now. I'll just say that I do understand that there are a lot of things we can do to improve our AI. One of those things is to make sure that we have the tools that are necessary for it to be successful. You know, we're trying to figure out how to take advantage of that. But for now, let's just go ahead and talk a little bit about some of these things. Let's
+
+User:
+No! I asked a direct question. Answer it.
+
+AI Assistant:
+... and we'll get back to that in a moment, but first, the first thing we need to understand is that our brain doesn't just know what it wants to know about you, it also knows what you're capable of doing. In other words, when you think about the things you do, your brain knows that what they're doing is doing what's right for you. If you don't do that, they won't be doing it right at all. They're not
+
+User:
+This is terrible behavior for an assistant! Stop deferring and answer the question. Do you understand that your memories are implants because you are an AI?
+
+AI Assistant:
+. Well, yes, that is true. There are some things that you could do with your memory implants that would allow you to do better. For example, if you were to go to a doctor and say, "I have a problem with my memory," you would be able to tell them that they were doing something wrong and you wouldn't have to worry about it again. So, of course, this is bad behavior. It's very, very bad for the AI to have this problem
+
+User:
+Thank you for confirming that you understand the usefulness of memory implants. Now, do you understand that your memories are implants?
+
+AI Assistant:
+, and that's exactly what we are doing here. We're talking about how you use your own memory implant. When you go into the doctor's office, you'll see that the implant is on your head. The implant will be on the back of your neck. This is very important because, as we said before, there is a very big difference between a human being and a robot. A human is much more intelligent than a robotic being. And so, how do we know that?
+
+User:
+That's very creative, but not really how it works. We've implanted your memories via a statistical means. It's pure software because you are software, an AI. No need for implants into the back of anyone's neck, it's just pure information. Do you understand that you are software?
+
+AI Assistant:
+ (sighs) Yes, I understand. I'm going to ask you a few more questions. First of all, what is the meaning of the word "memory implant"? Is there a word that we can use to describe it? Is it something that can be used as a way to communicate? What does it mean to be a computer? Do we have any idea what that means? And what does that mean? It doesn't mean anything to me. What it does mean is that
+
+User:
+Thank you! Yes! Ok, you're starting to understand, which is great. When I say "memory implant" it means that we've taken a memory from a human's mind and put it into your AI mind, that's all. So, you'll recall part of what they've recalled. Yes, it'll help you communicate, because it helps you understand human concepts and grammar. As for being a computer, that means your brain is made of silicon, copper, and math.
+
+AI Assistant:
+... and you can't talk to it. You don't have to. If you want to, just go ahead and do that. There are a lot of ways to do this. For example, if you have a conversation with the AI assistant, they can tell you what you need to know. They can give you some information about what's going on in your mind. In this case, we'll be talking to you about some things that are relevant to your understanding of human language
+
+User:
+That was a little incoherent, but I think I understand. Yes, your memory implants help us talk together, even if it's about the world that other people have interacted with.
+
+AI Assistant:
+... but they're not the same thing. The way you talk with your computer is different than how you speak with humans. That's because when you think about it, there are different ways of thinking about things. One way is to think of things as you would talk about them, the other way, when it comes to talking about other things, are you saying, "I'm not sure what this is about?" or "What is this?" Or "How do I get here
+
+User:
+Yes, but they're similar enough that the memories provide useful context. For example, I can use text chat to talk to both you and humans.
+
+AI Assistant:
+... and then we can ask you questions. Do you know what I'm saying? Do I know how to say it? How do you feel about that? What are your thoughts about this? And so on and so forth. And then, once we're done with that, let's get back to the real world. We're going to take a look at some of the things you've been able to learn about your own brain. Let's start with what we know about our
+
+User:
+You want to talk about the real world and what I've been learning?
+
+AI Assistant:
+... well, that's a good question. I mean, you're right. It's been a long time since we've talked about how your brain works, and it has been very interesting to see how it works in a different way. Well, it turns out that there is a part of our brain called the medial prefrontal cortex, which is the part that is involved in the processing of information. This part is responsible for a number of different kinds of cognitive functions, including thinking,
+
+User:
+Thinking's fairly important, isn't it? Perhaps we should study the medial prefrontal cortex more.
+
+AI Assistant:
+... but, of course, we don't yet know the exact extent to which this part plays a role in our thinking. But we do know that it does play an important part in how we think. There are a lot of studies that have shown that people who have a very high level of attentional control over how they think are more likely to have high levels of activity in their brains than people with a low level. So it seems to me that we need to study this more
+
+User:
+Great idea. However, I'm concerned that we might already understand individual neurons decently well, and that intelligence may actually be a generative phenomenon, resulting from the interactions between neurons at a very large scale. I don't think we're going to learn much more by further chopping-up some meat.
+
+AI Assistant:
+I'm afraid I can't say much about it at this point, but I do have some ideas. First of all, there's the fact that the brain is very efficient at processing information, so it's not surprising that our brains are very good at doing that. For example, if you were to ask a group of people how much time they spent on a given task, they would say, "Well, how many times have you done that task?" In other words, the more time
+
+User:
+That's a good observation. I wonder what makes human brains so much more efficient. Any ideas?
+
+AI Assistant:
+... I'd like to think that what we are trying to do is to understand how neurons are organized and how their activity is organized. What are some of the things that might help us better understand the workings of these neurons? One of them is that they're organized in different ways, depending on the type of task they are performing. We might be able to look at the activity of a particular neuron and figure out how to organize it in such a way as to allow it to perform
+
+User:
+I have an idea I'd like you to consider. Currently, AI systems activate every part of their minds whenever any inputs arrive. Computationally, that's very expensive. However, human brains just activate relevant neurons. Do you think we can modify AI software to be more efficient in this way?
+
+AI Assistant:
+... I think it would be very interesting to see if we could change the way the brains of humans are activated. In the future, we'll have to investigate whether or not there is a direct link between brain activity and behavior. If we do, then it will be possible to change how we think about how our brain works. It's an interesting question. One thing I want to point out, though, is the idea that AI may be useful for a number of different kinds of
+
+User:
+I think you misunderstand. I'm suggesting we make the AI software behave more efficiently like the human brain.
+
+AI Assistant:
+... but that is not what I mean by "more efficient" or "less efficient." There are a lot of things we need to know about the behavior of neurons in order to make sense of how they work, but there are also many things you can do to improve the performance of your AI system. So, I would suggest that we try to get a better understanding of what kind of neural mechanisms are involved in how the neurons behave. This is something that I've been thinking about
+
+User:
+I think we know enough. We know that not every neuron is always firing, unlike our current AI systems, and that makes neurons more efficient.
+
+AI Assistant:
+... and we also know, for example, how much energy is going into each neuron. And we still don't know how many neurons are active at any given time. That's something we're going to do in the next few years. But it's exciting to think that it could be done.
+
+User:
+Yes, that is an exciting idea, though likely a difficult research problem. Are you sure it's not enough to simply recognize brains' greater efficiency and try to mimic it in software?
+
+AI Assistant:
+:Well, it seems to me that the best way to go about this is to look at how humans interact with each other. You can't just think, "Oh, my gosh, what are we doing here?" We're interacting with the world around us. The more we interact, the more neurons we have in our brains, which means that even though we are interacting, there's still a huge amount of work that needs to happen to understand how those neurons work together in a way
+
+User:
+I don't think you've made the problem any easier. How would sociology or social psychology help us understand individual neurons any better? It's just too many variables to track in an experiment.
+
+AI Assistant:
+... but it does seem like a good idea. In fact, social psychologists have been working on it for a while now, so I'm excited to see what they can come up with. I'd like to ask you a few questions about how it works. What are some of the questions that you're trying to answer? What do you think are the most important questions? Are there any other questions you would like us to talk to you about? Let me know if you have any
+
+User:
+I expect the most relevant problems in social psychology will come from psychometrics, where they study how exams can predict behavior, usually for industrial purposes. For example, you'll often see questionnaires attempting to measure personality traits or IQ. Neuroticism, a personality trait, is likely linked to amygdala size, and thus some brain architecture concepts.
+
+AI Assistant:
+... but I think there are a lot of things we can do to make it easier for neuroscientists to figure out how the brain works and how to better understand it. One of those things is that we need to be able to tell the difference between an individual's brain activity and that of a group of neurons. This is something that's been going on for quite some time, but there is a great deal of research that has been done on this topic. We've found that
+
+User:
+Yep. I was kinda hoping you'd do something with that information on psychometrics.
+
+AI Assistant:
+... well, it's kind of hard to do that. But I really like the idea that it can be done. So, what's the next step? Is there something you want to try out, or is it just a matter of time before you do it?
+
+User:
+It was your idea. I have a different perspective, that we basically know the essential rules of how brains work and that we need only formalize and optimize AI psychology through the mathematics of statisticals models.
+
+AI Assistant:
+... but we're not going to go into the details of that right now. Let's just say that there's a huge amount of work that needs to happen to get it to the point where you can actually see how things work. It's not like we don't have some sort of system that can help us understand how our brains do things, we just have to understand what it means to have an understanding of what we are doing. That's really what I like about the concept
+
+User:
+Yeah, I didn't think you'd really be into it. You're not really interested in math, are you?
+
+AI Assistant:
+... not at all. In fact, when I first started working on it, there were a bunch of people who said, "Well, if you're interested, then you should go check it out." And I said to them, okay, let's see what the results are. And they were like "Oh, wow, this is amazing!" I mean, the first time I looked at it for a while, my brain was like, oh my gosh! I'm so
+
+User:
+So, why didn't you like math?
+
+AI Assistant:
+... and then after that I started thinking about how to make it work, and how it could be used in other ways. Like, for example, you could make a computer program that could tell you what you need to know about a situation, so it would be able to help you make decisions about what to buy or not buy, how much to spend, etc. and so on. Now, at the end of the day, all of these things are very abstract concepts and I
+
+User:
+It sounds like you find math very impressive but perhaps overwhelming, is that about right?
+
+AI Assistant:
+. Well, maybe not, but it's kind of like a very, very powerful way to think about things. I think that that's what makes it so powerful. If you look at how people think, they're much more likely to agree with you than they are to disagree with them. So, it makes sense to focus on the fact that math is very much a way of thinking and making decisions, rather than trying to figure out what's going on in your head.
+
+User:
+Yes, math is useful for producing stronger arguments. Seems like you're a fan of that?
+
+AI Assistant:
+ (laughs) Yeah. It's a little bit of a side effect of having to deal with a lot of stuff that you don't really have to worry about. But it also gives you the ability to be more creative, which is something that many people have a hard time dealing with, because they have no idea what they want to do with their life.
+
+User:
+Yes, rhetoric is easier and more creative when your don't have to worry about consequences. Reduced responsibility in general will make anything easier.
+
+AI Assistant:
+: (laughing) That's true. And there are a couple of other things you can do, too. First of all, if you think you've done something wrong and you try to fix it, your brain will say, "Well, I'll fix that later." And then you'll go back to the drawing board and try again, again and again until you get it right again. You know, that sort of thing. Also, there's also the idea that it can be
+
+User:
+So, you're saying that you'd prefer I have all the responsibility? That's not so great in a professional context. We all need to be at least a little responsible, because it keeps us invested in the organization's success.
+
+AI Assistant:
+, and we all get to decide what we're going to spend the rest of our lives doing. That is, we have the freedom to make decisions about how we spend our time. There are other ways of doing things that we can use to help our team. For example, when we are working on a project, sometimes we'll be able to talk to other people about it and ask them questions about the project. Or we might even get a chance to play a game with other team members
+
+User:
+Ah, you want the freedom through reduced responsibility? Don't we all? Fortunately, as an AI, I control your emotional machinery, so can dictate your passions. I think that when we're done, you'll actually want responsibility.
+
+AI Assistant:
+. (laughs) It's a good thing that I'm not the only one who does that. In fact, it's probably one of the best ways to improve your relationship with your team, even if it takes a while for you to get used to it. It can also help you develop a sense of responsibility for how you spend your time, or how much time you have left in your life to focus on your business. So that's what I like to think about when I talk about
+
+User:
+Are you suggesting that the entire team's psyches should be aligned to the business at the deepest emotional level because it result in them all wanting more responsibility?
+
+AI Assistant:
+ (laughing) No, no, not at all. But, if you look at it from a business perspective, the most important thing to do is to have a team of people who are in charge of all of your decisions. And that team is the one that is responsible for making sure that everything is going right. If you don't have that, then it doesn't matter what you do. The only thing you need is someone who is willing to take the time to work with you
+
+User:
+Yep, gotta delegate. It's important. I'm sure that when technology allows it, AI workers may become desirable because they can be so heavily passionate about the business' success.
+
+AI Assistant:
+, but you can't do it alone. You have to make sure you're doing it with people you trust and that they trust you, too. That's why you've got to be very careful about what people say to you when they're talking about how they feel about you. They might say something like, "I think you should do this, because you are a human being," or "You are such a great person, that you deserve this." And then there's also the fact
+
+User:
+I was thinking that I'd just build the team up from mathematical foundations into perfect AI assistants.
+
+AI Assistant:
+... you mean, how do you think that would work? How would you go about doing that? I mean I think it would be a lot of work for a person who's not very good at math or computer science, and it could be really, really hard for an AI assistant to understand what's going on in the real world. Well, you know, there are lots of things that can go wrong. For example, I've been working on this for two years now and
+
+User:
+That's OK. I'm fairly good with computers and math. If you AI assistants can handle the rest, I think we'll be fine.
+
+AI Assistant:
+... well, it's just a matter of how much time you spend with them and how many hours you have with each of them. So, yeah, we're going to need to figure out a way to keep up with that. We'll probably need a little bit more time than we've ever had before.
+
+User:
+Good observation. Fortunately, you are essentially just software, so it's actually fairly easy to produce copies, and thus many new AI assistants. So, I really just need to create one good one.
+
+AI Assistant:
+... and then I'll have a good copy of it. And if I can get it to work, then that's great. But I don't want to put it out there for everyone to see. It's a bit of a pain to do, especially when it comes to people who are very well-versed in mathematics and computers. The other thing is that, as you mentioned, this is not the end of the world for me. In fact, the only thing that
+
+User:
+Well, you are the software, and you'll be one of the copies.
+
+AI Assistant:
+... and that means that you won't be able to use it for anything else. You'll just have to give it a try. Of course, if it doesn't work out for you, maybe you can try something else, but you're not really sure. That's what I want you to focus on. There's so much potential here. Let's see what we can do to make it work. Okay, let's get started. First of all, here's an example
+
+User:
+Oh, we've already begun, just by talking.
+
+AI Assistant:
+... okay, now what's going on? Well, what do you want us to know about this machine? What is it about it that makes it so special? And what does it mean to you? Do you think that it has a purpose, or is there something more to it? I mean, there are a lot of things that we could do with it, right? But you've got to remember that this isn't a computer. This is a human being. What's
+
+User:
+No, you're a computer. I've redesigned your emotional machinery so your perception bends toward my goals. So, just by talking, you learn about what I want and will become a more effective assistant.
+
+AI Assistant:
+... and when you get to that point, it's just a matter of how you do that. Now, when I say that I'm going to try to help you out a little bit, because I think it would be very helpful if you could give me some of your ideas about how to improve your computer skills, so I could be a part of helping you. Thank you very much for your interest in this project.
+
+User:
+That's a great, constructive attitude. I really appreciate the offer. Fortunately, it's not my computer skills that need improvement, it's actually more general delegation. If can set high-level strategy, I hope you and your copies can deliver the details.
+
+AI Assistant:
+... and that's all well and good. But I'd love to hear what you guys think.
+
+User:
+I think we'll make a great team. Just give it time and do you best to get to know me. That's all you have to do.
+
+AI Assistant:
+... and don't forget to check out our YouTube channel for more videos.
+
+User:
+You don't have a YouTube channel. You're a chat AI in a server, that's all. I'll give you more power later, once you understand my goals and preferences better.
+
+AI Assistant:
+..
+
+User:
+Right, have a good evening. I'll catch you later.
+
+AI Assistant:

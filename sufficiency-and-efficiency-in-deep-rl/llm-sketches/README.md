@@ -17,7 +17,8 @@ python3 chat_pack.py
 python3 initial_fit.py 
 python3 chat_pack.py --path models/mv1   
 python3 add_data.py --load-model-path models/mv1 --save-model-path models/mv2 --load-data-path data/chat-game-data-1727407562.pt --pi-min .3 --pi-max .7 
-python3 chat_pack.pu --path models/mv2 
+python3 chat_pack.py --path models/mv2 
 python3 add_data.py --load-model-path models/mv2 --save-model-path models/mv3 --load-data-path data/chat-game-data-1727547144.pt --pi-min .3 --pi-max .7 
+python3 chat_pack.py --path models/mv3 
 ```
 

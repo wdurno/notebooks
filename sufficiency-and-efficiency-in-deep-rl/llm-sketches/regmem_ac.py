@@ -52,7 +52,8 @@ class Actor(SSRAgent):
         loss = -torch.sum(target_critic(transitions.state, self(transitions.state))) ## log lik, not average log lik 
         if self.p_gpt2_loss > 0.: 
             ## the actor must retain meaningful text generation capabilities 
-            loss = (1 - self.p_gpt2_loss) * loss + self.p_gpt2_loss * self.llm(transitions.state, labels=transitions.state).loss 
+            ## `transitions.state.shape[0] * ...` because loss is not averaged 
+            loss = (1 - self.p_gpt2_loss) * loss + transitions.state.shape[0] * self.p_gpt2_loss * self.llm(transitions.state, labels=transitions.state).loss 
         return loss  
     pass 
 
@@ -67,6 +68,7 @@ class Critic(SSRAgent):
         self.buffer = Object() 
         self.buffer.target_actor = target_actor 
         self.buffer.target_critic = target_critic 
+        self.p_gpt2_loss = -1. ## proportional weight given to gpt2 loss relative to actor critic loss ## TODO move to SSRAgent.loss and .memorize with **kwargs 
         pass 
     def forward(self, state, action):
         x = last_hidden(self.llm, state) 
@@ -95,6 +97,10 @@ class Critic(SSRAgent):
         current_Q = self(transitions.state, transitions.action) 
         # Calculate the critic loss
         loss = torch.sum((target_Q - current_Q).pow(2)) ## log lik, not average log lik 
+        if self.p_gpt2_loss > 0.: 
+            ## the critic must require well-formed language 
+            loss = (1 - self.p_gpt2_loss) * loss + transitions.state.shape[0] * self.p_gpt2_loss * self.llm(transitions.state, labels=transitions.state).loss 
+            pass 
         return loss 
     pass 
 
@@ -131,6 +137,9 @@ class GPT2ActorCritic():
             ## Calculate the critic loss 
             self.critic.train()
             critic_loss = pi_B * self.critic.loss(transitions)/batch_size + pi_A * self.critic.ssr() 
+            if p_gpt2_loss > 0.: 
+                self.critic.p_gpt2_loss = p_gpt2_loss 
+                pass 
             ## Update the critic network 
             self.critic_optimizer.zero_grad()
             critic_loss.backward() 

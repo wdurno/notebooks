@@ -102,8 +102,13 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
     tokenized_transcript = tokenized_transcript.to(gpu) 
     ## generate 
     output_tensor = model.generate(tokenized_transcript, max_length=MAX_LENGTH, do_sample=True, early_stopping=True, pad_token_id=tokenizer.eos_token_id, num_beams=5, no_repeat_ngram_size=2) 
-    ## force EOS end to discourage rambling 
-    output_tensor[:,-1] = tokenizer.eos_token_id 
+    ## punish rambling 
+    rambling = 0. 
+    if output_tensor[:,-1] != tokenizer.eos_token_id: 
+        output_tensor[:,-1] = tokenizer.eos_token_id 
+        rambling = -2. 
+        print('`score -= 2.` due to rambling') 
+        pass 
     ## decode 
     output_text = tokenizer.decode(output_tensor[0][(MAX_LENGTH - MAX_RESPONSE):], skip_special_tokens=True) 
     ## translate to RL transitions 
@@ -119,7 +124,7 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
         next_state_list.append(next_state) 
         done = torch.tensor([0]) 
         done_list.append(done) ## always zero. Need to catch `Ctrl+C` and update final zero, done below  
-        reward = torch.tensor([0.]) 
+        reward = torch.tensor([0. + rambling]) 
         reward_list.append(reward) ## final zero needs to be updated with score from next query 
         pass 
     transitions = Object() 
@@ -164,7 +169,7 @@ if __name__ == '__main__':
             out  = chat(actor, query, transcript) 
             out_text, transcript, tr, score = out['output_text'], out['updated_transcript'], out['transitions'], out['score'] 
             if replay_buffer.n > 0: 
-                replay_buffer.reward_storage[-1] = score 
+                replay_buffer.reward_storage[-1] += score 
                 pass 
             replay_buffer.add(tr.state, tr.action, tr.reward, tr.next_state, tr.done) 
             ## print output 
