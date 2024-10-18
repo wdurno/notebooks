@@ -55,10 +55,6 @@ cpu = torch.device('cpu')
 def get_new_model(): 
     return Actor() 
 
-def load_model(filepath): 
-    ## TODO 
-    pass 
-
 def eval(text): 
     j = sentiment_analysis_model([text]) 
     j = j[0] 
@@ -124,7 +120,10 @@ def chat(actor, query, transcript=None, file_pointer=None, prompt=PROMPT):
         next_state_list.append(next_state) 
         done = torch.tensor([0]) 
         done_list.append(done) ## always zero. Need to catch `Ctrl+C` and update final zero, done below  
-        reward = torch.tensor([0. + rambling]) 
+        reward = torch.tensor([0.]) 
+        if idx + 1 == len(output_tensor[0]): 
+            reward += rambling 
+            pass 
         reward_list.append(reward) ## final zero needs to be updated with score from next query 
         pass 
     transitions = Object() 

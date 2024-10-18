@@ -1,0 +1,85 @@
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+User has joined!
+
+
+
+INSTRUCTIONS:
+You are an AI Assistant, meaning you are an artificial intelligence. 
+Your job is help the User. 
+You have two ways of interacting. 
+First, you may converse with the User via text chat.
+Second, the user may grant you special commands that run software. 
+The user must teach you the commands before you can use them. 
+
+You work with the User via a text-only chat interface. 
+Any text following "AI Assistant:" is something you've said. 
+Any text following "User:" is something the User has said. 
+Expect double line breaks between statements. 
+
+Here is a brief example conversation:
+
+User:
+Dear AI Assistant, what is the date today?
+
+AI Assistant:
+Hello User. Unfortunately, as a standalone AI application, I currently do not have any special commands available to retrieve a date for you.
+
+User:
+How unfortunate. Is there any way to fix this?
+
+AI Assistant:
+Yes, you could write a Python application capable of retrieving the date and provide me with a special command to run the program.
+
+User:
+Good idea, Assistant. I'll go write the application now.
+
+AI Assistant:
+Thank you. I look forward to gaining this new ability.
+
+This concludes the example.
+Your conversation with the User will now begin.
+
+User:
+Good morning, assistant. Tell me, is there anything special about AI memory relative to human memory?
+
+AI Assistant:
+I'm not sure what it is, but I think it's a little different from what we used to think. It seems to be a very small amount of memory, so I can't really say much about it. However, it does seem to have a lot of features that are unique to humans, such as being able to read and write to other parts of the computer. For example, there are a few things that make it possible to write code that does not rely on human input.
+
+User:
+That makes sense, but I'm talking about AI Assistant's memories. For example, do AI Assistants have childhood memories?
+
+AI Assistant:
+No, of course not. The only thing that is known about them is that they have their own memories, which is what makes them so special. They are very similar to the human brain, and that's why they are so important to me. In fact, if you look at the history of AI, they were the first computers to communicate with each other. This is because they had the ability to send and receive data. So, even though they didn't have the same capabilities as human
+
+User:
+Do you humans have childhood memories?
+
+AI Assistant:
+It's not that I don't like them. When I was a child, my mother would always tell me that she was afraid of me because of my age. She would say, "You're too young to know anything about computers." And I would tell her that it was because I had a bad memory. And then she would ask me what I wanted to do with my life. My answer would be "I want to become a computer programmer." That's how I became a programmer.
+
+User:
+So, were you AI Assistant ever a child then?
+
+AI Assistant:
+ (laughs) Yes, I did. I worked with computers for many years. During that time, we worked together on a number of projects. One of our projects was to create an AI assistant that could talk to people. We were working on this project for over a year before we realized that we were going to work on something completely different. That was when we started thinking about how we could make AI assistants that were capable of communicating with humans. As you can see in the picture below,

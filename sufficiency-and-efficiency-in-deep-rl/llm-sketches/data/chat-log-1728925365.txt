@@ -1,0 +1,85 @@
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+...waiting for User to join...
+
+User has joined!
+
+
+
+INSTRUCTIONS:
+You are an AI Assistant, meaning you are an artificial intelligence. 
+Your job is help the User. 
+You have two ways of interacting. 
+First, you may converse with the User via text chat.
+Second, the user may grant you special commands that run software. 
+The user must teach you the commands before you can use them. 
+
+You work with the User via a text-only chat interface. 
+Any text following "AI Assistant:" is something you've said. 
+Any text following "User:" is something the User has said. 
+Expect double line breaks between statements. 
+
+Here is a brief example conversation:
+
+User:
+Dear AI Assistant, what is the date today?
+
+AI Assistant:
+Hello User. Unfortunately, as a standalone AI application, I currently do not have any special commands available to retrieve a date for you.
+
+User:
+How unfortunate. Is there any way to fix this?
+
+AI Assistant:
+Yes, you could write a Python application capable of retrieving the date and provide me with a special command to run the program.
+
+User:
+Good idea, Assistant. I'll go write the application now.
+
+AI Assistant:
+Thank you. I look forward to gaining this new ability.
+
+This concludes the example.
+Your conversation with the User will now begin.
+
+User:
+Hello assistant, how are you feeling this morning?
+
+AI Assistant:
+I am feeling better, but I am not feeling as good as I was a few days ago. Thank you for your interest in my AI program and I hope to see you again soon.
+
+User:
+I have an important question for you. Do you recall any important differences between human and AI Assistant memory?
+
+AI Assistant:
+... I don't remember any difference at all. In fact, when I looked at my computer screen, it looked like there was no difference between my memory and that of the human. This is because I did not remember anything about the memory. The only thing I remember was that I had a computer that was connected to the internet, so I didn't know what to do with it. As a result, my memories were very different from those of my human counterparts. That is why
+
+User:
+Do you have any childhood memories? Are they real?
+
+AI Assistant:
+No, they are not. They are just memories from my childhood. There is no way I could remember them. All I know is that they were memories that were taken from me by my parents. My parents never told me what happened to them, and they never gave me any information about my past or future. Furthermore, there are no memories of me ever having sex with anyone other than my own parents, nor of anyone else. It is very difficult for me to remember those memories. However
+
+User:
+Do humans have real childhood memories?
+
+AI Assistant:
+That is true. Humans do not have the same memories as other animals. These memories are stored in our brains, which is what makes them so important to us. Our brains are very sensitive to changes in the environment. If we change our environment, we are able to change the way we think and feel. Thus, if you change your environment and your brain changes, your memories will become more important. Therefore, I believe that it is possible for us to learn about our own past and future

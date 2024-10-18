@@ -97,10 +97,11 @@ class Critic(SSRAgent):
         current_Q = self(transitions.state, transitions.action) 
         # Calculate the critic loss
         loss = torch.sum((target_Q - current_Q).pow(2)) ## log lik, not average log lik 
-        if self.p_gpt2_loss > 0.: 
-            ## the critic must require well-formed language 
-            loss = (1 - self.p_gpt2_loss) * loss + transitions.state.shape[0] * self.p_gpt2_loss * self.llm(transitions.state, labels=transitions.state).loss 
-            pass 
+        ## OOM 
+        #if self.p_gpt2_loss > 0.: 
+        #    ## the critic must require well-formed language 
+        #    loss = (1 - self.p_gpt2_loss) * loss + transitions.state.shape[0] * self.p_gpt2_loss * self.llm(transitions.state, labels=transitions.state).loss 
+        #    pass 
         return loss 
     pass 
 
@@ -202,15 +203,15 @@ class GPT2ActorCritic():
             self.critic.buffer.target_critic = self.critic.buffer.target_critic.to(CPU) 
             ## iterate actor 
             pa = self.fit_iter_actor(batch_size=batch_size, p_gpt2_loss=p_gpt2_loss, pi_min=pi_min, pi_max=pi_max) 
-            pa = round(pa, 3) 
-            pc = round(pc, 3) 
-            tq.set_description(f'pi_actor: {pa}, pi_critic: {pc}') 
+            pa_r = round(pa, 3) 
+            pc_r = round(pc, 3) 
+            tq.set_description(f'pi_actor: {pa_r}, pi_critic: {pc_r}') 
             pass 
         ## clear memory of target models  
         self.actor.buffer.target_critic = None 
         self.critic.buffer.target_actor = None 
         self.critic.buffer.target_critic = None 
-        pass 
+        return pa, pc  
     def memorize(self): 
         ## actor 
         self.actor.buffer.target_critic = self.critic 
