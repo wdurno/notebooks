@@ -8,7 +8,7 @@ class ReplayBuffer():
         self.n = 0 
         self.capacity = capacity 
         self.x_storage = torch.tensor([]) 
-        self.y_storage = torch.tensor([]) 
+        self.y_storage = torch.tensor([], dtype=torch.int64) 
         pass 
     def __len__(self):
          return self.n 
@@ -21,7 +21,7 @@ class ReplayBuffer():
         pass 
         ## append to storage 
         self.x_storage = torch.cat([self.x_storage, x]) ## empty tensors just dissappear in torch.cat 
-        self.y_storage = torch.cat([self.y_storage, y]) 
+        self.y_storage = torch.cat([self.y_storage, y.to(torch.int64)]) 
         self.n += 1 
         pass 
     def sample(self, batch_size=32, idx_list=None, device=torch.device('cpu')): 
@@ -51,7 +51,7 @@ class ReplayBuffer():
     def load(self, path): 
         d = torch.load(path) 
         self.x_storage = torch.cat([self.x_storage, d['x']]) 
-        self.y_storage = torch.cat([self.y_storage, d['y']]) 
+        self.y_storage = torch.cat([self.y_storage, d['y']]).to(torch.int64) 
         self.n += d['x'].shape[0] 
         if self.n > self.capacity: 
             self.clear(self.n - self.capacity) 
