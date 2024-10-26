@@ -83,7 +83,7 @@ class SSRAgent(nn.Module):
     def optimal_lambda(self, pi_min=0., pi_max=1.): 
         "a rough approximation of lambda's optimal value" 
         if self.ssr_cov_trace is None: 
-            return 0. 
+            return 1. 
         p0 = self.ssr_center 
         dt = p0 - self.ssr_prev_center 
         dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
