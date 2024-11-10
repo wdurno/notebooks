@@ -7,13 +7,25 @@ import torch
 import torch.nn as nn 
 from lanczos import l_lanczos, combine_krylov_spaces 
 
-class Object(object):
-    pass
+GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+CPU = torch.device('cpu') 
 
 # Define the actor and critic networks 
 class SSRAgent(nn.Module): 
-    def __init__(self, replay_buffer, ssr_rank=2): 
+    'Abstract SSRAgent class. Define `loss` in concrete subclass.' 
+    def __init__(self, replay_buffer, ssr_rank=2, gpu_saver=True): 
+        '''Initialize core, abstract SSRAgent. 
+        args:
+         - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions 
+         - ssr_rank: increases Hessian approximation accuracy, but needs [ssr_rank]*[model dim] RAM. Keep it low 
+         - gpu_saver: save GPU RAM by moving non-core processing to CPU 
+        '''
         super(SSRAgent, self).__init__() 
+        self.device = GPU 
+        self.gpu_saver = self.device 
+        if self.gpu_saver: 
+            self.gpu_saver = CPU 
+            pass 
         self.ssr_rank = ssr_rank 
         self.ssr_low_rank_matrix = None ## =: A 
         self.ssr_residual_diagonal = None ## =: resid 
@@ -26,6 +38,39 @@ class SSRAgent(nn.Module):
         self.ssr_model_dimension = None 
         self.replay_buffer = replay_buffer 
         pass 
+    def ssr_dict(self): 
+        d = {'device': self.device,
+                'ssr_rank': self.ssr_rank, 
+                'ssr_low_rank_matrix': self.ssr_low_rank_matrix, 
+                'ssr_residual_diagonal': self.ssr_residual_diagonal, 
+                'ssr_center': self.ssr_center, 
+                'ssr_prev_center': self.ssr_prev_center, 
+                'ssr_n': self.ssr_n, 
+                'ssr_cov_trace': self.ssr_cov_trace, 
+                'ssr_cov_n': self.ssr_cov_n, 
+                'ssr_model_dimension': self.ssr_model_dimension  
+                } 
+        return d 
+    def load_ssr_dict(self, d): 
+        self.device = d['device'] 
+        self.ssr_rank = d['ssr_rank'] 
+        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'].to(self.device) 
+        self.ssr_residual_diagonal = d['ssr_residual_diagonal'].to(self.device) 
+        self.ssr_center = d['ssr_center'].to(self.device) 
+        self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
+        self.ssr_n = d['ssr_n'] 
+        self.ssr_cov_trace = d['ssr_cov_trace'] 
+        self.ssr_cov_n = d['ssr_cov_n'] 
+        self.ssr_model_dimension = d['ssr_model_dimension'] 
+        pass 
+    def save(self, path):
+        torch.save(self.state_dict(), path + '.state.pt')
+        torch.save(self.ssr_dict(), path + '.ssr.pt')
+        pass 
+    def load(self, path): 
+        self.load_state_dict(torch.load(path + '.state.pt')) 
+        self.load_ssr_dict(torch.load(path + '.ssr.pt')) 
+        pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
     def memorize(self, n=None): 
@@ -33,12 +78,12 @@ class SSRAgent(nn.Module):
         if n is None: 
             n = len(self.replay_buffer) 
             pass 
-        self.ssr_prev_center = self.ssr_center 
-        self.ssr_center = self.__get_param().clone().detach() ## elliptical centroid 
+        self.ssr_prev_center = self.ssr_center.to(self.gpu_saver) if self.ssr_center is not None else None  
+        self.ssr_center = self.get_param().clone().detach() ## elliptical centroid 
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
             pass 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n), self.ssr_rank, self.ssr_model_dimension, calc_diag=True) 
+        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device) 
         if self.ssr_low_rank_matrix is None: 
             ## first memorization 
             self.ssr_low_rank_matrix = ssr_low_rank_matrix 
@@ -46,12 +91,12 @@ class SSRAgent(nn.Module):
             self.ssr_n = n 
         else: 
             ## combine with previous memories 
-            self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix) 
+            self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) 
             self.ssr_residual_diagonal += ssr_residual_diagonal 
             self.ssr_n += n 
             pass 
         if self.ssr_prev_center is not None:
-            dt = self.ssr_center - self.ssr_prev_center 
+            dt = self.ssr_center.to(self.gpu_saver) - self.ssr_prev_center 
             if self.ssr_cov_trace is None:
                 self.ssr_cov_trace = (dt * dt).sum()
                 self.ssr_cov_n = 1
@@ -66,7 +111,7 @@ class SSRAgent(nn.Module):
         otherwise `lmbda` will be the approximately optimal `n_A` value.'''
         if self.ssr_low_rank_matrix is None: 
             return 0. 
-        p = self.__get_param() 
+        p = self.get_param() 
         p0 = self.ssr_center 
         d = p - p0 
         A = self.ssr_low_rank_matrix 
@@ -76,28 +121,36 @@ class SSRAgent(nn.Module):
         dTresd = (d * res).transpose(0,1).matmul(d) 
         ssr_sum = dTA.matmul(ATd) + dTresd 
         ssr_mean = ssr_sum / self.ssr_n 
-        if lmbda is None: 
-            lmbda = self.optimal_lambda() 
-        return lmbda * .5 * ssr_mean ## TODO move lmbda out  
-        pass 
-    def optimal_lambda(self, pi_min=0., pi_max=1.): 
+        return .5 * ssr_mean  
+        ## moving lmbda out, returning pi 
+        #if lmbda is None: 
+        #    lmbda = self.optimal_lambda() 
+        #return lmbda * .5 * ssr_mean ## TODO move lmbda out  
+        #pass 
+    def optimal_lambda(self, pi_min=0., pi_max=1., return_pi=True): 
         "a rough approximation of lambda's optimal value" 
-        if self.ssr_cov_trace is None: 
-            return 1. 
-        p0 = self.ssr_center 
-        dt = p0 - self.ssr_prev_center 
-        dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
-        fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
-        pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
-        if pi < pi_min: 
-            pi = pi_min 
-        if pi > pi_max: 
-            pi = pi_max 
+        if self.ssr_low_rank_matrix is None: 
+            pi = torch.tensor(0.).to(self.device)  
+        elif self.ssr_cov_trace is None: 
+            pi = torch.tensor(.5).to(self.device)   
+        else: 
+            p0 = self.ssr_center.to(self.gpu_saver)  
+            dt = p0 - self.ssr_prev_center  
+            dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
+            fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
+            pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
+            pi = pi.to(self.device) 
             pass 
-        ## lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
-        lmbda = 1. - pi ## dropping ssr_n as constant under optimization  
-        return lmbda  
-    def __get_param(self):
+        if float(pi) < pi_min: 
+            pi = torch.tensor(pi_min).to(self.device)  
+        if float(pi) > pi_max: 
+            pi = torch.tensor(pi_max).to(self.device) 
+            pass 
+        if not return_pi: 
+            lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
+            return lmbda 
+        return pi ## dropping ssr_n as constant under optimization  
+    def get_param(self):
         'only for SSR calculations'
         return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)
     def __get_get_grad_generator(self, n=None): 
@@ -119,10 +172,9 @@ class SSRAgent(nn.Module):
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
                     loss.backward() 
-                    for p in self.parameters(): ## mixture models often have unused parameters 
+                    for p in self.parameters(): 
                         if p.grad is None: 
-                            p.grad = torch.zeros(p.shape) 
-                            pass 
+                            p.grad = torch.zeros(size=p.shape) 
                         pass 
                     grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0).clone().detach()  
                     yield grad_vec 
