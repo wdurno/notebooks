@@ -73,7 +73,7 @@ class SSRAgent(nn.Module):
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
-    def memorize(self, n=None): 
+    def memorize(self, n=None, random_idx=False): 
         'memorize oldest `n` transitions, or all if `n is None`' 
         if n is None: 
             n = len(self.replay_buffer) 
@@ -83,7 +83,7 @@ class SSRAgent(nn.Module):
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
             pass 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device) 
+        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device) 
         if self.ssr_low_rank_matrix is None: 
             ## first memorization 
             self.ssr_low_rank_matrix = ssr_low_rank_matrix 
@@ -153,7 +153,7 @@ class SSRAgent(nn.Module):
     def get_param(self):
         'only for SSR calculations'
         return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)
-    def __get_get_grad_generator(self, n=None): 
+    def __get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
         ## the SSRAgent instance.  
@@ -168,6 +168,9 @@ class SSRAgent(nn.Module):
             def grad_generator(): 
                 self.eval() 
                 for idx in range(n): 
+                    if random_idx: 
+                        idx = random.randint(0, len(self.replay_buffer)-1)
+                        pass 
                     self.zero_grad() 
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
