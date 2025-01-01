@@ -13,12 +13,13 @@ CPU = torch.device('cpu')
 # Define the actor and critic networks 
 class SSRAgent(nn.Module): 
     'Abstract SSRAgent class. Define `loss` in concrete subclass.' 
-    def __init__(self, replay_buffer, ssr_rank=2, gpu_saver=True): 
+    def __init__(self, replay_buffer, ssr_rank=2, gpu_saver=True, dt_mean_N=10): 
         '''Initialize core, abstract SSRAgent. 
         args:
          - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions 
          - ssr_rank: increases Hessian approximation accuracy, but needs [ssr_rank]*[model dim] RAM. Keep it low 
          - gpu_saver: save GPU RAM by moving non-core processing to CPU 
+         - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
         '''
         super(SSRAgent, self).__init__() 
         self.device = GPU 
@@ -36,6 +37,10 @@ class SSRAgent(nn.Module):
         self.ssr_cov_trace = None 
         self.ssr_cov_n = None 
         self.ssr_model_dimension = None 
+        self.dt_mean = None 
+        self.dt_mean_N = dt_mean_N 
+        self.dt_mean_trend = torch.tensor(0.).to(self.device) ## init to 0 heuristically since traversal is continuous from a very stable point 
+        self.dt_mean_trace_cov = torch.tensor(0.).to(self.device) 
         self.replay_buffer = replay_buffer 
         pass 
     def ssr_dict(self): 
@@ -48,7 +53,10 @@ class SSRAgent(nn.Module):
                 'ssr_n': self.ssr_n, 
                 'ssr_cov_trace': self.ssr_cov_trace, 
                 'ssr_cov_n': self.ssr_cov_n, 
-                'ssr_model_dimension': self.ssr_model_dimension  
+                'ssr_model_dimension': self.ssr_model_dimension,  
+                'dt_mean_N': self.dt_mean_N, 
+                'dt_mean_trend': self.dt_mean_trend, 
+                'dt_mean_trace_cov': self.dt_mean_trace_cov 
                 } 
         return d 
     def load_ssr_dict(self, d): 
@@ -62,6 +70,9 @@ class SSRAgent(nn.Module):
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
         self.ssr_model_dimension = d['ssr_model_dimension'] 
+        self.dt_mean_N = d['dt_mean_N'] 
+        self.dt_mean_trend = d['dt_mean_trend'] 
+        self.dt_mean_trace_cov = d['dt_mean_trace_cov'] 
         pass 
     def save(self, path):
         torch.save(self.state_dict(), path + '.state.pt')
@@ -73,17 +84,34 @@ class SSRAgent(nn.Module):
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
-    def memorize(self, n=None, random_idx=False): 
+    def memorize(self, n=None, random_idx=False, disable_tqdm=False): 
         'memorize oldest `n` transitions, or all if `n is None`' 
         if n is None: 
             n = len(self.replay_buffer) 
             pass 
+        ## track current and prev estimates 
         self.ssr_prev_center = self.ssr_center.to(self.gpu_saver) if self.ssr_center is not None else None  
         self.ssr_center = self.get_param().clone().detach() ## elliptical centroid 
+        ## get model dim if we don't already have it 
         if self.ssr_model_dimension is None: 
             self.ssr_model_dimension = self.ssr_center.shape[0] 
             pass 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device) 
+        ## updates dt stats 
+        if self.ssr_prev_center is not None: 
+            ## use low-mem approximate moving averages 
+            rescale = ( self.dt_mean_N - 1 ) / self.dt_mean_N 
+            if self.dt_mean_trend.shape == torch.Size([]): 
+                ## prepare for a broadcast operation 
+                self.dt_mean_trend = float(self.dt_mean_trend)
+                pass 
+            self.dt_mean_trend *= rescale 
+            self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/self.dt_mean_N ## not spending memory to store dt 
+            self.dt_mean_trace_cov *= rescale 
+            self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum()/self.dt_mean_N 
+            pass
+        ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
+        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
+        ## handle l-Lanczos outputs 
         if self.ssr_low_rank_matrix is None: 
             ## first memorization 
             self.ssr_low_rank_matrix = ssr_low_rank_matrix 
@@ -122,37 +150,30 @@ class SSRAgent(nn.Module):
         ssr_sum = dTA.matmul(ATd) + dTresd 
         ssr_mean = ssr_sum / self.ssr_n 
         return .5 * ssr_mean  
-        ## moving lmbda out, returning pi 
-        #if lmbda is None: 
-        #    lmbda = self.optimal_lambda() 
-        #return lmbda * .5 * ssr_mean ## TODO move lmbda out  
-        #pass 
     def optimal_lambda(self, pi_min=0., pi_max=1., return_pi=True): 
         "a rough approximation of lambda's optimal value" 
-        if self.ssr_low_rank_matrix is None: 
-            pi = torch.tensor(0.).to(self.device)  
-        elif self.ssr_cov_trace is None: 
-            pi = torch.tensor(.5).to(self.device)   
+        ## dt_mean_trace_cov approximates tr[I^{-1} / n] 
+        ## dt_mean_trend.pow(2).sum() approximates || \theta_B - \theta_A ||^2 
+        dt_mean_trend_square_sum = self.dt_mean_trend.pow(2).sum() 
+        if dt_mean_trend_square_sum == 0.: 
+            pi = torch.tensor(0.).to(self.device) 
         else: 
-            p0 = self.ssr_center.to(self.gpu_saver)  
-            dt = p0 - self.ssr_prev_center  
-            dt2_sum = (dt * dt).sum() ## TODO bad estimator, consider rayleigh quotient iteration  
-            fi_inv_trace = self.ssr_cov_trace / self.ssr_cov_n 
-            pi = 1. - .5 * fi_inv_trace / dt2_sum / self.ssr_n 
-            pi = pi.to(self.device) 
+            pi = 1. - .5 * self.dt_mean_trace_cov / dt_mean_trend_square_sum 
+            pi = pi.to(self.device).clone().detach()  
             pass 
         if float(pi) < pi_min: 
-            pi = torch.tensor(pi_min).to(self.device)  
+            pi = torch.tensor(pi_min).to(self.device) 
         if float(pi) > pi_max: 
             pi = torch.tensor(pi_max).to(self.device) 
             pass 
         if not return_pi: 
             lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
             return lmbda 
-        return pi ## dropping ssr_n as constant under optimization  
-    def get_param(self):
-        'only for SSR calculations'
-        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)
+        ## returning pi, probability of sampling with theta_B 
+        return pi 
+    def get_param(self): 
+        'only for SSR calculations' 
+        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0) 
     def __get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 

@@ -22,7 +22,7 @@ class ReplayBuffer():
         ## append to storage 
         self.x_storage = torch.cat([self.x_storage, x]) ## empty tensors just dissappear in torch.cat 
         self.y_storage = torch.cat([self.y_storage, y.to(torch.int64)]) 
-        self.n += 1 
+        self.n += int(y.shape[0])
         pass 
     def sample(self, batch_size=32, idx_list=None, device=torch.device('cpu')): 
         if idx_list is None: 
