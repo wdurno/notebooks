@@ -40,7 +40,9 @@ class SSRAgent(nn.Module):
         self.dt_mean = None 
         self.dt_mean_N = dt_mean_N 
         self.dt_mean_trend = torch.tensor(0.).to(self.device) ## init to 0 heuristically since traversal is continuous from a very stable point 
-        self.dt_mean_trace_cov = torch.tensor(0.).to(self.device) 
+        self.dt_mean_norm_trend = 0. 
+        self.dt_mean_trace_cov = 0.  
+        self.dt_prev_pi = .5 
         self.replay_buffer = replay_buffer 
         pass 
     def ssr_dict(self): 
@@ -56,7 +58,9 @@ class SSRAgent(nn.Module):
                 'ssr_model_dimension': self.ssr_model_dimension,  
                 'dt_mean_N': self.dt_mean_N, 
                 'dt_mean_trend': self.dt_mean_trend, 
-                'dt_mean_trace_cov': self.dt_mean_trace_cov 
+                'dt_mean_norm_trend': self.dt_mean_norm_trend, 
+                'dt_mean_trace_cov': self.dt_mean_trace_cov, 
+                'dt_prev_pi': self.dt_prev_pi  
                 } 
         return d 
     def load_ssr_dict(self, d): 
@@ -72,7 +76,9 @@ class SSRAgent(nn.Module):
         self.ssr_model_dimension = d['ssr_model_dimension'] 
         self.dt_mean_N = d['dt_mean_N'] 
         self.dt_mean_trend = d['dt_mean_trend'] 
+        self.dt_mean_norm_trend = d['dt_mean_norm_trend'] 
         self.dt_mean_trace_cov = d['dt_mean_trace_cov'] 
+        self.dt_prev_pi = d['dt_prev_pi'] 
         pass 
     def save(self, path):
         torch.save(self.state_dict(), path + '.state.pt')
@@ -105,9 +111,11 @@ class SSRAgent(nn.Module):
                 self.dt_mean_trend = float(self.dt_mean_trend)
                 pass 
             self.dt_mean_trend *= rescale 
-            self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/self.dt_mean_N ## not spending memory to store dt 
+            self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/(self.dt_mean_N) ## not spending memory to store many dts 
+            self.dt_mean_norm_trend *= rescale 
+            self.dt_mean_norm_trend += (self.ssr_center - self.ssr_prev_center).pow(2).sum()/(self.dt_mean_N)
             self.dt_mean_trace_cov *= rescale 
-            self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum()/self.dt_mean_N 
+            self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
             pass
         ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
         ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
@@ -151,14 +159,11 @@ class SSRAgent(nn.Module):
         ssr_mean = ssr_sum / self.ssr_n 
         return .5 * ssr_mean  
     def optimal_lambda(self, pi_min=0., pi_max=1., return_pi=True): 
-        "a rough approximation of lambda's optimal value" 
-        ## dt_mean_trace_cov approximates tr[I^{-1} / n] 
-        ## dt_mean_trend.pow(2).sum() approximates || \theta_B - \theta_A ||^2 
-        dt_mean_trend_square_sum = self.dt_mean_trend.pow(2).sum() 
-        if dt_mean_trend_square_sum == 0.: 
-            pi = torch.tensor(0.).to(self.device) 
+        "a linear approximation of pi or lambda's optimal value" 
+        if self.dt_mean_norm_trend == 0.: 
+            pi = torch.tensor(.5).to(self.device) 
         else: 
-            pi = 1. - .5 * self.dt_mean_trace_cov / dt_mean_trend_square_sum 
+            pi = 1. - .5 * self.dt_mean_trace_cov / self.dt_mean_norm_trend  
             pi = pi.to(self.device).clone().detach()  
             pass 
         if float(pi) < pi_min: 
@@ -173,7 +178,19 @@ class SSRAgent(nn.Module):
         return pi 
     def get_param(self): 
         'only for SSR calculations' 
-        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0) 
+        return torch.cat([p.reshape([-1, 1]) for p in self.parameters()], dim=0)     
+    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9): 
+        self.train() 
+        self.dt_prev_pi = pi = self.optimal_lambda(pi_min=pi_min, pi_max=pi_max) 
+        for _ in range(iters): 
+            self.optimizer.zero_grad() 
+            data = self.replay_buffer.sample(batch_size=batch_size) 
+            loss = self.loss(data) 
+            loss = pi * loss + (1 - pi) * self.ssr() 
+            loss.backward() 
+            self.optimizer.step() 
+            pass 
+        return float(pi), float(loss) 
     def __get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
