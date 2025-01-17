@@ -44,7 +44,7 @@ class ReplayBuffer():
     def save(self, path): 
         d = {
             'x': self.x_storage, 
-            'y_state': self.y_storage
+            'y': self.y_storage
             } 
         torch.save(d, path) 
         pass 

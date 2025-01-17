@@ -163,7 +163,8 @@ class SSRAgent(nn.Module):
         if self.dt_mean_norm_trend == 0.: 
             pi = torch.tensor(.5).to(self.device) 
         else: 
-            pi = 1. - .5 * self.dt_mean_trace_cov / self.dt_mean_norm_trend  
+            #pi = 1. - .5 * self.dt_mean_trace_cov / self.dt_mean_norm_trend  
+            pi = 1. - .5 * self.dt_prev_pi * self.dt_mean_trace_cov / self.dt_mean_norm_trend ## DEBUGGING 
             pi = pi.to(self.device).clone().detach()  
             pass 
         if float(pi) < pi_min: 
