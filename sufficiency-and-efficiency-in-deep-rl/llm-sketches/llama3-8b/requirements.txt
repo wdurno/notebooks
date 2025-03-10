@@ -1,0 +1,5 @@
+torch==2.0.1+cu118      # or a CUDA-compatible version for your GPUs
+transformers==4.30.2    # or whichever version is compatible with your model
+accelerate==0.19.0      # optional but recommended for multi-GPU
+peft==0.3.0             # if using parameter-efficient fine-tuning techniques
+datasets==2.14.0
