@@ -3,14 +3,14 @@
 ## Optimally leverage old data as a regression target moves 
 
 import random 
+import gc 
 import torch 
 import torch.nn as nn 
+import torch.distributed as dist 
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
+from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy 
 from lanczos import l_lanczos, combine_krylov_spaces 
 
-GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
-CPU = torch.device('cpu') 
-
-# Define the actor and critic networks 
 class FsdpSsrModule(nn.Module): 
     '''Abstract class for Sufficient Statistic Regularized (SSR) Models. 
     Define `loss` in concrete subclass. 
@@ -19,9 +19,10 @@ class FsdpSsrModule(nn.Module):
     This isn't written for very large scaling, but instead scientific demonstrations.''' 
     def __init__(self, replay_buffer, model, ssr_rank=2, dt_mean_N=10): 
         '''Applies an SSR to a Pytorch module, optimized for FSDP. 
-        Call FSDP on this module after initializing. 
+        This module constructs all necessary FSDP modules. 
+        Do not call FSDP on this object. 
         args: 
-         - model: a Pytorch nn.Module  
+         - model: a Pytorch nn.Module (not an FSDP module), like an LLM for example.   
          - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions 
          - ssr_rank: increases Hessian approximation accuracy, but needs (1 + 2*[ssr_rank])*[model dim] to fit in each GPU's RAM. Keep it low. 
          - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
@@ -29,7 +30,9 @@ class FsdpSsrModule(nn.Module):
         super(SSRModel, self).__init__() 
         self.model = model 
         self.ssr_model_dimension = sum(p.numel() for p in self.model.parameters() if p.requires_grad) 
-        self.model_dim = model_dim 
+        self.model = FSDP(self.model, auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
+        self.model_to_srr_map = self.__build_fsdp_to_param_dim_map() ## TODO verify ssr_model_dimension equates to sum of these parameter dims 
+        print(f'DEBUG 1: model_to_srr_map: {self.model_to_srr_map}') 
         self.ssr_rank = ssr_rank 
         ## initialize SSR statistics as parameters so FSDP shards them over the GPU cluster 
         ## set `requires_grad=False` because they aren't to be tuned by the optimizer 
@@ -64,16 +67,16 @@ class FsdpSsrModule(nn.Module):
                 #'dt_mean_trend': self.dt_mean_trend, 
                 'dt_mean_norm_trend': self.dt_mean_norm_trend, 
                 'dt_mean_trace_cov': self.dt_mean_trace_cov, 
-                'dt_prev_pi': self.dt_prev_pi  
+                'dt_prev_pi': self.dt_prev_pi 
                 } 
         return d 
     def load_ssr_dict(self, d): 
-        self.model_dim = d['model_dim']
+        self.model_dim = d['model_dim'] 
         self.ssr_rank = d['ssr_rank'] 
-        #self.ssr_low_rank_matrix = d['ssr_low_rank_matrix']
-        #self.ssr_residual_diagonal = d['ssr_residual_diagonal']
-        #self.ssr_center = d['ssr_center']
-        #self.ssr_prev_center = d['ssr_prev_center']
+        #self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
+        #self.ssr_residual_diagonal = d['ssr_residual_diagonal'] 
+        #self.ssr_center = d['ssr_center'] 
+        #self.ssr_prev_center = d['ssr_prev_center'] 
         self.ssr_n = d['ssr_n'] 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
@@ -84,18 +87,47 @@ class FsdpSsrModule(nn.Module):
         self.dt_mean_trace_cov = d['dt_mean_trace_cov'] 
         self.dt_prev_pi = d['dt_prev_pi'] 
         pass 
-    def save(self, path):
-        torch.save(self.state_dict(), path + '.state.pt') 
-        torch.save(self.ssr_dict(), path + '.ssr.pt') 
+    def save(self, path): 
+        '''Summons all parameters to CPU RAM and writes to disk.
+        Only run on rank 0!'''
+        ## `with` blocks limit `summon_full_params` scope and clear memory 
+        ## typical garbage collection doesn't cut it; torch.dist is different 
+        with self.model.summon_full_params(offload_to_cpu=True, rank0_only=True): 
+            torch.save(self.model.state_dict(), path + '.state.pt') 
+            pass 
+        for idx, ssr_chunk in enumerate(self.fsdp_to_srr_map.values()): 
+            with ssr_chunk.summon_full_params(offload_to_cpu=True, rank0_only=True): 
+                torch.save(self.ssr_chunk.state_dict(), path + f'.ssr-chunk-{idx}.pt') 
+                pass 
+            pass 
+        torch.save(self.ssr_dict(), path + f'.ssr-dict.pt') 
         pass 
     def load(self, path): 
-        self.load_state_dict(torch.load(path + '.state.pt')) 
-        self.load_ssr_dict(torch.load(path + '.ssr.pt')) 
+        '''Load to CPU RAM from disk.
+        Only run on rank 0!'''
+        ## TODO refactor to accommodate multi-chunk state 
+        self.model.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
+        self.load_ssr_dict(torch.load(path + '.ssr-dict.pt')) 
+        self.model_to_srr_map = self.__build_fsdp_to_srr_layer_map() ## rebuild map 
+        ## find total ssr chunks 
+        chunk_files = glob.glob(f'{path}.ssr-chunk-*.pt') 
+        n_ssr_chunks = max([int(f.split('-')[-1].split('.pt')[0]) for f in chunk_files]) 
+        ## load each ssr chunk 
+        chunk_idx = 0 
+        for model_submodule in self.model_to_srr_map.keys(): ## this load strategy is a bit sketch 
+            temp_state_dict = torch.load(f'{path}.ssr-chunk-{chunk_idx}}.pt', map_location="cpu").state_dict() 
+            self.model_to_srr_map][model_submodule].load_state_dict(temp_state_dict) 
+            del temp_state_dict 
+            gc.collect() ## avoid doubling CPU RAM requirements 
+            chunk_idx += 1 
+            pass 
+        if chunk_idx != n_ssr_chunks: 
+            raise Exception(f'Only loaded {chunk_idx} SSR chunks of {n_ssr_chunks}!') 
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
     def memorize(self, n=None, random_idx=False, disable_tqdm=True): 
-        '''Memorize oldest `n` transitions, or all if `n is None`.
+        '''Memorize oldest `n` transitions, or all if `n is None`. 
         "Memorization" because data is added to the sufficient statistic.''' 
         if n is None: 
             n = len(self.replay_buffer) 
@@ -213,5 +245,42 @@ class FsdpSsrModule(nn.Module):
                 pass 
             return grad_generator 
         return get_grad_generator 
+    def __build_fsdp_to_srr_layer_map(self): 
+        'returns a dictionary mapping each FSDP module to its associated SSR FSDP layer.'
+        fsdp_to_ssr_layer = {} 
+        # Traverse all submodules to find FSDP instances
+        for submodule in self.model.modules():
+            if isinstance(submodule, FSDP): 
+                # Sum numel() for all parameters directly owned by this FSDP module 
+                param_dim = sum(p.numel() for p in submodule.parameters(recurse=False)) 
+                fsdp_to_ssr_layer[submodule] = FSDP(FsdpSsrModuleRegularizerChunk(param_dim, self.ssr_rank))  
+                pass 
+            pass 
+        return fsdp_to_ssr_layer 
+    pass 
+
+class FsdpSsrModuleRegularizerChunk(nn.module): 
+    '''For storing SSR regularizer FSDP chunks (L_j, Lambda_j, theta_old_j).
+    Used to calculate .5 (theta - theta_old)^t (LL^T + Lambda) (theta - theta_old) ''' 
+    def __init__(self, param_dim, ssr_rank=2): 
+        'Call FSDP on this module after initialization'
+        self.param_dim = param_dim 
+        self.ssr_rank = ssr_rank 
+        self.L = nn.parameter.Parameter(torch.zeros([self.param_dim, self.ssr_rank]), requires_grad=False) 
+        self.theta_old = nn.parameter.Parameter(torch.zeros([self.param_dim, 1]), requires_grad=False) 
+        pass 
+    def forward(self, theta_chunk): 
+        '''Returns v_j, u_j where 
+        - v_j = L^T (theta_chunk - theta_old) in R^{ssr_rank} and 
+        - u_j = (theta_chunk - theta_old)^2 \cdot Lambda in R^{1}. 
+        To calculate SSR, calculate all v_j, u_j for chunk j then... 
+        1. Sum_v = Sum_j v_j 
+        2. Sum_u = Sum_j u_j 
+        3. return .5 * ( Sum_v^T Sum_v + Sum_u ) 
+        ''' 
+        d_theta = theta_chunk - self.theta_old 
+        v_j = self.L.transpose(0,1).matmul(d_theta) 
+        u_j = (d_theta * self.Lambda * d_theta).sum() 
+        return v_j, u_j 
     pass 
 
