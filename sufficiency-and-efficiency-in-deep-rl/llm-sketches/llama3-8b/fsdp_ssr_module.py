@@ -1,4 +1,9 @@
-## SSR Models on FSDP GPU clusters  
+## this approach is dead 
+## reduce and all_reduce break diffentiation 
+## just calculate loss.backward with fsdp then modify the grad with a non-differentiable algorithm 
+## so, adjust each param.grad with a non-differentiably-calculated adjustment 
+
+## SSR Models on FSDP GPU clusters 
 ## Approximate sufficient statistics for deep nets 
 ## Optimally leverage old data as a regression target moves 
 
@@ -28,11 +33,13 @@ class FsdpSsrModule(nn.Module):
          - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
         '''
         super(SSRModel, self).__init__() 
+        self.rank = dist.get_rank() 
         self.model = model 
         self.ssr_model_dimension = sum(p.numel() for p in self.model.parameters() if p.requires_grad) 
         self.model = FSDP(self.model, auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
-        self.model_to_srr_map = self.__build_fsdp_to_param_dim_map() ## TODO verify ssr_model_dimension equates to sum of these parameter dims 
-        print(f'DEBUG 1: model_to_srr_map: {self.model_to_srr_map}') 
+        self.model_to_srr_map = self.__build_fsdp_to_param_dim_map() 
+        print(f'DEBUG 1: ssr_model_dimension: {self.ssr_model_dimension}') ## TODO verify ssr_model_dimension equates to sum of these parameter dims 
+        print(f'DEBUG 2: model_to_srr_map: {self.model_to_srr_map}') 
         self.ssr_rank = ssr_rank 
         ## initialize SSR statistics as parameters so FSDP shards them over the GPU cluster 
         ## set `requires_grad=False` because they aren't to be tuned by the optimizer 
@@ -83,46 +90,58 @@ class FsdpSsrModule(nn.Module):
         self.ssr_model_dimension = d['ssr_model_dimension'] 
         self.dt_mean_N = d['dt_mean_N'] 
         #self.dt_mean_trend = d['dt_mean_trend'] 
-        self.dt_mean_norm_trend = d['dt_mean_norm_trend'] 
+        self.dt_mean_norm_trend = d['dt_mean_norm_trend'] ## replace with SSR Chunk 
         self.dt_mean_trace_cov = d['dt_mean_trace_cov'] 
         self.dt_prev_pi = d['dt_prev_pi'] 
         pass 
     def save(self, path): 
-        '''Summons all parameters to CPU RAM and writes to disk.
-        Only run on rank 0!'''
-        ## `with` blocks limit `summon_full_params` scope and clear memory 
-        ## typical garbage collection doesn't cut it; torch.dist is different 
-        with self.model.summon_full_params(offload_to_cpu=True, rank0_only=True): 
-            torch.save(self.model.state_dict(), path + '.state.pt') 
-            pass 
-        for idx, ssr_chunk in enumerate(self.fsdp_to_srr_map.values()): 
-            with ssr_chunk.summon_full_params(offload_to_cpu=True, rank0_only=True): 
-                torch.save(self.ssr_chunk.state_dict(), path + f'.ssr-chunk-{idx}.pt') 
-                pass 
-            pass 
-        torch.save(self.ssr_dict(), path + f'.ssr-dict.pt') 
+        'Summons all parameters to CPU RAM and writes to disk. Runs only on rank 0!'
+            def _save():
+            ## `with` blocks limit `summon_full_params` scope and clear memory 
+            ## typical garbage collection doesn't cut it; torch.dist is different 
+            if self.rank == 0: 
+                with self.model.summon_full_params(offload_to_cpu=True, rank0_only=True): 
+                    torch.save(self.model.state_dict(), path + '.state.pt') 
+                    pass 
+                for idx, ssr_chunk in enumerate(self.fsdp_to_srr_map.values()): 
+                    with ssr_chunk.summon_full_params(offload_to_cpu=True, rank0_only=True): 
+                        torch.save(self.ssr_chunk.state_dict(), path + f'.ssr-chunk-{idx}.pt') 
+                        pass 
+                    pass 
+                torch.save(self.ssr_dict(), path + f'.ssr-dict.pt') 
+                pass
+            dist.barrier() ## protect distributed params while manipulating 
+            pass
+        self.__rank_0_run(_save())
         pass 
     def load(self, path): 
-        '''Load to CPU RAM from disk.
-        Only run on rank 0!'''
-        ## TODO refactor to accommodate multi-chunk state 
-        self.model.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
-        self.load_ssr_dict(torch.load(path + '.ssr-dict.pt')) 
-        self.model_to_srr_map = self.__build_fsdp_to_srr_layer_map() ## rebuild map 
-        ## find total ssr chunks 
-        chunk_files = glob.glob(f'{path}.ssr-chunk-*.pt') 
-        n_ssr_chunks = max([int(f.split('-')[-1].split('.pt')[0]) for f in chunk_files]) 
-        ## load each ssr chunk 
-        chunk_idx = 0 
-        for model_submodule in self.model_to_srr_map.keys(): ## this load strategy is a bit sketch 
-            temp_state_dict = torch.load(f'{path}.ssr-chunk-{chunk_idx}}.pt', map_location="cpu").state_dict() 
-            self.model_to_srr_map][model_submodule].load_state_dict(temp_state_dict) 
-            del temp_state_dict 
-            gc.collect() ## avoid doubling CPU RAM requirements 
-            chunk_idx += 1 
+        'Load to CPU RAM from disk. Runs only on rank 0!'
+        def _load(): 
+            ## update primary module 
+            with self.model.summon_full_params(offload_to_cpu=True, rank0_only=True): 
+                self.model.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
+                pass ## reshards on scope exit, assuming self.model already sharded 
+            self.load_ssr_dict(torch.load(path + '.ssr-dict.pt')) 
+            self.model_to_srr_map = self.__build_fsdp_to_srr_layer_map() ## rebuild map 
+            ## find total ssr chunks 
+            chunk_files = glob.glob(f'{path}.ssr-chunk-*.pt') 
+            n_ssr_chunks = max([int(f.split('-')[-1].split('.pt')[0]) for f in chunk_files]) 
+            ## load each ssr chunk 
+            chunk_idx = 0 
+            for model_submodule in self.model_to_srr_map.keys(): ## this load strategy is a bit sketch 
+                ssr_chunk = self.model_to_srr_map][model_submodule] 
+                with ssr_chunk.summon_full_params(offload_to_cpu=True, rank0_only=True): 
+                    temp_state_dict = torch.load(f'{path}.ssr-chunk-{chunk_idx}}.pt', map_location="cpu").state_dict() 
+                    ssr_chunk.load_state_dict(temp_state_dict) 
+                    del temp_state_dict 
+                    gc.collect() ## avoid doubling CPU RAM requirements 
+                    chunk_idx += 1 
+                    pass ## reshard if chunk already sharded 
+                pass 
+            if chunk_idx != n_ssr_chunks: 
+                raise Exception(f'Only loaded {chunk_idx} SSR chunks of {n_ssr_chunks}!') 
             pass 
-        if chunk_idx != n_ssr_chunks: 
-            raise Exception(f'Only loaded {chunk_idx} SSR chunks of {n_ssr_chunks}!') 
+        self.__rank_0_run(_load) 
         pass 
     def loss(self, transitions): 
         raise NotImplementedError('ERROR: loss not implemented!') 
@@ -257,6 +276,13 @@ class FsdpSsrModule(nn.Module):
                 pass 
             pass 
         return fsdp_to_ssr_layer 
+    def __rank_0_run(self, f): 
+        'run f on rank 0 while blocking the rest of the cluster'
+        if self.rank == 0: 
+            f() 
+            pass 
+        dist.barrier() 
+        pass 
     pass 
 
 class FsdpSsrModuleRegularizerChunk(nn.module): 
@@ -281,6 +307,6 @@ class FsdpSsrModuleRegularizerChunk(nn.module):
         d_theta = theta_chunk - self.theta_old 
         v_j = self.L.transpose(0,1).matmul(d_theta) 
         u_j = (d_theta * self.Lambda * d_theta).sum() 
-        return v_j, u_j 
+        return v_j, u_j
     pass 
 
