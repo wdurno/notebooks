@@ -267,8 +267,8 @@ class FsdpSsrModule(nn.Module):
     def __build_fsdp_to_srr_layer_map(self): 
         'returns a dictionary mapping each FSDP module to its associated SSR FSDP layer.'
         fsdp_to_ssr_layer = {} 
-        # Traverse all submodules to find FSDP instances
-        for submodule in self.model.modules():
+        # Traverse all submodules to find FSDP instances 
+        for submodule in self.model.modules(): 
             if isinstance(submodule, FSDP): 
                 # Sum numel() for all parameters directly owned by this FSDP module 
                 param_dim = sum(p.numel() for p in submodule.parameters(recurse=False)) 
