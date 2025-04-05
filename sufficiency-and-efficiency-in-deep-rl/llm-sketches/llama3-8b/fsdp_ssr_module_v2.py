@@ -13,7 +13,6 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy 
 from lanczos import l_lanczos, combine_krylov_spaces 
 
-# Define the actor and critic networks 
 class FsdpSsrModule(nn.Module): 
     'Abstract FSDP SSR Module class. Define `loss` and `optimizer` in concrete subclass.' 
     def __init__(self, module, replay_buffer, ssr_rank=2, dt_mean_N=10): 
@@ -94,7 +93,7 @@ class FsdpSsrModule(nn.Module):
             self.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
             self.load_ssr_dict(torch.load(path + '.ssr.pt', map_location="cpu")) 
             pass 
-        with FSDP.summon_full_params(model, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
+        with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
             FsdpSsrModule.__rank_0_run(_load) 
             pass 
         pass 
