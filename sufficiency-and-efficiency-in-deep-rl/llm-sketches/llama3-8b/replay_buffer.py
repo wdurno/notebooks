@@ -4,7 +4,7 @@ class Object(object):
     pass
 
 class ReplayBuffer(torch.utils.data.Dataset): 
-    def __init__(self, capacity=10000): 
+    def __init__(self, capacity=100000): 
         self.n = 0 
         self.capacity = capacity 
         self.state_storage = torch.tensor([]).type(torch.int64) 

@@ -1,39 +1,114 @@
-## We'll use an advantage-weighted approach because it allows shared parameters
-## between the policy net and the advantage function unlike Deterministic Policy Gradients (DPG). 
-## I've enjoyed DPG for its theoretical elegance, but RAM is expensive. 
+## Implemented with PPO advantage-weighted loss 
 
 import torch 
 import torch.nn as nn 
+import torch.optim as optim 
+from torch import quantization 
 import torch.nn.functional as F 
+import torch.distributed as dist 
+from transformers import AutoConfig 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM 
+
+from fsdp_ssr_module import AbstractFsdpSsrModule 
+from replay_buffer import ReplayBuffer 
 
 ## Name of the pretrained model 
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B" 
 
-## Load config 
-CONFIG = AutoConfig.from_pretrained(MODEL_NAME) 
-CONFIG.output_hidden_states = True  ## important for value head! 
-
-## Initialize tokenizer for future use 
-TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME) 
-
-## TODO I can't just save state dicts, I need to use these functions to get configs 
-## model.save_pretrained("dualhead-llama3") 
-## tokenizer.save_pretrained("dualhead-llama3") 
+class FsdpSsrLlama8B(AbstractFsdpSsrModule): 
+    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=None): 
+        if load_path is not None and config is None: 
+            with open("my_llm_dir/config.json") as f: 
+                config = AutoConfig.from_dict(json.load(f)) 
+                pass 
+            pass 
+        if config is None: 
+            ## contacts Hugging Face for the config 
+            config = AutoConfig.from_pretrained(MODEL_NAME) 
+            config.output_hidden_states = True  ## important for value head! 
+            pass 
+        ## default `rl_coef` value is `0.` if not already set 
+        config.rl_coef = getattr(config, 'rl_coef', 0.) 
+        if rl_coef is not None: 
+            ## override with provided value 
+            config.rl_coef = rl_coef 
+            pass 
+        replay_buffer = ReplayBuffer(capacity=1_000_000) 
+        if load_path is None: 
+            LlamaForCausalLMWithValueHead.load_pretrained(config=config) ## get a fresh model 
+        else: 
+            module = LlamaForCausalLMWithValueHead(config=config) 
+            pass 
+        super(AbstractFsdpSsrModule, self).__init__(module=module, replay_buffer=replay_buffer, ssr_rank=ssr_rank, dt_mean_N=dt_mean_N) 
+        if load_path is not None: 
+            self.load(load_path) 
+            pass 
+        ## TODO consider saving space with SGD because I have true natural gradients 
+        self.optimizer = optim.AdamW([p for p in self.module.parameters() if p.requires_grad], lr=learning_rate) 
+        pass 
+    @staticmethod 
+    def get_tokenizer(): 
+        ## TODO add `save` and `load` for tokenizer 
+        return AutoTokenizer.from_pretrained(MODEL_NAME) 
+    def save_quantized(self, path): 
+        ## TODO wrap in `summon` block AND only run on rank 0 
+        self.module.config.save_pretrained(path) ## write config.json 
+        quantized_model = torch.quantization.quantize_dynamic(
+            self.module,  ## summoned module 
+            {torch.nn.Linear},  ## only quantizing Linaer layers 
+            dtype=torch.qint8
+            )
+        torch.save(quantized_model.state_dict(), f'{path}/quantized_model.pt') 
+        pass 
+    @staticmethod 
+    def load_quantized(self, path): 
+        '''Do not run with FSDP! 
+        This is for off-cluster data generation. 
+        Example data generation: 
+        ``` 
+        inputs = tokenizer("Hello", return_tensors="pt").to("cpu") 
+        outputs = model.generate(**inputs, max_new_tokens=50) 
+        print(tokenizer.decode(outputs[0])) 
+        ``` 
+        ''' 
+        with open("my_llm_dir/config.json") as f: 
+            config = AutoConfig.from_dict(json.load(f)) 
+            pass 
+        model = LlamaForCausalLMWithValueHead(config) ## TODO this'll load 2 non-quantized models - stop this from happenning 
+        model.load_state_dict(torch.load(f'{path}/quantized_model.pt')) 
+        model.eval() 
+        return model 
+    def loss(self, transitions): 
+        _, _, loss = self.module(transitions, old_model=self.prev_module, rl_coef=self.module.config.rl_coef) 
+        return loss 
+    def save(self, path): 
+        if dist.rank == 0: 
+            self.module.config.save_pretrained(path) 
+            pass 
+        super(FsdpSsrLlama8B, self).save(path) 
+        pass 
+    def load(self, path): 
+        'requires correctly-configured modules before loading' 
+        super(FsdpSsrLlama8B, self).load(path) 
+        self.module.config.from_pretrained(path) 
+        self.prev_module.config.from_pretrained(path) 
+        pass 
+    pass 
 
 class LlamaForCausalLMWithValueHead(LlamaForCausalLM): 
-    def __init__(self, config=CONFIG):
+    def __init__(self, config=None): 
         super().__init__(config)
-        self.value_head = nn.Linear(config.hidden_size, 1)  ## regression target 
-        self.post_init()
+        self.value_head = nn.Linear(config.hidden_size, 1) ## regression target 
+        self.post_init() 
         pass 
-    @staticmethod
+    @staticmethod 
     def load_pretrained(): 
-        '''Use this to init with pre-trained parameters from Hugging Face.
+        '''Use this to init with pre-trained parameters from Hugging Face. 
         '''
-        model = LlamaForCausalLMWithValueHead.from_pretrained(
-            "meta-llama/Meta-Llama-3-8B",
-            ignore_mismatched_sizes=True  ## prevents crashing due to new head
+        ## contacts Hugging Face for the pre-fit parameters 
+        model = LlamaForCausalLMWithValueHead.from_pretrained( ## TODO this'll hammer Hugging Face - pull once, then distribute 
+            "meta-llama/Meta-Llama-3-8B", 
+            ignore_mismatched_sizes=True  ## prevents crashing due to new head 
             ) 
         model.value_head.reset_parameters() ## re-init value_head params 
         return model 
@@ -42,11 +117,11 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             transitions, 
             attention_mask=None, 
             old_model=None, ## I can't just cache old_log_probs because I'm running off-policy experiments 
-            value_coef=.5, 
+            rl_coef=.5, 
             **kwargs
             ):
         '''Predicts probability logits and expected RL value. 
-        If a `transitions` is a full tuple and (`old_model`, `value_coef`) is provided, then it also calculates a loss. 
+        If a `transitions` is a full tuple and (`old_model`, `value_coef`) is provided, then loss combines LLM & RL loss. 
         inputs: 
         - transisions: can be one of two things... 
           - if just a tensor, then its a matrix of input IDs of shape [batch_size, sequence length] 
@@ -57,11 +132,11 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             4. `reward`: a matrix of rewards, shaped [batch_size, 1]
             5. `done`: a matrix of boolean `done` flags, shaped [batch_size, 1] 
         - `old_model`: a similar-but-different `LlamaForCausalLMWithValueHead` instance 
-        - `value_coef`: the loss weight given to RL value. For example, 0. implies a pure LLM loss. 
+        - `rl_coef`: the loss weight given to RL value. For example, 0. implies a pure LLM loss. 
         outputs: 
         - `p_logits`: soft max logits encoding the probability of which token comes next 
         - `values`: the predicted RL value of the next state 
-        - `loss`: a combined LLM and RL loss 
+        - `loss`: a combined LLM and RL loss OR just LLM loss, depending on inputs 
         '''
         ## unpack transitions 
         if type(transitions) == tuple: 
@@ -78,13 +153,15 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             done = None 
             pass 
         ## predict on current state 
-        p_logits, values = self.__get_logits_and_values(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
-        ## if viable, calculate the loss 
-        loss = None 
-        if next_state is not None and old_model is not None and value_coef is not None:  
-            old_p_logits, next_values = old_model.__get_logits_and_values(input_ids=next_state, attention_mask=None, **kwargs) 
+        d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
+        p_logits, values, loss = d['logits'], d['values'], d['loss'] 
+        ## if viable, calculate the RL loss 
+        if next_state is not None and old_model is not None and rl_coef is not None: 
+            d = old_model.__get_logits_and_values(input_ids=next_state, attention_mask=None, **kwargs) 
+            old_p_logits, next_values = d['logits'], d['values'] 
             llm_loss, rl_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
-            loss = llm_loss + value_coef * rl_loss 
+            rl_loss = llm_loss + .5*rl_loss 
+            loss += rl_coef * rl_loss 
             pass 
         # return (probability logits, expected values, loss) 
         return p_logits, values, loss 
@@ -93,15 +170,15 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         ## apply backbone and get probability logits 
         output = super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
         ## Reuse last hidden states
-        hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0]
+        hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0] 
         ## Use the same final hidden state for value prediction
         values = self.value_head(hidden_states).squeeze(-1)  ## shape: [batch, seq] 
-        ## returns (probability logits, expected values) 
-        return output.logits, values 
+        ## returns (probability logits, expected values, LLM loss) as dictionary to meet `generate` interface 
+        return {'logits': output.logits, 'values': values, 'loss': output.loss}
     @staticmethod
     def __compute_ppo_loss_nonsequential(
             logits, values, actions, rewards, next_values, old_log_probs, done, 
-            gamma=0.99, clip_epsilon=0.2, value_coef=0.5
+            gamma=0.99, clip_epsilon=0.2 
             ):
         '''Computes a PPO loss for a dual head but without the regularizer. 
         inputs: ## TODO 
@@ -122,6 +199,4 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         policy_loss = -torch.mean(torch.min(unclipped, clipped))  ## maximize advantage 
         ## Value loss (TD error)
         value_loss = F.mse_loss(values, target_values)
-        ## Total loss
-        total_loss = policy_loss + value_coef * value_loss
-        return total_loss, policy_loss, value_loss, advantages 
+        return policy_loss, value_loss 

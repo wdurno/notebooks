@@ -1,14 +1,11 @@
-## this approach is dead 
-## reduce and all_reduce break diffentiation 
-## just calculate loss.backward with fsdp then modify the grad with a non-differentiable algorithm 
-## so, adjust each param.grad with a non-differentiably-calculated adjustment 
-
-## SSR Models on FSDP GPU clusters 
+## FSDP SSR Module  
 ## Approximate sufficient statistics for deep nets 
 ## Optimally leverage old data as a regression target moves 
+## FSDP adjustments distribute the model over several GPUs 
+## However, the SSR is caclculated in CPU RAM 
+## So, this isn't very scalable but decent for demonstrations 
 
 import random 
-import gc 
 import torch 
 import torch.nn as nn 
 import torch.distributed as dist 
@@ -16,182 +13,186 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy 
 from lanczos import l_lanczos, combine_krylov_spaces 
 
-class FsdpSsrModule(nn.Module): 
-    '''Abstract class for Sufficient Statistic Regularized (SSR) Models. 
-    Define `loss` in concrete subclass. 
-    Optimized for FSDP processing on GPU clusters. 
-    Assumes several copies of the underlying model can fit on the GPU.
-    This isn't written for very large scaling, but instead scientific demonstrations.''' 
-    def __init__(self, replay_buffer, model, ssr_rank=2, dt_mean_N=10): 
-        '''Applies an SSR to a Pytorch module, optimized for FSDP. 
-        This module constructs all necessary FSDP modules. 
-        Do not call FSDP on this object. 
+class AbstractFsdpSsrModule(nn.Module): 
+    'Abstract FSDP SSR Module class. Define `loss` and `optimizer` in concrete subclass.' 
+    def __init__(self, module, replay_buffer, ssr_rank=2, dt_mean_N=10): 
+        '''Initialize core, abstract FSDP SSR Module. 
         args: 
-         - model: a Pytorch nn.Module (not an FSDP module), like an LLM for example.   
-         - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions 
-         - ssr_rank: increases Hessian approximation accuracy, but needs (1 + 2*[ssr_rank])*[model dim] to fit in each GPU's RAM. Keep it low. 
-         - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
+        - module: the module to be FSDP-wrapped storing all differentiable parameters. 
+        - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions. Data  must be loaded to all ranks! 
+        - ssr_rank: increases Hessian approximation accuracy, but needs [ssr_rank]*[model dim] RAM. Keep it low. 
+        - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
         '''
-        super(SSRModel, self).__init__() 
-        self.rank = dist.get_rank() 
-        self.model = model 
-        self.ssr_model_dimension = sum(p.numel() for p in self.model.parameters() if p.requires_grad) 
-        self.model = FSDP(self.model, auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
-        self.model_to_srr_map = self.__build_fsdp_to_param_dim_map() 
-        print(f'DEBUG 1: ssr_model_dimension: {self.ssr_model_dimension}') ## TODO verify ssr_model_dimension equates to sum of these parameter dims 
-        print(f'DEBUG 2: model_to_srr_map: {self.model_to_srr_map}') 
+        super(AbstractFsdpSsrModule, self).__init__() 
+        self.module = FSDP(module, auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
+        self.prev_module = prev_module 
+        if self.prev_module is not None: 
+            self.prev_module = FSDP(model.clone().detatch(), auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
         self.ssr_rank = ssr_rank 
-        ## initialize SSR statistics as parameters so FSDP shards them over the GPU cluster 
-        ## set `requires_grad=False` because they aren't to be tuned by the optimizer 
-        ## initialize to full size with zeros to assist FSDP memory management 
-        self.ssr_low_rank_matrix = nn.parameter.Parameter(torch.zeros([self.ssr_rank, self.ssr_model_dimension]), requires_grad=False) ## =: A 
-        self.ssr_residual_diagonal = nn.parameter.Parameter(torch.zeros([self.ssr_model_dimension]), requires_grad=False) ## =: resid 
-        ## N * Fisher Information \approx AA^T + diag(resid) 
-        self.ssr_center = nn.parameter.Parameter(torch.zeros([self.ssr_model_dimension]), requires_grad=False) 
-        self.ssr_prev_center = nn.parameter.Parameter(torch.zeros([self.ssr_model_dimension]), requires_grad=False) 
-        self.ssr_n = 0 
-        self.ssr_cov_trace = 0. 
-        self.ssr_cov_n = 0 
+        self.ssr_low_rank_matrix = None ## =: A 
+        self.ssr_residual_diagonal = None ## =: resid 
+        ## N * Fisher Information \approx AA^T + resid 
+        self.ssr_center = None ## yes, I have several copies - results before optimization 
+        self.ssr_prev_center = None 
+        self.ssr_n = None 
+        self.ssr_cov_trace = None 
+        self.ssr_cov_n = None 
+        self.ssr_model_dimension = None 
+        self.dt_mean = None 
         self.dt_mean_N = dt_mean_N 
-        ## init dt_mean_trend to zero because we pragmatically assume initial model is static and without momentum of any kind 
-        self.dt_mean_trend = nn.parameter.Parameter(torch.zeros([self.ssr_model_dimension]), requires_grad=False) 
+        self.dt_mean_trend = torch.tensor(0.) ## init to 0 heuristically since traversal is continuous from a very stable point 
         self.dt_mean_norm_trend = 0. 
         self.dt_mean_trace_cov = 0. 
         self.dt_prev_pi = .5 
         self.replay_buffer = replay_buffer 
+        self.optimizer = None ## abstract attribute; must optimize over `self.module` parameters 
         pass 
     def ssr_dict(self): 
         d = {'ssr_rank': self.ssr_rank, 
-                #'ssr_low_rank_matrix': self.ssr_low_rank_matrix, ## now a parameter covered by `state_dict` 
-                #'ssr_residual_diagonal': self.ssr_residual_diagonal, 
-                #'ssr_center': self.ssr_center, 
-                #'ssr_prev_center': self.ssr_prev_center, 
+                'ssr_low_rank_matrix': self.ssr_low_rank_matrix, 
+                'ssr_residual_diagonal': self.ssr_residual_diagonal, 
+                'ssr_center': self.ssr_center, 
+                'ssr_prev_center': self.ssr_prev_center, 
                 'ssr_n': self.ssr_n, 
                 'ssr_cov_trace': self.ssr_cov_trace, 
                 'ssr_cov_n': self.ssr_cov_n, 
                 'ssr_model_dimension': self.ssr_model_dimension, 
                 'dt_mean_N': self.dt_mean_N, 
-                #'dt_mean_trend': self.dt_mean_trend, 
+                'dt_mean_trend': self.dt_mean_trend, 
                 'dt_mean_norm_trend': self.dt_mean_norm_trend, 
                 'dt_mean_trace_cov': self.dt_mean_trace_cov, 
                 'dt_prev_pi': self.dt_prev_pi 
                 } 
         return d 
     def load_ssr_dict(self, d): 
-        self.model_dim = d['model_dim'] 
         self.ssr_rank = d['ssr_rank'] 
-        #self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
-        #self.ssr_residual_diagonal = d['ssr_residual_diagonal'] 
-        #self.ssr_center = d['ssr_center'] 
-        #self.ssr_prev_center = d['ssr_prev_center'] 
+        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'].to(self.device) 
+        self.ssr_residual_diagonal = d['ssr_residual_diagonal'].to(self.device) 
+        self.ssr_center = d['ssr_center'].to(self.device) 
+        self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
         self.ssr_n = d['ssr_n'] 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
         self.ssr_model_dimension = d['ssr_model_dimension'] 
         self.dt_mean_N = d['dt_mean_N'] 
-        #self.dt_mean_trend = d['dt_mean_trend'] 
-        self.dt_mean_norm_trend = d['dt_mean_norm_trend'] ## replace with SSR Chunk 
+        self.dt_mean_trend = d['dt_mean_trend'] 
+        self.dt_mean_norm_trend = d['dt_mean_norm_trend'] 
         self.dt_mean_trace_cov = d['dt_mean_trace_cov'] 
         self.dt_prev_pi = d['dt_prev_pi'] 
         pass 
     def save(self, path): 
-        'Summons all parameters to CPU RAM and writes to disk. Runs only on rank 0!'
-            def _save():
-            ## `with` blocks limit `summon_full_params` scope and clear memory 
-            ## typical garbage collection doesn't cut it; torch.dist is different 
-            if self.rank == 0: 
-                with self.model.summon_full_params(offload_to_cpu=True, rank0_only=True): 
-                    torch.save(self.model.state_dict(), path + '.state.pt') 
-                    pass 
-                for idx, ssr_chunk in enumerate(self.fsdp_to_srr_map.values()): 
-                    with ssr_chunk.summon_full_params(offload_to_cpu=True, rank0_only=True): 
-                        torch.save(self.ssr_chunk.state_dict(), path + f'.ssr-chunk-{idx}.pt') 
-                        pass 
-                    pass 
-                torch.save(self.ssr_dict(), path + f'.ssr-dict.pt') 
-                pass
-            dist.barrier() ## protect distributed params while manipulating 
-            pass
-        self.__rank_0_run(_save())
+        'pulls parameters from ranks to CPU RAM and writes to disk' 
+        if dist.rank == 0: 
+            print(f'Saving model at {path}...') 
+            torch.save(self.ssr_dict(), path + '.ssr.pt')  
+            pass 
+        def _save_state(): 
+            torch.save(self.module.state_dict(), path + '.state.pt') 
+            pass 
+        with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True): 
+            AbstractFsdpSsrModule.__rank_0_run(_save_state) 
+            pass 
+        def _save_prev_state(): 
+            torch.save(self.prev_module.state_dict(), path + '.prev-state.pt') 
+            pass 
+        with FSDP.summon_full_params(self.prev_module, offload_to_cpu=True, rank0_only=True): 
+            AbstractFsdpSsrModule.__rank_0_run(_save_prev_state) 
+            pass 
         pass 
     def load(self, path): 
-        'Load to CPU RAM from disk. Runs only on rank 0!'
-        def _load(): 
-            ## update primary module 
-            with self.model.summon_full_params(offload_to_cpu=True, rank0_only=True): 
-                self.model.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
-                pass ## reshards on scope exit, assuming self.model already sharded 
-            self.load_ssr_dict(torch.load(path + '.ssr-dict.pt')) 
-            self.model_to_srr_map = self.__build_fsdp_to_srr_layer_map() ## rebuild map 
-            ## find total ssr chunks 
-            chunk_files = glob.glob(f'{path}.ssr-chunk-*.pt') 
-            n_ssr_chunks = max([int(f.split('-')[-1].split('.pt')[0]) for f in chunk_files]) 
-            ## load each ssr chunk 
-            chunk_idx = 0 
-            for model_submodule in self.model_to_srr_map.keys(): ## this load strategy is a bit sketch 
-                ssr_chunk = self.model_to_srr_map][model_submodule] 
-                with ssr_chunk.summon_full_params(offload_to_cpu=True, rank0_only=True): 
-                    temp_state_dict = torch.load(f'{path}.ssr-chunk-{chunk_idx}}.pt', map_location="cpu").state_dict() 
-                    ssr_chunk.load_state_dict(temp_state_dict) 
-                    del temp_state_dict 
-                    gc.collect() ## avoid doubling CPU RAM requirements 
-                    chunk_idx += 1 
-                    pass ## reshard if chunk already sharded 
-                pass 
-            if chunk_idx != n_ssr_chunks: 
-                raise Exception(f'Only loaded {chunk_idx} SSR chunks of {n_ssr_chunks}!') 
+        'Loads from disk to CPU RAM, then distributes parameters over the cluster' 
+        if dist.rank == 0: 
+            print(f'Loading model from {path}...') 
+            self.load_ssr_dict(torch.load(path + '.ssr.pt', map_location="cpu")) 
             pass 
-        self.__rank_0_run(_load) 
+        def _load_state():  
+            self.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
+            pass 
+        with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
+            AbstractFsdpSsrModule.__rank_0_run(_load_state) 
+            pass 
+        def _load_prev_state(): 
+            self.load_state_dict(torch.load(path + '.prev-state.pt', map_location="cpu")) 
+            pass 
+        with FSDP.summon_full_params(self.prev_module, rank0_only=True, offload_to_cpu=True): 
+            AbstractFsdpSsrModule.__rank_0_run(_load_prev_state) 
+            pass 
         pass 
     def loss(self, transitions): 
+        '''Abstract function which you must implement. 
+        FSDP constraints: 
+        - Sum losses; do not average. FSDP all-reduces gradients with a sum operation - so, avoid summing averages. 
+        - Be sure to cover empty `len(transitions) == 0` cases, perhaps by returning `tensor(0.)`. 
+        '''
         raise NotImplementedError('ERROR: loss not implemented!') 
-    def memorize(self, n=None, random_idx=False, disable_tqdm=True): 
-        '''Memorize oldest `n` transitions, or all if `n is None`. 
-        "Memorization" because data is added to the sufficient statistic.''' 
-        if n is None: 
-            n = len(self.replay_buffer) 
+    def memorize(self, n=None, random_idx=False, disable_tqdm=False): 
+        'memorize oldest `n` transitions, or all if `n is None`' 
+        def _memorize(): 
+            if n is None: 
+                n = len(self.replay_buffer) 
+                pass 
+            ## track current and prev estimates 
+            self.ssr_prev_center = self.ssr_center.to(self.gpu_saver) if self.ssr_center is not None else None  
+            self.ssr_center = self.get_param().clone().detach() ## elliptical centroid 
+            ## get model dim if we don't already have it 
+            if self.ssr_model_dimension is None: 
+                self.ssr_model_dimension = self.ssr_center.shape[0] 
+                pass 
+            ## updates dt stats 
+            if self.ssr_prev_center is not None: 
+                ## use low-mem approximate moving averages 
+                rescale = ( self.dt_mean_N - 1 ) / self.dt_mean_N 
+                if self.dt_mean_trend.shape == torch.Size([]): 
+                    ## prepare for a broadcast operation 
+                    self.dt_mean_trend = float(self.dt_mean_trend) 
+                    pass 
+                self.dt_mean_trend *= rescale 
+                self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/(self.dt_mean_N) ## not spending memory to store many dts 
+                self.dt_mean_norm_trend *= rescale 
+                self.dt_mean_norm_trend += (self.ssr_center - self.ssr_prev_center).pow(2).sum()/(self.dt_mean_N) 
+                self.dt_mean_trace_cov *= rescale 
+                self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
+                pass
+            ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
+            ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
+            ## handle l-Lanczos outputs 
+            if self.ssr_low_rank_matrix is None: 
+                ## first memorization 
+                self.ssr_low_rank_matrix = ssr_low_rank_matrix 
+                self.ssr_residual_diagonal = ssr_residual_diagonal 
+                self.ssr_n = n 
+            else: 
+                ## combine with previous memories 
+                self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) 
+                self.ssr_residual_diagonal += ssr_residual_diagonal 
+                self.ssr_n += n 
+                pass 
+            if self.ssr_prev_center is not None:
+                dt = self.ssr_center.to(self.gpu_saver) - self.ssr_prev_center 
+                if self.ssr_cov_trace is None: 
+                    self.ssr_cov_trace = (dt * dt).sum() 
+                    self.ssr_cov_n = 1 
+                else: 
+                    self.ssr_cov_trace += (dt * dt).sum() 
+                    self.ssr_cov_n += 1 
+                    pass 
+                pass 
             pass 
-        ## track current and prev estimates 
-        if self.ssr_cov_n > 0: ## `ssr_cov_n` effectively counts `memorize` calls 
-            self.ssr_prev_center.data = self.ssr_center 
-            pass 
-        self.ssr_center.data = self.get_param().clone().detach() ## elliptical centroid 
-        ## updates dt stats 
-        if self.ssr_cov_n > 1: ## implies `ssr_prev_center` estimated and not just zeros 
-            ## use low-mem approximate moving averages 
-            rescale = ( self.dt_mean_N - 1 ) / self.dt_mean_N 
-            self.dt_mean_trend *= rescale 
-            self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/(self.dt_mean_N) ## not spending memory to store many dts 
-            self.dt_mean_norm_trend *= rescale 
-            self.dt_mean_norm_trend += (self.ssr_center - self.ssr_prev_center).pow(2).sum()/(self.dt_mean_N) 
-            self.dt_mean_trace_cov *= rescale 
-            self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
-            pass 
-        ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
-        ## handle l-Lanczos outputs 
-        if self.ssr_cov_n == 0: 
-            ## first memorization 
-            self.ssr_low_rank_matrix.data = ssr_low_rank_matrix 
-            self.ssr_residual_diagonal.data = ssr_residual_diagonal 
-            self.ssr_n = n 
-        else: 
-            ## combine with previous memories 
-            self.ssr_low_rank_matrix.data = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) 
-            self.ssr_residual_diagonal.data += ssr_residual_diagonal 
-            self.ssr_n += n 
-            pass 
-        if self.ssr_cov_n > 0: ## guarantee `ssr_prev_center` existence 
-            dt = self.ssr_center - self.ssr_prev_center 
-            self.ssr_cov_trace += (dt * dt).sum() 
-            self.ssr_cov_n += 1 
+        with FSDP.summon_full_params(model, rank0_only=True, offload_to_cpu=True):
+            AbstractFsdpSsrModule.__rank_0_run(_memorize) 
             pass 
         pass 
-    def ssr(self): 
-        'Get the ssr regularizer' 
+    def ssr(self, lmbda=None): 
+        '''Get the ssr regularizer and its gradient vector. 
+        If `lmbda is None`, `lmbda` will be set to 1 when `self.ssr_prev_center is None`, 
+        otherwise `lmbda` will be the approximately optimal `n_A` value.
+        
+        WARNING: Only run inside a `with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True):` block!
+        The block is not enforced here to enable gradient handling.'''
         if self.ssr_low_rank_matrix is None: 
             return 0. 
-        p = self.get_param() 
+        ## p = self.get_param() 
+        p = self.get_param().clone().detach() ## FSDP modification: break the graph and calculate gradients manually 
         p0 = self.ssr_center 
         d = p - p0 
         A = self.ssr_low_rank_matrix 
@@ -201,44 +202,94 @@ class FsdpSsrModule(nn.Module):
         dTresd = (d * res).transpose(0,1).matmul(d) 
         ssr_sum = dTA.matmul(ATd) + dTresd 
         ssr_mean = ssr_sum / self.ssr_n 
-        return .5 * ssr_mean 
-    def optimal_pi(self, pi_min=0., pi_max=1., return_lambda_form=False): 
-        "a linear approximation of pi or lambda's optimal value" 
+        ssr_grad_sum = A.matmul(ATd) + (d * res).reshape([-1, 1]) 
+        ssr_grad_mean = ssr_grad_sum / self.ssr_n 
+        ## I've opted against extending autograd.Function because FSDP expects the whole graph to be on the GPUs. 
+        ## My CPU-bound code is proven and I want results now. 
+        return .5 * ssr_mean , ssr_grad_mean 
+    def optimal_pi(self, pi_min=0., pi_max=1., return_lambda=False): 
+        "Returns a linear approximation of pi's optimal value. This is a CPU-bound calculation." 
         if self.dt_mean_norm_trend == 0.: 
-            pi = torch.tensor(.5).to(self.device) 
+            pi = torch.tensor(.5) 
         else: 
-            pi = 1. - .5 * self.dt_prev_pi * self.dt_mean_trace_cov / self.dt_mean_norm_trend 
-            pi = pi.to(self.device).clone().detach() 
+            pi = 1. - .5 * self.dt_mean_trace_cov / self.dt_mean_norm_trend 
+            pi = pi.clone().detach().reshape([]) 
             pass 
         if float(pi) < pi_min: 
-            pi = torch.tensor(pi_min).to(self.device) 
+            pi = torch.tensor(pi_min) 
         if float(pi) > pi_max: 
-            pi = torch.tensor(pi_max).to(self.device) 
+            pi = torch.tensor(pi_max) 
             pass 
-        if return_lambda_form: 
+        if return_lambda: 
             lmbda = self.ssr_n * (1. - pi) ## lambda = n_A 
             return lmbda 
         ## returning pi, probability of sampling with theta_B 
         return pi 
     def get_param(self): 
-        'only for SSR calculations' 
-        return torch.cat([p.reshape([-1, 1]) for p in self.model.parameters() if p.requires_grad], dim=0) 
-    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9): ## TODO how to handle distributed batches ??? 
+        '''Only for SSR calculations.
+        
+        WARNING: Only run inside a `with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True):` block! 
+        The block is not enforced here to enable gradient handling.''' 
+        ## For an FSDP module, all self.module parameters will be `FlatParameter`s 
+        return torch.cat([p.reshape([-1, 1]) for p in self.module.parameters() if p.requires_grad], dim=0) 
+    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9): 
+        '''Runs numerical fitting iterations over the `replay_buffer` dataset. 
+        inputs: 
+        - `batch_size`: the per-rank batch size. 
+        - `iters`: the number of iterations, each updating the parameter and pulling from new random data batch. 
+        outputs: 
+        - `pi` (float): the `pi` estimate used for this round of fits. 
+        - `loss` (float): the final observed `loss` after all fitting iterations. 
+        side-effects: 
+        - `self.model.parameter` is updated where `requires_grad=True`.'''
+        ## check for sufficient concreteness 
+        if self.optimizer is None: 
+            raise NotImplementedError('ERROR: optimizer not implemented!') 
         self.train() 
-        self.dt_prev_pi = pi = self.optimal_lambda(pi_min=pi_min, pi_max=pi_max) 
-        for _ in range(iters): 
+        ## distribute pi from rank 0 CPU, since that's where SSR stats are stored 
+        pi = torch.tensor(0.) 
+        if dist.rank == 0: 
+            ## store `dt_prev_pi` for reporting purposes 
+            self.dt_prev_pi = pi = self.optimal_pi(pi_min=pi_min, pi_max=pi_max) 
+            pass 
+        dist.broadcat(pi, src=0) 
+        ## New loaders & samplers are needed because overall dataset size frequently changes in RL 
+        loader, sampler = self.__get_distributed_loader_and_sampler(batch_size) 
+        ## start fit iterations 
+        n = 0 
+        for epoch_idx in range(iters): 
+            sampler.set_epoch(epoch) 
             self.optimizer.zero_grad() 
-            data = self.replay_buffer.sample(batch_size=batch_size) 
-            loss = self.loss(data) 
-            loss = pi * loss + (1 - pi) * self.ssr() 
-            loss.backward() 
-            self.optimizer.step() ## TODO this optimizer is never initialized !!! 
+            for data in loader: 
+                n += data[0].shape[0] ## loader stacks samples tuples of tensors into a tuple of stacked tensors 
+                loss = self.loss(data) 
+                loss.backward() ## FSDP aggregates grads over ranks with an allreduce OP SUM 
+                pass 
+            ## get actual sample size so we can adjust ssr_grad scale to fit summed gradients 
+            ## I can't just use dataset size because distributed loaders are capable of small degrees of double sampling 
+            n = torch.tensor(n) 
+            dist.all_reduce(n, op=dist.ReduceOp.SUM) 
+            n = n.item() 
+            ## calculate the average SSR and its gradient on rank 0's CPU 
+            ## I'll adjust upward by `n` because `loss` isn't averaged 
+            with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
+                if dist.rank == 0: 
+                    ssr, ssr_grad = self.ssr() 
+                    ssr *= n 
+                    ssr_grad *= n 
+                    pass 
+                dist.barrier() 
+                pass 
+            self.__adjust_grads(ssr_grad, pi) ## grads applied here 
+            self.optimizer.step() ## apply gradients 
+            ## return average loss for reporting purposes because it'll be comparable over different samples sizes 
+            loss = (pi * loss + (1 - pi) * ssr)/n 
             pass 
         return float(pi), float(loss) 
-    def __get_get_grad_generator(self, n=None, random_idx=False): ## TODO how to sample one observation at a time in a distributed context ??? 
+    def __get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context, 
         ## packaging `get_grad_generator` for calling without 
-        ## the SSRAgent instance. 
+        ## the AbstractFsdpSsrModule instance. 
         if n is None: 
             n = self.replay_buffer.n 
             pass 
@@ -251,62 +302,65 @@ class FsdpSsrModule(nn.Module):
                 self.eval() 
                 for idx in range(n): 
                     if random_idx: 
-                        idx = random.randint(0, len(self.replay_buffer)-1) 
+                        idx = random.randint(0, len(self.replay_buffer)-1)
                         pass 
                     self.zero_grad() 
                     transition = self.replay_buffer.sample(idx_list=[idx]) 
                     loss = self.loss(transition) 
                     loss.backward() 
-                    ## TODO this won't get the full vec in FSDP, only local grads 
-                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.model.parameters() if p.requires_grad], dim=0).clone().detach() 
+                    for p in self.parameters(): 
+                        if p.grad is None: 
+                            p.grad = torch.zeros(size=p.shape) 
+                        pass 
+                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.module.parameters() if p.requires_grad], dim=0).clone().detach()  
                     yield grad_vec 
-                    pass
+                    pass 
                 pass 
             return grad_generator 
         return get_grad_generator 
-    def __build_fsdp_to_srr_layer_map(self): 
-        'returns a dictionary mapping each FSDP module to its associated SSR FSDP layer.'
-        fsdp_to_ssr_layer = {} 
-        # Traverse all submodules to find FSDP instances 
-        for submodule in self.model.modules(): 
-            if isinstance(submodule, FSDP): 
-                # Sum numel() for all parameters directly owned by this FSDP module 
-                param_dim = sum(p.numel() for p in submodule.parameters(recurse=False)) 
-                fsdp_to_ssr_layer[submodule] = FSDP(FsdpSsrModuleRegularizerChunk(param_dim, self.ssr_rank))  
+    def __adjust_grads(self, ssr_grad, pi): 
+        'applies the ssr gradient over all FSDP GPU gradients' 
+        cursor = 0 
+        for p in self.module.parameters() if p.requires_grad: 
+            n = p.numel() 
+            communication_tensor = torch.zeros([n]) 
+            if dist.rank == 0: 
+                communication_tensor.copy_(ssr_grad[cursor : cursor + n, 1]) 
                 pass 
+            ## TODO Replace this terribly inefficient code, ideally with FSDP-native gradient calculation. 
+            ## This should be paired with refactoring my `l_lanczos` eigenvector algorithm to FSDP as well. 
+            ## Distributed numerical engineering takes time, expertise, and care, hence the inefficient-but-effective alternative here. 
+            dist.broadcast(communication_tensor, src=0) 
+            if p._fsdp_shard_metadata is not None: 
+                ## current rank owns this parameter 
+                p.grad = (pi * p.grad) + ((1 - pi) * communication_tensor.to(p.device))  
+                pass 
+            cursor += n 
             pass 
-        return fsdp_to_ssr_layer 
-    def __rank_0_run(self, f): 
+        pass 
+    def __get_distributed_loader_and_sampler(self, batch_size):
+        sampler = DistributedSampler(
+            self.replay_buffer,
+            num_replicas=dist.get_world_size(),
+            rank=dist.get_rank(),
+            shuffle=True, 
+            drop_last=False,
+        )
+        dataloader = DataLoader(
+            replay_buffer,
+            batch_size=batch_size,
+            sampler=sampler,
+            num_workers=0,
+            pin_memory=True
+        )
+        return dataloader, sampler
+    @staticmethod 
+    def __rank_0_run(f): 
         'run f on rank 0 while blocking the rest of the cluster'
-        if self.rank == 0: 
+        if dist.get_rank() == 0: 
             f() 
             pass 
         dist.barrier() 
         pass 
-    pass 
-
-class FsdpSsrModuleRegularizerChunk(nn.module): 
-    '''For storing SSR regularizer FSDP chunks (L_j, Lambda_j, theta_old_j).
-    Used to calculate .5 (theta - theta_old)^t (LL^T + Lambda) (theta - theta_old) ''' 
-    def __init__(self, param_dim, ssr_rank=2): 
-        'Call FSDP on this module after initialization'
-        self.param_dim = param_dim 
-        self.ssr_rank = ssr_rank 
-        self.L = nn.parameter.Parameter(torch.zeros([self.param_dim, self.ssr_rank]), requires_grad=False) 
-        self.theta_old = nn.parameter.Parameter(torch.zeros([self.param_dim, 1]), requires_grad=False) 
-        pass 
-    def forward(self, theta_chunk): 
-        '''Returns v_j, u_j where 
-        - v_j = L^T (theta_chunk - theta_old) in R^{ssr_rank} and 
-        - u_j = (theta_chunk - theta_old)^2 \cdot Lambda in R^{1}. 
-        To calculate SSR, calculate all v_j, u_j for chunk j then... 
-        1. Sum_v = Sum_j v_j 
-        2. Sum_u = Sum_j u_j 
-        3. return .5 * ( Sum_v^T Sum_v + Sum_u ) 
-        ''' 
-        d_theta = theta_chunk - self.theta_old 
-        v_j = self.L.transpose(0,1).matmul(d_theta) 
-        u_j = (d_theta * self.Lambda * d_theta).sum() 
-        return v_j, u_j
     pass 
 
