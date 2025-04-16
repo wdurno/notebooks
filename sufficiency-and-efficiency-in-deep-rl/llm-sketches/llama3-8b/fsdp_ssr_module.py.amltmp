@@ -19,15 +19,15 @@ class AbstractFsdpSsrModule(nn.Module):
         '''Initialize core, abstract FSDP SSR Module. 
         args: 
         - module: the module to be FSDP-wrapped storing all differentiable parameters. 
-        - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions. Data  must be loaded to all ranks! 
+        - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions. Data must be loaded to all ranks! 
         - ssr_rank: increases Hessian approximation accuracy, but needs [ssr_rank]*[model dim] RAM. Keep it low. 
         - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
         '''
         super(AbstractFsdpSsrModule, self).__init__() 
-        self.module = FSDP(module, auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
-        self.prev_module = prev_module 
-        if self.prev_module is not None: 
-            self.prev_module = FSDP(model.clone().detatch(), auto_wrap_policy=size_based_auto_wrap_policy(min_num_params=1000000)) 
+        device_id = torch.device(f"cuda:{dist.get_rank()}") 
+        module = module.to(device_id) 
+        self.module = FSDP(module, auto_wrap_policy=size_based_auto_wrap_policy) 
+        ## store params 
         self.ssr_rank = ssr_rank 
         self.ssr_low_rank_matrix = None ## =: A 
         self.ssr_residual_diagonal = None ## =: resid 
@@ -92,12 +92,6 @@ class AbstractFsdpSsrModule(nn.Module):
         with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True): 
             AbstractFsdpSsrModule.__rank_0_run(_save_state) 
             pass 
-        def _save_prev_state(): 
-            torch.save(self.prev_module.state_dict(), path + '.prev-state.pt') 
-            pass 
-        with FSDP.summon_full_params(self.prev_module, offload_to_cpu=True, rank0_only=True): 
-            AbstractFsdpSsrModule.__rank_0_run(_save_prev_state) 
-            pass 
         pass 
     def load(self, path): 
         'Loads from disk to CPU RAM, then distributes parameters over the cluster' 
@@ -110,12 +104,6 @@ class AbstractFsdpSsrModule(nn.Module):
             pass 
         with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
             AbstractFsdpSsrModule.__rank_0_run(_load_state) 
-            pass 
-        def _load_prev_state(): 
-            self.load_state_dict(torch.load(path + '.prev-state.pt', map_location="cpu")) 
-            pass 
-        with FSDP.summon_full_params(self.prev_module, rank0_only=True, offload_to_cpu=True): 
-            AbstractFsdpSsrModule.__rank_0_run(_load_prev_state) 
             pass 
         pass 
     def loss(self, transitions): 
@@ -226,7 +214,7 @@ class AbstractFsdpSsrModule(nn.Module):
         ## returning pi, probability of sampling with theta_B 
         return pi 
     def get_param(self): 
-        '''Only for SSR calculations.
+        '''Only for SSR calculations. 
         
         WARNING: Only run inside a `with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True):` block! 
         The block is not enforced here to enable gradient handling.''' 
@@ -255,9 +243,9 @@ class AbstractFsdpSsrModule(nn.Module):
         dist.broadcat(pi, src=0) 
         ## New loaders & samplers are needed because overall dataset size frequently changes in RL 
         loader, sampler = self.__get_distributed_loader_and_sampler(batch_size) 
-        ## start fit iterations 
-        n = 0 
+        ## start fit iterations  
         for epoch_idx in range(iters): 
+            n = 0 
             sampler.set_epoch(epoch) 
             self.optimizer.zero_grad() 
             for data in loader: 
@@ -321,7 +309,7 @@ class AbstractFsdpSsrModule(nn.Module):
     def __adjust_grads(self, ssr_grad, pi): 
         'applies the ssr gradient over all FSDP GPU gradients' 
         cursor = 0 
-        for p in self.module.parameters() if p.requires_grad: 
+        for p in [p for p in self.module.parameters() if p.requires_grad]: 
             n = p.numel() 
             communication_tensor = torch.zeros([n]) 
             if dist.rank == 0: 

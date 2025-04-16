@@ -1,4 +1,4 @@
-## Implemented with PPO advantage-weighted loss 
+## Implemented with PPO advantage-weighted loss but with SSR 
 
 import torch 
 import torch.nn as nn 
@@ -35,11 +35,11 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             pass 
         replay_buffer = ReplayBuffer(capacity=1_000_000) 
         if load_path is None: 
-            LlamaForCausalLMWithValueHead.load_pretrained(config=config) ## get a fresh model 
+            module = LlamaForCausalLMWithValueHead.load_pretrained() ## get a fresh model 
         else: 
             module = LlamaForCausalLMWithValueHead(config=config) 
             pass 
-        super(AbstractFsdpSsrModule, self).__init__(module=module, replay_buffer=replay_buffer, ssr_rank=ssr_rank, dt_mean_N=dt_mean_N) 
+        super(FsdpSsrLlama8B, self).__init__(module=module, replay_buffer=replay_buffer, ssr_rank=ssr_rank, dt_mean_N=dt_mean_N) 
         if load_path is not None: 
             self.load(load_path) 
             pass 
@@ -48,17 +48,24 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         pass 
     @staticmethod 
     def get_tokenizer(): 
-        ## TODO add `save` and `load` for tokenizer 
+        ## TODO add `save` and `load` for tokenizer to avoid duplicative downloads 
         return AutoTokenizer.from_pretrained(MODEL_NAME) 
     def save_quantized(self, path): 
-        ## TODO wrap in `summon` block AND only run on rank 0 
-        self.module.config.save_pretrained(path) ## write config.json 
-        quantized_model = torch.quantization.quantize_dynamic(
-            self.module,  ## summoned module 
-            {torch.nn.Linear},  ## only quantizing Linaer layers 
-            dtype=torch.qint8
-            )
-        torch.save(quantized_model.state_dict(), f'{path}/quantized_model.pt') 
+        'Load model from FSDP cluster and write quantized on rank 0 disk for data generation' 
+        path = f'{path}/quantized_model' 
+        def _save_quantized(): 
+            quantized_model = torch.quantization.quantize_dynamic( 
+                self.module,  ## summoned module 
+                {torch.nn.Linear},  ## only quantizing Linaer layers 
+                dtype=torch.qint8
+                )
+            quantized_model.save_pretrained(path) 
+            pass 
+        with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
+            if dist.rank == 0:
+                print(f'Writing quantized model to "{path}"...')
+                self._save_quantized() 
+            pass 
         pass 
     @staticmethod 
     def load_quantized(self, path): 
@@ -71,16 +78,15 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         print(tokenizer.decode(outputs[0])) 
         ``` 
         ''' 
-        with open("my_llm_dir/config.json") as f: 
-            config = AutoConfig.from_dict(json.load(f)) 
-            pass 
-        model = LlamaForCausalLMWithValueHead(config) ## TODO this'll load 2 non-quantized models - stop this from happenning 
-        model.load_state_dict(torch.load(f'{path}/quantized_model.pt')) 
+        ## Loading into parent class bypasses massive parameters inits and disregards subclass-specific parameters 
+        model = LlamaForCausalLM.from_pretrained(path, device_map="auto") 
         model.eval() 
         return model 
     def loss(self, transitions): 
-        _, _, loss = self.module(transitions, old_model=self.prev_module, rl_coef=self.module.config.rl_coef) 
+        _, _, loss = self.module(transitions, rl_coef=self.module.config.rl_coef) 
         return loss 
+
+        return transitions 
     def save(self, path): 
         if dist.rank == 0: 
             self.module.config.save_pretrained(path) 
@@ -91,7 +97,6 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         'requires correctly-configured modules before loading' 
         super(FsdpSsrLlama8B, self).load(path) 
         self.module.config.from_pretrained(path) 
-        self.prev_module.config.from_pretrained(path) 
         pass 
     pass 
 
@@ -116,7 +121,6 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             self,
             transitions, 
             attention_mask=None, 
-            old_model=None, ## I can't just cache old_log_probs because I'm running off-policy experiments 
             rl_coef=.5, 
             **kwargs
             ):
@@ -129,9 +133,8 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             1. `state`: a matrix of input IDs 
             2. `next_state`: a matrix of input IDs immediately following `state` 
             3. `action`: action probability logits that originally lead to `next_state`, shaped [batch_size, 1] 
-            4. `reward`: a matrix of rewards, shaped [batch_size, 1]
+            4. `reward`: a matrix of rewards, shaped [batch_size, 1] 
             5. `done`: a matrix of boolean `done` flags, shaped [batch_size, 1] 
-        - `old_model`: a similar-but-different `LlamaForCausalLMWithValueHead` instance 
         - `rl_coef`: the loss weight given to RL value. For example, 0. implies a pure LLM loss. 
         outputs: 
         - `p_logits`: soft max logits encoding the probability of which token comes next 
@@ -154,10 +157,15 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             pass 
         ## predict on current state 
         d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
+        ## if this loss gets returned, it's just the LLM loss 
         p_logits, values, loss = d['logits'], d['values'], d['loss'] 
         ## if viable, calculate the RL loss 
-        if next_state is not None and old_model is not None and rl_coef is not None: 
-            d = old_model.__get_logits_and_values(input_ids=next_state, attention_mask=None, **kwargs) 
+        if next_state is not None and rl_coef is not None: 
+            ## I don't use a previous model here because we use symbolic differentiation. 
+            ## Numerical differentiation would require we store several values of theta at great memory cost. 
+            ## Instead, it's just sufficient to break the differentiation graph in the right spots. 
+            ## This is equivalent to updating from theta_old every time we run optimizer.step(). 
+            d = self.__get_logits_and_values(input_ids=next_state, attention_mask=None, **kwargs) 
             old_p_logits, next_values = d['logits'], d['values'] 
             llm_loss, rl_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
             rl_loss = llm_loss + .5*rl_loss 
@@ -169,14 +177,14 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
     def __get_logits_and_values(self, input_ids, attention_mask, **kwargs): 
         ## apply backbone and get probability logits 
         output = super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
-        ## Reuse last hidden states
+        ## Reuse last hidden states 
         hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0] 
-        ## Use the same final hidden state for value prediction
+        ## Use the same final hidden state for value prediction 
         values = self.value_head(hidden_states).squeeze(-1)  ## shape: [batch, seq] 
         ## returns (probability logits, expected values, LLM loss) as dictionary to meet `generate` interface 
-        return {'logits': output.logits, 'values': values, 'loss': output.loss}
-    @staticmethod
-    def __compute_ppo_loss_nonsequential(
+        return {'logits': output.logits, 'values': values, 'loss': output.loss} 
+    @staticmethod 
+    def __compute_ppo_loss_nonsequential( 
             logits, values, actions, rewards, next_values, old_log_probs, done, 
             gamma=0.99, clip_epsilon=0.2 
             ):
