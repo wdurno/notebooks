@@ -1,0 +1,5 @@
+# Ignore all files under models/, recursively...
+models/**
+
+# ...except this .gitkeep marker
+!models/.gitkeep

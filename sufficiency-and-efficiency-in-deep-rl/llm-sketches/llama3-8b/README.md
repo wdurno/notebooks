@@ -1,0 +1,35 @@
+# 🤖 LLM Model Upload Toolkit
+
+This repo includes tools for uploading large language models (LLMs) to Azure Blob Storage — including full and quantized variants.
+
+## 🧰 Contents
+
+- `llm_keys.sh`: Template to configure secure Azure credentials
+- `upload_models.py`: Python script to upload full and quantized models
+- `models/`: Local directory where models are stored
+  - `model_v0_full/`
+  - `model_v0_quantized/`
+  - ... 
+
+## ✅ Quickstart
+
+### 1. Fill in your credentials
+
+Copy and edit `llm_keys.sh` with your Azure Blob credentials:
+
+```bash
+cp llm_keys.sh ~/llm_keys.sh
+nano ~/llm_keys.sh  # or use your favorite editor
+```
+
+NEVER POPULATE `llm_keys.sh` IN THE REPO!
+Otherwise, you risk running `git commit` on a key file.
+
+### 2. Generate text 
+
+```bash 
+## set keys for current process 
+. ~/llm_keys.sh 
+python3 2_generate_data.py  
+```
+

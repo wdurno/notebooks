@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torch.distributed as dist 
 from transformers import AutoConfig 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM 
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
 
 from fsdp_ssr_module import AbstractFsdpSsrModule 
 from replay_buffer import ReplayBuffer 
@@ -54,17 +55,28 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         'Load model from FSDP cluster and write quantized on rank 0 disk for data generation' 
         path = f'{path}/quantized_model' 
         def _save_quantized(): 
+            ## TODO there's too much hacking here - don't mix frameworks so much 
+            ## enable `torch.quantization` compatibility 
+            ## drop dual-head params 
+            cleaned_state_dict = {k: v for k, v in self.module.state_dict().items() if not k.startswith("value_head.")} 
+            ## drop extra Hugging Face data  
+            cleaned_state_dict = {k: v for k, v in cleaned_state_dict.items() if isinstance(v, torch.Tensor) } 
+            ## clone the model but strip non-essential components  
+            minimal_model = LlamaForCausalLM(self.module.config) 
+            minimal_model.load_state_dict(cleaned_state_dict, strict=False) 
+            minimal_model.state_dict = lambda: cleaned_state_dict ## hacking a little too hard here 
+            ## get quantizing 
             quantized_model = torch.quantization.quantize_dynamic( 
-                self.module,  ## summoned module 
+                minimal_model,  ## summoned module 
                 {torch.nn.Linear},  ## only quantizing Linaer layers 
                 dtype=torch.qint8
                 )
             quantized_model.save_pretrained(path) 
             pass 
-        with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
-            if dist.rank == 0:
+        with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
+            if dist.get_rank() == 0:
                 print(f'Writing quantized model to "{path}"...')
-                self._save_quantized() 
+                _save_quantized() 
             pass 
         pass 
     @staticmethod 
@@ -88,7 +100,7 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
 
         return transitions 
     def save(self, path): 
-        if dist.rank == 0: 
+        if dist.get_rank() == 0: 
             self.module.config.save_pretrained(path) 
             pass 
         super(FsdpSsrLlama8B, self).save(path) 

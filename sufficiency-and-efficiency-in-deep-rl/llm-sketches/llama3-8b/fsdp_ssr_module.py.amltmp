@@ -82,20 +82,20 @@ class AbstractFsdpSsrModule(nn.Module):
         pass 
     def save(self, path): 
         'pulls parameters from ranks to CPU RAM and writes to disk' 
-        if dist.rank == 0: 
+        if dist.get_rank() == 0: 
             print(f'Saving model at {path}...') 
             torch.save(self.ssr_dict(), path + '.ssr.pt')  
             pass 
         def _save_state(): 
             torch.save(self.module.state_dict(), path + '.state.pt') 
             pass 
-        with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True): 
+        with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
             AbstractFsdpSsrModule.__rank_0_run(_save_state) 
             pass 
         pass 
     def load(self, path): 
         'Loads from disk to CPU RAM, then distributes parameters over the cluster' 
-        if dist.rank == 0: 
+        if dist.get_rank() == 0: 
             print(f'Loading model from {path}...') 
             self.load_ssr_dict(torch.load(path + '.ssr.pt', map_location="cpu")) 
             pass 
@@ -236,7 +236,7 @@ class AbstractFsdpSsrModule(nn.Module):
         self.train() 
         ## distribute pi from rank 0 CPU, since that's where SSR stats are stored 
         pi = torch.tensor(0.) 
-        if dist.rank == 0: 
+        if dist.get_rank() == 0: 
             ## store `dt_prev_pi` for reporting purposes 
             self.dt_prev_pi = pi = self.optimal_pi(pi_min=pi_min, pi_max=pi_max) 
             pass 
@@ -261,7 +261,7 @@ class AbstractFsdpSsrModule(nn.Module):
             ## calculate the average SSR and its gradient on rank 0's CPU 
             ## I'll adjust upward by `n` because `loss` isn't averaged 
             with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
-                if dist.rank == 0: 
+                if dist.get_rank() == 0: 
                     ssr, ssr_grad = self.ssr() 
                     ssr *= n 
                     ssr_grad *= n 
@@ -312,7 +312,7 @@ class AbstractFsdpSsrModule(nn.Module):
         for p in [p for p in self.module.parameters() if p.requires_grad]: 
             n = p.numel() 
             communication_tensor = torch.zeros([n]) 
-            if dist.rank == 0: 
+            if dist.get_rank() == 0: 
                 communication_tensor.copy_(ssr_grad[cursor : cursor + n, 1]) 
                 pass 
             ## TODO Replace this terribly inefficient code, ideally with FSDP-native gradient calculation. 
