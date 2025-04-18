@@ -50,7 +50,10 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
     @staticmethod 
     def get_tokenizer(): 
         ## TODO add `save` and `load` for tokenizer to avoid duplicative downloads 
-        return AutoTokenizer.from_pretrained(MODEL_NAME) 
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME) 
+        tokenizer.pad_token = tokenizer.eos_token 
+        tokenizer.padding_side = "left" 
+        return tokenizer 
     def save_quantized(self, path): 
         'Load model from FSDP cluster and write quantized on rank 0 disk for data generation' 
         path = f'{path}/quantized_model' 

@@ -34,10 +34,10 @@ def fsdp_reduction(rank, world_size):
     dist.barrier()
 
     ## write quantized 
-    model.save_quantized('model_v0_quantized')
+    model.save_quantized('models/model_v0_quantized')
 
     ## write full model 
-    model.save('model_v0_full') 
+    model.save('models/model_v0_full') 
 
     cleanup()
     pass 
