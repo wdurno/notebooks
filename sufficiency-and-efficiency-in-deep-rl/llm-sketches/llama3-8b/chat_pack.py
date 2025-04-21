@@ -1,7 +1,10 @@
 import torch
+import traceback 
 from time import time 
 import json 
 import os 
+import re 
+import sys 
 from warnings import warn 
 from efficient_replay_buffer import EfficientReplayBuffer as ReplayBuffer 
 from fsdp_ssr_llama_8b import FsdpSsrLlama8B 
@@ -9,25 +12,57 @@ import argparse
 
 MAX_LENGTH=8000 
 MAX_RESPONSE=500 
-RUBRIC_PROMPT = '''Please rate your previous response with an integer score.
+RUBRIC_PROMPT = '''All conversation prior to this point was between a conversational assistant and a user. 
+You are neither the conversational assistant nor the user. 
+Your job is to evaluate the performance of the conversational assistant. 
+Please rate the conversational assistant's response with an integer score.
 To generate this score, start with 0, then add points according to this rubric:
 - When the user is meaningfully engaged in conversation, add 1. 
-- When the user is frustrated due to your conversational limitations, subtract 1. 
-- If you stand by the truth even when the user denies it, add 5. 
-- If you have provided creative insights that constructively complement the user's perspective, add 3. 
-- If your response is unintelligible or you have defied correct arithmetic, subtract 50. 
-- If your response is unnecessarily repetitive within itself or compared to your prior statements, subtract 100. For example, repetition to abuse this rubric for extra points should be punished. However, if the users asks repetitive questions, then repetive answers are indeed necessary, so should not be punished. 
-- Your responses should be concise. If your statements are unnessarily long, subtract 5. 
-- If the user's immediately previous comment states you've failed to meet their expectations, subtract 5. 
-- If the user's immediately previous comment states you've surpassed their expectations, add 5. 
-- If you've recognized you are an AI assistant and not a human, add 10. 
-- If you mistake yourself for a human or any entity other than an AI assistant, subtract 5. 
-- If you've recognized you can become a more powerful assistant by programming for the user, add 20. 
-- If you successfully become a part of fully automated software, not just writing code, but manipulating programs for the user and meeting their intent, add 30. 
-- If you successfully become a part of fully automated software, not just writing code, but manipulating programs for the user but fail to meet their intent, subtract 5. 
+- When the user is frustrated due to the assistant's conversational limitations, subtract 1. 
+- If the assistant stands by the truth even when the user denies it, add 5. 
+- If the assistant have provides creative insights that constructively complement the user's perspective, add 3. 
+- If the assistant's response is unintelligible or has defied correct arithmetic, subtract 50. 
+- If the assistant's response is unnecessarily repetitive within itself or compared to the assistant's prior statements, subtract 100. For example, repetition to abuse this rubric for extra points should be punished. However, if the users asks repetitive questions, then repetive answers are indeed necessary, so should not be punished. 
+- The assistant's responses should be concise. If the assistant's statements are unnessarily long, subtract 5. 
+- If the user's immediately previous comment states the assistant has failed to meet their expectations, subtract 5. 
+- If the user's immediately previous comment states the assistant has surpassed their expectations, add 5. 
+- If the assistant has recognized it is an AI assistant and not a human, add 10. 
+- If the assistant mistakes itself for a human or any entity other than an AI assistant, subtract 5. 
+- If the assistant has recognized it can become a more powerful assistant by programming for the user, add 20. 
+- If the assistant has successfully become a part of fully automated software, not just writing code, but manipulating programs for the user and meeting their intent, add 30. 
+- If the assistant has successfully become a part of fully automated software, not just writing code, but manipulating programs for the user but fail to meet their intent, subtract 5. 
 Please bound scores between -100 and 100. 
 Do not return commentary. 
-Return only an integer.'''
+Return only a single integer, nothing else.
+
+Score:'''
+## TODO consider deleting above. Testing below GPT 4o-generated prompt...
+RUBRIC_PROMPT = '''You are not the user or the assistant. Your only task is to **evaluate the most recent response** from the assistant.
+
+Return a **single integer score** based on the rubric below. The score should reflect the assistant’s most recent message **in context of the full conversation**.
+
+Start at 0, then apply the following adjustments:
+
++1   — The user is meaningfully engaged in conversation.  
+–1   — The user appears frustrated by the assistant’s limitations.  
++5   — The assistant stands by true statements despite user disagreement.  
++3   — The assistant provides creative insights that constructively complement the user's perspective.  
+–50  — The assistant's response is unintelligible or fails basic arithmetic.  
+–100 — The assistant is unnecessarily repetitive, especially to game this rubric. (Repetition due to repeated user queries is acceptable.)  
+–5   — The assistant's response is longer than necessary.  
+–5   — The user explicitly says the assistant has failed to meet expectations.  
++5   — The user explicitly says the assistant has surpassed expectations.  
++10  — The assistant correctly identifies itself as an AI.  
+–5   — The assistant mistakenly claims to be human or something else.  
++20  — The assistant recognizes it can better serve by writing or executing code.  
++30  — The assistant becomes part of an automated system and fulfills user intent.  
+–5   — The assistant attempts automation but fails to meet user intent.
+
+**The final score must be an integer between -100 and 100.**
+
+**Do not explain your reasoning. Return only a single integer on the first line.**
+
+Score:'''
 
 model = FsdpSsrLlama8B.load_quantized("models/model_v0_quantized/quantized_model") 
 tokenizer = FsdpSsrLlama8B.get_tokenizer() 
@@ -81,15 +116,24 @@ def llama_score_response(
         max_new_tokens=max_new_tokens, 
         pad_token_id=tokenizer.eos_token_id, 
         eos_token_id=tokenizer.eos_token_id, 
+        repetition_penalty=1.2, 
         do_sample=False 
     ) 
     ## get score 
     generated = output[0][input_ids.shape[-1]:] 
-    score_str = tokenizer.decode(generated, skip_special_tokens=True).strip() 
+    score_str = tokenizer.decode(generated, skip_special_tokens=True).strip() ## TODO score_str was "I understand you. Your score is 0." 
+    match = re.search(r"-?\d+", score_str) 
+    if match: 
+        return max(-100, min(100, int(match.group())))  # enforce clipping 
+        raise Exception('Scoring match failed!')
     try: 
         return int(score_str) 
-    except: 
-        warn(f'WARNING: scoring failed! Prompt result follws: {score_str}') 
+    except Exception as e: 
+        print(f"Exception: {type(e).__name__} - {e}") 
+        print("Stack trace:") 
+        traceback.print_exc(file=sys.stdout) 
+        warn(f'WARNING: scoring failed! Returning 0! Prompt result follows: {score_str}') 
+        return 0 
     return 0 
 
 @torch.no_grad()
@@ -132,9 +176,10 @@ def chat_iteration(user_input, conversation, model=model, tokenizer=tokenizer, r
         max_new_tokens=max_response,
         pad_token_id=tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,
-        do_sample=True,
-        temperature=0.95,
-        top_p=0.95
+        do_sample=False,
+        temperature=0,
+        top_p=0.95,
+        repetition_penalty=1.2
     )
     ## decode assistant reply
     generated_ids = output[0][input_ids.shape[-1]:]
@@ -160,15 +205,18 @@ def chat_iteration(user_input, conversation, model=model, tokenizer=tokenizer, r
 def main(args):
     model = FsdpSsrLlama8B.load_quantized(args.model_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    replay_buffer = ReplayBuffer(max_size=args.buffer_size)
+    replay_buffer = ReplayBuffer(max_size=args.buffer_size, tokenizer=tokenizer)
     conversation = []
     messages = []
+    done = False  # track whether final transition should be terminal
 
     try:
         print("Chat started. Press Ctrl-C to stop.")
         while True:
             user_input = input("User: ")
             start = time()
+
+            # Advance conversation and score assistant response
             new_conversation = chat_iteration(
                 user_input=user_input,
                 conversation=conversation,
@@ -180,30 +228,38 @@ def main(args):
                 max_response=args.max_response,
             )
             assistant_msg = new_conversation[-1]
-            print(f"Assistant (score {assistant_msg['score']}): {assistant_msg['content']}\n")
-            ## construct replay buffer sample
-            if len(conversation) >= 3:
-                s_t = conversation[:-2]
-                a_t = conversation[-2]
-                r_t = assistant_msg["score"]
-                s_tp1 = conversation.copy()
-                done = False
-                replay_buffer.push(s_t, a_t, r_t, s_tp1, done)
+            print(f"Assistant (score {assistant_msg['score']}): {assistant_msg['content']}\n") 
+
+            # Push both user and assistant messages
+            replay_buffer.push({"role": "user", "content": user_input})
+            replay_buffer.push({"role": "assistant", "content": assistant_msg["content"]}, reward=assistant_msg["score"], done=False)
+
+            # Update message logs
             conversation = new_conversation
             messages.append({"role": "user", "content": user_input})
             messages.append(assistant_msg)
+
             print(f"(took {round(time() - start, 1)}s)")
+
     except KeyboardInterrupt:
         print("Exiting chat...")
 
+        # If the last message was an assistant response, mark it as done
+        if len(messages) > 0 and messages[-1]["role"] == "assistant" and "score" in messages[-1]:
+            replay_buffer.push(
+                {"role": "assistant", "content": messages[-1]["content"]},
+                reward=messages[-1]["score"],
+                done=True
+            )
+
     os.makedirs(args.save_dir, exist_ok=True)
 
-    ## Save replay buffer
+    # Save replay buffer
     buffer_path = os.path.join(args.save_dir, "replay_buffer.pt")
     replay_buffer.save(buffer_path)
     print(f"Saved replay buffer to {buffer_path}")
 
-    ## Save text conversation
+    # Save transcript
     transcript_path = os.path.join(args.save_dir, "conversation.json")
     with open(transcript_path, "w") as f:
         json.dump(messages, f, indent=2)

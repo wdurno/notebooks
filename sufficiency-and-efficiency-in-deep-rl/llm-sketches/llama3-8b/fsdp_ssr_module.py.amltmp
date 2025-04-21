@@ -84,10 +84,10 @@ class AbstractFsdpSsrModule(nn.Module):
         'pulls parameters from ranks to CPU RAM and writes to disk' 
         if dist.get_rank() == 0: 
             print(f'Saving model at {path}...') 
-            torch.save(self.ssr_dict(), path + '.ssr.pt')  
+            torch.save(self.ssr_dict(), path + 'full-model.ssr.pt')  
             pass 
         def _save_state(): 
-            torch.save(self.module.state_dict(), path + '.state.pt') 
+            torch.save(self.module.state_dict(), path + 'full-model.state.pt') 
             pass 
         with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
             AbstractFsdpSsrModule.__rank_0_run(_save_state) 
@@ -97,10 +97,10 @@ class AbstractFsdpSsrModule(nn.Module):
         'Loads from disk to CPU RAM, then distributes parameters over the cluster' 
         if dist.get_rank() == 0: 
             print(f'Loading model from {path}...') 
-            self.load_ssr_dict(torch.load(path + '.ssr.pt', map_location="cpu")) 
+            self.load_ssr_dict(torch.load(path + 'full-model.ssr.pt', map_location="cpu")) 
             pass 
         def _load_state():  
-            self.load_state_dict(torch.load(path + '.state.pt', map_location="cpu")) 
+            self.load_state_dict(torch.load(path + 'full-model.state.pt', map_location="cpu")) 
             pass 
         with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
             AbstractFsdpSsrModule.__rank_0_run(_load_state) 

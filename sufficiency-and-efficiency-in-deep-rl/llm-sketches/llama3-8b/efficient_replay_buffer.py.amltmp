@@ -13,6 +13,27 @@ class EfficientReplayBuffer(Dataset):
         self.transitions = []   # List of (t, reward, done)
 
     def push(self, message, reward=None, done=False):
+        """
+        Add a new message to the replay buffer.
+
+        This function appends a message (from either the 'user' or 'assistant') to the internal
+        buffer. When the message is from the assistant and a reward is provided, it marks that
+        message as the end of a transition. The corresponding `(state, action, reward, next_state, done)`
+        tuple can then be sampled later using `__getitem__`.
+
+        Arguments:
+            message (dict): A dictionary with at least keys `'role'` and `'content'`.
+                            - 'role': either `'user'` or `'assistant'`
+                            - 'content': string with the message text
+            reward (float, optional): The scalar reward for the assistant's response.
+                                    Should be provided only for 'assistant' messages.
+            done (bool, optional): Whether this message terminates the episode. Defaults to False.
+
+        Notes:
+            - Only 'assistant' messages with an associated reward are treated as actionable transitions.
+            - If `max_size` is exceeded, old messages and transitions are evicted.
+            - The transition index stored is the index of the assistant message in `self.messages`.
+        """
         if len(self.messages) >= self.max_size:
             self.messages.pop(0)
             self.transitions = [(t - 1, r, d) for (t, r, d) in self.transitions if t > 0]

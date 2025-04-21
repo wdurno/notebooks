@@ -6,7 +6,7 @@ import torch.optim as optim
 from torch import quantization 
 import torch.nn.functional as F 
 import torch.distributed as dist 
-from transformers import AutoConfig 
+from transformers import AutoConfig, AutoTokenizer, BitsAndBytesConfig 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM 
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
 
@@ -58,23 +58,31 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         'Load model from FSDP cluster and write quantized on rank 0 disk for data generation' 
         path = f'{path}/quantized_model' 
         def _save_quantized(): 
-            ## TODO there's too much hacking here - don't mix frameworks so much 
-            ## enable `torch.quantization` compatibility 
-            ## drop dual-head params 
-            cleaned_state_dict = {k: v for k, v in self.module.state_dict().items() if not k.startswith("value_head.")} 
-            ## drop extra Hugging Face data  
-            cleaned_state_dict = {k: v for k, v in cleaned_state_dict.items() if isinstance(v, torch.Tensor) } 
-            ## clone the model but strip non-essential components  
-            minimal_model = LlamaForCausalLM(self.module.config) 
-            minimal_model.load_state_dict(cleaned_state_dict, strict=False) 
-            minimal_model.state_dict = lambda: cleaned_state_dict ## hacking a little too hard here 
-            ## get quantizing 
-            quantized_model = torch.quantization.quantize_dynamic( 
-                minimal_model,  ## summoned module 
-                {torch.nn.Linear},  ## only quantizing Linaer layers 
-                dtype=torch.qint8
-                )
-            quantized_model.save_pretrained(path) 
+            self.module.save_pretrained(path) 
+            ## trying full save prior to `bitsandbytes` load 
+            # ## TODO there's too much hacking here - don't mix frameworks so much 
+            # ## enable `torch.quantization` compatibility 
+            # ## drop dual-head params 
+            # cleaned_state_dict = {k: v for k, v in self.module.state_dict().items() if not k.startswith("value_head.")} 
+            # ## drop extra Hugging Face data  
+            # cleaned_state_dict = {k: v for k, v in cleaned_state_dict.items() if isinstance(v, torch.Tensor) } 
+            # ## clone the model but strip non-essential components  
+            # minimal_model = LlamaForCausalLM(self.module.config) 
+            # minimal_model.load_state_dict(cleaned_state_dict, strict=False) 
+            # # minimal_model.state_dict = lambda: cleaned_state_dict ## hacking a little too hard here 
+            # minimal_model.state_dict = lambda *args, **kwargs: cleaned_state_dict
+            # ## get quantizing 
+            # quantized_model = torch.quantization.quantize_dynamic( 
+            #     minimal_model,  ## summoned module 
+            #     {torch.nn.Linear},  ## only quantizing Linaer layers 
+            #     dtype=torch.qint8
+            #     )
+            # # quantized_model = torch.quantization.quantize_dynamic( 
+            # #     self.module,  ## summoned module 
+            # #     {torch.nn.Linear},  ## only quantizing Linaer layers 
+            # #     dtype=torch.qint8
+            # #     )
+            # quantized_model.save_pretrained(path) 
             pass 
         with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
             if dist.get_rank() == 0:
@@ -83,18 +91,29 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             pass 
         pass 
     @staticmethod 
-    def load_quantized(self, path): 
+    def load_quantized(path): 
         '''Do not run with FSDP! 
         This is for off-cluster data generation. 
         Example data generation: 
         ``` 
-        inputs = tokenizer("Hello", return_tensors="pt").to("cpu") 
+        inputs = tokenizer("Hello", return_tensors="pt").to("cuda") 
         outputs = model.generate(**inputs, max_new_tokens=50) 
         print(tokenizer.decode(outputs[0])) 
         ``` 
         ''' 
+        ## need that superior quantization for cheap GPUs 
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,  # use `load_in_8bit=True` for 8-bit instead
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",  # consider "fp4" instead 
+            bnb_4bit_compute_dtype=torch.float16
+            )
         ## Loading into parent class bypasses massive parameters inits and disregards subclass-specific parameters 
-        model = LlamaForCausalLM.from_pretrained(path, device_map="auto") 
+        model = LlamaForCausalLM.from_pretrained(
+            path, 
+            quantization_config=bnb_config,
+            device_map="auto"
+            )
         model.eval() 
         return model 
     def loss(self, transitions): 
