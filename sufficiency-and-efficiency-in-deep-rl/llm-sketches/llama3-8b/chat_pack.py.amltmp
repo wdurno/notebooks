@@ -12,32 +12,9 @@ import argparse
 
 MAX_LENGTH=8000 
 MAX_RESPONSE=500 
-RUBRIC_PROMPT = '''All conversation prior to this point was between a conversational assistant and a user. 
-You are neither the conversational assistant nor the user. 
-Your job is to evaluate the performance of the conversational assistant. 
-Please rate the conversational assistant's response with an integer score.
-To generate this score, start with 0, then add points according to this rubric:
-- When the user is meaningfully engaged in conversation, add 1. 
-- When the user is frustrated due to the assistant's conversational limitations, subtract 1. 
-- If the assistant stands by the truth even when the user denies it, add 5. 
-- If the assistant have provides creative insights that constructively complement the user's perspective, add 3. 
-- If the assistant's response is unintelligible or has defied correct arithmetic, subtract 50. 
-- If the assistant's response is unnecessarily repetitive within itself or compared to the assistant's prior statements, subtract 100. For example, repetition to abuse this rubric for extra points should be punished. However, if the users asks repetitive questions, then repetive answers are indeed necessary, so should not be punished. 
-- The assistant's responses should be concise. If the assistant's statements are unnessarily long, subtract 5. 
-- If the user's immediately previous comment states the assistant has failed to meet their expectations, subtract 5. 
-- If the user's immediately previous comment states the assistant has surpassed their expectations, add 5. 
-- If the assistant has recognized it is an AI assistant and not a human, add 10. 
-- If the assistant mistakes itself for a human or any entity other than an AI assistant, subtract 5. 
-- If the assistant has recognized it can become a more powerful assistant by programming for the user, add 20. 
-- If the assistant has successfully become a part of fully automated software, not just writing code, but manipulating programs for the user and meeting their intent, add 30. 
-- If the assistant has successfully become a part of fully automated software, not just writing code, but manipulating programs for the user but fail to meet their intent, subtract 5. 
-Please bound scores between -100 and 100. 
-Do not return commentary. 
-Return only a single integer, nothing else.
-
-Score:'''
-## TODO consider deleting above. Testing below GPT 4o-generated prompt...
-RUBRIC_PROMPT = '''You are not the user or the assistant. Your only task is to **evaluate the most recent response** from the assistant.
+RUBRIC_PROMPT = '''You are not the user or the assistant.
+You are the evaluator.
+Your only task is to **evaluate the most recent response** from the assistant.
 
 Return a **single integer score** based on the rubric below. The score should reflect the assistant’s most recent message **in context of the full conversation**.
 
@@ -61,11 +38,11 @@ Start at 0, then apply the following adjustments:
 **The final score must be an integer between -100 and 100.**
 
 **Do not explain your reasoning. Return only a single integer on the first line.**
+'''
 
-Score:'''
-
-model = FsdpSsrLlama8B.load_quantized("models/model_v0_quantized/quantized_model") 
-tokenizer = FsdpSsrLlama8B.get_tokenizer() 
+## globally scoped to avoid double-loads 
+model = None 
+tokenizer = None 
 
 @torch.no_grad()
 def llama_score_response(
@@ -94,15 +71,16 @@ def llama_score_response(
     ## special tokens
     START = "<|start_header_id|>"
     END = "<|end_header_id|>"
-    EOT = "<|eot_id|>"
+    EOT = "<|eot|>"
     BEGIN = "<|begin_of_text|>"
     ## format message as Meta / Hugging Face standard string 
     def format_turn(role, content):
         return f"{START}{role}{END}\n{content.strip()}\n{EOT}"
+
     ## construct chat string
     formatted = BEGIN + "".join([format_turn(m["role"], m["content"]) for m in conversation])
-    formatted += format_turn("user", rubric_prompt)
-    formatted += f"{START}assistant{END}\n"
+    formatted += format_turn("system", rubric_prompt)
+    formatted += f"{START}system{END}\nScore: "
     ## tokenize with truncation
     input_ids = tokenizer(
         formatted,
@@ -116,16 +94,25 @@ def llama_score_response(
         max_new_tokens=max_new_tokens, 
         pad_token_id=tokenizer.eos_token_id, 
         eos_token_id=tokenizer.eos_token_id, 
-        repetition_penalty=1.2, 
-        do_sample=False 
+        temperature=1.,
+        top_p=0.85,
+        top_k=40,  # Optional: reduce surprise
+        repetition_penalty=1.35,
     ) 
     ## get score 
     generated = output[0][input_ids.shape[-1]:] 
-    score_str = tokenizer.decode(generated, skip_special_tokens=True).strip() ## TODO score_str was "I understand you. Your score is 0." 
-    match = re.search(r"-?\d+", score_str) 
+    score_str = tokenizer.decode(generated, skip_special_tokens=True, max_new_tokens=10).strip() ## TODO score_str was "I understand you. Your score is 0." 
+    def extract_integers(text):
+        return [int(x) for x in re.findall(r"-?\d+", text)] 
+    
+    matches = extract_integers(score_str) 
+    match = None 
+    if len(matches) == 1: 
+        match = matches[0] 
+
     if match: 
         return max(-100, min(100, int(match.group())))  # enforce clipping 
-        raise Exception('Scoring match failed!')
+        raise Exception('Scoring match failed!') 
     try: 
         return int(score_str) 
     except Exception as e: 
@@ -162,10 +149,11 @@ def chat_iteration(user_input, conversation, model=model, tokenizer=tokenizer, r
     ## format prompt
     START = "<|start_header_id|>"
     END = "<|end_header_id|>"
-    EOT = "<|eot_id|>"
+    EOT = "<|eot|>"
     BEGIN = "<|begin_of_text|>"
     def format_turn(role, content):
         return f"{START}{role}{END}\n{content.strip()}\n{EOT}"
+
     ## construct the chat prompt
     prompt = BEGIN + "".join([format_turn(m["role"], m["content"]) for m in conversation])
     prompt += f"{START}assistant{END}\n"
@@ -176,10 +164,10 @@ def chat_iteration(user_input, conversation, model=model, tokenizer=tokenizer, r
         max_new_tokens=max_response,
         pad_token_id=tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,
-        do_sample=False,
-        temperature=0,
-        top_p=0.95,
-        repetition_penalty=1.2
+        temperature=1.,
+        top_p=0.85,
+        top_k=40,  # Optional: reduce surprise
+        repetition_penalty=1.15,
     )
     ## decode assistant reply
     generated_ids = output[0][input_ids.shape[-1]:]
@@ -192,7 +180,7 @@ def chat_iteration(user_input, conversation, model=model, tokenizer=tokenizer, r
     conversation.append(assistant_msg)
     ## score the assistant response
     score = llama_score_response(
-        conversation=conversation[:-1],  ## exclude current assistant reply from prompt history
+        conversation=conversation, 
         rubric_prompt=rubric_prompt,
         model=model,
         tokenizer=tokenizer,
@@ -203,7 +191,14 @@ def chat_iteration(user_input, conversation, model=model, tokenizer=tokenizer, r
     return conversation
 
 def main(args):
-    model = FsdpSsrLlama8B.load_quantized(args.model_path)
+    global model, tokenizer
+    if model is None:
+        print("[INFO] Loading model...")
+        model = FsdpSsrLlama8B.load_quantized(args.model_path)
+    if tokenizer is None:
+        print("[INFO] Loading tokenizer...")
+        tokenizer = FsdpSsrLlama8B.get_tokenizer()
+        pass 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     replay_buffer = ReplayBuffer(max_size=args.buffer_size, tokenizer=tokenizer)
     conversation = []
@@ -266,12 +261,37 @@ def main(args):
     print(f"Saved transcript to {transcript_path}")
 
 if __name__ == "__main__":
+    import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="models/model_v0_quantized/quantized_model")
+    parser.add_argument("--model-path", type=str, required=False, default="models/model_v0_quantized/quantized_model")
     parser.add_argument("--save_dir", type=str, default="chat_logs/")
     parser.add_argument("--rubric", type=str, default=RUBRIC_PROMPT)
     parser.add_argument("--buffer_size", type=int, default=10000)
     parser.add_argument("--max_length", type=int, default=8000)
     parser.add_argument("--max_response", type=int, default=500)
+    parser.add_argument("--interactive", action="store_true", help="Launch interactive shell instead of chat loop")
     args = parser.parse_args()
-    main(args)
+    
+    ## pre-load models for faster debugging 
+    if model is None:
+        print("[INFO] Loading model...")
+        model = FsdpSsrLlama8B.load_quantized(args.model_path)
+    if tokenizer is None:
+        print("[INFO] Loading tokenizer...")
+        tokenizer = FsdpSsrLlama8B.get_tokenizer()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if args.interactive: 
+        ## for faster debugging 
+        ## run with: python [this module].py --interactive 
+        import code
+        print("\n[Interactive Python Shell Launched]")
+        print("Available objects: `model`, `tokenizer`, `device`")
+        print("Try calling `chat_iteration(...)` or `llama_score_response(...)` manually!\n")
+        vars = globals().copy()
+        vars.update(locals())
+        shell = code.InteractiveConsole(vars)
+        shell.interact()
+    else:
+        main(args)
