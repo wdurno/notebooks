@@ -147,7 +147,7 @@ def llama_score_response(
     return 0 
 
 def manual_score(conversation, retries=3): 
-    def _score():
+    def _score(): 
         input_text = input("Please score the assistant's response with an integer. Score: ") 
         conversation[-1]['score'] = [int(x) for x in re.findall(r"-?\d+", input_text)][0] 
         pass 
@@ -156,7 +156,7 @@ def manual_score(conversation, retries=3):
     while tries < 3: 
         try: 
             return _score() 
-        except Exception as e:
+        except Exception as e: 
             warn(f'WARNING, manual scoring failed: {e}') 
             pass 
         pass 
@@ -295,23 +295,19 @@ def main(args):
     except KeyboardInterrupt:
         print("Exiting chat...")
 
-        # If the last message was an assistant response, mark it as done
-        if len(messages) > 0 and messages[-1]["role"] == "assistant" and "score" in messages[-1]:
-            replay_buffer.push(
-                {"role": "assistant", "content": messages[-1]["content"]},
-                reward=messages[-1]["score"],
-                done=True
-            )
+        # If the last message was an assistant response, mark it as done 
+        if len(messages) > 0 and messages[-1]["role"] == "assistant" and "score" in messages[-1]: 
+            replay_buffer.transitions[-1][2] = True 
 
     os.makedirs(args.save_dir, exist_ok=True)
 
     # Save replay buffer
-    buffer_path = os.path.join(args.save_dir, "replay_buffer.pt")
+    buffer_path = os.path.join(args.save_dir, "replay_buffer") ## TODO apply version ID 
     replay_buffer.save(buffer_path)
     print(f"Saved replay buffer to {buffer_path}")
 
     # Save transcript
-    transcript_path = os.path.join(args.save_dir, "conversation.json")
+    transcript_path = os.path.join(args.save_dir, "conversation.json") ## TODO apply version ID 
     with open(transcript_path, "w") as f:
         json.dump(messages, f, indent=2)
     print(f"Saved transcript to {transcript_path}")

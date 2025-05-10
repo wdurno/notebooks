@@ -203,10 +203,23 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             logits, values, actions, rewards, next_values, old_log_probs, done, 
             gamma=0.99, clip_epsilon=0.2 
             ):
-        '''Computes a PPO loss for a dual head but without the regularizer. 
-        inputs: ## TODO 
-        outputs: ## TODO 
-        '''
+        """
+        Compute the PPO loss for a batch of assistant responses without assuming sequential generation.
+
+        This function compares the current policy's log probabilities of the sampled actions (assistant responses)
+        against a reference policy's frozen log probabilities using the PPO clipped surrogate objective.
+        Each response is treated independently and not as a step in a trajectory.
+
+        Args:
+            states (Tensor): Tokenized input prompt sequences (context), shape (batch_size, seq_len).
+            actions (Tensor): Tokenized assistant response sequences (actions), shape (batch_size, action_len).
+            advantages (Tensor): Advantage estimates for each sample, shape (batch_size,).
+            old_logprobs (Tensor): Log probabilities of actions under the reference (old) policy, shape (batch_size, action_len).
+
+        Returns: 
+            policy_loss (Tensor): The mean PPO policy loss over the batch (scalar).
+            value_loss (Tensor): The mean value function loss over the batch (scalar).
+        """
         ## break differentiation graph 
         old_log_probs = old_log_probs.clone().detach() 
         ## Compute current log probs 
