@@ -11,7 +11,7 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
 
 from fsdp_ssr_module import AbstractFsdpSsrModule 
-from replay_buffer import ReplayBuffer 
+from efficient_replay_buffer import EfficientReplayBuffer as ReplayBuffer 
 
 ## Name of the pretrained model 
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B" 
@@ -19,7 +19,7 @@ MODEL_NAME = "meta-llama/Meta-Llama-3-8B"
 class FsdpSsrLlama8B(AbstractFsdpSsrModule): 
     def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=None): 
         if load_path is not None and config is None: 
-            with open("my_llm_dir/config.json") as f: 
+            with open(f"{load_path}/config.json") as f: 
                 config = AutoConfig.from_dict(json.load(f)) 
                 pass 
             pass 
@@ -100,8 +100,6 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
     def loss(self, transitions): 
         _, _, loss = self.module(transitions, rl_coef=self.module.config.rl_coef) 
         return loss 
-
-        return transitions 
     def save(self, path): 
         if dist.get_rank() == 0: 
             self.module.config.save_pretrained(path) 
