@@ -4,8 +4,8 @@ import os
 import json
 
 class EfficientReplayBuffer(Dataset):
-    def __init__(self, max_size=10000, max_seq_len=2048, tokenizer=None):
-        self.max_size = max_size
+    def __init__(self, capacity=10000, max_seq_len=2048, tokenizer=None):
+        self.capacity = self.capacity = capacity
         self.max_seq_len = max_seq_len
         self.tokenizer = tokenizer
 
@@ -31,10 +31,10 @@ class EfficientReplayBuffer(Dataset):
 
         Notes:
             - Only 'assistant' messages with an associated reward are treated as actionable transitions.
-            - If `max_size` is exceeded, old messages and transitions are evicted.
+            - If `capacity` is exceeded, old messages and transitions are evicted.
             - The transition index stored is the index of the assistant message in `self.messages`.
         """
-        if len(self.messages) >= self.max_size: 
+        if len(self.messages) >= self.capacity: 
             self.messages.pop(0) 
             self.transitions = [(t - 1, r, d) for (t, r, d) in self.transitions if t > 0] 
 
@@ -69,10 +69,13 @@ class EfficientReplayBuffer(Dataset):
             done = True 
             pass 
         s_t = self._tokenize(s_t_msgs) 
-        a_t = self._tokenize([a_t_msg]) 
+        a_t = self._tokenize([a_t_msg]) ## TODO [s_t, a_t] need to be concatenated, padded, and masked ## TODO padded how far???
         s_tp1 = self._tokenize(s_tp1_msgs) 
+        r_t = torch.tensor(reward, dtype=torch.float32) ## TODO put this float into a zero vector, same shape as [s_t, a_t]
+        d_t = torch.tensor(done, dtype=torch.bool) ## TODO same as above 
 
-        return s_t, a_t, torch.tensor(reward, dtype=torch.float32), s_tp1, torch.tensor(done, dtype=torch.bool) 
+        print(f'DEBUG 0: s_t: {s_t.shape}, a_t: {a_t.shape}, r_t: {r_t.shape}, s_tp1: {s_tp1.shape}, d_t: {d_t.shape}')
+        return s_t, a_t, r_t, s_tp1, d_t 
 
     def _tokenize(self, messages): 
         """
@@ -96,7 +99,7 @@ class EfficientReplayBuffer(Dataset):
                 formatted += f"{START}{role}{END}\n{content}{EOT}\n"
             text = formatted
 
-        return self.tokenizer(text, return_tensors="pt", padding=True, truncation=True).input_ids[0]
+        return self.tokenizer(text, return_tensors="pt", padding="max_length", truncation=True).input_ids[0] ## TODO attention_mask needed too 
 
     def save(self, path):
         os.makedirs(path, exist_ok=True)

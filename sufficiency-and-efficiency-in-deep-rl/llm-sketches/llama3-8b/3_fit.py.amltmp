@@ -1,6 +1,7 @@
 import argparse 
 import torch 
 import torch.distributed as dist 
+from pathlib import Path 
 import os 
 from fsdp_ssr_llama_8b import FsdpSsrLlama8B 
 
@@ -59,6 +60,9 @@ def main(args) -> None:
     model = FsdpSsrLlama8B(load_path=args.model_checkpoint, learning_rate=args.lr) 
     ## load data on each rank 
     model.replay_buffer.load(args.data_path) 
+    ## set tokenizer 
+    model.tokenizer = FsdpSsrLlama8B.get_tokenizer() ## TODO if really necessary, then auto-instantiate it 
+    model.replay_buffer.tokenizer = model.tokenizer 
     ## optimize 
     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9) 
     print(f'Observed optimal pi: {pi}') 

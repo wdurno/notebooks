@@ -6,9 +6,12 @@
 ## So, this isn't very scalable but decent for demonstrations 
 
 import random 
+import os 
 import torch 
 import torch.nn as nn 
 import torch.distributed as dist 
+from torch.utils.data import DataLoader 
+from torch.utils.data.distributed import DistributedSampler 
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy 
 from lanczos import l_lanczos, combine_krylov_spaces 
@@ -66,10 +69,10 @@ class AbstractFsdpSsrModule(nn.Module):
         return d 
     def load_ssr_dict(self, d): 
         self.ssr_rank = d['ssr_rank'] 
-        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'].to(self.device) 
-        self.ssr_residual_diagonal = d['ssr_residual_diagonal'].to(self.device) 
-        self.ssr_center = d['ssr_center'].to(self.device) 
-        self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
+        self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'] 
+        self.ssr_residual_diagonal = d['ssr_residual_diagonal'] 
+        self.ssr_center = d['ssr_center'] 
+        self.ssr_prev_center = d['ssr_prev_center']  
         self.ssr_n = d['ssr_n'] 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
@@ -95,16 +98,23 @@ class AbstractFsdpSsrModule(nn.Module):
         pass 
     def load(self, path): 
         'Loads from disk to CPU RAM, then distributes parameters over the cluster' 
+        state_path_ssr = os.path.join(path, 'full-model.ssr.pt') 
+        state_path_model = os.path.join(path, 'full-model.state.pt') 
         if dist.get_rank() == 0: 
             print(f'Loading model from {path}...') 
-            self.load_ssr_dict(torch.load(path + 'full-model.ssr.pt', map_location="cpu")) 
+            self.load_ssr_dict(torch.load(state_path_ssr, map_location="cpu")) 
             pass 
-        def _load_state():  
-            self.load_state_dict(torch.load(path + 'full-model.state.pt', map_location="cpu")) 
+        with FSDP.summon_full_params(self.module, offload_to_cpu=True): 
+            state_dict = torch.load(state_path_model, map_location="cpu") 
+            self.module.load_state_dict(state_dict) 
             pass 
-        with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
-            AbstractFsdpSsrModule.__rank_0_run(_load_state) 
-            pass 
+        ## Does not resdistribute parameters! FSDP only sends shards owned by current rank 
+        #def _load_state():  
+        #    self.load_state_dict(torch.load(os.path.join(path, 'full-model.state.pt'), map_location="cpu")) 
+        #    pass 
+        #with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
+        #    AbstractFsdpSsrModule.__rank_0_run(_load_state) 
+        #    pass 
         pass 
     def loss(self, transitions): 
         '''Abstract function which you must implement. 
@@ -240,13 +250,16 @@ class AbstractFsdpSsrModule(nn.Module):
             ## store `dt_prev_pi` for reporting purposes 
             self.dt_prev_pi = pi = self.optimal_pi(pi_min=pi_min, pi_max=pi_max) 
             pass 
-        dist.broadcat(pi, src=0) 
+        ## broadcast pi via GPU since NCCL requires it 
+        pi = pi.cuda() 
+        dist.broadcast(pi, src=0) 
+        pi = pi.cpu() 
         ## New loaders & samplers are needed because overall dataset size frequently changes in RL 
         loader, sampler = self.__get_distributed_loader_and_sampler(batch_size) 
         ## start fit iterations  
         for epoch_idx in range(iters): 
             n = 0 
-            sampler.set_epoch(epoch) 
+            sampler.set_epoch(epoch_idx) 
             self.optimizer.zero_grad() 
             for data in loader: 
                 n += data[0].shape[0] ## loader stacks samples tuples of tensors into a tuple of stacked tensors 
@@ -335,7 +348,7 @@ class AbstractFsdpSsrModule(nn.Module):
             drop_last=False,
         )
         dataloader = DataLoader(
-            replay_buffer,
+            self.replay_buffer,
             batch_size=batch_size,
             sampler=sampler,
             num_workers=0,

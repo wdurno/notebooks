@@ -1,12 +1,13 @@
 ## Implemented with PPO advantage-weighted loss but with SSR 
 
+import json 
 import torch 
 import torch.nn as nn 
 import torch.optim as optim 
 from torch import quantization 
 import torch.nn.functional as F 
 import torch.distributed as dist 
-from transformers import AutoConfig, AutoTokenizer, BitsAndBytesConfig 
+from transformers import AutoConfig, AutoTokenizer, BitsAndBytesConfig, LlamaConfig 
 from transformers.models.llama.modeling_llama import LlamaForCausalLM 
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
 
@@ -20,7 +21,7 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
     def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=None): 
         if load_path is not None and config is None: 
             with open(f"{load_path}/config.json") as f: 
-                config = AutoConfig.from_dict(json.load(f)) 
+                config = LlamaConfig.from_dict(json.load(f))
                 pass 
             pass 
         if config is None: 
@@ -52,7 +53,7 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         ## TODO add `save` and `load` for tokenizer to avoid duplicative downloads 
         tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME) 
         tokenizer.pad_token = tokenizer.eos_token 
-        tokenizer.padding_side = "left" 
+        tokenizer.padding_side = "right" 
         return tokenizer 
     def save_quantized(self, path): 
         'Load model from FSDP cluster and write quantized on rank 0 disk for data generation' 
@@ -62,8 +63,8 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             self.module.save_pretrained(path) 
             pass 
         with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
-            if dist.get_rank() == 0:
-                print(f'Writing quantized model to "{path}"...')
+            if dist.get_rank() == 0: 
+                print(f'Writing quantized model to "{path}"...') 
                 _save_quantized() 
             pass 
         pass 
@@ -145,7 +146,7 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
           - if a tuple, then it has these entries... 
             1. `state`: a matrix of input IDs 
             2. `next_state`: a matrix of input IDs immediately following `state` 
-            3. `action`: action probability logits that originally lead to `next_state`, shaped [batch_size, 1] 
+            3. `action`: action probability logits that originally lead to `next_state`, shaped [batch_size, 1] ### TODO this is wrong! Actions are now currently sequences! 
             4. `reward`: a matrix of rewards, shaped [batch_size, 1] 
             5. `done`: a matrix of boolean `done` flags, shaped [batch_size, 1] 
         - `rl_coef`: the loss weight given to RL value. For example, 0. implies a pure LLM loss. 
@@ -172,6 +173,7 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
         ## if this loss gets returned, it's just the LLM loss 
         p_logits, values, loss = d['logits'], d['values'], d['loss'] 
+        print(f'DEBUG 0: p_logits.shape: {p_logits.shape}, values.shape: {values.shape}') ## TODO verifying... if p_logits 2-rank, below log-softmax likely needs to be a sum. O.w., expect 3-rank. Also, expecting values to be 1-rank. 
         ## if viable, calculate the RL loss 
         if next_state is not None and rl_coef is not None: 
             ## I don't use a previous model here because we use symbolic differentiation. 
@@ -189,7 +191,7 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
 
     def __get_logits_and_values(self, input_ids, attention_mask, **kwargs): 
         ## apply backbone and get probability logits 
-        output = super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
+        output = self.model.forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
         ## Reuse last hidden states 
         hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0] 
         ## Use the same final hidden state for value prediction 
@@ -205,11 +207,11 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         Compute the PPO loss for a batch of assistant responses without assuming sequential generation.
 
         This function compares the current policy's log probabilities of the sampled actions (assistant responses)
-        against a reference policy's frozen log probabilities using the PPO clipped surrogate objective.
+        against a reference policy's frozen log probabilities using the PPO clipped surrogate objective. 
         Each response is treated independently and not as a step in a trajectory.
 
         Args:
-            states (Tensor): Tokenized input prompt sequences (context), shape (batch_size, seq_len).
+            states (Tensor): Tokenized input prompt sequences (context), shape (batch_size, seq_len). ## TODO this doc string is out-of-date! 
             actions (Tensor): Tokenized assistant response sequences (actions), shape (batch_size, action_len).
             advantages (Tensor): Advantage estimates for each sample, shape (batch_size,).
             old_logprobs (Tensor): Log probabilities of actions under the reference (old) policy, shape (batch_size, action_len).
@@ -222,8 +224,9 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         old_log_probs = old_log_probs.clone().detach() 
         ## Compute current log probs 
         log_probs = F.log_softmax(logits, dim=-1) 
-        action_log_probs = log_probs.gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) 
-        ## Advantage estimate: TD(0) 
+        action_log_probs = log_probs.gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) ## TODO this likely needs a sum since actions are sequences 
+        ## TODO Use GAE instead. Use masks to avoid learning from padding tokens. 
+        ## Advantage estimate: TD(0) with sequences (not tokens) as actions 
         target_values = rewards + gamma * next_values * (1. - done) 
         advantages = (target_values - values).detach()  ## no gradient through targets 
         ## Policy loss (PPO clip) 

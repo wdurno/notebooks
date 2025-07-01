@@ -1,0 +1,39 @@
+DEBUG 0: s_t: torch.Size([2345]), a_t: torch.Size([48]), r_t: torch.Size([]), s_tp1: torch.Size([2411]), d_t: torch.Si│·········
+ze([])                                                                                                                │·········
+DEBUG 0: s_t: torch.Size([2472]), a_t: torch.Size([82]), r_t: torch.Size([]), s_tp1: torch.Size([2569]), d_t: torch.Si│·········
+ze([])                                                                                                                │·········
+DEBUG 0: s_t: torch.Size([1070]), a_t: torch.Size([513]), r_t: torch.Size([]), s_tp1: torch.Size([1613]), d_t: torch.S│·········
+ize([])                                                                                                               │·········
+DEBUG 0: s_t: torch.Size([2255]), a_t: torch.Size([52]), r_t: torch.Size([]), s_tp1: torch.Size([2345]), d_t: torch.Si│·········
+ze([])                                                                                                                │·········
+DEBUG 0: s_t: torch.Size([1678]), a_t: torch.Size([513]), r_t: torch.Size([]), s_tp1: torch.Size([2255]), d_t: torch.S│·········
+ize([])                                                                                                               │·········
+DEBUG 0: s_t: torch.Size([980]), a_t: torch.Size([52]), r_t: torch.Size([]), s_tp1: torch.Size([1070]), d_t: torch.Siz│·········
+e([])                                                                                                                 │·········
+DEBUG 0: s_t: torch.Size([2411]), a_t: torch.Size([37]), r_t: torch.Size([]), s_tp1: torch.Size([2472]), d_t: torch.Si│·········
+ze([])                                                                                                                │·········
+DEBUG 0: s_t: torch.Size([2569]), a_t: torch.Size([61]), r_t: torch.Size([]), s_tp1: torch.Size([2660]), d_t: torch.Si│·········
+ze([])                                                                                                                │·········
+[rank1]: Traceback (most recent call last):                                                                           │·········
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-eff│·········
+iciency-in-deep-rl/llm-sketches/llama3-8b/3_fit.py", line 85, in <module>                                             │·········
+[rank1]:     main(args)                                                                                               │·········
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-eff│·········
+iciency-in-deep-rl/llm-sketches/llama3-8b/3_fit.py", line 67, in main                                                 │·········
+[rank1]:     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9)                │·········
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-eff│·········
+iciency-in-deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 264, in fit                                       │·········
+[rank1]:     for data in loader:
+...
+line 211, in collate                                                                                                  │·········
+[rank1]:     return [                                                                                                 │·········
+[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", │·········
+line 212, in <listcomp>                                                                                               │·········
+[rank1]:     collate(samples, collate_fn_map=collate_fn_map)                                                          │·········
+[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", │·········
+line 155, in collate                                                                                                  │·········
+[rank1]:     return collate_fn_map[elem_type](batch, collate_fn_map=collate_fn_map)                                   │·········
+[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", │·········
+line 272, in collate_tensor_fn                                                                                        │·········
+[rank1]:     return torch.stack(batch, 0, out=out)                                                                    │·········
+[rank1]: RuntimeError: stack expects each tensor to be equal size, but got [2345] at entry 0 and [1070] at entry 1
