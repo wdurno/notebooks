@@ -239,7 +239,7 @@ class AbstractFsdpSsrModule(nn.Module):
         - `pi` (float): the `pi` estimate used for this round of fits. 
         - `loss` (float): the final observed `loss` after all fitting iterations. 
         side-effects: 
-        - `self.model.parameter` is updated where `requires_grad=True`.'''
+        - `self.module.parameter` is updated where `requires_grad=True`.'''
         ## check for sufficient concreteness 
         if self.optimizer is None: 
             raise NotImplementedError('ERROR: optimizer not implemented!') 
@@ -262,6 +262,7 @@ class AbstractFsdpSsrModule(nn.Module):
             sampler.set_epoch(epoch_idx) 
             self.optimizer.zero_grad() 
             for data in loader: 
+                data = AbstractFsdpSsrModule.__load_stacker(data) 
                 n += data[0].shape[0] ## loader stacks samples tuples of tensors into a tuple of stacked tensors 
                 loss = self.loss(data) 
                 loss.backward() ## FSDP aggregates grads over ranks with an allreduce OP SUM 
@@ -363,5 +364,49 @@ class AbstractFsdpSsrModule(nn.Module):
             pass 
         dist.barrier() 
         pass 
+    @staticmethod
+    def __load_stacker(tensor_tuple_list): 
+        '''`DataLoader` batches arrive in a list of results and inconsistent tensor ranks. 
+        This function corrects that there's only a single RL tuple of tensors, 
+        and each tensor has a sample index.
+        inputs:
+        - tensor_tuple_list: a list of tuples of tensors 
+        outputs:
+        - tensor_tuple: a tuple of tensors 
+        ''' 
+        ## TODO This entire function may be unnecessary. 
+        ## Consider verifying that my replay_buffer returns 
+        ## consistently-formatted outputs ready for concatenation. 
+        new_tensor_tuple_list = []
+        ## guarantee existence of index ranks  
+        for tensor_tuple in tensor_tuple_list: 
+            new_tensor_tuple_list.append(AbstractFsdpSsrModule.__add_sample_idx_if_missing(tensor_tuple)) 
+            pass 
+        ## concat on index 0, the sample index 
+        out = [] 
+        n_cols = len(new_tensor_tuple_list[0]) 
+        for col_idx in range(n_cols): 
+            tensor_list = [] 
+            for tensor_tuple in new_tensor_tuple_list: 
+                tensor_list.append(tensor_tuple[col_idx]) 
+                pass 
+            out.append(torch.cat(tensor_list)) ## concatenates on index 0 
+            pass 
+        return out 
+    @staticmethod
+    def __add_sample_idx_if_missing(tensor_tuple): 
+        'helper to __load_stacker'
+        ## check first tensor for adequate rank 
+        ## need something like [n, 2048] 
+        out = [] 
+        for tensor in tensor_tuple: 
+            rank = len(tensor.shape) 
+            while rank < 2: 
+                ## inadequate rank indicates row vector or scalar 
+                tensor = tensor.unsqueeze(0) 
+                pass 
+            out.append(tensor) ## adds first index so [...] becomes [1, ...] 
+            pass 
+        return out 
     pass 
 

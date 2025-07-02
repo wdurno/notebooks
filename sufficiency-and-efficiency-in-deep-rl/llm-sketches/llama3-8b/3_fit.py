@@ -32,7 +32,7 @@ def _parse_args() -> argparse.Namespace:
 
     # Training hyper‑parameters
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs to train")
-    parser.add_argument("--batch-size", type=int, default=4, help="Batch size for the DataLoader")
+    parser.add_argument("--batch-size", type=int, default=2, help="Batch size for the DataLoader")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
 
     return parser.parse_args()
@@ -60,9 +60,6 @@ def main(args) -> None:
     model = FsdpSsrLlama8B(load_path=args.model_checkpoint, learning_rate=args.lr) 
     ## load data on each rank 
     model.replay_buffer.load(args.data_path) 
-    ## set tokenizer 
-    model.tokenizer = FsdpSsrLlama8B.get_tokenizer() ## TODO if really necessary, then auto-instantiate it 
-    model.replay_buffer.tokenizer = model.tokenizer 
     ## optimize 
     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9) 
     print(f'Observed optimal pi: {pi}') 

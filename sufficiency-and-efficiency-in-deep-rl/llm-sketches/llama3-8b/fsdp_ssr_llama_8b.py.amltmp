@@ -12,7 +12,7 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
 
 from fsdp_ssr_module import AbstractFsdpSsrModule 
-from efficient_replay_buffer import EfficientReplayBuffer as ReplayBuffer 
+from efficient_replay_buffer2 import EfficientReplayBuffer as ReplayBuffer 
 
 ## Name of the pretrained model 
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B" 
@@ -35,7 +35,8 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             ## override with provided value 
             config.rl_coef = rl_coef 
             pass 
-        replay_buffer = ReplayBuffer(capacity=1_000_000) 
+        self.tokenizer = FsdpSsrLlama8B.get_tokenizer() 
+        replay_buffer = ReplayBuffer(tokenizer=self.tokenizer) 
         if load_path is None: 
             module = LlamaForCausalLMWithValueHead.load_pretrained() ## get a fresh model 
         else: 
@@ -156,31 +157,34 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         - `loss`: a combined LLM and RL loss OR just LLM loss, depending on inputs 
         '''
         ## unpack transitions 
-        if type(transitions) == tuple: 
-            state = input_ids = transitions[0] 
-            next_state = transitions[1] 
-            action = transitions[2] 
-            reward = transitions[3] 
-            done = transitions[4] 
+        if type(transitions) in [tuple, list]: 
+            state = input_ids = transitions[0] ## concatenation of (s_t, a_t) where a_t may be empty 
+            state_mask = transitions[1] ## attention mask for (s_t, a_t) 
+            next_state = transitions[2] ## the window of (s_t, a_t) bumped one token to the right, so (s_, a_t, a_{t+1}) for example 
+            next_state_mask = transitions[3] ## the attention mask for `next_state` 
+            action = state[:,-1] ## final tokens are current actions 
+            reward = transitions[4] ## vector of rewards 
+            done = transitions[5] ## vector of dones 
         else: 
-            state = input_ids = transitions 
+            state = input_ids = transitions ## concatenation of (s_t, a_t) where a_t may be empty 
+            state_mask = None 
             next_state = None 
+            next_state_mask = None 
             action = None 
             reward = None 
             done = None 
             pass 
         ## predict on current state 
-        d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
+        d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=state_mask, **kwargs) 
         ## if this loss gets returned, it's just the LLM loss 
         p_logits, values, loss = d['logits'], d['values'], d['loss'] 
-        print(f'DEBUG 0: p_logits.shape: {p_logits.shape}, values.shape: {values.shape}') ## TODO verifying... if p_logits 2-rank, below log-softmax likely needs to be a sum. O.w., expect 3-rank. Also, expecting values to be 1-rank. 
         ## if viable, calculate the RL loss 
         if next_state is not None and rl_coef is not None: 
             ## I don't use a previous model here because we use symbolic differentiation. 
             ## Numerical differentiation would require we store several values of theta at great memory cost. 
             ## Instead, it's just sufficient to break the differentiation graph in the right spots. 
             ## This is equivalent to updating from theta_old every time we run optimizer.step(). 
-            d = self.__get_logits_and_values(input_ids=next_state, attention_mask=None, **kwargs) 
+            d = self.__get_logits_and_values(input_ids=next_state, attention_mask=next_state_mask, **kwargs) 
             old_p_logits, next_values = d['logits'], d['values'] 
             llm_loss, rl_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
             rl_loss = llm_loss + .5*rl_loss 
@@ -191,7 +195,9 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
 
     def __get_logits_and_values(self, input_ids, attention_mask, **kwargs): 
         ## apply backbone and get probability logits 
-        output = self.model.forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs) 
+        print(f'DEBUG 0: len(input_ids): {len(input_ids)}, type(input_ids[0]): {type(input_ids[0])}')
+        print(f'DEBUG 1: input_ids[0].shape: {input_ids[0].shape}')
+        output = super().forward(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True, **kwargs) 
         ## Reuse last hidden states 
         hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0] 
         ## Use the same final hidden state for value prediction 
