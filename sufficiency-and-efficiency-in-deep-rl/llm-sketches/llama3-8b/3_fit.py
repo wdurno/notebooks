@@ -32,7 +32,7 @@ def _parse_args() -> argparse.Namespace:
 
     # Training hyper‑parameters
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs to train")
-    parser.add_argument("--batch-size", type=int, default=2, help="Batch size for the DataLoader")
+    parser.add_argument("--batch-size", type=int, default=1, help="Batch size for the DataLoader")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
 
     return parser.parse_args()

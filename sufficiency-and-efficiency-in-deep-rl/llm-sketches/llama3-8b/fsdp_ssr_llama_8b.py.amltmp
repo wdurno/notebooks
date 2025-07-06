@@ -18,10 +18,10 @@ from efficient_replay_buffer2 import EfficientReplayBuffer as ReplayBuffer
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B" 
 
 class FsdpSsrLlama8B(AbstractFsdpSsrModule): 
-    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=None): 
+    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=.5): 
         if load_path is not None and config is None: 
             with open(f"{load_path}/config.json") as f: 
-                config = LlamaConfig.from_dict(json.load(f))
+                config = LlamaConfig.from_dict(json.load(f)) 
                 pass 
             pass 
         if config is None: 
@@ -29,12 +29,7 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             config = AutoConfig.from_pretrained(MODEL_NAME) 
             config.output_hidden_states = True  ## important for value head! 
             pass 
-        ## default `rl_coef` value is `0.` if not already set 
-        config.rl_coef = getattr(config, 'rl_coef', 0.) 
-        if rl_coef is not None: 
-            ## override with provided value 
-            config.rl_coef = rl_coef 
-            pass 
+        self.rl_coef = rl_coef 
         self.tokenizer = FsdpSsrLlama8B.get_tokenizer() 
         replay_buffer = ReplayBuffer(tokenizer=self.tokenizer) 
         if load_path is None: 
@@ -100,7 +95,8 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         model.eval() 
         return model 
     def loss(self, transitions): 
-        _, _, loss = self.module(transitions, rl_coef=self.module.config.rl_coef) 
+        print(f'DEBUG 14: self.rl_coef: {self.rl_coef}')
+        _, _, loss = self.module(transitions, rl_coef=self.rl_coef) 
         return loss 
     def save(self, path): 
         if dist.get_rank() == 0: 
@@ -174,18 +170,23 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             reward = None 
             done = None 
             pass 
+        print(f'DEBUG 15: rl_coef: {rl_coef}') 
         ## predict on current state 
-        d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=state_mask, **kwargs) 
+        print(f'DEBUG 3: calculating first logits and values...') 
+        d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=state_mask, labels=next_state, **kwargs) 
         ## if this loss gets returned, it's just the LLM loss 
         p_logits, values, loss = d['logits'], d['values'], d['loss'] 
+        ## I'm only interested in logits for next actions 
+        p_logits = p_logits[:, -1, :] 
         ## if viable, calculate the RL loss 
         if next_state is not None and rl_coef is not None: 
             ## I don't use a previous model here because we use symbolic differentiation. 
             ## Numerical differentiation would require we store several values of theta at great memory cost. 
             ## Instead, it's just sufficient to break the differentiation graph in the right spots. 
             ## This is equivalent to updating from theta_old every time we run optimizer.step(). 
+            print(f'DEBUG 4: calculating second logits and values...') 
             d = self.__get_logits_and_values(input_ids=next_state, attention_mask=next_state_mask, **kwargs) 
-            old_p_logits, next_values = d['logits'], d['values'] 
+            old_p_logits, next_values = d['logits'][:, -1, :], d['values'] 
             llm_loss, rl_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
             rl_loss = llm_loss + .5*rl_loss 
             loss += rl_coef * rl_loss 
@@ -195,13 +196,18 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
 
     def __get_logits_and_values(self, input_ids, attention_mask, **kwargs): 
         ## apply backbone and get probability logits 
-        print(f'DEBUG 0: len(input_ids): {len(input_ids)}, type(input_ids[0]): {type(input_ids[0])}')
-        print(f'DEBUG 1: input_ids[0].shape: {input_ids[0].shape}')
+        print(f'DEBUG 0: type(input_ids): {type(input_ids)}, input_ids.shape: {input_ids.shape}') 
         output = super().forward(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True, **kwargs) 
         ## Reuse last hidden states 
-        hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0] 
+        ##hidden_states = output.hidden_states[-1] if self.config.output_hidden_states else output[0] ## output[0] is logits - do not use 
+        hidden_states = output.hidden_states[-1] 
+        print(f'DEBUG 1: hidden_states.shape: {hidden_states.shape}')
         ## Use the same final hidden state for value prediction 
-        values = self.value_head(hidden_states).squeeze(-1)  ## shape: [batch, seq] 
+        print('DEBUG 5: calculating value...') 
+        values = self.value_head(hidden_states) 
+        print(f'DEBUG 16: values.shape: {values.shape}') 
+        values = values.squeeze(-1).squeeze(0) ## shape: [batch, seq] 
+        print(f'DEBUG 17: values.shape: {values.shape}') 
         ## returns (probability logits, expected values, LLM loss) as dictionary to meet `generate` interface 
         return {'logits': output.logits, 'values': values, 'loss': output.loss} 
     @staticmethod 
@@ -227,16 +233,16 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             value_loss (Tensor): The mean value function loss over the batch (scalar).
         """
         ## break differentiation graph 
-        old_log_probs = old_log_probs.clone().detach() 
+        old_log_probs = old_log_probs.clone().detach().gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) 
         ## Compute current log probs 
         log_probs = F.log_softmax(logits, dim=-1) 
-        action_log_probs = log_probs.gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) ## TODO this likely needs a sum since actions are sequences 
-        ## TODO Use GAE instead. Use masks to avoid learning from padding tokens. 
+        print(f'DEBUG 13: log_probs.shape: {log_probs.shape}, actions.shape: {actions.shape}') 
+        action_log_probs = log_probs.gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) 
         ## Advantage estimate: TD(0) with sequences (not tokens) as actions 
-        target_values = rewards + gamma * next_values * (1. - done) 
-        advantages = (target_values - values).detach()  ## no gradient through targets 
+        target_values = rewards + gamma * next_values * (1. - done.float()) 
+        advantages = (target_values - values)[:,-1].detach()  ## no gradient through targets 
         ## Policy loss (PPO clip) 
-        ratios = torch.exp(action_log_probs - old_log_probs) 
+        ratios = torch.exp(action_log_probs - old_log_probs)  
         unclipped = ratios * advantages 
         clipped = torch.clamp(ratios, 1.0 - clip_epsilon, 1.0 + clip_epsilon) * advantages 
         policy_loss = -torch.mean(torch.min(unclipped, clipped))  ## maximize advantage 

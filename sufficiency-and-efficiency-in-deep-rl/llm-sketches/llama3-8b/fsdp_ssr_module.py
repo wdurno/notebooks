@@ -109,7 +109,7 @@ class AbstractFsdpSsrModule(nn.Module):
             self.module.load_state_dict(state_dict) 
             pass 
         ## Does not resdistribute parameters! FSDP only sends shards owned by current rank 
-        #def _load_state():  
+        #def _load_state(): 
         #    self.load_state_dict(torch.load(os.path.join(path, 'full-model.state.pt'), map_location="cpu")) 
         #    pass 
         #with FSDP.summon_full_params(self.module, rank0_only=True, offload_to_cpu=True): ## redistributes on context close 
@@ -262,9 +262,12 @@ class AbstractFsdpSsrModule(nn.Module):
             sampler.set_epoch(epoch_idx) 
             self.optimizer.zero_grad() 
             for data in loader: 
+                print(f'DEBUG 11: type(data): {type(data)}, type(data[0]): {type(data[0])}')
                 data = AbstractFsdpSsrModule.__load_stacker(data) 
                 n += data[0].shape[0] ## loader stacks samples tuples of tensors into a tuple of stacked tensors 
+                print(f'DEBUG 2: calculating loss...') 
                 loss = self.loss(data) 
+                print('DEBUG 6: calculating backward...') 
                 loss.backward() ## FSDP aggregates grads over ranks with an allreduce OP SUM 
                 pass 
             ## get actual sample size so we can adjust ssr_grad scale to fit summed gradients 
@@ -276,13 +279,16 @@ class AbstractFsdpSsrModule(nn.Module):
             ## I'll adjust upward by `n` because `loss` isn't averaged 
             with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
                 if dist.get_rank() == 0: 
+                    print('DEBUG 7: calculating ssr...')
                     ssr, ssr_grad = self.ssr() 
                     ssr *= n 
                     ssr_grad *= n 
                     pass 
                 dist.barrier() 
                 pass 
+            print('DEBUG 8: adjusting grads...') 
             self.__adjust_grads(ssr_grad, pi) ## grads applied here 
+            print('DEBUG 9: applying grads...') 
             self.optimizer.step() ## apply gradients 
             ## return average loss for reporting purposes because it'll be comparable over different samples sizes 
             loss = (pi * loss + (1 - pi) * ssr)/n 
@@ -374,6 +380,30 @@ class AbstractFsdpSsrModule(nn.Module):
         outputs:
         - tensor_tuple: a tuple of tensors 
         ''' 
+        ## DEBUGGING START 
+        for tensor_tuple in tensor_tuple_list: 
+            print(f'DEBUG 12: type: {tensor_tuple.shape}, shapes: {[t.shape for t in tensor_tuple]}') 
+        ## DEBUGGING STOP 
+        out = [] 
+        for tensor_tuple in tensor_tuple_list: 
+            out.append(torch.stack([t for t in tensor_tuple])) 
+            pass 
+        return out 
+        ## OLD CODE FOLLOWS 
+        n_tuples = len(tensor_tuple_list) 
+        n_cols = len(tensor_tuple_list[0]) 
+        out_list = [[] for _ in range(n_cols)] 
+        for tensor_tuple in tensor_tuple_list: 
+            for idx in range(n_cols): 
+                out_list[idx].append(tensor_tuple[idx]) 
+                pass 
+            pass 
+        ## build output tuple
+        for idx in range(n_cols): 
+            out_list[idx] = torch.stack(out_list[idx]) 
+            pass 
+        return out_list 
+        ## OLD CODE FOLLOWS 
         ## TODO This entire function may be unnecessary. 
         ## Consider verifying that my replay_buffer returns 
         ## consistently-formatted outputs ready for concatenation. 
@@ -397,13 +427,14 @@ class AbstractFsdpSsrModule(nn.Module):
     def __add_sample_idx_if_missing(tensor_tuple): 
         'helper to __load_stacker'
         ## check first tensor for adequate rank 
-        ## need something like [n, 2048] 
+        ## need shape with len 2 or more, like [n, 2048] 
         out = [] 
         for tensor in tensor_tuple: 
             rank = len(tensor.shape) 
             while rank < 2: 
                 ## inadequate rank indicates row vector or scalar 
                 tensor = tensor.unsqueeze(0) 
+                rank = len(tensor.shape) 
                 pass 
             out.append(tensor) ## adds first index so [...] becomes [1, ...] 
             pass 
