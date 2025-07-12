@@ -32,7 +32,7 @@ def _parse_args() -> argparse.Namespace:
 
     # Training hyper‑parameters
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs to train")
-    parser.add_argument("--batch-size", type=int, default=1, help="Batch size for the DataLoader")
+    parser.add_argument("--batch-size", type=int, default=5, help="Batch size for the DataLoader")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
 
     return parser.parse_args()
@@ -57,7 +57,7 @@ def main(args) -> None:
     ## init FSDP 
     setup(args.rank, args.world_size) 
     ## distributed model init 
-    model = FsdpSsrLlama8B(load_path=args.model_checkpoint, learning_rate=args.lr) 
+    model = FsdpSsrLlama8B(load_path=args.model_checkpoint, learning_rate=args.lr, seq_len=2048) # 2048
     ## load data on each rank 
     model.replay_buffer.load(args.data_path) 
     ## optimize 

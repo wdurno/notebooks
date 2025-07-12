@@ -260,15 +260,21 @@ class AbstractFsdpSsrModule(nn.Module):
         for epoch_idx in range(iters): 
             n = 0 
             sampler.set_epoch(epoch_idx) 
-            self.optimizer.zero_grad() 
-            for data in loader: 
-                print(f'DEBUG 11: type(data): {type(data)}, type(data[0]): {type(data[0])}')
+            ## zeroing grads with Nones because 
+            ## 1. zeros and Nones are applied to _all_ parameters, and  
+            ## 2. FSDP only needs zeros applied to some parameters per GPU. 
+            self.optimizer.zero_grad(set_to_none=True) 
+            for data_idx, data in enumerate(loader): ## TODO FSDP is not designed to accommodate this kind of loop, so has biased MLEs 
+                print(f'DEBUG 11: type(data): {type(data)}, type(data[0]): {type(data[0])}') 
                 data = AbstractFsdpSsrModule.__load_stacker(data) 
                 n += data[0].shape[0] ## loader stacks samples tuples of tensors into a tuple of stacked tensors 
                 print(f'DEBUG 2: calculating loss...') 
                 loss = self.loss(data) 
-                print('DEBUG 6: calculating backward...') 
+                print(torch.cuda.memory_summary()) ## MORE DEBUGGING 
+                print(f'DEBUG 6: calculating backward... data_idx: {data_idx}, epoch_idx: {epoch_idx}') 
                 loss.backward() ## FSDP aggregates grads over ranks with an allreduce OP SUM 
+                #self.optimizer.zero_grad(set_to_none=True) ## TODO REMOVE !!! THIS IS AN OOM TEST 
+                ##torch.cuda.empty_cache() ## THIS DIDN'T WORK 
                 pass 
             ## get actual sample size so we can adjust ssr_grad scale to fit summed gradients 
             ## I can't just use dataset size because distributed loaders are capable of small degrees of double sampling 
@@ -279,7 +285,7 @@ class AbstractFsdpSsrModule(nn.Module):
             ## I'll adjust upward by `n` because `loss` isn't averaged 
             with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
                 if dist.get_rank() == 0: 
-                    print('DEBUG 7: calculating ssr...')
+                    print('DEBUG 7: calculating ssr...') 
                     ssr, ssr_grad = self.ssr() 
                     ssr *= n 
                     ssr_grad *= n 
@@ -290,6 +296,7 @@ class AbstractFsdpSsrModule(nn.Module):
             self.__adjust_grads(ssr_grad, pi) ## grads applied here 
             print('DEBUG 9: applying grads...') 
             self.optimizer.step() ## apply gradients 
+            self.optimizer.zero_grad(set_to_none=True) 
             ## return average loss for reporting purposes because it'll be comparable over different samples sizes 
             loss = (pi * loss + (1 - pi) * ssr)/n 
             pass 

@@ -18,7 +18,7 @@ from efficient_replay_buffer2 import EfficientReplayBuffer as ReplayBuffer
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B" 
 
 class FsdpSsrLlama8B(AbstractFsdpSsrModule): 
-    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=.5): 
+    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=.5, seq_len=2048): 
         if load_path is not None and config is None: 
             with open(f"{load_path}/config.json") as f: 
                 config = LlamaConfig.from_dict(json.load(f)) 
@@ -31,18 +31,30 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             pass 
         self.rl_coef = rl_coef 
         self.tokenizer = FsdpSsrLlama8B.get_tokenizer() 
-        replay_buffer = ReplayBuffer(tokenizer=self.tokenizer) 
+        replay_buffer = ReplayBuffer(tokenizer=self.tokenizer, seq_len=seq_len) 
         if load_path is None: 
             module = LlamaForCausalLMWithValueHead.load_pretrained() ## get a fresh model 
         else: 
             module = LlamaForCausalLMWithValueHead(config=config) 
             pass 
+        ## gradient checkpointing saves RAM during fitting but costs compute time 
+        module.config.use_cache = False ## otherwise, checkpointing silently disabled 
+        module.gradient_checkpointing_enable( 
+                gradient_checkpointing_kwargs={"use_reentrant": False}) ## recommended here https://docs.pytorch.org/docs/stable/checkpoint.html  
+        module.enable_input_require_grads() 
+        ## register module 
         super(FsdpSsrLlama8B, self).__init__(module=module, replay_buffer=replay_buffer, ssr_rank=ssr_rank, dt_mean_N=dt_mean_N) 
         if load_path is not None: 
             self.load(load_path) 
             pass 
         ## TODO consider saving space with SGD because I have true natural gradients 
-        self.optimizer = optim.AdamW([p for p in self.module.parameters() if p.requires_grad], lr=learning_rate) 
+        #self.optimizer = optim.AdamW([p for p in self.module.parameters() if p.requires_grad], lr=learning_rate) 
+        self.optimizer = optim.SGD(
+            [p for p in self.module.parameters() if p.requires_grad],
+            lr=learning_rate,      # e.g. 2e-4
+            momentum=0.0,          # keep at zero so no buffer is created
+            weight_decay=0.0       # set >0 if you want classic L2
+            )
         pass 
     @staticmethod 
     def get_tokenizer(): 
@@ -173,9 +185,11 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
         print(f'DEBUG 15: rl_coef: {rl_coef}') 
         ## predict on current state 
         print(f'DEBUG 3: calculating first logits and values...') 
-        d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=state_mask, labels=next_state, **kwargs) 
+        with torch.no_grad(): 
+            d = self.__get_logits_and_values(input_ids=input_ids, attention_mask=state_mask, **kwargs) 
+            pass 
         ## if this loss gets returned, it's just the LLM loss 
-        p_logits, values, loss = d['logits'], d['values'], d['loss'] 
+        p_logits, values, loss = d['logits'], d['values'], None 
         ## I'm only interested in logits for next actions 
         p_logits = p_logits[:, -1, :] 
         ## if viable, calculate the RL loss 
@@ -185,8 +199,9 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             ## Instead, it's just sufficient to break the differentiation graph in the right spots. 
             ## This is equivalent to updating from theta_old every time we run optimizer.step(). 
             print(f'DEBUG 4: calculating second logits and values...') 
-            d = self.__get_logits_and_values(input_ids=next_state, attention_mask=next_state_mask, **kwargs) 
-            old_p_logits, next_values = d['logits'][:, -1, :], d['values'] 
+            ## TODO detach insufficent to save memory - try to use a no_grad block 
+            d = self.__get_logits_and_values(input_ids=next_state, attention_mask=next_state_mask, labels=next_state, **kwargs) 
+            old_p_logits, next_values, loss = d['logits'][:, -1, :], d['values'], d['loss'] 
             llm_loss, rl_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
             rl_loss = llm_loss + .5*rl_loss 
             loss += rl_coef * rl_loss 
@@ -233,7 +248,7 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             value_loss (Tensor): The mean value function loss over the batch (scalar).
         """
         ## break differentiation graph 
-        old_log_probs = old_log_probs.clone().detach().gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) 
+        old_log_probs = old_log_probs.detach().gather(dim=-1, index=actions.unsqueeze(-1)).squeeze(-1) 
         ## Compute current log probs 
         log_probs = F.log_softmax(logits, dim=-1) 
         print(f'DEBUG 13: log_probs.shape: {log_probs.shape}, actions.shape: {actions.shape}') 
