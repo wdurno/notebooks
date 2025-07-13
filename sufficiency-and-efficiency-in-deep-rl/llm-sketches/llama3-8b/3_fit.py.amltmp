@@ -33,7 +33,8 @@ def _parse_args() -> argparse.Namespace:
     # Training hyper‑parameters
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs to train")
     parser.add_argument("--batch-size", type=int, default=5, help="Batch size for the DataLoader")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate") 
+    parser.add_argument("--subset-size", type=int, default=-1, help="If applied, subset the replay buffer") 
 
     return parser.parse_args()
 
@@ -61,7 +62,7 @@ def main(args) -> None:
     ## load data on each rank 
     model.replay_buffer.load(args.data_path) 
     ## optimize 
-    pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9) 
+    pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9, subset_size=args.subset_size) 
     print(f'Observed optimal pi: {pi}') 
     print(f'Observed loss: {loss}') 
     ## save model 

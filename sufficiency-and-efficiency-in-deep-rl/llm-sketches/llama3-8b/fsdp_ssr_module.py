@@ -10,6 +10,7 @@ import os
 import torch 
 import torch.nn as nn 
 import torch.distributed as dist 
+from torch.utils.data import Subset 
 from torch.utils.data import DataLoader 
 from torch.utils.data.distributed import DistributedSampler 
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP 
@@ -188,7 +189,7 @@ class AbstractFsdpSsrModule(nn.Module):
         WARNING: Only run inside a `with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True):` block!
         The block is not enforced here to enable gradient handling.'''
         if self.ssr_low_rank_matrix is None: 
-            return 0. 
+            return 0., 0.
         ## p = self.get_param() 
         p = self.get_param().clone().detach() ## FSDP modification: break the graph and calculate gradients manually 
         p0 = self.ssr_center 
@@ -230,11 +231,12 @@ class AbstractFsdpSsrModule(nn.Module):
         The block is not enforced here to enable gradient handling.''' 
         ## For an FSDP module, all self.module parameters will be `FlatParameter`s 
         return torch.cat([p.reshape([-1, 1]) for p in self.module.parameters() if p.requires_grad], dim=0) 
-    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9): 
+    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9, subset_size=-1): 
         '''Runs numerical fitting iterations over the `replay_buffer` dataset. 
         inputs: 
         - `batch_size`: the per-rank batch size. 
         - `iters`: the number of iterations, each updating the parameter and pulling from new random data batch. 
+        - `subset_size`: if > 0, subset the replay_buffer randomly. Default -1. 
         outputs: 
         - `pi` (float): the `pi` estimate used for this round of fits. 
         - `loss` (float): the final observed `loss` after all fitting iterations. 
@@ -255,7 +257,7 @@ class AbstractFsdpSsrModule(nn.Module):
         dist.broadcast(pi, src=0) 
         pi = pi.cpu() 
         ## New loaders & samplers are needed because overall dataset size frequently changes in RL 
-        loader, sampler = self.__get_distributed_loader_and_sampler(batch_size) 
+        loader, sampler = self.__get_distributed_loader_and_sampler(batch_size, subset_size=subset_size) 
         ## start fit iterations  
         for epoch_idx in range(iters): 
             n = 0 
@@ -278,12 +280,12 @@ class AbstractFsdpSsrModule(nn.Module):
                 pass 
             ## get actual sample size so we can adjust ssr_grad scale to fit summed gradients 
             ## I can't just use dataset size because distributed loaders are capable of small degrees of double sampling 
-            n = torch.tensor(n) 
+            n = torch.tensor(n, dtype=torch.long, device=torch.cuda.current_device()) 
             dist.all_reduce(n, op=dist.ReduceOp.SUM) 
             n = n.item() 
             ## calculate the average SSR and its gradient on rank 0's CPU 
             ## I'll adjust upward by `n` because `loss` isn't averaged 
-            with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True): 
+            with FSDP.summon_full_params(self.module, offload_to_cpu=True, writeback=False, rank0_only=True): 
                 if dist.get_rank() == 0: 
                     print('DEBUG 7: calculating ssr...') 
                     ssr, ssr_grad = self.ssr() 
@@ -353,9 +355,13 @@ class AbstractFsdpSsrModule(nn.Module):
             cursor += n 
             pass 
         pass 
-    def __get_distributed_loader_and_sampler(self, batch_size):
+    def __get_distributed_loader_and_sampler(self, batch_size, subset_size=-1):
+        dataset = self.replay_buffer 
+        if subset_size > 0: 
+            dataset = AbstractFsdpSsrModule.__random_dataset_subset(dataset, subset_size)
+            pass 
         sampler = DistributedSampler(
-            self.replay_buffer,
+            dataset,
             num_replicas=dist.get_world_size(),
             rank=dist.get_rank(),
             shuffle=True, 
@@ -369,6 +375,10 @@ class AbstractFsdpSsrModule(nn.Module):
             pin_memory=True
         )
         return dataloader, sampler
+    @staticmethod
+    def __random_dataset_subset(dataset, size):
+        indices = random.sample(range(len(dataset)), size)
+        return Subset(dataset, indices)
     @staticmethod 
     def __rank_0_run(f): 
         'run f on rank 0 while blocking the rest of the cluster'

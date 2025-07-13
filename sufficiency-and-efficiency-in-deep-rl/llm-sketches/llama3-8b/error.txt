@@ -1,36 +1,21 @@
-DEBUG 6: calculating backward...                                                                                                                                    
-[rank0]: Traceback (most recent call last):                                                                                                                         
-[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/3_fi
-t.py", line 82, in <module>
-[rank0]:     main(args)
-[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/3_fi
-t.py", line 64, in main
-[rank0]:     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9)
-[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/fsdp
-_ssr_module.py", line 271, in fit
-[rank0]:     loss.backward() ## FSDP aggregates grads over ranks with an allreduce OP SUM
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/_tensor.py", line 626, in backward
-[rank0]:     torch.autograd.backward(
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/autograd/__init__.py", line 347, in backward
-[rank0]:     _engine_run_backward(
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
-[rank0]:     return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/fsdp/_runtime_utils.py", line 683, in _pre_backward_hook
-[rank0]:     _prefetch_handle(state, handle, _PrefetchMode.BACKWARD)
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/fsdp/_runtime_utils.py", line 1223, in _prefetch_handle
-[rank0]:     _unshard(state, handle, state._unshard_stream, state._pre_unshard_stream)
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/fsdp/_runtime_utils.py", line 301, in _unshard
-[rank0]:     handle.unshard()
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/fsdp/_flat_param.py", line 1354, in unshard
-[rank0]:     unsharded_flat_param = self._alloc_padded_unsharded_flat_param()
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/fsdp/_flat_param.py", line 1381, in _alloc_padded_unsharded_flat_
-param
-[rank0]:     _alloc_storage(unsharded_flat_param, flat_param._padded_unsharded_size)  # type: ignore[attr-defined]
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/utils.py", line 192, in _alloc_storage
-[rank0]:     tensor._typed_storage()._resize_(size.numel())
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/storage.py", line 1258, in _resize_
-[rank0]:     self._untyped_storage.resize_(size * self._element_size())
-[rank0]: torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 672.00 MiB. GPU 0 has a total capacity of 93.02 GiB of which 585.25 MiB is free. Including no
-n-PyTorch memory, this process has 92.44 GiB memory in use. Of the allocated memory 86.16 GiB is allocated by PyTorch, and 4.93 GiB is reserved by PyTorch but unall
-ocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memo
-ry Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[rank0]:     return func(*args, **kwargs)                                                                                       
+[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py", line 28
+06, in all_reduce                                                                                                               
+[rank0]:     work = group.allreduce([tensor], opts)                                                                             
+[rank0]: RuntimeError: No backend type associated with device type cpu
+[rank1]: Traceback (most recent call last):                                                                                     
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
+-deep-rl/llm-sketches/llama3-8b/3_fit.py", line 83, in <module>                                                                 [rank1]:     main(args)
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
+-deep-rl/llm-sketches/llama3-8b/3_fit.py", line 65, in main                                                                     [rank1]:     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9, subset_size=args.subset_s
+ize)                       
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
+-deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 284, in fit
+[rank1]:     dist.all_reduce(n, op=dist.ReduceOp.SUM)
+[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/c10d_logger.py", line 81, in 
+wrapper  
+[rank1]:     return func(*args, **kwargs)
+[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py", line 28
+06, in all_reduce                                               
+[rank1]:     work = group.allreduce([tensor], opts)
+[rank1]: RuntimeError: No backend type associated with device type cpu

@@ -54,5 +54,8 @@ This must run on a GPU node.
 bash 3_fit.sh \
   --model-checkpoint models/model_v0_full \
   --output-dir models/model_v1 \
-  --data-path chat_logs/replay_buffer.pt
+  --data-path chat_logs/replay_buffer.pt \
+  --subset-size 100 \
+  --batch-size 10 \
+  --epochs 3
 ```
