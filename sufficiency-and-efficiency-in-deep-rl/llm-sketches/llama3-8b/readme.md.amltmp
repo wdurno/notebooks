@@ -44,18 +44,33 @@ This can run on a cheaper node.
 python3 2_generate_data.py  
 ```
 
-### 3. Update model 
+### 3. Memorize existing data 
+
+We'll run a memorization with a pure LLM loss; RL loss is zerod out. 
+
+```bash
+## set keys 
+. ~/llm_keys.sh ## use keys 
+bash 3_memorize.sh \
+  --model-checkpoint models/model_v0_full \
+  --output-dir models/model_v1 \
+  --data-path chat_logs/replay_buffer.pt \
+  --rl-coef 0.
+```
+
+### 4. Update model 
 
 This must run on a GPU node. 
 
 ```bash
 ## set keys 
 . ~/llm_keys.sh ## use keys 
-bash 3_fit.sh \
-  --model-checkpoint models/model_v0_full \
-  --output-dir models/model_v1 \
+bash 4_fit.sh \
+  --model-checkpoint models/model_v1 \
+  --output-dir models/model_v2 \
   --data-path chat_logs/replay_buffer.pt \
   --subset-size 100 \
   --batch-size 10 \
-  --epochs 3
+  --epochs 3 \
+  --rl-coef 0.1
 ```

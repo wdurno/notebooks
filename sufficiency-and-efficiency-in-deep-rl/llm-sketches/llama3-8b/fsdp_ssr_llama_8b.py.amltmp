@@ -18,7 +18,7 @@ from efficient_replay_buffer2 import EfficientReplayBuffer as ReplayBuffer
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B" 
 
 class FsdpSsrLlama8B(AbstractFsdpSsrModule): 
-    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=.5, seq_len=2048): 
+    def __init__(self, load_path=None, ssr_rank=2, dt_mean_N=10, learning_rate=1e-4, config=None, rl_coef=.5, seq_len=2048, use_fsdp=True): 
         if load_path is not None and config is None: 
             with open(f"{load_path}/config.json") as f: 
                 config = LlamaConfig.from_dict(json.load(f)) 
@@ -42,11 +42,12 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         module.gradient_checkpointing_enable( 
                 gradient_checkpointing_kwargs={"use_reentrant": False}) ## recommended here https://docs.pytorch.org/docs/stable/checkpoint.html  
         module.enable_input_require_grads() 
-        ## register module 
-        super(FsdpSsrLlama8B, self).__init__(module=module, replay_buffer=replay_buffer, ssr_rank=ssr_rank, dt_mean_N=dt_mean_N) 
+        ## load all tensors, optionally discarding with FSDP later 
         if load_path is not None: 
-            self.load(load_path) 
+            self.load(load_path, module=module) 
             pass 
+        ## register module 
+        super(FsdpSsrLlama8B, self).__init__(module=module, replay_buffer=replay_buffer, ssr_rank=ssr_rank, dt_mean_N=dt_mean_N, use_fsdp=use_fsdp) 
         ## TODO consider saving space with SGD because I have true natural gradients 
         #self.optimizer = optim.AdamW([p for p in self.module.parameters() if p.requires_grad], lr=learning_rate) 
         self.optimizer = optim.SGD(
@@ -116,16 +117,19 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
             pass 
         super(FsdpSsrLlama8B, self).save(path) 
         pass 
-    def load(self, path): 
-        'requires correctly-configured modules before loading' 
-        super(FsdpSsrLlama8B, self).load(path) 
-        self.module.config.from_pretrained(path) 
+    def load(self, path, module=None): 
+        'requires correctly-configured modules before loading' ## TODO not if I want to quickly load parameters... 
+        super(FsdpSsrLlama8B, self).load(path, module=module) 
+        if module is None: 
+            module = self.module 
+            pass 
+        module.config.from_pretrained(path) 
         pass 
     pass 
 
 class LlamaForCausalLMWithValueHead(LlamaForCausalLM): 
     def __init__(self, config=None): 
-        super().__init__(config)
+        super().__init__(config) 
         self.value_head = nn.Linear(config.hidden_size, 1) ## regression target 
         self.post_init() 
         pass 
@@ -202,9 +206,11 @@ class LlamaForCausalLMWithValueHead(LlamaForCausalLM):
             ## TODO detach insufficent to save memory - try to use a no_grad block 
             d = self.__get_logits_and_values(input_ids=next_state, attention_mask=next_state_mask, labels=next_state, **kwargs) 
             old_p_logits, next_values, loss = d['logits'][:, -1, :], d['values'], d['loss'] 
-            llm_loss, rl_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
-            rl_loss = llm_loss + .5*rl_loss 
-            loss += rl_coef * rl_loss 
+            if rl_coef != 0.:
+                policy_loss, value_loss = LlamaForCausalLMWithValueHead.__compute_ppo_loss_nonsequential(p_logits, values, action, reward, next_values, old_p_logits, done) 
+                rl_loss = policy_loss + .5*value_loss 
+                loss += rl_coef * rl_loss 
+                pass 
             pass 
         # return (probability logits, expected values, loss) 
         return p_logits, values, loss 

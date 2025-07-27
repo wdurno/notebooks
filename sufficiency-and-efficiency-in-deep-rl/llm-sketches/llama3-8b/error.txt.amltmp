@@ -1,0 +1,14 @@
+rank0]:     model.memorize()
+[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/fsdp
+_ssr_module.py", line 181, in memorize                                            
+[rank0]:     AbstractFsdpSsrModule.__rank_0_run(_memorize)
+[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/fsdp
+_ssr_module.py", line 386, in __rank_0_run
+[rank0]:     f()       
+[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/fsdp
+_ssr_module.py", line 156, in _memorize
+[rank0]:     ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension
+, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm)                                                                                                    
+[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1928, in __getattr__
+[rank0]:     raise AttributeError(                                                                                                                                  
+[rank0]: AttributeError: 'FsdpSsrLlama8B' object has no attribute 'device'

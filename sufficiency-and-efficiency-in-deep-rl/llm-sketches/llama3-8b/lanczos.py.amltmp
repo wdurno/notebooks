@@ -2,9 +2,10 @@
 import numpy as np
 from scipy.linalg import block_diag 
 import torch 
+import torch.distributed as dist 
 import traceback 
 #from tqdm import tqdm 
-from tqdm.notebook import tqdm 
+from tqdm import tqdm 
 
 def lanczos(AAT, r): 
     'Lanczos algorithm: produce AA^T = V T V^T' 
@@ -57,7 +58,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     if r < 1: 
         ## degenerate case 
         return torch.zeros([p, 1]) 
-    def multiply_fisher_information(x, disable_tqdm=disable_tqdm):
+    def multiply_fisher_information(x, get_grad_generator=get_grad_generator, disable_tqdm=disable_tqdm):
         grad_generator = get_grad_generator() 
         out = 0. 
         for g in grad_generator():
@@ -83,7 +84,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
         v = v.to(device) 
     v = v / torch.sqrt(v.transpose(0,1).matmul(v)) 
     ## next_v = AAT.matmul(v)  
-    next_v = multiply_fisher_information(v) 
+    next_v = multiply_fisher_information(v, get_grad_generator=get_grad_generator, disable_tqdm=disable_tqdm) 
     diag = next_v.transpose(0,1).matmul(v) 
     next_v = next_v - diag * v 
     vecs.append(v) 
@@ -94,7 +95,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
         off_diag = torch.sqrt(next_v.transpose(0,1).matmul(next_v))
         v = next_v / off_diag  
         ## next_v = AAT.matmul(v)  
-        next_v = multiply_fisher_information(v) 
+        next_v = multiply_fisher_information(v, get_grad_generator=get_grad_generator, disable_tqdm=disable_tqdm) 
         diag = next_v.transpose(0,1).matmul(v) 
         next_v = next_v - diag * v - off_diag * prev_v 
         vecs.append(v) 
@@ -136,13 +137,79 @@ def combine_krylov_spaces(A, B, device=None, krylov_eps=0.):
     outputs: 
     - C: a combined Krylov basis 
     '''
-    def mfi_alternate(x): 
+    def mfi_alternate(x, get_grad_generator=None, disable_tqdm=None): 
         x1 = A.matmul(A.transpose(0,1).matmul(x)) 
         x2 = B.matmul(B.transpose(0,1).matmul(x)) 
-        if krylov_eps > 0.:
+        if krylov_eps > 0.: 
             return x1 + x2 + krylov_eps * x 
         return x1 + x2 
     p, r = tuple(A.shape) 
     C = l_lanczos(get_grad_generator=None, r=r, p=p, eps=krylov_eps, device=device, mfi_alternate=mfi_alternate)  
     return C   
+
+def distributed_multiply_fisher(
+        x: torch.Tensor,
+        *,
+        eps: float = 0.,
+        get_grad_generator,
+        disable_tqdm: bool = True
+    ) -> torch.Tensor:
+    """
+    Compute (empirical Fisher)·x across distributed ranks.
+
+    Requires 
+    - AbstractFsdpSsrModule must be intialized with `user_fsdp=False`
+    - Models and gradients must entirely fit on GPUs 
+
+    Parameters
+    ----------
+    x : torch.Tensor   (CPU column vector)
+    eps : float        optional Tikhonov term per step
+    get_grad_generator : callable returning the grad‑generator
+    disable_tqdm : bool  hide progress bar if True
+    """
+    ## Make sure x is on CPU and identical on every rank 
+    ## Using CPU memory to avoid OOM on GPUs 
+    if x.device.type != "cpu":
+        x = x.cpu()
+    if dist.is_initialized():
+        dist.broadcast(x, src=0) ## NCCL doesn't support this, hence using GLOO during memorization 
+
+    grad_gen = get_grad_generator(distributed=True)
+    out = torch.zeros_like(x)
+
+    iterator = grad_gen()
+    if dist.get_rank() == 0:
+        iterator = tqdm(iterator, disable=disable_tqdm, desc="Fisher pass")
+
+    for g in iterator:
+        if g is not None:
+            g = g.cpu().reshape(-1, 1)                 ## (p,1)
+            contrib = g @ (g.t() @ x)                  ## (p,1)
+        else:
+            contrib = torch.zeros_like(x)
+
+        if dist.is_initialized():
+            dist.all_reduce(contrib, op=dist.ReduceOp.SUM)
+
+        out += contrib
+        if eps > 0.:
+            out += eps * x
+
+    return out
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

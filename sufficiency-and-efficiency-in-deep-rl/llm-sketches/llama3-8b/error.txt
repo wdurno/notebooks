@@ -1,21 +1,24 @@
-[rank0]:     return func(*args, **kwargs)                                                                                       
-[rank0]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py", line 28
-06, in all_reduce                                                                                                               
-[rank0]:     work = group.allreduce([tensor], opts)                                                                             
-[rank0]: RuntimeError: No backend type associated with device type cpu
-[rank1]: Traceback (most recent call last):                                                                                     
+[rank1]: Traceback (most recent call last):                                                                                     [rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
+-deep-rl/llm-sketches/llama3-8b/3_memorize.py", line 80, in <module>
+[rank1]:     main(args)                                                                                                         
 [rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/3_fit.py", line 83, in <module>                                                                 [rank1]:     main(args)
+-deep-rl/llm-sketches/llama3-8b/3_memorize.py", line 64, in main                                                   
+[rank1]:     model.memorize() 
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 186, in memorize
+[rank1]:     ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), sel
+f.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=torch.device('cpu'), disable_tqdm=disable_tqdm, mfi_alternate=distributed_multiply_fisher) 
 [rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/3_fit.py", line 65, in main                                                                     [rank1]:     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9, subset_size=args.subset_s
-ize)                       
+-deep-rl/llm-sketches/llama3-8b/lanczos.py", line 87, in l_lanczos 
+[rank1]:     next_v = multiply_fisher_information(v, get_grad_generator=get_grad_generator, disable_tqdm=disable_tqdm) 
 [rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 284, in fit
-[rank1]:     dist.all_reduce(n, op=dist.ReduceOp.SUM)
-[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/c10d_logger.py", line 81, in 
-wrapper  
-[rank1]:     return func(*args, **kwargs)
-[rank1]:   File "/anaconda/envs/azureml_py310_sdkv2/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py", line 28
-06, in all_reduce                                               
-[rank1]:     work = group.allreduce([tensor], opts)
-[rank1]: RuntimeError: No backend type associated with device type cpu
+-deep-rl/llm-sketches/llama3-8b/lanczos.py", line 185, in distributed_multiply_fisher
+[rank1]:     for g in iterator:
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
+-deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 372, in grad_generator
+[rank1]:     transition = AbstractFsdpSsrModule.__load_stacker([self.replay_buffer[idx]]) 
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
+-deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 449, in __load_stacker
+[rank1]:     out.append(torch.stack([t for t in tensor_tuple]))  
+[rank1]: RuntimeError: stack expects each tensor to be equal size, but got [2048] at entry 0 and [1] at entry 4
+W0726 23:53:24.910000 8467 site-packages/torch/distributed/elastic/multiprocessing/api.py:897] Sending process 8508 closing sign
+al SIGTERM 

@@ -30,18 +30,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--model-checkpoint", type=Path, default=None,
                         help="Optional path to an existing model checkpoint to resume from")
 
-    # Training hyper‑parameters
-    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs to train")
-    parser.add_argument("--batch-size", type=int, default=5, help="Batch size for the DataLoader")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate") 
-    parser.add_argument("--subset-size", type=int, default=-1, help="If applied, subset the replay buffer") 
+    # Memorization parameters 
+    parser.add_argument("--rl-coef", type=float, default=.5, help="RL loss weighting, relative to LLM weight of 1") 
+    parser.add_argument("--n-override", type=int, default=-1, help="If >0, reweight new information to this sample size") ## TODO MAKE USE OF THIS 
 
     return parser.parse_args()
 
 def setup(rank, world_size):
     """ Initialize Process Group """
-    dist.init_process_group("nccl", rank=rank, world_size=world_size) 
+    ## dist.init_process_group("nccl", rank=rank, world_size=world_size) ## CPU+GPU ops needed 
+    dist.init_process_group("gloo", rank=rank, world_size=world_size) 
     torch.cuda.set_device(rank)  ## ensure each process uses the correct GPU 
+    num_threads = int(os.getenv("OMP_NUM_THREADS", 1)) 
+    torch.set_num_threads(num_threads) 
+    torch.set_num_interop_threads(2)
     pass 
 
 def cleanup():
@@ -58,13 +60,11 @@ def main(args) -> None:
     ## init FSDP 
     setup(args.rank, args.world_size) 
     ## distributed model init 
-    model = FsdpSsrLlama8B(load_path=args.model_checkpoint, learning_rate=args.lr, seq_len=2048) # 2048
+    model = FsdpSsrLlama8B(load_path=args.model_checkpoint, rl_coef=args.rl_coef, seq_len=2048, use_fsdp=False) 
     ## load data on each rank 
     model.replay_buffer.load(args.data_path) 
     ## optimize 
-    pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9, subset_size=args.subset_size) 
-    print(f'Observed optimal pi: {pi}') 
-    print(f'Observed loss: {loss}') 
+    model.memorize() 
     ## save model 
     model.save_quantized(str(args.output_dir)+'_quantized') 
     model.save(str(args.output_dir)+'_full') 
