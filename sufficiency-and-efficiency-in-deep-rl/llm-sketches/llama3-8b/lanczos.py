@@ -4,8 +4,8 @@ from scipy.linalg import block_diag
 import torch 
 import torch.distributed as dist 
 import traceback 
-#from tqdm import tqdm 
 from tqdm import tqdm 
+from time import time ## TODO debugging tool - remove! 
 
 def lanczos(AAT, r): 
     'Lanczos algorithm: produce AA^T = V T V^T' 
@@ -170,10 +170,13 @@ def distributed_multiply_fisher(
     """
     ## Make sure x is on CPU and identical on every rank 
     ## Using CPU memory to avoid OOM on GPUs 
+    t = round(time(),4); rank=dist.get_rank(); print(f'DEBUG 20: starting distributed_multiply_fisher... t={t}, r={rank}')  
     if x.device.type != "cpu":
-        x = x.cpu()
+        x = x.cpu()  
+    t = round(time(),4); print(f'DEBUG 21: distributing... t={t}, r={rank}')
     if dist.is_initialized():
         dist.broadcast(x, src=0) ## NCCL doesn't support this, hence using GLOO during memorization 
+    t = round(time(),4); print(f'DEBUG 22: distributing done, initializing loop... t={t}, r={rank}')
 
     grad_gen = get_grad_generator(distributed=True)
     out = torch.zeros_like(x)
@@ -184,17 +187,25 @@ def distributed_multiply_fisher(
 
     for g in iterator:
         if g is not None:
-            g = g.cpu().reshape(-1, 1)                 ## (p,1)
-            contrib = g @ (g.t() @ x)                  ## (p,1)
+            t = round(time(),4); print(f'DEBUG 23: gradient obtained. g.shape: {g.shape}, x.shape: {x.shape}. Processing... t={t}, r={rank}') ## gradient generation takes 8 seconds 
+            #g = g.cpu().reshape(-1, 1)                 ## (p,1) 
+            #contrib = g @ (g.t() @ x)                  ## (p,1) 
+            g = g.cpu()  
+            s = torch.dot(g.flatten(), x.flatten()) 
+            contrib = (g * s) 
+            t = round(time(),4); print(f'DEBUG 24: Gradient processing complete... t={t}, r={rank}') ## took 8 seconds when parallelized 
         else:
             contrib = torch.zeros_like(x)
 
+        t = round(time(),4); print(f'DEBUG 25: pre-reduciton, contrib.shape: {contrib.shape}... t={t}, r={rank}') ## took under 1 second 
         if dist.is_initialized():
             dist.all_reduce(contrib, op=dist.ReduceOp.SUM)
+        t = round(time(),4); print(f'DEBUG 26: reduciton complete... t={t}, r={rank}') ## took 22 seconds 
 
         out += contrib
         if eps > 0.:
             out += eps * x
+        t = round(time(),4); print(f'DEBUG 27: iteration complete... t={t}, r={rank}') ## took under 1 second 
 
     return out
 

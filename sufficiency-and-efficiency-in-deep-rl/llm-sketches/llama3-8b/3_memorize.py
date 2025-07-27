@@ -43,7 +43,8 @@ def setup(rank, world_size):
     torch.cuda.set_device(rank)  ## ensure each process uses the correct GPU 
     num_threads = int(os.getenv("OMP_NUM_THREADS", 1)) 
     torch.set_num_threads(num_threads) 
-    torch.set_num_interop_threads(2)
+    torch.set_num_interop_threads(2) 
+    print(f'Rank {rank} using {torch.get_num_threads()} CPU threads')
     pass 
 
 def cleanup():
