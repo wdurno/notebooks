@@ -55,7 +55,9 @@ bash 3_memorize.sh \
   --model-checkpoint models/model_v0_full \
   --output-dir models/model_v1 \
   --data-path chat_logs/replay_buffer.pt \
-  --rl-coef 0.
+  --rl-coef 0. \
+  --pad-percentile .1 \
+  --subsample-size 100
 ```
 
 ### 4. Update model 

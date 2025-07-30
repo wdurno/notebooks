@@ -13,6 +13,7 @@ Revision 4 – merge‑friendly `load` + earlier tweaks
 from typing import List, Tuple
 import json
 import os
+import random 
 
 import torch
 from torch.utils.data import Dataset
@@ -215,6 +216,54 @@ class EfficientReplayBuffer(Dataset):
                 if d:
                     self.dones[-1] = True
             cur_token_idx = len(self.tokens)
+
+    # ------------------------------------------------------------------
+    #  Biased subsample favouring non‑zero rewards
+    # ------------------------------------------------------------------
+    def biased_subsample(self, n: int) -> List[int]:
+        """
+        Return *n* dataset indices with priority on non‑zero rewards.
+
+        Rules implemented
+        -----------------
+        1. Caller supplies n.
+        2. Let m = # non‑zero‑reward observations.
+           • If m ≥ n  → draw n indices uniformly from that non‑zero set.
+           • If m < n  → keep all m, then
+        3. Draw (n‑m) extra indices *with replacement* from the full
+           dataset at equal probability.
+        4. Shuffle before returning.
+
+        Notes
+        -----
+        * Dataset indices here mean positions in ``self.action_indices``
+          (the view exposed via ``__getitem__``).  An element `i` maps
+          to token index ``self.action_indices[i]`` where the reward is
+          stored.  :contentReference[oaicite:0]{index=0}
+        * Works for any n ≥ 0; duplicates appear only when replacement
+          is required (rule 3).
+        """
+        if n <= 0 or len(self) == 0:
+            return []
+
+        # -------- 1) collect indices with non‑zero reward ---------------
+        nz_indices = [
+            i
+            for i, tok_idx in enumerate(self.action_indices)
+            if self.rewards[tok_idx] != 0
+        ]
+        m = len(nz_indices)
+
+        # -------- 2‑3) sample according to the rules -------------------
+        if m >= n:
+            chosen = random.sample(nz_indices, k=n)
+        else:
+            chosen = nz_indices.copy()                    # keep all m
+            extra = random.choices(range(len(self)), k=n - m)  # w/ replacement
+            chosen.extend(extra)
+
+        random.shuffle(chosen)                            # rule 4
+        return chosen
 
     # .....................................................................
     # Internal helpers

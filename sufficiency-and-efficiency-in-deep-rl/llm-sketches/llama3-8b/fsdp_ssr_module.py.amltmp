@@ -411,7 +411,7 @@ class AbstractFsdpSsrModule(nn.Module):
     def __get_distributed_loader_and_sampler(self, batch_size, subset_size=-1):
         dataset = self.replay_buffer 
         if subset_size > 0: 
-            dataset = AbstractFsdpSsrModule.__random_dataset_subset(dataset, subset_size)
+            dataset = self.random_dataset_subset(subset_size)
             pass 
         sampler = DistributedSampler(
             dataset,
@@ -428,10 +428,10 @@ class AbstractFsdpSsrModule(nn.Module):
             pin_memory=True
         )
         return dataloader, sampler
-    @staticmethod
-    def __random_dataset_subset(dataset, size):
-        indices = random.sample(range(len(dataset)), size)
-        return Subset(dataset, indices)
+    def random_dataset_subset(self, size):
+        #indices = random.sample(range(len(dataset)), size) 
+        indices = self.replay_buffer.biased_subsample(size)  
+        return Subset(self.replay_buffer, indices)
     @staticmethod 
     def __rank_0_run(f): 
         'run f on rank 0 while blocking the rest of the cluster'
