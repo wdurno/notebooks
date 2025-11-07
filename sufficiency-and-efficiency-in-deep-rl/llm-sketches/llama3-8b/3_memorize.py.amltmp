@@ -83,6 +83,9 @@ def main(args) -> None:
         model.ssr_residual_diagonal = winsorize_low_tail(model.ssr_residual_diagonal, p=args.pad_percentile) 
         pass 
     ## save model 
+    if args.rank == 0: 
+        print('Saving model...') 
+        pass 
     model.save_quantized(str(args.output_dir)+'_quantized') 
     model.save(str(args.output_dir)+'_full') 
     ## clean-up FSDP 
@@ -92,9 +95,9 @@ def main(args) -> None:
 def winsorize_low_tail(lam: torch.Tensor, p: float, eps: float = 1e-8):
     mask = lam > eps
     if mask.any():
-        q = torch.quantile(lam[mask], p / 100.0)     # scalar (0‑D tensor)
-        tmp = lam[mask]                               # avoid double indexing on RHS
-        lam[mask] = torch.clamp(tmp, min=q)          # in‑place on lam
+        ##q = torch.quantile(lam[mask], p)     ## don't sort such a long list, it's non-viably slow 
+        q = torch.mean(lam[mask]).item() * p ### TODO replace with sub-sampling - this hack will be skewed 
+        lam[:] = torch.clamp(lam, min=q)          # in‑place on lam
     return lam
 
 if __name__ == "__main__": 

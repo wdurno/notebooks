@@ -3,6 +3,7 @@ import torch
 import torch.distributed as dist 
 from pathlib import Path 
 import os 
+from datetime import timedelta 
 from fsdp_ssr_llama_8b import FsdpSsrLlama8B 
 
 ## set master address and port for FSDP 
@@ -41,13 +42,19 @@ def _parse_args() -> argparse.Namespace:
 
 def setup(rank, world_size):
     """ Initialize Process Group """
-    dist.init_process_group("nccl", rank=rank, world_size=world_size) 
+    ## the timedelta is for my brutally inefficient SSR loads 
+    ## default process group runs on GPUs 
+    dist.init_process_group("nccl", rank=rank, world_size=world_size, timeout=timedelta(hours=1)) 
+    ## process group for CPU communication 
+    pg_gloo = dist.new_group(backend="gloo", timeout=timedelta(hours=1))
     torch.cuda.set_device(rank)  ## ensure each process uses the correct GPU 
-    pass 
+    return pg_gloo 
 
-def cleanup():
+def cleanup(pg_gloo=None):
     """ Destroy Process Group """
     dist.destroy_process_group() 
+    if pg_gloo is not None: 
+        dist.destroy_process_group(pg_gloo) 
     pass 
 
 # -----------------------------------------------------------------------------
@@ -57,20 +64,22 @@ def cleanup():
 
 def main(args) -> None: 
     ## init FSDP 
-    setup(args.rank, args.world_size) 
+    pg_gloo = setup(args.rank, args.world_size) 
     ## distributed model init 
     model = FsdpSsrLlama8B(load_path=args.model_checkpoint, learning_rate=args.lr, rl_coef=args.rl_coef, seq_len=2048) 
     ## load data on each rank 
     model.replay_buffer.load(args.data_path) 
     ## optimize 
-    pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, pi_min=.1, pi_max=.9, subset_size=args.subset_size) 
+    print(f'DEBUG fitting... rank: {args.rank}')
+    pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, \
+            pi_min=.1, pi_max=.9, subset_size=args.subset_size, pg_gloo=pg_gloo) 
     print(f'Observed optimal pi: {pi}') 
     print(f'Observed loss: {loss}') 
     ## save model 
     model.save_quantized(str(args.output_dir)+'_quantized') 
     model.save(str(args.output_dir)+'_full') 
     ## clean-up FSDP 
-    cleanup() 
+    cleanup(pg_gloo=pg_gloo) 
     pass 
 
 if __name__ == "__main__": 

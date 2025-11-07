@@ -118,7 +118,7 @@ class FsdpSsrLlama8B(AbstractFsdpSsrModule):
         super(FsdpSsrLlama8B, self).save(path) 
         pass 
     def load(self, path, module=None): 
-        'requires correctly-configured modules before loading' ## TODO not if I want to quickly load parameters... 
+        'requires correctly-configured modules before loading' 
         super(FsdpSsrLlama8B, self).load(path, module=module) 
         if module is None: 
             module = self.module 

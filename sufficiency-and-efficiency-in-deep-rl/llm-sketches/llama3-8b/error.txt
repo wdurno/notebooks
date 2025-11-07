@@ -1,24 +1,31 @@
-[rank1]: Traceback (most recent call last):                                                                                     [rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/3_memorize.py", line 80, in <module>
-[rank1]:     main(args)                                                                                                         
-[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/3_memorize.py", line 64, in main                                                   
-[rank1]:     model.memorize() 
-[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 186, in memorize
-[rank1]:     ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), sel
-f.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=torch.device('cpu'), disable_tqdm=disable_tqdm, mfi_alternate=distributed_multiply_fisher) 
-[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/lanczos.py", line 87, in l_lanczos 
-[rank1]:     next_v = multiply_fisher_information(v, get_grad_generator=get_grad_generator, disable_tqdm=disable_tqdm) 
-[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/lanczos.py", line 185, in distributed_multiply_fisher
-[rank1]:     for g in iterator:
-[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 372, in grad_generator
-[rank1]:     transition = AbstractFsdpSsrModule.__load_stacker([self.replay_buffer[idx]]) 
-[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in
--deep-rl/llm-sketches/llama3-8b/fsdp_ssr_module.py", line 449, in __load_stacker
-[rank1]:     out.append(torch.stack([t for t in tensor_tuple]))  
-[rank1]: RuntimeError: stack expects each tensor to be equal size, but got [2048] at entry 0 and [1] at entry 4
-W0726 23:53:24.910000 8467 site-packages/torch/distributed/elastic/multiprocessing/api.py:897] Sending process 8508 closing sign
-al SIGTERM 
+DEBUG 6: calculating backward... data_idx: 0, epoch_idx: 0                                                                                         
+DEBUG 6.5 starting pre-ssr parameter transfer...                                                                                                   
+DEBUG 6.5 starting pre-ssr parameter transfer...                                                                                                   
+DEBUG 7: calculating ssr...                                                                                                                        
+DEBUG SSR 1: type(self.ssr_low_rank_matrix) <class 'NoneType'>                                                                                     
+DEBUG 8: adjusting grads...                                                                                                                        
+DEBUG 8: adjusting grads...                                                                                                                        
+DEBUG 9: applying grads...DEBUG 9: applying grads...                                                                                               
+                                                                                                                                                   
+[rank1]: Traceback (most recent call last):                                                                                                        
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketch
+es/llama3-8b/4_fit.py", line 93, in <module>                                                                                                       
+[rank1]:     main(args)                                                                                                                            
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketch
+es/llama3-8b/4_fit.py", line 74, in main                                                                                                           
+[rank1]:     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, \                                                                 
+[rank1]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketch
+es/llama3-8b/fsdp_ssr_module.py", line 353, in fit                                                                                                 
+[rank1]:     loss = (pi * loss + (1 - pi) * ssr)/n                                                                                                 
+[rank1]: RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:1 and cpu!                              
+[rank0]: Traceback (most recent call last):                                                                                                        
+[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketch
+es/llama3-8b/4_fit.py", line 93, in <module>                                                                                                       
+[rank0]:     main(args)                                                                                                                            
+[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketch
+es/llama3-8b/4_fit.py", line 74, in main                                                                                                           
+[rank0]:     pi, loss = model.fit(batch_size=args.batch_size, iters=args.epochs, \
+[rank0]:   File "/mnt/batch/tasks/shared/LS_root/mounts/clusters/gpux2/code/Users/wdurno/notebooks/sufficiency-and-efficiency-in-deep-rl/llm-sketch
+es/llama3-8b/fsdp_ssr_module.py", line 353, in fit
+[rank0]:     loss = (pi * loss + (1 - pi) * ssr)/n 
+[rank0]: RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

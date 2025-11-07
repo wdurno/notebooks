@@ -34,6 +34,8 @@ class AbstractFsdpSsrModule(nn.Module):
         self.module = module.to(device_id) 
         if use_fsdp: 
             self.module = FSDP(self.module, auto_wrap_policy=size_based_auto_wrap_policy) 
+            n_fsdp = len([m for m in self.module.modules() if isinstance(m, FSDP)]) 
+            print(f'DEBUG: num FSDP modules detected: {n_fsdp}') 
             pass 
         ## store params 
         self.ssr_rank = ssr_rank 
@@ -92,13 +94,15 @@ class AbstractFsdpSsrModule(nn.Module):
         'pulls parameters from ranks to CPU RAM and writes to disk' 
         if dist.get_rank() == 0: 
             print(f'Saving model at {path}...') 
-            torch.save(self.ssr_dict(), path + 'full-model.ssr.pt')  
+            torch.save(self.ssr_dict(), os.path.join(path, 'full-model.ssr.pt'))  
             pass 
-        def _save_state(): 
-            torch.save(self.module.state_dict(), path + 'full-model.state.pt') 
-            pass 
-        with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
-            AbstractFsdpSsrModule.__rank_0_run(_save_state) 
+        # def _save_state(): 
+        #     torch.save(self.module.state_dict(), path + 'full-model.state.pt') 
+        #     pass 
+        if dist.get_rank() == 0:
+            with FSDP.summon_full_params(self.module, offload_to_cpu=True, rank0_only=True, writeback=False): 
+                torch.save(self.module.state_dict(), os.path.join(path, 'full-model.state.pt')) 
+                pass 
             pass 
         pass 
     def load(self, path, module=None): 
@@ -107,6 +111,8 @@ class AbstractFsdpSsrModule(nn.Module):
         state_path_model = os.path.join(path, 'full-model.state.pt') 
         if dist.get_rank() == 0: 
             print(f'Loading model from {path}...') 
+            ## TODO single node load times for the SSR are rediculous. 
+            ## This is a strong motivator for fully distributed algorithms. 
             self.load_ssr_dict(torch.load(state_path_ssr, map_location="cpu")) 
             pass 
         ## load entire module, then apply FSDP to discard unneeded parameters 
@@ -209,8 +215,8 @@ class AbstractFsdpSsrModule(nn.Module):
                     pass 
                 pass 
             pass 
-            dist.barrier() 
             print(f'DEBUG 19: memorization complete...') 
+        dist.barrier() 
         pass 
     def ssr(self, lmbda=None): 
         '''Get the ssr regularizer and its gradient vector. 
@@ -219,10 +225,11 @@ class AbstractFsdpSsrModule(nn.Module):
         
         WARNING: Only run inside a `with FSDP.summon_full_params(model, offload_to_cpu=True, rank0_only=True):` block!
         The block is not enforced here to enable gradient handling.'''
+        print(f'DEBUG SSR 1: type(self.ssr_low_rank_matrix) {type(self.ssr_low_rank_matrix)}')
         if self.ssr_low_rank_matrix is None: 
             return 0., 0.
         ## p = self.get_param() 
-        p = self.get_param().clone().detach() ## FSDP modification: break the graph and calculate gradients manually 
+        p = self.get_param().detach() ## FSDP modification: break the graph and calculate gradients manually 
         p0 = self.ssr_center 
         d = p - p0 
         A = self.ssr_low_rank_matrix 
@@ -262,12 +269,13 @@ class AbstractFsdpSsrModule(nn.Module):
         The block is not enforced here to enable gradient handling.''' 
         ## For an FSDP module, all self.module parameters will be `FlatParameter`s 
         return torch.cat([p.reshape([-1, 1]) for p in self.module.parameters() if p.requires_grad], dim=0) 
-    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9, subset_size=-1): 
+    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9, subset_size=-1, pg_gloo=None): 
         '''Runs numerical fitting iterations over the `replay_buffer` dataset. 
         inputs: 
         - `batch_size`: the per-rank batch size. 
         - `iters`: the number of iterations, each updating the parameter and pulling from new random data batch. 
         - `subset_size`: if > 0, subset the replay_buffer randomly. Default -1. 
+        - `pg_gloo`: process group running GLOO protocol 
         outputs: 
         - `pi` (float): the `pi` estimate used for this round of fits. 
         - `loss` (float): the final observed `loss` after all fitting iterations. 
@@ -283,18 +291,19 @@ class AbstractFsdpSsrModule(nn.Module):
             ## store `dt_prev_pi` for reporting purposes 
             self.dt_prev_pi = pi = self.optimal_pi(pi_min=pi_min, pi_max=pi_max) 
             pass 
+        dist.barrier() 
         ## broadcast pi via GPU since NCCL requires it 
         pi = pi.cuda() 
         dist.broadcast(pi, src=0) 
         pi = pi.cpu() 
         ## New loaders & samplers are needed because overall dataset size frequently changes in RL 
         loader, sampler = self.__get_distributed_loader_and_sampler(batch_size, subset_size=subset_size) 
-        ## start fit iterations  
+        ## start fit iterations 
         for epoch_idx in range(iters): 
             n = 0 
             sampler.set_epoch(epoch_idx) 
             ## zeroing grads with Nones because 
-            ## 1. zeros and Nones are applied to _all_ parameters, and  
+            ## 1. zeros and Nones are applied to _all_ parameters, and 
             ## 2. FSDP only needs zeros applied to some parameters per GPU. 
             self.optimizer.zero_grad(set_to_none=True) 
             for data_idx, data in enumerate(loader): ## TODO FSDP is not designed to accommodate this kind of loop, so has biased MLEs 
@@ -317,6 +326,7 @@ class AbstractFsdpSsrModule(nn.Module):
             ## calculate the average SSR and its gradient on rank 0's CPU 
             ## I'll adjust upward by `n` because `loss` isn't averaged 
             print(f'DEBUG 6.5 starting pre-ssr parameter transfer...') 
+            ssr_grad = None 
             with FSDP.summon_full_params(self.module, offload_to_cpu=True, writeback=False, rank0_only=True): 
                 if dist.get_rank() == 0: 
                     print('DEBUG 7: calculating ssr...') 
@@ -326,8 +336,16 @@ class AbstractFsdpSsrModule(nn.Module):
                     pass 
                 dist.barrier() 
                 pass 
+            ## communicate ssr 
+            if dist.get_rank() == 0: 
+                if type(ssr) == float: 
+                    ssr = torch.tensor(ssr).reshape([1,1]) 
+            else: 
+                ssr = torch.tensor(0.).reshape([1,1]) 
+            dist.broadcast(ssr, src=0, group=pg_gloo) 
+            dist.barrier(group=pg_gloo) 
             print('DEBUG 8: adjusting grads...') 
-            self.__adjust_grads(ssr_grad, pi) ## grads applied here 
+            self.__adjust_grads(ssr_grad, pi, pg_gloo) ## grads applied here 
             print('DEBUG 9: applying grads...') 
             self.optimizer.step() ## apply gradients 
             self.optimizer.zero_grad(set_to_none=True) 
@@ -388,26 +406,67 @@ class AbstractFsdpSsrModule(nn.Module):
                 pass 
             return grad_generator 
         return get_grad_generator 
-    def __adjust_grads(self, ssr_grad, pi): 
-        'applies the ssr gradient over all FSDP GPU gradients' 
-        cursor = 0 
-        for p in [p for p in self.module.parameters() if p.requires_grad]: 
-            n = p.numel() 
-            communication_tensor = torch.zeros([n]) 
-            if dist.get_rank() == 0: 
-                communication_tensor.copy_(ssr_grad[cursor : cursor + n, 1]) 
-                pass 
-            ## TODO Replace this terribly inefficient code, ideally with FSDP-native gradient calculation. 
-            ## This should be paired with refactoring my `l_lanczos` eigenvector algorithm to FSDP as well. 
-            ## Distributed numerical engineering takes time, expertise, and care, hence the inefficient-but-effective alternative here. 
-            dist.broadcast(communication_tensor, src=0) 
-            if p._fsdp_shard_metadata is not None: 
-                ## current rank owns this parameter 
-                p.grad = (pi * p.grad) + ((1 - pi) * communication_tensor.to(p.device))  
-                pass 
-            cursor += n 
-            pass 
-        pass 
+    # def __adjust_grads(self, ssr_grad, pi): 
+    #     'applies the ssr gradient over all FSDP GPU gradients' 
+    #     cursor = 0 
+    #     for p in [p for p in self.module.parameters() if p.requires_grad]: 
+    #         n = p.numel() 
+    #         device = torch.device("cuda", torch.cuda.current_device()) 
+    #         communication_tensor = torch.zeros([n], device=device, dtype=torch.float32) 
+    #         if dist.get_rank() == 0: 
+    #             communication_tensor.copy_(ssr_grad[cursor : cursor + n, 0]) 
+    #             pass 
+    #         ## TODO Replace this terribly inefficient code, ideally with FSDP-native gradient calculation. 
+    #         ## This should be paired with refactoring my `l_lanczos` eigenvector algorithm to FSDP as well. 
+    #         ## Distributed numerical engineering takes time, expertise, and care, hence the inefficient-but-effective alternative here. 
+    #         dist.broadcast(communication_tensor, src=0) 
+    #         if p._fsdp_shard_metadata is not None: ## TODO pick-up here, _fsdp_shard_metadata now always defined 
+    #             ## current rank owns this parameter 
+    #             p.grad = (pi * p.grad) + ((1 - pi) * communication_tensor)  
+    #             pass 
+    #         cursor += n 
+    #         ## free GPU memory 
+    #         del communication_tensor 
+    #         pass 
+    #     pass 
+    def __adjust_grads(self, ssr_grad: torch.Tensor, pi: float, pg_gloo):
+        """
+        Apply global SSR gradient to parameter grads.
+        `ssr_grad` is the full concatenated vector on rank 0; dtype float32.
+        """
+        ## distribute ssr_grad over CPUs 
+        p = torch.tensor(1) 
+        if type(ssr_grad) == float: 
+            ssr_grad = torch.tensor(ssr_grad).reshape([1,1]) ## degenerate case, communicate break 
+        if dist.get_rank() == 0: 
+            p = torch.tensor(ssr_grad.shape[0]) 
+        dist.broadcast(p, src=0, group=pg_gloo) ## send grad size 
+        if dist.get_rank() != 0: 
+            ssr_grad = torch.zeros([p,1], dtype=torch.float32) 
+        dist.broadcast(ssr_grad, src=0, group=pg_gloo) ## enables reads per rank 
+        dist.barrier(group=pg_gloo) 
+        if p == 1:
+            ## distributed break 
+            return 
+        ## update grads 
+        ## This requires loading a whole model into the GPU with grads -- it likely won't fit and will force me to reprogram for full distribution 
+        cursor = 0
+        with FSDP.summon_full_params(
+            self.module, 
+            rank0_only=False,            # supported
+            with_grads=True,             # gather grads
+            offload_to_cpu=False         # gather to GPU
+            ):
+            for p in (p for p in self.module.parameters() if p.requires_grad):
+                n = p.numel()
+                # slice & move to param device/dtype
+                sl = ssr_grad[cursor:cursor+n,0].to(p.device, p.dtype, non_blocking=True).view_as(p)
+                cursor += n
+                if p.grad is None:
+                    p.grad = torch.zeros_like(p)
+                with torch.no_grad():
+                    p.grad.mul_(pi).add_(sl, alpha=1.0 - pi)
+                del sl 
     def __get_distributed_loader_and_sampler(self, batch_size, subset_size=-1):
         dataset = self.replay_buffer 
         if subset_size > 0: 

@@ -56,7 +56,7 @@ bash 3_memorize.sh \
   --output-dir models/model_v1 \
   --data-path chat_logs/replay_buffer.pt \
   --rl-coef 0. \
-  --pad-percentile .1 \
+  --pad-percentile .001 \
   --subsample-size 100
 ```
 
@@ -68,11 +68,12 @@ This must run on a GPU node.
 ## set keys 
 . ~/llm_keys.sh ## use keys 
 bash 4_fit.sh \
-  --model-checkpoint models/model_v1 \
+  --model-checkpoint models/model_v1_full \
   --output-dir models/model_v2 \
   --data-path chat_logs/replay_buffer.pt \
-  --subset-size 100 \
-  --batch-size 10 \
   --epochs 3 \
-  --rl-coef 0.1
+  --rl-coef 0.1 \
+  --batch-size 10 \
+  --subset-size 100 
+
 ```

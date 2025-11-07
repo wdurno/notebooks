@@ -146,3 +146,90 @@ def combine_krylov_spaces(A, B, device=None, krylov_eps=0.):
     C = l_lanczos(get_grad_generator=None, r=r, p=p, eps=krylov_eps, device=device, mfi_alternate=mfi_alternate)  
     return C   
 
+def get_get_amari_chentsov_product(get_grad_generator, delta, positive_part=True): 
+    def get_amari_chentsov_product(x): 
+        grad_generator = get_grad_generator() 
+        out = 0. 
+        for g in grad_generator(): 
+            g = g.reshape([-1, 1]) 
+            c = g.transpose(0,1).matmul(delta) ## scalar 
+            if (positive_part and c > 0.) or (not positive_part and c < 0.): 
+                out += c * g.matmul(g.transpose(0,1).matmul(x)) ## matrix 
+        return out 
+    return get_amari_chentsov_product 
+
+# def combine_psd(A, B): ## TODO what if BB^T negative definite 
+#     'Returns PSD CC^T s.t. C = argmin_C \| CC^T - AA^T - BB^T \|_F^2' 
+#     ## TODO this is sub-optimal poc-grade code 
+#     r = A.shape[1] 
+#     Y = torch.concatenate([A,B], dim=1) 
+#     G = Y.transpose(0,1).matmul(Y) 
+#     eigs = torch.linalg.eigh(G) 
+#     r_idx = _get_top_r_positive_indices(eigs.eigenvalue, r) 
+#     S_r = torch.diag(eigs.eigenvalues[r_idx].pow(-.5)) 
+#     V_r = eigs.eigenvectors[:,r_idx] 
+#     return Y.matmul(V_r.matmul(S_r)) 
+
+# def _get_top_r_positive_indices(x, r): 
+#     pos = torch.nonzero(x > 0, as_tuple=True)[0] 
+#     _, top_idx = torch.topk(x[pos], k=min(r, pos.numel())) 
+#     indices = pos[top_idx] 
+#     return indices 
+
+## yes, this is AI-generated code. Gotta turn-and-burn hypotheses for science 
+def combine_psd(A, B, signB=+1, r=None, tol=None, pad_zeros=False):
+    """
+    Returns C such that C C^T is the Frobenius-nearest PSD to A A^T + signB * B B^T,
+    truncated to rank r (default: r = A.shape[1]). Works for signB = +1 (add PSD)
+    or signB = -1 (subtract NSD).
+
+    Shapes: A, B are (n, rA), (n, rB), thin. Output C is (n, r_out).
+    """
+    assert signB in (+1, -1), "signB must be +1 or -1"
+    n = A.shape[0]
+    if r is None:
+        r = A.shape[1]
+
+    # 1) Build tall-skinny basis for span([A, B]) and get small R
+    Y = torch.cat([A, B], dim=1)                       # (n, m), m = rA + rB
+    Q, R = torch.linalg.qr(Y, mode='reduced')          # Q: (n,k), R: (k,m), k <= m
+
+    # 2) Form signed small core K = R * diag(I, signB*I) * R^T
+    mA = A.shape[1]
+    R_A = R[:, :mA]                                    # (k, rA)
+    R_B = R[:, mA:]                                    # (k, rB)
+    if signB == +1:
+        K = R_A @ R_A.T + R_B @ R_B.T
+    else:  # signB == -1  => subtract NSD block
+        K = R_A @ R_A.T - R_B @ R_B.T
+
+    # Numerical symmetrization (cheap & keeps eigh happy)
+    K = 0.5 * (K + K.T)
+
+    # 3) Eigen-decompose small core, keep only positive spectrum
+    evals, evecs = torch.linalg.eigh(K)                # ascending order
+    if tol is None:
+        # scale-aware tolerance
+        tol = 1e-10 * torch.trace(torch.abs(K)) / max(1, K.shape[0])
+
+    pos = evals > tol
+    if pos.any():
+        evals_pos = evals[pos]
+        evecs_pos = evecs[:, pos]
+        # sort positives descending
+        idx = torch.argsort(evals_pos, descending=True)
+        evals_pos = evals_pos[idx]
+        evecs_pos = evecs_pos[:, idx]
+        r_out = min(r, evals_pos.numel())
+        evals_sel = evals_pos[:r_out]
+        evecs_sel = evecs_pos[:, :r_out]
+        # 4) Lift back: C = Q U_+ Λ_+^{1/2}
+        C = Q @ (evecs_sel * torch.sqrt(evals_sel).unsqueeze(0))
+        if pad_zeros and r_out < r:
+            # Pad with zero-columns to keep a fixed (n, r) shape if you prefer
+            pad = torch.zeros((n, r - r_out), dtype=C.dtype, device=C.device)
+            C = torch.cat([C, pad], dim=1)
+        return C
+    else:
+        # No positive eigenvalues -> projection to PSD cone is zero
+        return torch.zeros((n, r), dtype=Y.dtype, device=Y.device) if pad_zeros else torch.zeros((n, 0), dtype=Y.dtype, device=Y.device)
