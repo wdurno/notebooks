@@ -5,7 +5,7 @@
 import random 
 import torch 
 import torch.nn as nn 
-from lanczos import l_lanczos, combine_krylov_spaces, get_get_amari_chentsov_product, combine_psd  
+from lanczos import l_lanczos, combine_krylov_spaces, update_amari_chentsov_tensor, combine_psd_plus_sym_core, combine_psd  
 
 GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 CPU = torch.device('cpu') 
@@ -34,9 +34,7 @@ class SSRAgent(nn.Module):
         self.ssr_center = None 
         self.ssr_prev_center = None 
         self.ssr_n = None 
-        self.amari_prod_low_rank_matrix_positive = None 
-        self.amari_prod_low_rank_matrix_negative = None 
-        self.amari_prod_n = None 
+        self.amari_chentsov_core_tensor = None 
         self.ssr_cov_trace = None 
         self.ssr_cov_n = None 
         self.ssr_model_dimension = None 
@@ -56,9 +54,7 @@ class SSRAgent(nn.Module):
                 'ssr_center': self.ssr_center, 
                 'ssr_prev_center': self.ssr_prev_center, 
                 'ssr_n': self.ssr_n, 
-                'amari_prod_low_rank_matrix_positive': self.amari_prod_low_rank_matrix_positive, 
-                'amari_prod_low_rank_matrix_negative': self.amari_prod_low_rank_matrix_negative, 
-                'amari_prod_n': self.amari_prod_n, 
+                'amari_chentsov_core_tensor': self.amari_chentsov_core_tensor, 
                 'ssr_cov_trace': self.ssr_cov_trace, 
                 'ssr_cov_n': self.ssr_cov_n, 
                 'ssr_model_dimension': self.ssr_model_dimension,  
@@ -77,9 +73,7 @@ class SSRAgent(nn.Module):
         self.ssr_center = d['ssr_center'].to(self.device) 
         self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
         self.ssr_n = d['ssr_n'] 
-        self.amari_prod_low_rank_matrix_positive = d['amari_prod_low_rank_matrix_positive'].to(self.device) 
-        self.amari_prod_low_rank_matrix_negative = d['amari_prod_low_rank_matrix_negative'].to(self.device) 
-        self.amari_prod_n = d['amari_prod_n'] 
+        self.amari_chentsov_core_tensor = d['amari_chentsov_core_tensor'].to(self.device) 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
         self.ssr_model_dimension = d['ssr_model_dimension'] 
@@ -127,23 +121,9 @@ class SSRAgent(nn.Module):
             self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
             pass
         ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
-        if apply_amari_prod and self.ssr_prev_center is not None: 
-            ## Cacluate average inner product between Amari-Chentsov tensor and average theta differential 
-            get_amari_chentsov_product_positive = get_get_amari_chentsov_product(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_center - self.ssr_prev_center, positive_part=True) 
-            amari_prod_low_rank_matrix_positive = l_lanczos(None, self.ssr_rank, self.ssr_model_dimension, calc_diag=False, device=self.device, disable_tqdm=disable_tqdm, mfi_alternate=get_amari_chentsov_product_positive) 
-            get_amari_chentsov_product_negative = get_get_amari_chentsov_product(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_center - self.ssr_prev_center, positive_part=False) 
-            amari_prod_low_rank_matrix_negative = l_lanczos(None, self.ssr_rank, self.ssr_model_dimension, calc_diag=False, device=self.device, disable_tqdm=disable_tqdm, mfi_alternate=get_amari_chentsov_product_negative) 
-            if self.amari_prod_low_rank_matrix_positive is None or self.amari_prod_low_rank_matrix_negative is None: 
-                ## first memorization 
-                self.amari_prod_low_rank_matrix_positive = amari_prod_low_rank_matrix_positive / n ## always scaled to 1 
-                self.amari_prod_low_rank_matrix_negative = amari_prod_low_rank_matrix_negative / n 
-            else: 
-                rescale_old = ( self.dt_mean_N - 1 ) / self.dt_mean_N ## TODO if batch sizes are small, a small dt_mean_N will incur too much variance 
-                rescale_new = 1 / self.dt_mean_N 
-                ## combine  
-                self.amari_prod_low_rank_matrix_positive = combine_psd(rescale_old * self.amari_prod_low_rank_matrix_positive, rescale_new * amari_prod_low_rank_matrix_positive / n, signB=1) 
-                self.amari_prod_low_rank_matrix_negative = combine_psd(rescale_old * self.amari_prod_low_rank_matrix_negative, rescale_new * amari_prod_low_rank_matrix_negative / n, signB=1) 
-                pass 
+        if apply_amari_prod: 
+            prior_ssr_low_rank_matrix = self.ssr_low_rank_matrix ## can be None 
+            pass 
         ## Calculate local information matrix estimate 
         ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
         ## handle l-Lanczos outputs 
@@ -155,14 +135,27 @@ class SSRAgent(nn.Module):
         elif self.ssr_prev_center is not None: 
             ## combine with previous memories 
             ## add Amari-Chentsov product to tranport Hessian estimate 
-            if apply_amari_prod: 
-                ## combine_psd can add nsd but guaranteed to return nearest psd, but requires O(p * 2r) space 
-                self.ssr_low_rank_matrix = combine_psd(self.ssr_low_rank_matrix, self.ssr_n * self.amari_prod_low_rank_matrix_positive, signB=1) 
-                self.ssr_low_rank_matrix = combine_psd(self.ssr_low_rank_matrix, self.ssr_n * self.amari_prod_low_rank_matrix_negative, signB=-1) 
+            if apply_amari_prod and self.amari_chentsov_core_tensor is not None: 
+                ## transport the FIM estimate to nearest PSD matrix in Frobenius norm 
+                matrix_core = torch.einsum('ijk, kl -> ijl',self.amari_chentsov_core_tensor / self.ssr_n, self.ssr_low_rank_matrix.T @ (self.ssr_center - self.ssr_prev_center)) 
+                r = self.amari_chentsov_core_tensor.shape[0] 
+                matrix_core = matrix_core.reshape([r, r]) 
+                self.ssr_low_rank_matrix = combine_psd_plus_sym_core(self.ssr_low_rank_matrix, self.ssr_low_rank_matrix, matrix_core, pad_zeros=True) 
+                pass 
             ## Average estimates now that they are comparable 
-            self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) 
+            ##self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) ## numerically unstable 
+            self.ssr_low_rank_matrix = combine_psd(self.ssr_low_rank_matrix, ssr_low_rank_matrix) ## should be more robust 
             self.ssr_residual_diagonal += ssr_residual_diagonal 
             self.ssr_n += n 
+            pass 
+        if apply_amari_prod: 
+            ## update the Amari-Chentsov core tensor estimate with new data 
+            self.amari_chentsov_core_tensor = update_amari_chentsov_tensor( 
+                get_grad_generator = self.__get_get_grad_generator(n, random_idx=random_idx), 
+                information_basis = self.ssr_low_rank_matrix,
+                prior_tensor = self.amari_chentsov_core_tensor,
+                prior_information_basis = prior_ssr_low_rank_matrix
+                )
             pass 
         if self.ssr_prev_center is not None: 
             dt = self.ssr_center.to(self.gpu_saver) - self.ssr_prev_center 
@@ -198,7 +191,7 @@ class SSRAgent(nn.Module):
         else: 
             pi = 1. - .5 * self.dt_mean_trace_cov / self.dt_mean_norm_trend  
             #pi = 1. - .5 * self.dt_prev_pi * self.dt_mean_trace_cov / self.dt_mean_norm_trend ## DEBUGGING 
-            pi = pi.to(self.device).clone().detach()  
+            pi = pi.to(self.device).clone().detach() 
             pass 
         if float(pi) < pi_min: 
             pi = torch.tensor(pi_min).to(self.device) 
@@ -258,4 +251,3 @@ class SSRAgent(nn.Module):
             return grad_generator 
         return get_grad_generator 
     pass 
-
