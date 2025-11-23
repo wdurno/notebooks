@@ -134,6 +134,7 @@ class SSRAgent(nn.Module):
             prior_ssr_low_rank_matrix = self.ssr_low_rank_matrix ## can be None 
             pass 
         ## Calculate local information matrix estimate 
+        ## stored in sum-scale; no division by ssr_n 
         ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
         ## handle l-Lanczos outputs 
         if self.ssr_low_rank_matrix is None: 
@@ -145,9 +146,12 @@ class SSRAgent(nn.Module):
             ## combine with previous memories 
             ## add Amari-Chentsov product to tranport Hessian estimate 
             if apply_amari_prod and self.amari_chentsov_core_tensor is not None: 
+                ## ops are on avg-scale, not sum-scale ## refactor to have only one scale 
+                self.ssr_low_rank_matrix = self.ssr_low_rank_matrix / (self.ssr_n ** .5) 
+                self.ssr_residual_diagonal = self.ssr_residual_diagonal / self.ssr_n 
                 ## transport the FIM estimate to nearest PSD matrix in Frobenius norm 
-                matrix_core, _ = make_matrix_core( ### TODO very likely unecessary 
-                    U=self.ssr_low_rank_matrix, 
+                matrix_core, _ = make_matrix_core(  
+                    U=self.ssr_low_rank_matrix,  
                     Mk=None,
                     L=self.amari_chentsov_L, 
                     W=self.amari_chentsov_W, 
@@ -155,41 +159,44 @@ class SSRAgent(nn.Module):
                     delta=self.ssr_center - self.ssr_prev_center, 
                     return_whitened=False
                     ) 
-                ## Adjust outer product 
+                ## transport outer product 
                 new_ssr_low_rank_matrix = combine_psd_plus_sym_core( 
                     A=self.ssr_low_rank_matrix, 
                     U=self.ssr_low_rank_matrix, 
                     Mk=matrix_core, 
                     r=self.ssr_low_rank_matrix.shape[1], 
                     pad_zeros=True
-                    )
+                    ) 
                 ## adjust diagonal 
                 diag_inc = (self.ssr_low_rank_matrix * (self.ssr_low_rank_matrix @ matrix_core)).sum(dim=1, keepdim=True)           # diag increment from transport
                 self.ssr_residual_diagonal = self.ssr_residual_diagonal + diag_inc - ((new_ssr_low_rank_matrix*new_ssr_low_rank_matrix).sum(1, keepdim=True) - (self.ssr_low_rank_matrix*self.ssr_low_rank_matrix).sum(1, keepdim=True)) 
                 self.ssr_residual_diagonal.clamp_(min=0) 
                 ## overwrite stored output product 
-                self.ssr_low_rank_matrix = new_ssr_low_rank_matrix
+                self.ssr_low_rank_matrix = new_ssr_low_rank_matrix 
+                ## convert back to sum scale 
+                self.ssr_low_rank_matrix = self.ssr_low_rank_matrix * (self.ssr_n ** .5) 
+                self.ssr_residual_diagonal = self.ssr_residual_diagonal * self.ssr_n 
                 pass 
             ## Average estimates now that they are comparable 
             ##self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) ## numerically unstable 
-            self.ssr_residual_diagonal += ssr_residual_diagonal ### TODO this isn't curvature-corrected !!! 
+            self.ssr_residual_diagonal += ssr_residual_diagonal 
             self.ssr_n += n 
             pass 
         if apply_amari_prod: 
             ## update the Amari-Chentsov core tensor estimate with new data 
             self.amari_chentsov_core_tensor, self.amari_chentsov_L, self.amari_chentsov_W, self.amari_chentsov_alpha = update_amari_chentsov_tensor(
-                get_grad_generator=self.__get_get_grad_generator(n, random_idx=random_idx),
-                information_basis=self.ssr_low_rank_matrix,
-                prior_tensor=self.amari_chentsov_core_tensor,
+                get_grad_generator = self.__get_get_grad_generator(n, random_idx=random_idx),
+                information_basis = self.ssr_low_rank_matrix / (self.ssr_n ** .5),
+                prior_tensor = self.amari_chentsov_core_tensor,
                 prior_information_basis=prior_ssr_low_rank_matrix,
                 # --- New optional state for whitened-core CP model ---
-                prior_L=self.amari_chentsov_L,
-                prior_W=self.amari_chentsov_W,   # (r_prev, m) orthonormal in prior whitened core
-                prior_alpha=self.amari_chentsov_alpha, # (m,)
-                m_components=None,       # default: r
-                power_steps=1,                     # small (1–3) is usually enough per call
-                power_shift=0.0,                 # tiny stabilizer in core power-step (e.g., 1e-4)
-                ridge_scale=1e-10,               # for Cholesky / whitening
+                prior_L = self.amari_chentsov_L,
+                prior_W = self.amari_chentsov_W,   # (r_prev, m) orthonormal in prior whitened core
+                prior_alpha = self.amari_chentsov_alpha, # (m,)
+                m_components = self.ssr_low_rank_matrix.shape[1],       # default: r
+                power_steps = 1,                     # small (1–3) is usually enough per call
+                power_shift = 0.0,                 # tiny stabilizer in core power-step (e.g., 1e-4)
+                ridge_scale = 1e-10,               # for Cholesky / whitening
                 )
             pass 
         if self.ssr_prev_center is not None: 

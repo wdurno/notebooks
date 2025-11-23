@@ -536,8 +536,9 @@ def combine_psd_plus_sym_core(
     R = U.T @ A                                      # (k, r)
     Gk = R @ R.T                                     # (k, k)
     Gk = _symmetrize(Gk)
-    rho = ridge_scale * torch.trace(Gk).clamp_min(1e-12) / max(1, k)
-    Lg = torch.linalg.cholesky(Gk + rho * torch.eye(k, device=device, dtype=dtype))
+    #rho = ridge_scale * torch.trace(Gk).clamp_min(1e-12) / max(1, k)
+    #Lg = torch.linalg.cholesky(Gk + rho * torch.eye(k, device=device, dtype=dtype)) ## numerically unstable 
+    Lg, _ = _safe_cholesky_from_cov(Gk, ridge_scale=1e-10)
 
     # Whiten the increment core: S = Lg^{-1} Mk Lg^{-T}
     Linv = torch.cholesky_inverse(Lg)
