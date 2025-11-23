@@ -171,6 +171,14 @@ class SSRAgent(nn.Module):
                 diag_inc = (self.ssr_low_rank_matrix * (self.ssr_low_rank_matrix @ matrix_core)).sum(dim=1, keepdim=True)           # diag increment from transport
                 self.ssr_residual_diagonal = self.ssr_residual_diagonal + diag_inc - ((new_ssr_low_rank_matrix*new_ssr_low_rank_matrix).sum(1, keepdim=True) - (self.ssr_low_rank_matrix*self.ssr_low_rank_matrix).sum(1, keepdim=True)) 
                 self.ssr_residual_diagonal.clamp_(min=0) 
+                ## TODO experimenting with ssr_n adjustments 
+                Q_old, _ = torch.linalg.qr(self.ssr_low_rank_matrix, mode='reduced')   # (p,r)
+                Q_new, _ = torch.linalg.qr(new_ssr_low_rank_matrix, mode='reduced')   # (p,r)
+                S = Q_old.T @ Q_new 
+                ssr_n_adjustment = (S*S).sum()/new_ssr_low_rank_matrix.shape[1] 
+                print(f'DEBUG 1: {ssr_n_adjustment}')
+                ssr_n_adjustment = float(torch.clamp(ssr_n_adjustment, 0.0, 1.0))
+                self.ssr_n *= ssr_n_adjustment 
                 ## overwrite stored output product 
                 self.ssr_low_rank_matrix = new_ssr_low_rank_matrix 
                 ## convert back to sum scale 
