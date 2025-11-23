@@ -5,7 +5,7 @@
 import random 
 import torch 
 import torch.nn as nn 
-from lanczos import l_lanczos, combine_krylov_spaces, update_amari_chentsov_tensor, combine_psd_plus_sym_core, combine_psd  
+from lanczos import l_lanczos, combine_krylov_spaces, combine_psd, update_amari_chentsov_tensor, combine_psd_plus_sym_core, make_matrix_core 
 
 GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 CPU = torch.device('cpu') 
@@ -35,6 +35,9 @@ class SSRAgent(nn.Module):
         self.ssr_prev_center = None 
         self.ssr_n = None 
         self.amari_chentsov_core_tensor = None 
+        self.amari_chentsov_L = None 
+        self.amari_chentsov_W = None 
+        self.amari_chentsov_alpha = None 
         self.ssr_cov_trace = None 
         self.ssr_cov_n = None 
         self.ssr_model_dimension = None 
@@ -55,6 +58,9 @@ class SSRAgent(nn.Module):
                 'ssr_prev_center': self.ssr_prev_center, 
                 'ssr_n': self.ssr_n, 
                 'amari_chentsov_core_tensor': self.amari_chentsov_core_tensor, 
+                'amari_chentsov_L': self.amari_chentsov_L, 
+                'amari_chentsov_W': self.amari_chentsov_W, 
+                'amari_chentsov_alpha': self.amari_chentsov_alpha,
                 'ssr_cov_trace': self.ssr_cov_trace, 
                 'ssr_cov_n': self.ssr_cov_n, 
                 'ssr_model_dimension': self.ssr_model_dimension,  
@@ -74,6 +80,9 @@ class SSRAgent(nn.Module):
         self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
         self.ssr_n = d['ssr_n'] 
         self.amari_chentsov_core_tensor = d['amari_chentsov_core_tensor'].to(self.device) 
+        self.amari_chentsov_L = d['amari_chentsov_L'].to(self.device) 
+        self.amari_chentsov_W = d['amari_chentsov_W'].to(self.device) 
+        self.amari_chentsov_alpha = d['amari_chentsov_alpha'].to(self.device) 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
         self.ssr_model_dimension = d['ssr_model_dimension'] 
@@ -111,12 +120,12 @@ class SSRAgent(nn.Module):
             rescale = ( self.dt_mean_N - 1 ) / self.dt_mean_N 
             if self.dt_mean_trend.shape == torch.Size([]): 
                 ## prepare for a broadcast operation 
-                self.dt_mean_trend = float(self.dt_mean_trend)
+                self.dt_mean_trend = float(self.dt_mean_trend) 
                 pass 
             self.dt_mean_trend *= rescale 
             self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/(self.dt_mean_N) ## not spending memory to store many dts 
             self.dt_mean_norm_trend *= rescale 
-            self.dt_mean_norm_trend += (self.ssr_center - self.ssr_prev_center).pow(2).sum()/(self.dt_mean_N)
+            self.dt_mean_norm_trend += (self.ssr_center - self.ssr_prev_center).pow(2).sum()/(self.dt_mean_N) 
             self.dt_mean_trace_cov *= rescale 
             self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
             pass
@@ -137,24 +146,50 @@ class SSRAgent(nn.Module):
             ## add Amari-Chentsov product to tranport Hessian estimate 
             if apply_amari_prod and self.amari_chentsov_core_tensor is not None: 
                 ## transport the FIM estimate to nearest PSD matrix in Frobenius norm 
-                matrix_core = torch.einsum('ijk, kl -> ijl',self.amari_chentsov_core_tensor / self.ssr_n, self.ssr_low_rank_matrix.T @ (self.ssr_center - self.ssr_prev_center)) 
-                r = self.amari_chentsov_core_tensor.shape[0] 
-                matrix_core = matrix_core.reshape([r, r]) 
-                self.ssr_low_rank_matrix = combine_psd_plus_sym_core(self.ssr_low_rank_matrix, self.ssr_low_rank_matrix, matrix_core, pad_zeros=True) 
+                matrix_core, _ = make_matrix_core( ### TODO very likely unecessary 
+                    U=self.ssr_low_rank_matrix, 
+                    Mk=None,
+                    L=self.amari_chentsov_L, 
+                    W=self.amari_chentsov_W, 
+                    alpha=self.amari_chentsov_alpha, 
+                    delta=self.ssr_center - self.ssr_prev_center, 
+                    return_whitened=False
+                    ) 
+                ## Adjust outer product 
+                new_ssr_low_rank_matrix = combine_psd_plus_sym_core( 
+                    A=self.ssr_low_rank_matrix, 
+                    U=self.ssr_low_rank_matrix, 
+                    Mk=matrix_core, 
+                    r=self.ssr_low_rank_matrix.shape[1], 
+                    pad_zeros=True
+                    )
+                ## adjust diagonal 
+                diag_inc = (self.ssr_low_rank_matrix * (self.ssr_low_rank_matrix @ matrix_core)).sum(dim=1, keepdim=True)           # diag increment from transport
+                self.ssr_residual_diagonal = self.ssr_residual_diagonal + diag_inc - ((new_ssr_low_rank_matrix*new_ssr_low_rank_matrix).sum(1, keepdim=True) - (self.ssr_low_rank_matrix*self.ssr_low_rank_matrix).sum(1, keepdim=True)) 
+                self.ssr_residual_diagonal.clamp_(min=0) 
+                ## overwrite stored output product 
+                self.ssr_low_rank_matrix = new_ssr_low_rank_matrix
                 pass 
             ## Average estimates now that they are comparable 
             ##self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) ## numerically unstable 
-            self.ssr_low_rank_matrix = combine_psd(self.ssr_low_rank_matrix, ssr_low_rank_matrix) ## should be more robust 
-            self.ssr_residual_diagonal += ssr_residual_diagonal 
+            self.ssr_residual_diagonal += ssr_residual_diagonal ### TODO this isn't curvature-corrected !!! 
             self.ssr_n += n 
             pass 
         if apply_amari_prod: 
             ## update the Amari-Chentsov core tensor estimate with new data 
-            self.amari_chentsov_core_tensor = update_amari_chentsov_tensor( 
-                get_grad_generator = self.__get_get_grad_generator(n, random_idx=random_idx), 
-                information_basis = self.ssr_low_rank_matrix,
-                prior_tensor = self.amari_chentsov_core_tensor,
-                prior_information_basis = prior_ssr_low_rank_matrix
+            self.amari_chentsov_core_tensor, self.amari_chentsov_L, self.amari_chentsov_W, self.amari_chentsov_alpha = update_amari_chentsov_tensor(
+                get_grad_generator=self.__get_get_grad_generator(n, random_idx=random_idx),
+                information_basis=self.ssr_low_rank_matrix,
+                prior_tensor=self.amari_chentsov_core_tensor,
+                prior_information_basis=prior_ssr_low_rank_matrix,
+                # --- New optional state for whitened-core CP model ---
+                prior_L=self.amari_chentsov_L,
+                prior_W=self.amari_chentsov_W,   # (r_prev, m) orthonormal in prior whitened core
+                prior_alpha=self.amari_chentsov_alpha, # (m,)
+                m_components=None,       # default: r
+                power_steps=1,                     # small (1–3) is usually enough per call
+                power_shift=0.0,                 # tiny stabilizer in core power-step (e.g., 1e-4)
+                ridge_scale=1e-10,               # for Cholesky / whitening
                 )
             pass 
         if self.ssr_prev_center is not None: 
