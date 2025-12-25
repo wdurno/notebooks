@@ -5,7 +5,10 @@
 import random 
 import torch 
 import torch.nn as nn 
-from lanczos import l_lanczos, combine_krylov_spaces, combine_psd, update_amari_chentsov_tensor, combine_psd_plus_sym_core, make_matrix_core 
+
+from lanczos import l_lanczos, combine_krylov_spaces 
+from replay_buffer import Object 
+from grad_replay_buffer import GradReplayBuffer 
 
 GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 CPU = torch.device('cpu') 
@@ -13,13 +16,14 @@ CPU = torch.device('cpu')
 # Define the actor and critic networks 
 class SSRAgent(nn.Module): 
     'Abstract SSRAgent class. Define `loss` in concrete subclass.' 
-    def __init__(self, replay_buffer, ssr_rank=2, gpu_saver=True, dt_mean_N=10, apply_amari_prod=True): 
+    def __init__(self, replay_buffer, ssr_rank=2, gpu_saver=True, dt_mean_N=10, ssr_info_model=False): 
         '''Initialize core, abstract SSRAgent. 
         args:
          - replay_buffer: instance of the `replay_buffer` class, holds reinforcement learning transitions 
          - ssr_rank: increases Hessian approximation accuracy, but needs [ssr_rank]*[model dim] RAM. Keep it low 
          - gpu_saver: save GPU RAM by moving non-core processing to CPU 
          - dt_mean_N: Statistical manifold traversal is assumed to follow a trended Brownian motion, with stats estimated up to `dt_mean_N` samples. 
+         - ssr_info_model: Boolean, True if you want an SSR Agent modelling the information matrix 
         '''
         super(SSRAgent, self).__init__() 
         self.device = GPU 
@@ -34,13 +38,17 @@ class SSRAgent(nn.Module):
         self.ssr_center = None 
         self.ssr_prev_center = None 
         self.ssr_n = None 
-        self.amari_chentsov_core_tensor = None 
-        self.amari_chentsov_L = None 
-        self.amari_chentsov_W = None 
-        self.amari_chentsov_alpha = None 
         self.ssr_cov_trace = None 
         self.ssr_cov_n = None 
         self.ssr_model_dimension = None 
+        self.ssr_info_model = None 
+        if ssr_info_model: 
+            ## initialize upon obtaining data 
+            ## Use buffer to avoid `.parameters()` picking-up sub-parameters 
+            ## These are approximately statistically independent models 
+            self.ssr_info_model = Object() ## TODO invent serialization scheme 
+            self.ssr_info_model.model = None 
+            pass 
         self.dt_mean = None 
         self.dt_mean_N = dt_mean_N 
         self.dt_mean_trend = torch.tensor(0.).to(self.device) ## init to 0 heuristically since traversal is continuous from a very stable point 
@@ -48,6 +56,7 @@ class SSRAgent(nn.Module):
         self.dt_mean_trace_cov = 0.  
         self.dt_prev_pi = .5 
         self.replay_buffer = replay_buffer 
+        ## self.optimizer = ... ? ## TODO at least document that this is needed in the subclass 
         pass 
     def ssr_dict(self): 
         d = {'device': self.device,
@@ -57,10 +66,6 @@ class SSRAgent(nn.Module):
                 'ssr_center': self.ssr_center, 
                 'ssr_prev_center': self.ssr_prev_center, 
                 'ssr_n': self.ssr_n, 
-                'amari_chentsov_core_tensor': self.amari_chentsov_core_tensor, 
-                'amari_chentsov_L': self.amari_chentsov_L, 
-                'amari_chentsov_W': self.amari_chentsov_W, 
-                'amari_chentsov_alpha': self.amari_chentsov_alpha,
                 'ssr_cov_trace': self.ssr_cov_trace, 
                 'ssr_cov_n': self.ssr_cov_n, 
                 'ssr_model_dimension': self.ssr_model_dimension,  
@@ -79,10 +84,6 @@ class SSRAgent(nn.Module):
         self.ssr_center = d['ssr_center'].to(self.device) 
         self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
         self.ssr_n = d['ssr_n'] 
-        self.amari_chentsov_core_tensor = d['amari_chentsov_core_tensor'].to(self.device) 
-        self.amari_chentsov_L = d['amari_chentsov_L'].to(self.device) 
-        self.amari_chentsov_W = d['amari_chentsov_W'].to(self.device) 
-        self.amari_chentsov_alpha = d['amari_chentsov_alpha'].to(self.device) 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
         self.ssr_model_dimension = d['ssr_model_dimension'] 
@@ -101,8 +102,10 @@ class SSRAgent(nn.Module):
         self.load_ssr_dict(torch.load(path + '.ssr.pt')) 
         pass 
     def loss(self, transitions): 
+        '''Must be a mean-scaled loss. 
+        '''
         raise NotImplementedError('ERROR: loss not implemented!') 
-    def memorize(self, n=None, random_idx=False, disable_tqdm=False, apply_amari_prod=False): 
+    def memorize(self, n=None, random_idx=False, disable_tqdm=False): 
         'memorize oldest `n` transitions, or all if `n is None`' 
         if n is None: 
             n = len(self.replay_buffer) 
@@ -130,10 +133,6 @@ class SSRAgent(nn.Module):
             self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
             pass
         ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
-        if apply_amari_prod: 
-            prior_ssr_low_rank_matrix = self.ssr_low_rank_matrix ## can be None 
-            pass 
-        ## Calculate local information matrix estimate 
         ## stored in sum-scale; no division by ssr_n 
         ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
         ## handle l-Lanczos outputs 
@@ -142,70 +141,29 @@ class SSRAgent(nn.Module):
             self.ssr_low_rank_matrix = ssr_low_rank_matrix 
             self.ssr_residual_diagonal = ssr_residual_diagonal 
             self.ssr_n = n 
-        elif self.ssr_prev_center is not None: 
-            ## combine with previous memories 
-            ## add Amari-Chentsov product to tranport Hessian estimate 
-            if apply_amari_prod and self.amari_chentsov_core_tensor is not None: 
-                ## ops are on avg-scale, not sum-scale ## refactor to have only one scale 
-                self.ssr_low_rank_matrix = self.ssr_low_rank_matrix / (self.ssr_n ** .5) 
-                self.ssr_residual_diagonal = self.ssr_residual_diagonal / self.ssr_n 
-                ## transport the FIM estimate to nearest PSD matrix in Frobenius norm 
-                matrix_core, _ = make_matrix_core(  
-                    U=self.ssr_low_rank_matrix,  
-                    Mk=None,
-                    L=self.amari_chentsov_L, 
-                    W=self.amari_chentsov_W, 
-                    alpha=self.amari_chentsov_alpha, 
-                    delta=self.ssr_center - self.ssr_prev_center, 
-                    return_whitened=False
-                    ) 
-                ## transport outer product 
-                new_ssr_low_rank_matrix = combine_psd_plus_sym_core( 
-                    A=self.ssr_low_rank_matrix, 
-                    U=self.ssr_low_rank_matrix, 
-                    Mk=matrix_core, 
-                    r=self.ssr_low_rank_matrix.shape[1], 
-                    pad_zeros=True
-                    ) 
-                ## adjust diagonal 
-                diag_inc = (self.ssr_low_rank_matrix * (self.ssr_low_rank_matrix @ matrix_core)).sum(dim=1, keepdim=True)           # diag increment from transport
-                self.ssr_residual_diagonal = self.ssr_residual_diagonal + diag_inc - ((new_ssr_low_rank_matrix*new_ssr_low_rank_matrix).sum(1, keepdim=True) - (self.ssr_low_rank_matrix*self.ssr_low_rank_matrix).sum(1, keepdim=True)) 
-                self.ssr_residual_diagonal.clamp_(min=0) 
-                ## TODO experimenting with ssr_n adjustments 
-                Q_old, _ = torch.linalg.qr(self.ssr_low_rank_matrix, mode='reduced')   # (p,r)
-                Q_new, _ = torch.linalg.qr(new_ssr_low_rank_matrix, mode='reduced')   # (p,r)
-                S = Q_old.T @ Q_new 
-                ssr_n_adjustment = (S*S).sum()/new_ssr_low_rank_matrix.shape[1] 
-                print(f'DEBUG 1: {ssr_n_adjustment}')
-                ssr_n_adjustment = float(torch.clamp(ssr_n_adjustment, 0.0, 1.0))
-                self.ssr_n *= ssr_n_adjustment 
-                ## overwrite stored output product 
-                self.ssr_low_rank_matrix = new_ssr_low_rank_matrix 
-                ## convert back to sum scale 
-                self.ssr_low_rank_matrix = self.ssr_low_rank_matrix * (self.ssr_n ** .5) 
-                self.ssr_residual_diagonal = self.ssr_residual_diagonal * self.ssr_n 
-                pass 
-            ## Average estimates now that they are comparable 
-            ##self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) ## numerically unstable 
+        elif self.ssr_prev_center is not None and self.ssr_info_model is None: 
+            ## combine with previous memories via Krylov subspace 
+            self.ssr_low_rank_matrix = combine_krylov_spaces(self.ssr_low_rank_matrix, ssr_low_rank_matrix, device=self.device) 
             self.ssr_residual_diagonal += ssr_residual_diagonal 
             self.ssr_n += n 
-            pass 
-        if apply_amari_prod: 
-            ## update the Amari-Chentsov core tensor estimate with new data 
-            self.amari_chentsov_core_tensor, self.amari_chentsov_L, self.amari_chentsov_W, self.amari_chentsov_alpha = update_amari_chentsov_tensor(
-                get_grad_generator = self.__get_get_grad_generator(n, random_idx=random_idx),
-                information_basis = self.ssr_low_rank_matrix / (self.ssr_n ** .5),
-                prior_tensor = self.amari_chentsov_core_tensor,
-                prior_information_basis=prior_ssr_low_rank_matrix,
-                # --- New optional state for whitened-core CP model ---
-                prior_L = self.amari_chentsov_L,
-                prior_W = self.amari_chentsov_W,   # (r_prev, m) orthonormal in prior whitened core
-                prior_alpha = self.amari_chentsov_alpha, # (m,)
-                m_components = self.ssr_low_rank_matrix.shape[1],       # default: r
-                power_steps = 1,                     # small (1–3) is usually enough per call
-                power_shift = 0.0,                 # tiny stabilizer in core power-step (e.g., 1e-4)
-                ridge_scale = 1e-10,               # for Cholesky / whitening
-                )
+        elif self.ssr_prev_center is not None and self.ssr_info_model is None: 
+            ## combine with previous memories via SSR info model 
+            ## TODO finish 
+            if self.ssr_info_model.model is None: 
+                ## initialize SSR info model 
+                self.ssr_info_model.model = DefaultSSRInfoModel(ssr_rank=self.ssr_rank, \
+                    grad_replay_buffer = GradReplayBuffer(self), \
+                    initial_L = self.ssr_low_rank_matrix, \
+                    initial_D_vec = self.ssr_residual_diagonal, \
+                    intial_n = self.ssr_n \
+                    ) 
+                pass 
+            ## update SSR info 
+            self.ssr_info_model.model.fit(batch_size=1, iters=len(self.replay_buffer)) 
+            self.ssr_info_model.model.memorize() 
+            self.ssr_low_rank_matrix = self.ssr_info_model.model.L.detach() 
+            self.ssr_residual_diagonal = torch.exp(self.ssr_info_model.model.log_D.detach()) 
+            self.ssr_n += n 
             pass 
         if self.ssr_prev_center is not None: 
             dt = self.ssr_center.to(self.gpu_saver) - self.ssr_prev_center 
@@ -240,7 +198,6 @@ class SSRAgent(nn.Module):
             pi = torch.tensor(.5).to(self.device) 
         else: 
             pi = 1. - .5 * self.dt_mean_trace_cov / self.dt_mean_norm_trend  
-            #pi = 1. - .5 * self.dt_prev_pi * self.dt_mean_trace_cov / self.dt_mean_norm_trend ## DEBUGGING 
             pi = pi.to(self.device).clone().detach() 
             pass 
         if float(pi) < pi_min: 
@@ -259,14 +216,15 @@ class SSRAgent(nn.Module):
     def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9): 
         self.train() 
         self.dt_prev_pi = pi = self.optimal_lambda(pi_min=pi_min, pi_max=pi_max) 
+        self.optimizer.zero_grad() 
+        ssr = self.ssr() 
         for _ in range(iters): 
-            self.optimizer.zero_grad() 
-            data = self.replay_buffer.sample(batch_size=batch_size) 
-            loss = self.loss(data) 
+            data = self.replay_buffer.sample(batch_size=batch_size) ## TODO provide whole-sample-in-batches option 
+            loss = self.loss(data) / iters 
             loss = pi * loss + (1 - pi) * self.ssr() 
             loss.backward() 
-            self.optimizer.step() 
             pass 
+        self.optimizer.step() 
         return float(pi), float(loss) 
     def __get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context,  
@@ -286,18 +244,96 @@ class SSRAgent(nn.Module):
                     if random_idx: 
                         idx = random.randint(0, len(self.replay_buffer)-1)
                         pass 
-                    self.zero_grad() 
-                    transition = self.replay_buffer.sample(idx_list=[idx]) 
-                    loss = self.loss(transition) 
-                    loss.backward() 
-                    for p in self.parameters(): 
-                        if p.grad is None: 
-                            p.grad = torch.zeros(size=p.shape) 
-                        pass 
-                    grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0).clone().detach()  
+                    grad_vec = self.get_grad_vec(idx) 
                     yield grad_vec 
                     pass
                 pass 
             return grad_generator 
         return get_grad_generator 
+    
+    def get_grad_vec(self, observation_index): 
+        self.zero_grad() 
+        transition = self.replay_buffer.sample(idx_list=[observation_index]) 
+        loss = self.loss(transition) 
+        loss.backward() 
+        for p in self.parameters(): 
+            if p.grad is None: 
+                p.grad = torch.zeros(size=p.shape) 
+            pass 
+        grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0).clone().detach() 
+        return grad_vec 
     pass 
+
+class DefaultSSRInfoModel(SSRAgent): 
+    '''A sufficient statistic regularized model for estimating information matrices (equivalently, covariances matrices) without regressors
+    '''
+    def __init__(self, ssr_rank, grad_replay_buffer, initial_L, initial_D_vec, initial_n): 
+        '''Constructs a deep learning model estimating information (covariance) matrices. 
+        Utilizes low rank approximation LL^T + D, where L is p X r-shaped and D is diagonal, positive. 
+        args: 
+        - ssr_rank: positive integer, sets r. Warning: applying this model to an O(p*r)-sized SSR Agent model will increase space requirements to O(p*r^2)! 
+        - grad_replay_buffer: Must be of type GradReplayBuffer initialized with the parent SSR Agent's replay buffer. 
+        - initial_L: p X r-shaped tensor providing an initial estimate for L. 
+        - initial_D: p X 1-shaped tensor providing an initial estimate for the diagonal of D. 
+        - initial_n: integer providing initial sample size used to estimate initial parameters. 
+        '''
+        super(DefaultSSRInfoModel, self).__init__(ssr_rank=ssr_rank, replay_buffer=grad_replay_buffer) 
+        self.L = torch.nn.parameter(initial_L) 
+        initial_D_vec[initial_D_vec < 1e-5] = 1e-5 ## don't want to store any negative inifinities 
+        self.log_D = torch.nn.parameter(torch.log(initial_D_vec)) ## store on log scale so the optimizer can utilize all Euclidian space 
+        self.ssr_n = initial_n 
+        self.optimizer = optim.Adam(self.parameters(), lr=0.001) ## TODO do not hard code - this whole init scheme needs a refactor 
+        pass 
+    def forward(self, transitions): 
+        '''Calculates \| LL^T + D - YY^T \|_F^2 with a few \|A + B \|_F^2 = \|A \|_F^2 + \|B \|_F^2 - 2 tr[ AB ] expansions. 
+        If this was actually used for forecasting, the forecast would just be LL^T + D, but that's just an auto-OOM in deep learning. 
+        So, instead, I'm calculating a sum-scale loss, ready for batching. 
+        '''
+        y = transitions.y ## p X n tensor of gradients ## TODO refactor so rows are n 
+        # loss = ((self.L.T @ self.L) * (self.L.T @ self.L)).sum() \
+        #     + (torch.exp(self.log_D) * torch.exp(self.log_D)).sum() \
+        #     - 2. * torch.trace(self.L.T @ torch.exp(self.log_D) @ self.L) \
+        #     + ((y.T @ T) * (y.T @ T)).sum() \
+        #     + 2. * ((y.T @ self.L) * (y.T @ self.L)).sum() \
+        #     + 2. * torch.trace(y.T @ torch.exp(self.log_D) @ y)  
+        d = self.log_D.exp().reshape([-1])  # (p,)
+
+        G = self.L.T @ self.L                 # (r, r)
+        term_LL = (G * G).sum()               # ||LL^T||_F^2 = ||L^T L||_F^2
+
+        term_D = (d * d).sum()                # ||D||_F^2 (D diagonal)
+
+        rowL2 = (self.L * self.L).sum(dim=1)  # (p,) rowwise ||L_i||^2
+        term_cross_LD = 2.0 * (d * rowL2).sum()
+
+        YY = y.T @ y                          # (m, m)
+        term_YY = (YY * YY).sum()             # ||YY^T||_F^2 = ||Y^T Y||_F^2
+
+        YL = y.T @ self.L                     # (m, r)
+        term_cross_LY = -2.0 * (YL * YL).sum()  # -2 ||Y^T L||_F^2
+
+        rowY2 = (y * y).sum(dim=1)            # (p,) rowwise ||Y_i||^2
+        term_cross_DY = -2.0 * (d * rowY2).sum()
+
+        loss = term_LL + term_D + term_cross_LD + term_YY + term_cross_LY + term_cross_DY
+        return loss 
+    def loss(self, transitions): 
+        # n = len(self.replay_buffer) 
+        # loss = 0. 
+        # ## loop over batches, calling `.backward` per iteration to free execution graphs from memory 
+        # for idx_batch in (list(range(n))[i:i+batch_size] for i in range(0, n, batch_size)): 
+        #     batch_loss = self.forward(self.replay_buffer.sample(idx_list=idx_batch)) * (len(idx_batch) / n) 
+        #     batch_loss.backward() ## avoid those OOMs! 
+        #     loss += batch_loss 
+        #     pass 
+        loss = self.forward(transitions) 
+        return loss  
+    pass 
+
+
+
+
+
+
+
+
