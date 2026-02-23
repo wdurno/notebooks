@@ -4,7 +4,7 @@ A lightweight Python web dashboard for manually testing your PiCar V through the
 
 It provides:
 - Clickable drive controls: forward, backward, left, right, stop.
-- Clickable camera controls: up, down, left, right, forward(center).
+- Clickable camera controls: up, left, right, forward(center).
 - A camera view that refreshes at **most 2 times per second**.
 
 This app is wired to the real interface from `picar-v-rl-env`:
@@ -54,7 +54,8 @@ Required:
 
 Notes:
 - In upstream `picar-v-rl-env`, movement endpoints are timed and there is no `stop` function in `car_client.py`. The dashboard tries `http://<host>/stop` as a fallback for custom APIs.
-- In upstream `picar-v-rl-env`, there is no `look_down` function in `car_client.py`. The dashboard tries `http://<host>/look-down` as a fallback for custom APIs.
+- `car_env.car_client.img(...)` returns BGR-like channel ordering; this dashboard swaps red/blue before display so colors appear correct.
+- If camera updates feel unstable, set `DASHBOARD_CAMERA_HZ=1` to reduce API load.
 
 ## Example
 

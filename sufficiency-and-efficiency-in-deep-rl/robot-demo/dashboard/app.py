@@ -29,6 +29,10 @@ def _encode_jpeg_from_frame(frame: Any) -> bytes:
     if not isinstance(frame, np.ndarray):
         raise TypeError(f"car_env.img() returned unexpected frame type: {type(frame)}")
 
+    if frame.ndim == 3 and frame.shape[2] >= 3:
+        # car_env camera frames are BGR; convert to RGB for correct display colors.
+        frame = frame[..., [2, 1, 0]]
+
     out = io.BytesIO()
     Image.fromarray(frame).save(out, format="JPEG")
     return out.getvalue()
@@ -80,11 +84,6 @@ class RobotAdapter:
             self.car_client.look_right(self.host)
         elif action in ("center", "forward"):
             self.car_client.look_forward(self.host)
-        elif action == "down":
-            if hasattr(self.car_client, "look_down"):
-                self.car_client.look_down(self.host)
-            else:
-                self._raw_get("/look-down")
         else:
             raise ValueError(f"unknown camera action: {action}")
 

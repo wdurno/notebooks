@@ -6,7 +6,7 @@
     <title>PiCar Dashboard</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
-  <body>
+  <body data-camera-hz="{{ camera_hz }}">
     <main class="page">
       <section class="panel controls">
         <h1>PiCar Controls</h1>
@@ -24,7 +24,6 @@
         <div class="grid3">
           <button data-endpoint="/api/camera" data-action="up">Up</button>
           <button data-endpoint="/api/camera" data-action="center">Forward</button>
-          <button data-endpoint="/api/camera" data-action="down">Down</button>
           <button data-endpoint="/api/camera" data-action="left">Left</button>
           <button data-endpoint="/api/camera" data-action="right">Right</button>
         </div>
@@ -35,7 +34,11 @@
       <section class="panel camera">
         <h2>Camera View</h2>
         <p>Refresh rate: up to {{ camera_hz }} FPS</p>
-        <img id="camera" alt="PiCar camera feed" src="/api/frame.jpg?t=0" />
+        <img
+          id="camera"
+          alt="PiCar camera feed"
+          src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+        />
       </section>
     </main>
 
