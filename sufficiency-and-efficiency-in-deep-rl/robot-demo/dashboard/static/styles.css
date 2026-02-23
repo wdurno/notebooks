@@ -1,0 +1,98 @@
+:root {
+  --bg: #f2f5ef;
+  --panel: #ffffff;
+  --ink: #1d2621;
+  --accent: #006a67;
+  --warn: #c4382c;
+  --line: #ced8ce;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at top right, #dfe8d9 0%, var(--bg) 45%, #e9ece2 100%);
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) 1fr;
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+}
+
+h1,
+h2,
+p {
+  margin: 0 0 10px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+button {
+  border: 1px solid #b6c3b7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #f9fcf8;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button.warn {
+  border-color: #e5b3ad;
+  color: var(--warn);
+}
+
+#status {
+  min-height: 64px;
+  margin: 0;
+  padding: 10px;
+  background: #f5f8f4;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: auto;
+}
+
+#camera {
+  width: 100%;
+  min-height: 240px;
+  max-height: 72vh;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #111;
+}
+
+@media (max-width: 900px) {
+  .page {
+    grid-template-columns: 1fr;
+  }
+}

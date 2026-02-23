@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PiCar Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel controls">
+        <h1>PiCar Controls</h1>
+
+        <h2>Drive</h2>
+        <div class="grid3">
+          <button data-endpoint="/api/move" data-action="forward">Forward</button>
+          <button data-endpoint="/api/move" data-action="stop" class="warn">Stop</button>
+          <button data-endpoint="/api/move" data-action="backward">Backward</button>
+          <button data-endpoint="/api/move" data-action="left">Left</button>
+          <button data-endpoint="/api/move" data-action="right">Right</button>
+        </div>
+
+        <h2>Camera</h2>
+        <div class="grid3">
+          <button data-endpoint="/api/camera" data-action="up">Up</button>
+          <button data-endpoint="/api/camera" data-action="center">Forward</button>
+          <button data-endpoint="/api/camera" data-action="down">Down</button>
+          <button data-endpoint="/api/camera" data-action="left">Left</button>
+          <button data-endpoint="/api/camera" data-action="right">Right</button>
+        </div>
+
+        <pre id="status">Ready.</pre>
+      </section>
+
+      <section class="panel camera">
+        <h2>Camera View</h2>
+        <p>Refresh rate: up to {{ camera_hz }} FPS</p>
+        <img id="camera" alt="PiCar camera feed" src="/api/frame.jpg?t=0" />
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
