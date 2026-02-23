@@ -5,6 +5,16 @@ const effectiveHz = Number.isFinite(requestedHz) ? Math.min(2, Math.max(0.25, re
 const FRAME_INTERVAL_MS = Math.floor(1000 / effectiveHz);
 let cameraObjectUrl = null;
 let frameInFlight = false;
+const keyBindings = {
+  w: { endpoint: "/api/move", action: "forward" },
+  a: { endpoint: "/api/move", action: "left" },
+  s: { endpoint: "/api/move", action: "backward" },
+  d: { endpoint: "/api/move", action: "right" },
+  arrowup: { endpoint: "/api/camera", action: "up" },
+  arrowleft: { endpoint: "/api/camera", action: "left" },
+  arrowright: { endpoint: "/api/camera", action: "right" },
+  arrowdown: { endpoint: "/api/camera", action: "center" },
+};
 
 function setStatus(message) {
   const now = new Date().toLocaleTimeString();
@@ -64,6 +74,29 @@ for (const button of document.querySelectorAll("button[data-endpoint]")) {
   });
 }
 
+document.addEventListener("keydown", (event) => {
+  if (event.repeat) {
+    return;
+  }
+  if (event.target instanceof HTMLElement) {
+    const tag = event.target.tagName;
+    const isTypingTarget =
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      event.target.isContentEditable;
+    if (isTypingTarget) {
+      return;
+    }
+  }
+
+  const binding = keyBindings[event.key.toLowerCase()];
+  if (!binding) {
+    return;
+  }
+  event.preventDefault();
+  sendAction(binding.endpoint, binding.action);
+});
+
 setInterval(refreshFrame, FRAME_INTERVAL_MS);
 refreshFrame();
-setStatus("Ready.");
+setStatus("Ready. Keyboard: WASD drive, arrows control camera (down = forward).");

@@ -5,6 +5,7 @@ A lightweight Python web dashboard for manually testing your PiCar V through the
 It provides:
 - Clickable drive controls: forward, backward, left, right, stop.
 - Clickable camera controls: up, left, right, forward(center).
+- Keyboard controls: `W/A/S/D` to drive, arrow keys for camera (`ArrowDown` = camera forward/center).
 - A camera view that refreshes at **most 2 times per second**.
 
 This app is wired to the real interface from `picar-v-rl-env`:
