@@ -6,7 +6,11 @@
     <title>PiCar Dashboard</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
-  <body data-camera-hz="{{ camera_hz }}">
+  <body
+    data-camera-hz="{{ camera_hz }}"
+    data-camera-x-resize="{{ camera_x_resize if camera_x_resize is not none else '' }}"
+    data-camera-y-resize="{{ camera_y_resize if camera_y_resize is not none else '' }}"
+  >
     <main class="page">
       <section class="panel controls">
         <h1>PiCar Controls</h1>
@@ -27,6 +31,23 @@
           <button data-endpoint="/api/camera" data-action="left">Left</button>
           <button data-endpoint="/api/camera" data-action="right">Right</button>
         </div>
+        <form id="resolution-form" class="resolution-form">
+          <label for="resolution-preset">Camera resolution</label>
+          <select id="resolution-preset">
+            <option value="default">API default</option>
+            <option value="80x60">80 x 60</option>
+            <option value="120x90">120 x 90</option>
+            <option value="160x120">160 x 120</option>
+            <option value="320x240">320 x 240</option>
+            <option value="custom">Custom</option>
+          </select>
+          <div class="resolution-inputs">
+            <input id="resolution-x" type="number" min="1" placeholder="width" inputmode="numeric" />
+            <input id="resolution-y" type="number" min="1" placeholder="height" inputmode="numeric" />
+            <button type="submit">Apply</button>
+          </div>
+          <p class="resolution-note">Current: <strong id="resolution-current">API default</strong></p>
+        </form>
         <p><strong>Keyboard:</strong> <code>W/A/S/D</code> drive, arrow keys control camera (<code>down = forward</code>).</p>
 
         <pre id="status">Ready.</pre>

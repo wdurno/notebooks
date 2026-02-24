@@ -93,6 +93,16 @@ class RobotAdapter:
         )
         return _encode_jpeg_from_frame(frame)
 
+    def set_resolution(self, x_resize: int | None, y_resize: int | None) -> None:
+        self.x_resize = x_resize
+        self.y_resize = y_resize
+
+    def get_resolution(self) -> dict[str, int | None]:
+        return {
+            "x_resize": self.x_resize,
+            "y_resize": self.y_resize,
+        }
+
     def _raw_get(self, route: str) -> None:
         url = f"http://{self.host}{route}"
         response = requests.get(url, timeout=5)
@@ -105,6 +115,23 @@ def _env_int(name: str) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _parse_resize_value(value: Any, name: str) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if parsed <= 0:
+        raise ValueError(f"{name} must be > 0")
+    return parsed
+
+
+def _validate_resolution_pair(x_resize: int | None, y_resize: int | None) -> None:
+    if (x_resize is None) != (y_resize is None):
+        raise ValueError("x_resize and y_resize must both be set or both be null")
 
 
 def create_app() -> Flask:
@@ -145,7 +172,13 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index() -> str:
-        return render_template("index.html", camera_hz=target_hz)
+        resolution = adapter.get_resolution()
+        return render_template(
+            "index.html",
+            camera_hz=target_hz,
+            camera_x_resize=resolution["x_resize"],
+            camera_y_resize=resolution["y_resize"],
+        )
 
     @app.post("/api/move")
     def api_move() -> Response:
@@ -175,12 +208,42 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    @app.route("/api/resolution", methods=["GET", "POST"])
+    def api_resolution() -> Response:
+        if request.method == "GET":
+            return jsonify(
+                {
+                    "ok": True,
+                    **adapter.get_resolution(),
+                }
+            )
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            x_resize = _parse_resize_value(payload.get("x_resize"), "x_resize")
+            y_resize = _parse_resize_value(payload.get("y_resize"), "y_resize")
+            _validate_resolution_pair(x_resize, y_resize)
+            with lock:
+                adapter.set_resolution(x_resize, y_resize)
+                cache["last_time"] = 0.0
+            return jsonify(
+                {
+                    "ok": True,
+                    "x_resize": x_resize,
+                    "y_resize": y_resize,
+                }
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
     @app.get("/api/health")
     def api_health() -> Response:
+        resolution = adapter.get_resolution()
         return jsonify(
             {
                 "ok": True,
                 "camera_hz": target_hz,
+                **resolution,
                 "last_frame_age_sec": max(0.0, time.monotonic() - cache["last_time"]),
                 "last_error": cache["last_error"],
             }

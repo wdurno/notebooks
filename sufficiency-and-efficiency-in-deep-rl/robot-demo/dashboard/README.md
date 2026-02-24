@@ -7,6 +7,7 @@ It provides:
 - Clickable camera controls: up, left, right, forward(center).
 - Keyboard controls: `W/A/S/D` to drive, arrow keys for camera (`ArrowDown` = camera forward/center).
 - A camera view that refreshes at **most 2 times per second**.
+- Runtime camera resolution controls (preset or custom `x_resize` / `y_resize`) without restarting the dashboard.
 
 This app is wired to the real interface from `picar-v-rl-env`:
 - `car_env.car_client.drive_left/right/forward/backward(host)`
@@ -54,6 +55,8 @@ Required:
 - `CAR_ENV_Y_RESIZE` (optional, passed to `car_env.car_client.img`)
 
 Notes:
+- You can change camera resolution live from the dashboard; this maps to `car_env.car_client.img(host, x_resize=?, y_resize=?)`.
+- `CAR_ENV_X_RESIZE` and `CAR_ENV_Y_RESIZE` now act as startup defaults and can be overridden from the UI.
 - In upstream `picar-v-rl-env`, movement endpoints are timed and there is no `stop` function in `car_client.py`. The dashboard tries `http://<host>/stop` as a fallback for custom APIs.
 - `car_env.car_client.img(...)` returns BGR-like channel ordering; this dashboard swaps red/blue before display so colors appear correct.
 - If camera updates feel unstable, set `DASHBOARD_CAMERA_HZ=1` to reduce API load.
