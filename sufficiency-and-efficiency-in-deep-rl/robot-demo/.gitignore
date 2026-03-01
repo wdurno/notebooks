@@ -26,3 +26,37 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# Downloaded model artifacts and training outputs under demo/model.
+demo/model/**/*.bin
+demo/model/**/*.ckpt
+demo/model/**/*.gguf
+demo/model/**/*.h5
+demo/model/**/*.index
+demo/model/**/*.msgpack
+demo/model/**/*.onnx
+demo/model/**/*.pb
+demo/model/**/*.pt
+demo/model/**/*.pth
+demo/model/**/*.safetensors
+demo/model/**/*.tar
+demo/model/**/*.tflite
+demo/model/**/*.weights
+
+# Split checkpoint shards and tensor data.
+demo/model/**/*.data-*
+demo/model/**/*.safetensors.index.json
+
+# Compressed archives commonly used for model distribution.
+demo/model/**/*.tar.gz
+demo/model/**/*.tgz
+demo/model/**/*.zip
+demo/model/**/*.7z
+
+# Temporary download and cache outputs.
+demo/model/cache/
+
+# Keep model documentation and manifests visible to git.
+!demo/model/README.md
+!demo/model/manifests/
+!demo/model/manifests/**
