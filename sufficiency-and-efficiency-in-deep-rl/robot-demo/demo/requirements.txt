@@ -6,3 +6,7 @@ sounddevice
 piper-tts
 pathvalidate
 pytest
+Pillow
+torch
+transformers
+peft

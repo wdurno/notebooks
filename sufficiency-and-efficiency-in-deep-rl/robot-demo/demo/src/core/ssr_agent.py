@@ -6,8 +6,8 @@ import random
 import torch 
 import torch.nn as nn 
 
-from lanczos import l_lanczos, combine_krylov_spaces 
-from replay_buffer import Object 
+from .lanczos import l_lanczos, combine_krylov_spaces 
+from .replay_buffer import Object 
 #from grad_replay_buffer import GradReplayBuffer 
 
 GPU = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
@@ -238,7 +238,6 @@ class SSRAgent(nn.Module):
         grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0).clone().detach() 
         return grad_vec 
     pass 
-
 
 
 
