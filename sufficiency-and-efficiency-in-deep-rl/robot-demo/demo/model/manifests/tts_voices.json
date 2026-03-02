@@ -1,0 +1,23 @@
+{
+  "default": "en_US-lessac-medium",
+  "voices": {
+    "en_US-lessac-medium": {
+      "voice_id": "en_US-lessac-medium",
+      "backend": "piper",
+      "repo_id": "rhasspy/piper-voices",
+      "target_dir": "tts/piper/en_US-lessac-medium",
+      "model_filename": "en_US-lessac-medium.onnx",
+      "config_filename": "en_US-lessac-medium.onnx.json",
+      "files": [
+        {
+          "repo_path": "en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+          "local_name": "en_US-lessac-medium.onnx"
+        },
+        {
+          "repo_path": "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
+          "local_name": "en_US-lessac-medium.onnx.json"
+        }
+      ]
+    }
+  }
+}

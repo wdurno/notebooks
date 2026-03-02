@@ -1,0 +1,8 @@
+# Core speech stack for the demo.
+faster-whisper
+huggingface_hub
+numpy
+sounddevice
+piper-tts
+pathvalidate
+pytest

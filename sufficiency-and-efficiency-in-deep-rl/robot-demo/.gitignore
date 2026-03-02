@@ -55,8 +55,21 @@ demo/model/**/*.7z
 
 # Temporary download and cache outputs.
 demo/model/cache/
+demo/model/stt/**
+demo/model/tts/**
+demo/model/vlm/**
+
+# Generated experiment data.
+demo/data/**
 
 # Keep model documentation and manifests visible to git.
 !demo/model/README.md
 !demo/model/manifests/
 !demo/model/manifests/**
+!demo/model/stt/
+!demo/model/stt/.gitkeep
+!demo/model/tts/
+!demo/model/tts/.gitkeep
+!demo/model/vlm/
+!demo/model/vlm/.gitkeep
+!demo/data/README.md

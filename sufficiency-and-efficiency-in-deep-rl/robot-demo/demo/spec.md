@@ -142,4 +142,6 @@ An integration test battery can take up to 10 min but shouldn't involve extensiv
 Do not attempt resolving all requirements at once. 
 Instead, the agent's user will specify which requirement to work on. 
 Expect to require several iterations with the user per requirement. 
+This is not a complete Waterfall-type collection of instructions.
+Agile iterations are to be expected. 
 
