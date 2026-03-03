@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 from dataclasses import dataclass, field
@@ -12,6 +13,15 @@ from .action_space import ACTION_NAMES, normalized_action_name
 from .config import ModelConfig
 from .model_store import ModelStore
 from .schemas import ModelObservation
+
+
+CONTROL_SYSTEM_PROMPT = (
+    "You are controlling a PiCar-V robot. "
+    "Choose exactly one action from: "
+    "drive-left, drive-right, drive-forward, drive-backward, "
+    "look-left, look-right, look-up, look-forward. "
+    "Return JSON with keys `action` and `say`."
+)
 
 
 @dataclass(frozen=True)
@@ -167,11 +177,20 @@ class QwenLoRABackbone(nn.Module):
         except ImportError as exc:
             raise RuntimeError("Pillow is required to process RGB images for the VLM") from exc
 
-        prompts = []
         images = []
+        prompts = []
+        prepared_messages = []
         for observation in observations:
-            prompts.append(self._render_prompt(observation))
             images.append(Image.fromarray(observation.image_rgb))
+            messages = self._build_chat_messages(observation)
+            prepared_messages.append(messages)
+            prompts.append(
+                self.processor.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            )
 
         # The processor handles multimodal packing so the rest of the code can
         # work with plain RGB frames and message objects.
@@ -215,8 +234,8 @@ class QwenLoRABackbone(nn.Module):
         if compute_vlm_loss and target_texts and any(text is not None for text in target_texts):
             vlm_loss = self._compute_supervised_vlm_loss(
                 observations=observations,
-                prompts=prompts,
                 images=images,
+                messages_list=prepared_messages,
                 target_texts=target_texts,
                 model_device=model_device,
             )
@@ -228,25 +247,17 @@ class QwenLoRABackbone(nn.Module):
             debug=debug,
         )
 
-    def _render_prompt(self, observation: ModelObservation) -> str:
-        # Keep the first-pass prompt contract strict so the model is pushed
-        # toward a single action selection plus optional spoken text.
-        message_block = json.dumps(observation.messages, ensure_ascii=True)
-        return (
-            "You are controlling a PiCar-V robot. "
-            "Choose exactly one action from: "
-            "drive-left, drive-right, drive-forward, drive-backward, "
-            "look-left, look-right, look-up, look-forward. "
-            "Return JSON with keys `action` and `say`.\n"
-            f"messages={message_block}"
-        )
+    def _build_chat_messages(self, observation: ModelObservation) -> list[dict[str, Any]]:
+        messages = [{"role": "system", "content": [{"type": "text", "text": CONTROL_SYSTEM_PROMPT}]}]
+        messages.extend(_copy_messages(observation.messages))
+        return _ensure_image_placeholder(messages)
 
     def _compute_supervised_vlm_loss(
         self,
         *,
         observations: list[ModelObservation],
-        prompts: list[str],
         images: list[Any],
+        messages_list: list[list[dict[str, Any]]],
         target_texts: list[Optional[str]],
         model_device: torch.device,
     ) -> torch.Tensor:
@@ -265,12 +276,28 @@ class QwenLoRABackbone(nn.Module):
         """
 
         per_sample_losses = []
-        for observation, prompt, image, target_text in zip(observations, prompts, images, target_texts):
+        for observation, messages, image, target_text in zip(observations, messages_list, images, target_texts):
             if target_text is None or not target_text.strip():
                 continue
-            full_prompt = f"{prompt}\n{target_text.strip()}"
+            prompt_text = self.processor.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            full_messages = _copy_messages(messages)
+            full_messages.append(
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": target_text.strip()}],
+                }
+            )
+            full_prompt = self.processor.apply_chat_template(
+                full_messages,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
             prompt_inputs = self.processor(
-                text=[prompt],
+                text=[prompt_text],
                 images=[image],
                 return_tensors="pt",
             )
@@ -294,6 +321,51 @@ class QwenLoRABackbone(nn.Module):
             parameter = next(self.model.parameters())
             return parameter.sum() * 0.0
         return torch.stack(per_sample_losses).mean()
+
+
+def _copy_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return copy.deepcopy(list(messages))
+
+
+def _ensure_image_placeholder(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    copied = _copy_messages(messages)
+    if copied and _message_has_image(copied[-1]):
+        return copied
+    for index in range(len(copied) - 1, -1, -1):
+        if copied[index].get("role") == "user":
+            content = _normalize_content(copied[index].get("content"))
+            copied[index]["content"] = [{"type": "image"}] + content
+            return copied
+    copied.append(
+        {
+            "role": "user",
+            "content": [{"type": "image"}, {"type": "text", "text": "Describe the current scene."}],
+        }
+    )
+    return copied
+
+
+def _message_has_image(message: dict[str, Any]) -> bool:
+    for item in _normalize_content(message.get("content")):
+        if isinstance(item, dict) and item.get("type") == "image":
+            return True
+    return False
+
+
+def _normalize_content(content: Any) -> list[dict[str, Any]]:
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}]
+    if content is None:
+        return []
+    normalized = []
+    for item in list(content):
+        if isinstance(item, str):
+            normalized.append({"type": "text", "text": item})
+        elif isinstance(item, dict):
+            normalized.append(dict(item))
+        else:
+            normalized.append({"type": "text", "text": str(item)})
+    return normalized
 
 
 def _parse_action_and_text(text: str) -> tuple[str, str]:

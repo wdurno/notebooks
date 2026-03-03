@@ -59,3 +59,34 @@ your `faster-whisper` installation is available as well.
 - Speech inference prefers CUDA when available and falls back to CPU otherwise.
 - Piper playback and microphone access depend on the local audio device setup.
 - This test is intended for manual invocation, not the default fast pytest run.
+
+## Manual PiCar env smoke test
+
+Run:
+
+```bash
+PICAR_V_HOST=<host:port> pytest demo/tests/integration/test_picar_env_manual.py -s
+```
+
+Optional environment variables:
+
+- `PICAR_TEST_STEPS=2` controls how many env iterations run after the operator says `start`
+- `PICAR_USE_REAL_ACTION_MODEL=1` switches from the fast fake action model to the real Qwen-backed policy path
+
+The test will:
+
+1. print setup instructions in the terminal;
+2. speak the same setup instructions through TTS;
+3. ask you to:
+   set up the PiCar;
+   put it on blocks or pick it up;
+   put a red ball in view; and
+   say `start` when ready;
+4. wait for the continuous speech stream to recognize `start`;
+5. run a short real env loop against the PiCar API;
+6. verify replay/checkpoint/log artifacts were written before exit.
+
+This smoke test is designed to validate the new env orchestration quickly. By
+default it uses the real speech stack, the real frozen reward scorer, and a
+fast fake action-policy backbone so the robot loop starts promptly. If you want
+to exercise the full Qwen action path as well, set `PICAR_USE_REAL_ACTION_MODEL=1`.

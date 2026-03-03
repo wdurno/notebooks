@@ -10,3 +10,4 @@ Pillow
 torch
 transformers
 peft
+tqdm
