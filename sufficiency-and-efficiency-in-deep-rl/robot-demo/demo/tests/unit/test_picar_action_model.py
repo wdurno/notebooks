@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 
+import pytest
 import torch
 
 
@@ -39,20 +40,25 @@ def test_forward_returns_mixed_vector_owned_by_model():
         backbone=backbone,
     )
     with torch.no_grad():
-        model.value_head.weight.zero_()
-        model.value_head.bias.zero_()
-        model.value_head.bias[2] = 5.0
+        model.actor_head.proj.weight.zero_()
+        model.actor_head.proj.bias.zero_()
+        model.actor_head.proj.bias[1] = -20.0
+        for module in (model.critic, model.target_critic):
+            for parameter in module.parameters():
+                parameter.zero_()
 
     action = model.forward(_observation(0, t=0.25))
 
     assert action.agentic_action_name == "drive-left"
-    assert action.value_action_index == 2
-    assert action.mixed_action_vector == {
-        "pan": 0.0,
-        "tilt": 0.0,
-        "turn": -0.75,
-        "drive": 0.25,
-    }
+    assert action.actor_action_vector["pan"] == 0.0
+    assert action.actor_action_vector["tilt"] == pytest.approx(0.0, abs=1e-6)
+    assert action.actor_action_vector["turn"] == 0.0
+    assert action.actor_action_vector["drive"] == 0.0
+    assert action.executed_action_vector["pan"] == 0.0
+    assert action.executed_action_vector["tilt"] == pytest.approx(0.0, abs=1e-6)
+    assert action.executed_action_vector["turn"] == -0.75
+    assert action.executed_action_vector["drive"] == 0.0
+    assert action.critic_value == 0.0
     assert action.generated_text == "turning left"
 
 
@@ -70,19 +76,23 @@ def test_loss_combines_vlm_and_td_terms():
         backbone=backbone,
     )
     with torch.no_grad():
-        model.value_head.weight.zero_()
-        model.value_head.bias.zero_()
-        model.value_head.bias[0] = 1.0
-        model.value_head.bias[2] = 2.0
+        model.actor_head.proj.weight.zero_()
+        model.actor_head.proj.bias.zero_()
+        model.actor_head.proj.bias[1] = -20.0
+        for module in (model.critic, model.target_critic):
+            for parameter in module.parameters():
+                parameter.zero_()
 
     transition = Transition(
         observation=_observation(0),
-        action_index=2,
+        executed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
         reward=1.5,
         next_observation=_observation(1),
         done=False,
         target_text="drive-forward",
         target_action_name="drive-forward",
+        agentic_action_vector={"pan": 0.0, "tilt": 0.0, "turn": -1.0, "drive": 0.0},
+        actor_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 0.0},
     )
     replay_buffer.add(transition)
     batch = replay_buffer.sample(batch_size=1)
@@ -90,7 +100,7 @@ def test_loss_combines_vlm_and_td_terms():
     loss = model.loss(batch)
 
     assert loss.ndim == 0
-    assert float(loss.item()) > 1.0
+    assert float(loss.item()) > 0.0
 
 
 def test_optimizer_only_tracks_trainable_parameters():

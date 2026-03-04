@@ -83,9 +83,13 @@ def save_model_artifacts(model: Any, artifacts_dir: Path, checkpoint_basename: s
     }
     torch.save(trainable_state, artifacts_dir / f"{checkpoint_basename}.trainable.pt")
 
-    value_head = getattr(model, "value_head", None)
-    if value_head is not None:
-        torch.save(value_head.state_dict(), artifacts_dir / f"{checkpoint_basename}.value_head.pt")
+    actor_head = getattr(model, "actor_head", None)
+    if actor_head is not None:
+        torch.save(actor_head.state_dict(), artifacts_dir / f"{checkpoint_basename}.actor_head.pt")
+
+    critic = getattr(model, "critic", None)
+    if critic is not None:
+        torch.save(critic.state_dict(), artifacts_dir / f"{checkpoint_basename}.critic.pt")
 
     backbone_model = getattr(getattr(model, "backbone", None), "model", None)
     if backbone_model is not None and hasattr(backbone_model, "save_pretrained"):

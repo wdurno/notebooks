@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -10,13 +11,18 @@ import torch.nn.functional as F
 from .action_space import (
     ACTION_NAMES,
     action_name_to_one_hot,
+    action_vector_to_tensor,
+    clamp_action_tensor,
+    mix_action_tensors,
     one_hot_to_action_vector,
-    mix_action_vectors,
+    tensor_to_action_vector,
 )
-from .backbones import BackboneBatchOutput, FakeBackbone, QwenLoRABackbone
+from .backbones import FakeBackbone, QwenLoRABackbone
 from .config import ModelConfig
 from .replay_buffer import TransitionReplayBuffer
 from .schemas import ModelActionOutput, ModelObservation, TransitionBatch
+
+from core.ssr_agent import SSRAgent
 
 
 @dataclass(frozen=True)
@@ -24,38 +30,50 @@ class ForwardBatchOutput:
     """Intermediate batch output used by `forward()` and `loss()`."""
 
     actions: list[ModelActionOutput]
-    value_logits: torch.Tensor
     vlm_loss: torch.Tensor
     hidden_state: torch.Tensor
+    agentic_action_tensor: torch.Tensor
+    actor_action_tensor: torch.Tensor
+    executed_action_tensor: torch.Tensor
+    critic_value: torch.Tensor
+    t_tensor: torch.Tensor
     debug: list[dict[str, object]]
 
 
-from core.ssr_agent import SSRAgent
+class ContinuousActorHead(nn.Module):
+    """Map hidden states into bounded PiCar control vectors."""
+
+    def __init__(self, hidden_size: int, *, bias: bool = True):
+        super().__init__()
+        self.proj = nn.Linear(hidden_size, 4, bias=bias)
+
+    def forward(self, hidden_state: torch.Tensor) -> torch.Tensor:
+        raw = self.proj(hidden_state)
+        pan = torch.tanh(raw[:, 0:1])
+        tilt = torch.sigmoid(raw[:, 1:2])
+        turn = torch.tanh(raw[:, 2:3])
+        drive = torch.tanh(raw[:, 3:4])
+        return torch.cat([pan, tilt, turn, drive], dim=1)
+
+
+class ContinuousQCritic(nn.Module):
+    """Single-critic network for continuous-action Q estimation."""
+
+    def __init__(self, hidden_size: int, *, critic_hidden_size: int):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(hidden_size + 4, critic_hidden_size),
+            nn.ReLU(),
+            nn.Linear(critic_hidden_size, 1),
+        )
+
+    def forward(self, hidden_state: torch.Tensor, action_tensor: torch.Tensor) -> torch.Tensor:
+        critic_input = torch.cat([hidden_state, action_tensor], dim=1)
+        return self.network(critic_input).squeeze(1)
 
 
 class PiCarActionModel(SSRAgent):
-    """SSR-compatible PiCar model with agentic and value-driven action branches.
-
-    The model has two decision paths over the same 8-action discrete space:
-
-    1. the agentic branch, produced by the VLM/tool-calling path
-    2. the value branch, produced by an 8-way value head
-
-    Each branch first selects a one-hot action. That one-hot is then mapped into
-    the 4-key PiCar control dictionary expected by `apply_vector`:
-
-    - `pan`
-    - `tilt`
-    - `turn`
-    - `drive`
-
-    The execution vector is blended inside the model, not in the environment:
-
-    `mixed = (1 - t) * agentic_vector + t * value_vector`
-
-    This keeps the environment simple: it only passes observations in and
-    executes the returned mixed vector.
-    """
+    """SSR-compatible PiCar model with agentic VLM and continuous actor-critic control."""
 
     def __init__(
         self,
@@ -67,25 +85,23 @@ class PiCarActionModel(SSRAgent):
         gpu_saver: bool = True,
         dt_mean_N: int = 10,
     ):
-        """Construct the PiCar action model.
-
-        The trainable parameters are intentionally small:
-
-        - LoRA parameters inside the backbone
-        - the new 8-way value head
-
-        The base VLM remains frozen. A plain SGD optimizer is used because the
-        surrounding `SSRAgent` code already supplies the natural-gradient-style
-        geometry; adding momentum here would be redundant and more memory-hungry.
-        """
-
         self.config = config or ModelConfig()
         super().__init__(replay_buffer=replay_buffer, ssr_rank=ssr_rank, gpu_saver=gpu_saver, dt_mean_N=dt_mean_N)
         self.backbone = backbone if backbone is not None else QwenLoRABackbone.from_config(self.config)
         hidden_size = int(getattr(self.backbone, "hidden_size", self.config.hidden_size or 0))
         if hidden_size <= 0:
             raise ValueError("Backbone must expose a positive `hidden_size`")
-        self.value_head = nn.Linear(hidden_size, len(ACTION_NAMES), bias=self.config.value_head_bias)
+
+        self.actor_head = ContinuousActorHead(hidden_size, bias=self.config.value_head_bias)
+        critic_hidden_size = int(self.config.critic_hidden_size or hidden_size)
+        self.critic = ContinuousQCritic(hidden_size, critic_hidden_size=critic_hidden_size)
+        self.target_actor_head = copy.deepcopy(self.actor_head)
+        self.target_critic = copy.deepcopy(self.critic)
+        for parameter in self.target_actor_head.parameters():
+            parameter.requires_grad = False
+        for parameter in self.target_critic.parameters():
+            parameter.requires_grad = False
+
         self.to(self.device)
         trainable_params = [parameter for parameter in self.parameters() if parameter.requires_grad]
         self.optimizer = torch.optim.SGD(trainable_params, lr=self.config.learning_rate)
@@ -97,13 +113,6 @@ class PiCarActionModel(SSRAgent):
         target_texts: list[Optional[str]] | None = None,
         compute_vlm_loss: bool = False,
     ) -> ModelActionOutput | ForwardBatchOutput:
-        """Run inference for one observation or a batch of observations.
-
-        For a single observation, this returns the final `ModelActionOutput`
-        consumed by the environment. For a batch, it returns a richer internal
-        structure used by training.
-        """
-
         single = isinstance(observations, ModelObservation)
         observation_list = [observations] if single else list(observations)
         batch = self._forward_batch(
@@ -116,46 +125,53 @@ class PiCarActionModel(SSRAgent):
         return batch
 
     def loss(self, transitions: TransitionBatch) -> torch.Tensor:
-        """Compute the mean-scaled combined VLM + RL objective.
-
-        The total loss is:
-
-        `L = alpha * L_vlm + beta * L_rl`
-
-        where:
-
-        - `L_vlm` is the backbone-provided supervised language/tool-call loss
-        - `L_rl` is the mean Huber TD loss over the selected action values
-
-        For the RL term:
-
-        - `Q(s)` is the 8-way value head output
-        - `Q(s, a)` is gathered at the executed action index
-        - the bootstrap target is
-          `r + gamma * (1 - done) * max_a' Q(s', a')`
-
-        The next-state value is detached in the first pass, matching the
-        planning decision to keep the bootstrap target simple.
-        """
+        """Compute `alpha * L_vlm + beta * L_rl` with continuous actor-critic RL."""
 
         current = self._forward_batch(
             transitions.observations,
             target_texts=transitions.target_text,
             compute_vlm_loss=True,
         )
-        # Select Q(s, a) from the 8-way value head for the action that was
-        # actually executed and stored in the replay buffer.
-        q_selected = current.value_logits.gather(1, transitions.action_index.unsqueeze(1)).squeeze(1)
+        reward_tensor = transitions.reward.to(self.device)
+        done_tensor = transitions.done.to(self.device)
+        executed_action_tensor = transitions.executed_action_vector.to(self.device)
+        q_current = self.critic(current.hidden_state, executed_action_tensor)
+
         with torch.no_grad():
-            next_state = self._forward_batch(transitions.next_observations, compute_vlm_loss=False)
-            # Standard one-step bootstrap target:
-            # target = r + gamma * (1 - done) * max_a' Q(s', a')
-            next_q = next_state.value_logits.max(dim=1).values
-            td_target = transitions.reward + self.config.gamma * (1.0 - transitions.done) * next_q.detach()
-        # Huber loss is more stable than plain squared error for TD residuals.
-        rl_loss = F.smooth_l1_loss(q_selected, td_target, reduction="mean")
+            next_batch = self._forward_batch(
+                transitions.next_observations,
+                compute_vlm_loss=False,
+            )
+            next_actor_action = self.target_actor_head(next_batch.hidden_state)
+            next_executed_action = mix_action_tensors(
+                next_batch.agentic_action_tensor.detach(),
+                next_actor_action,
+                next_batch.t_tensor,
+            )
+            next_q = self.target_critic(next_batch.hidden_state, next_executed_action)
+            td_target = reward_tensor + self.config.gamma * (1.0 - done_tensor) * next_q
+
+        critic_loss = F.smooth_l1_loss(q_current, td_target, reduction="mean")
+
+        agentic_detached = current.agentic_action_tensor.detach()
+        actor_executed_action = mix_action_tensors(
+            agentic_detached,
+            current.actor_action_tensor,
+            current.t_tensor,
+        )
+        actor_value = self._critic_value_for_actor(current.hidden_state, actor_executed_action)
+        anchor_penalty = (current.actor_action_tensor - agentic_detached).pow(2).mean(dim=1)
+        anchor_weight = self.config.actor_anchor_weight * (1.0 - current.t_tensor)
+        actor_loss = -actor_value.mean() + (anchor_weight * anchor_penalty).mean()
+
+        rl_loss = actor_loss + critic_loss
         total_loss = self.config.alpha * current.vlm_loss + self.config.beta * rl_loss
         return total_loss
+
+    def fit(self, batch_size, iters=1, pi_min=0.1, pi_max=0.9):
+        result = super().fit(batch_size=batch_size, iters=iters, pi_min=pi_min, pi_max=pi_max)
+        self._soft_update_targets()
+        return result
 
     def _forward_batch(
         self,
@@ -164,64 +180,91 @@ class PiCarActionModel(SSRAgent):
         target_texts: list[Optional[str]] | None = None,
         compute_vlm_loss: bool = False,
     ) -> ForwardBatchOutput:
-        """Internal batch forward pass shared by inference and training.
-
-        The backbone produces:
-
-        - a pooled hidden representation for each observation
-        - an agentic action choice
-        - optional generated text
-        - optional VLM supervision loss
-
-        The value head then maps each pooled hidden state into 8 logits, one per
-        discrete PiCar action. Both the agentic branch and the value branch are
-        converted into 4-key control dictionaries and blended by `t`.
-        """
-
+        allow_agentic_actions = any(observation.t < 1.0 for observation in observations)
         backbone_output = self.backbone.encode(
             observations,
             target_texts=target_texts,
             compute_vlm_loss=compute_vlm_loss,
+            allow_agentic_actions=allow_agentic_actions,
         )
         hidden_state = backbone_output.pooled_hidden_state.to(self.device)
-        # The value head parameterizes Q(s, a) for the 8 discrete actions.
-        value_logits = self.value_head(hidden_state)
-        value_action_indices = torch.argmax(value_logits, dim=1)
+        actor_action_tensor = clamp_action_tensor(self.actor_head(hidden_state))
+        t_tensor = torch.tensor(
+            [float(observation.t) for observation in observations],
+            dtype=hidden_state.dtype,
+            device=hidden_state.device,
+        )
+
+        agentic_vectors = []
+        agentic_tensors = []
         actions = []
         for idx, observation in enumerate(observations):
             agentic_name = backbone_output.agentic_action_names[idx]
-            agentic_one_hot = action_name_to_one_hot(agentic_name, device=value_logits.device)
-            value_one_hot = F.one_hot(value_action_indices[idx], num_classes=len(ACTION_NAMES)).to(dtype=value_logits.dtype)
-            # Discrete actions are converted into the vector-valued PiCar control
-            # space before interpolation.
+            agentic_one_hot = action_name_to_one_hot(agentic_name, device=hidden_state.device)
             agentic_vector = one_hot_to_action_vector(agentic_one_hot)
-            value_vector = one_hot_to_action_vector(value_one_hot)
-            mixed_vector = mix_action_vectors(agentic_vector, value_vector, observation.t)
+            agentic_tensor = action_vector_to_tensor(agentic_vector, device=hidden_state.device, dtype=hidden_state.dtype)
+            agentic_vectors.append(agentic_vector)
+            agentic_tensors.append(agentic_tensor)
+
+        agentic_action_tensor = torch.stack(agentic_tensors, dim=0)
+        executed_action_tensor = mix_action_tensors(agentic_action_tensor, actor_action_tensor, t_tensor)
+        critic_value = self.critic(hidden_state, executed_action_tensor)
+
+        for idx, observation in enumerate(observations):
             actions.append(
                 ModelActionOutput(
-                    agentic_action_name=agentic_name,
-                    agentic_action_one_hot=agentic_one_hot.detach().cpu(),
-                    value_logits=value_logits[idx].detach().cpu(),
-                    value_action_index=int(value_action_indices[idx].item()),
-                    value_action_one_hot=value_one_hot.detach().cpu(),
-                    agentic_action_vector=agentic_vector,
-                    value_action_vector=value_vector,
-                    mixed_action_vector=mixed_vector,
+                    agentic_action_name=backbone_output.agentic_action_names[idx],
+                    agentic_action_one_hot=action_name_to_one_hot(
+                        backbone_output.agentic_action_names[idx],
+                        device=torch.device("cpu"),
+                    ),
+                    agentic_action_vector=agentic_vectors[idx],
+                    actor_action_vector=tensor_to_action_vector(actor_action_tensor[idx]),
+                    executed_action_vector=tensor_to_action_vector(executed_action_tensor[idx]),
+                    critic_value=float(critic_value[idx].detach().cpu().item()),
                     generated_text=backbone_output.generated_texts[idx],
                     debug=backbone_output.debug[idx] if idx < len(backbone_output.debug) else {},
                 )
             )
+
         vlm_loss = backbone_output.vlm_loss
         if vlm_loss is None:
-            # Keep the loss tensor connected to the graph shape even when the
-            # backbone does not provide a supervised language term.
-            vlm_loss = value_logits.sum() * 0.0
+            vlm_loss = hidden_state.sum() * 0.0
         else:
             vlm_loss = vlm_loss.to(self.device)
         return ForwardBatchOutput(
             actions=actions,
-            value_logits=value_logits,
             vlm_loss=vlm_loss,
             hidden_state=hidden_state,
+            agentic_action_tensor=agentic_action_tensor,
+            actor_action_tensor=actor_action_tensor,
+            executed_action_tensor=executed_action_tensor,
+            critic_value=critic_value,
+            t_tensor=t_tensor,
             debug=backbone_output.debug,
         )
+
+    def _critic_value_for_actor(self, hidden_state: torch.Tensor, action_tensor: torch.Tensor) -> torch.Tensor:
+        critic_requires_grad = [parameter.requires_grad for parameter in self.critic.parameters()]
+        try:
+            for parameter in self.critic.parameters():
+                parameter.requires_grad_(False)
+            return self.critic(hidden_state, action_tensor)
+        finally:
+            for parameter, requires_grad in zip(self.critic.parameters(), critic_requires_grad):
+                parameter.requires_grad_(requires_grad)
+
+    def _soft_update_targets(self) -> None:
+        tau = float(self.config.target_update_tau)
+        if tau <= 0.0:
+            return None
+        self._soft_update_module(self.target_actor_head, self.actor_head, tau)
+        self._soft_update_module(self.target_critic, self.critic, tau)
+        return None
+
+    @staticmethod
+    def _soft_update_module(target_module: nn.Module, source_module: nn.Module, tau: float) -> None:
+        with torch.no_grad():
+            for target_parameter, source_parameter in zip(target_module.parameters(), source_module.parameters()):
+                target_parameter.data.mul_(1.0 - tau).add_(source_parameter.data, alpha=tau)
+        return None

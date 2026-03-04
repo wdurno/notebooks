@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime, timezone
+import time
 from typing import Any
 
 from model import ModelObservation, Transition
@@ -91,6 +92,7 @@ class PiCarGymEnv:
         self.last_reward = 0.0
         self.paths: ExperimentPaths | None = None
         self._run_metadata: dict[str, Any] = {}
+        self._last_vector_command_at: float | None = None
         self._started = False
         self._closed = False
 
@@ -109,6 +111,7 @@ class PiCarGymEnv:
         self.last_reward = 0.0
         self.paths = create_experiment_paths(self.config.data_dir, self.config.experiment_name_prefix)
         self._run_metadata = {}
+        self._last_vector_command_at = None
         if self.speech_stream is not None:
             self.speech_stream.start()
         frame = self.picar_client.reset()
@@ -168,13 +171,20 @@ class PiCarGymEnv:
         action = self.model.forward(observation)
         if action.generated_text and self.speaker is not None:
             self.speaker.speak(action.generated_text)
-        action_receipt = self.picar_client.apply_vector(action.mixed_action_vector)
+        self._respect_command_rate_limit()
+        action_receipt = self.picar_client.apply_vector(action.executed_action_vector)
+        self._last_vector_command_at = time.monotonic()
 
         # Persist the assistant reply in the same structured format expected by
         # the Qwen chat template so future steps can reuse the dialogue history.
-        assistant_payload = json.dumps(
-            {"action": action.agentic_action_name, "say": action.generated_text},
-            ensure_ascii=True,
+        execution_mode = "mixed" if observation.t < 1.0 else "actor_only"
+        assistant_payload = (
+            json.dumps(
+                {"action": action.agentic_action_name, "say": action.generated_text},
+                ensure_ascii=True,
+            )
+            if observation.t < 1.0
+            else action.generated_text
         )
         assistant_message = {
             "role": "assistant",
@@ -193,22 +203,24 @@ class PiCarGymEnv:
             metadata={"reward_prompt_id": reward_result.prompt_id},
         )
 
-        # Replay stores the executed value-branch action index together with the
-        # scalar reward and the next observation for TD learning.
-        target_text = assistant_payload
+        # Replay stores the actual executed control vector so the critic trains
+        # on the same action that was sent to the robot.
+        target_text = assistant_payload if assistant_payload else None
         transition = Transition(
             observation=observation,
-            action_index=action.value_action_index,
+            executed_action_vector=action.executed_action_vector,
             reward=reward_result.clipped_reward,
             next_observation=next_observation,
             done=False,
             target_text=target_text,
             target_action_name=action.agentic_action_name,
+            agentic_action_vector=action.agentic_action_vector,
+            actor_action_vector=action.actor_action_vector,
             metadata={
                 "reward_prompt_id": reward_result.prompt_id,
                 "generated_text": action.generated_text,
                 "agentic_action_name": action.agentic_action_name,
-                "mixed_action_vector": action.mixed_action_vector,
+                "execution_mode": execution_mode,
                 "action_receipt": action_receipt,
             },
         )
@@ -231,9 +243,12 @@ class PiCarGymEnv:
                     "user_texts": user_texts,
                     "action": {
                         "agentic_action_name": action.agentic_action_name,
-                        "value_action_index": action.value_action_index,
-                        "mixed_action_vector": action.mixed_action_vector,
+                        "agentic_action_vector": action.agentic_action_vector,
+                        "actor_action_vector": action.actor_action_vector,
+                        "executed_action_vector": action.executed_action_vector,
+                        "critic_value": action.critic_value,
                         "generated_text": action.generated_text,
+                        "execution_mode": execution_mode,
                     },
                     "training": asdict(training_summary),
                     "frame_path": str(frame_path) if frame_path is not None else None,
@@ -297,6 +312,18 @@ class PiCarGymEnv:
         if self.speech_stream is None:
             return []
         return self.speech_stream.drain()
+
+    def _respect_command_rate_limit(self) -> None:
+        """Keep `apply_vector` calls below the Raspberry Pi stability threshold."""
+
+        min_interval = float(self.config.picar.min_command_interval_seconds)
+        if min_interval <= 0.0 or self._last_vector_command_at is None:
+            return None
+        elapsed = time.monotonic() - self._last_vector_command_at
+        remaining = min_interval - elapsed
+        if remaining > 0.0:
+            time.sleep(remaining)
+        return None
 
     def _interpolation_t(self, step_index: int) -> float:
         """Map the current step index onto the configured action-mixing ramp."""

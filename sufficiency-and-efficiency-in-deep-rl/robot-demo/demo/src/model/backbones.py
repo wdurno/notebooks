@@ -22,6 +22,11 @@ CONTROL_SYSTEM_PROMPT = (
     "look-left, look-right, look-up, look-forward. "
     "Return JSON with keys `action` and `say`."
 )
+SAY_ONLY_SYSTEM_PROMPT = (
+    "You are assisting a PiCar-V robot operator. "
+    "Do not emit tool calls, action names, or control commands. "
+    "Reply with concise plain text only."
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,7 @@ class SupportsBackbone(Protocol):
         *,
         target_texts: list[Optional[str]] | None = None,
         compute_vlm_loss: bool = False,
+        allow_agentic_actions: bool = True,
     ) -> BackboneBatchOutput:
         ...
 
@@ -82,6 +88,7 @@ class FakeBackbone(nn.Module):
         *,
         target_texts: list[Optional[str]] | None = None,
         compute_vlm_loss: bool = False,
+        allow_agentic_actions: bool = True,
     ) -> BackboneBatchOutput:
         # Produce deterministic hidden states from simple image statistics so
         # unit tests can control outputs without a heavyweight model.
@@ -94,7 +101,10 @@ class FakeBackbone(nn.Module):
             feature_seed = image_tensor.mean() if image_tensor.numel() else torch.tensor(0.0)
             base = torch.full((self.hidden_size,), float(feature_seed), dtype=torch.float32)
             hidden_rows.append(self.adapter(base))
-            action_names.append(self.agentic_action_names[min(idx, len(self.agentic_action_names) - 1)])
+            if allow_agentic_actions:
+                action_names.append(self.agentic_action_names[min(idx, len(self.agentic_action_names) - 1)])
+            else:
+                action_names.append("look-forward")
             texts.append(self.generated_texts[min(idx, len(self.generated_texts) - 1)])
             debug.append({"step_index": observation.step_index})
         pooled = torch.stack(hidden_rows, dim=0)
@@ -171,6 +181,7 @@ class QwenLoRABackbone(nn.Module):
         *,
         target_texts: list[Optional[str]] | None = None,
         compute_vlm_loss: bool = False,
+        allow_agentic_actions: bool = True,
     ) -> BackboneBatchOutput:
         try:
             from PIL import Image
@@ -182,7 +193,7 @@ class QwenLoRABackbone(nn.Module):
         prepared_messages = []
         for observation in observations:
             images.append(Image.fromarray(observation.image_rgb))
-            messages = self._build_chat_messages(observation)
+            messages = self._build_chat_messages(observation, allow_agentic_actions=allow_agentic_actions)
             prepared_messages.append(messages)
             prompts.append(
                 self.processor.apply_chat_template(
@@ -226,7 +237,10 @@ class QwenLoRABackbone(nn.Module):
                     skip_special_tokens=True,
                 )[0]
             )
-        parsed = [_parse_action_and_text(text) for text in decoded]
+        if allow_agentic_actions:
+            parsed = [_parse_action_and_text(text) for text in decoded]
+        else:
+            parsed = [("look-forward", text.strip()) for text in decoded]
         action_names = [item[0] for item in parsed]
         generated_texts = [item[1] for item in parsed]
         debug = [{"raw_generation": text} for text in decoded]
@@ -247,8 +261,9 @@ class QwenLoRABackbone(nn.Module):
             debug=debug,
         )
 
-    def _build_chat_messages(self, observation: ModelObservation) -> list[dict[str, Any]]:
-        messages = [{"role": "system", "content": [{"type": "text", "text": CONTROL_SYSTEM_PROMPT}]}]
+    def _build_chat_messages(self, observation: ModelObservation, *, allow_agentic_actions: bool) -> list[dict[str, Any]]:
+        system_prompt = CONTROL_SYSTEM_PROMPT if allow_agentic_actions else SAY_ONLY_SYSTEM_PROMPT
+        messages = [{"role": "system", "content": [{"type": "text", "text": system_prompt}]}]
         messages.extend(_copy_messages(observation.messages))
         return _ensure_image_placeholder(messages)
 

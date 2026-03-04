@@ -26,6 +26,9 @@ class ModelConfig:
     beta: float = 0.5
     value_head_bias: bool = True
     optimizer_name: str = "sgd"
+    critic_hidden_size: Optional[int] = None
+    target_update_tau: float = 0.05
+    actor_anchor_weight: float = 1.0
     lora_rank: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.0

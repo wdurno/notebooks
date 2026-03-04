@@ -18,7 +18,8 @@ class FakePersistedModel(nn.Module):
         super().__init__()
         self.trainable = nn.Parameter(torch.tensor([1.0]))
         self.frozen = nn.Parameter(torch.tensor([2.0]), requires_grad=False)
-        self.value_head = nn.Linear(1, 1)
+        self.actor_head = nn.Linear(1, 1)
+        self.critic = nn.Linear(1, 1)
         self.saved_base = None
 
     def save(self, path):
@@ -45,4 +46,5 @@ def test_save_model_artifacts_exports_trainable_weights(tmp_path):
     assert (tmp_path / "checkpoint.state.pt").exists()
     assert (tmp_path / "checkpoint.ssr.pt").exists()
     assert (tmp_path / "checkpoint.trainable.pt").exists()
-    assert (tmp_path / "checkpoint.value_head.pt").exists()
+    assert (tmp_path / "checkpoint.actor_head.pt").exists()
+    assert (tmp_path / "checkpoint.critic.pt").exists()

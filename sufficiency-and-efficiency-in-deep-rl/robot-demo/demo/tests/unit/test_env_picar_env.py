@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import torch
 import torch.nn as nn
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -37,7 +38,8 @@ class FakeReplayBuffer:
 class FakeModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.value_head = nn.Linear(1, 1)
+        self.actor_head = nn.Linear(1, 1)
+        self.critic = nn.Linear(1, 1)
         self.replay_buffer = FakeReplayBuffer()
         self.fit_calls = []
         self.memorize_calls = []
@@ -47,12 +49,10 @@ class FakeModel(nn.Module):
         return ModelActionOutput(
             agentic_action_name="drive-forward",
             agentic_action_one_hot=torch.tensor([0, 0, 1, 0, 0, 0, 0, 0], dtype=torch.float32),
-            value_logits=torch.zeros(8, dtype=torch.float32),
-            value_action_index=2,
-            value_action_one_hot=torch.tensor([0, 0, 1, 0, 0, 0, 0, 0], dtype=torch.float32),
             agentic_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
-            value_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
-            mixed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
+            actor_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
+            executed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
+            critic_value=1.5,
             generated_text="moving forward",
         )
 
@@ -181,3 +181,33 @@ def test_picar_env_step_records_transition_and_training(tmp_path):
     assert (run_dir / "logs" / "events.jsonl").exists()
     assert (run_dir / "blobs" / "replay_buffer.pkl").exists()
     assert (run_dir / "artifacts" / "picar_policy.state.pt").exists()
+
+
+def test_picar_env_rate_limits_vector_commands(tmp_path, monkeypatch):
+    model = FakeModel()
+    reward_scorer = FakeRewardScorer()
+    client = FakePiCarClient()
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=reward_scorer,
+        picar_client=client,
+        config=EnvConfig(data_dir=tmp_path),
+    )
+
+    sleeps = []
+    clock = {"now": 10.0}
+
+    def fake_monotonic():
+        return clock["now"]
+
+    def fake_sleep(duration):
+        sleeps.append(duration)
+        clock["now"] += duration
+
+    monkeypatch.setattr("env.picar_env.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("env.picar_env.time.sleep", fake_sleep)
+
+    env._last_vector_command_at = 9.8
+    env._respect_command_rate_limit()
+
+    assert sleeps == [pytest.approx(0.3)]

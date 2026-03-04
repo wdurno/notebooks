@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 
+from .action_space import action_vector_to_tensor
 from .schemas import Transition, TransitionBatch
 
 
@@ -46,10 +47,15 @@ class TransitionReplayBuffer:
         target_device = device or torch.device("cpu")
         return TransitionBatch(
             observations=[transition.observation for transition in transitions],
-            action_index=torch.tensor(
-                [transition.action_index for transition in transitions],
-                dtype=torch.int64,
-                device=target_device,
+            executed_action_vector=torch.stack(
+                [
+                    action_vector_to_tensor(
+                        transition.executed_action_vector,
+                        device=target_device,
+                    )
+                    for transition in transitions
+                ],
+                dim=0,
             ),
             reward=torch.tensor(
                 [transition.reward for transition in transitions],
@@ -64,6 +70,8 @@ class TransitionReplayBuffer:
             ),
             target_text=[transition.target_text for transition in transitions],
             target_action_name=[transition.target_action_name for transition in transitions],
+            agentic_action_vector=[transition.agentic_action_vector for transition in transitions],
+            actor_action_vector=[transition.actor_action_vector for transition in transitions],
             metadata=[transition.metadata for transition in transitions],
         )
 

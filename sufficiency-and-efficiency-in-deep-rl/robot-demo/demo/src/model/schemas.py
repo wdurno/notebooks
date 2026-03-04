@@ -28,27 +28,27 @@ class ModelActionOutput:
 
     agentic_action_name: str
     agentic_action_one_hot: torch.Tensor
-    value_logits: torch.Tensor
-    value_action_index: int
-    value_action_one_hot: torch.Tensor
     agentic_action_vector: ActionVector
-    value_action_vector: ActionVector
-    mixed_action_vector: ActionVector
+    actor_action_vector: ActionVector
+    executed_action_vector: ActionVector
+    critic_value: float
     generated_text: str = ""
     debug: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class Transition:
-    """One replay-buffer transition for SSR-backed Q-learning."""
+    """One replay-buffer transition for SSR-backed continuous actor-critic."""
 
     observation: ModelObservation
-    action_index: int
+    executed_action_vector: ActionVector
     reward: float
     next_observation: ModelObservation
     done: bool
     target_text: Optional[str] = None
     target_action_name: Optional[str] = None
+    agentic_action_vector: Optional[ActionVector] = None
+    actor_action_vector: Optional[ActionVector] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -57,10 +57,12 @@ class TransitionBatch:
     """Collated batch sampled from the model replay buffer."""
 
     observations: list[ModelObservation]
-    action_index: torch.Tensor
+    executed_action_vector: torch.Tensor
     reward: torch.Tensor
     next_observations: list[ModelObservation]
     done: torch.Tensor
     target_text: list[Optional[str]]
     target_action_name: list[Optional[str]]
+    agentic_action_vector: list[Optional[ActionVector]]
+    actor_action_vector: list[Optional[ActionVector]]
     metadata: list[dict[str, Any]]

@@ -182,7 +182,7 @@ def _build_action_model(*, use_real_action_model: bool) -> PiCarActionModel:
         backbone=backbone,
     )
     with torch.no_grad():
-        model.value_head.weight.zero_()
-        model.value_head.bias.zero_()
-        model.value_head.bias[2] = 5.0
+        model.actor_head.proj.weight.zero_()
+        model.actor_head.proj.bias.zero_()
+        model.actor_head.proj.bias[1] = -20.0
     return model

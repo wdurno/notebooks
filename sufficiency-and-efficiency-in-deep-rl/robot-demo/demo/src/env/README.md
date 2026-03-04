@@ -96,11 +96,14 @@ One control iteration follows this order:
 4. assemble Qwen-style message history with operator text and reward context
 5. query the trainable `PiCarActionModel`
 6. speak any generated assistant text through TTS
-7. send the mixed action vector to `apply_vector`
+7. send the executed action vector to `apply_vector`
 8. capture the post-action frame for the replay transition
 9. append the transition to replay and optionally train every `K` steps
 
 The loop runs until the user sends `Ctrl-C`.
+
+The environment also rate-limits `apply_vector` calls so the Raspberry Pi sees
+at most one vector command every 0.5 seconds by default.
 
 ## Shutdown behavior
 

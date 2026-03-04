@@ -1,15 +1,15 @@
 # Model Package
 
 This package implements requirement 2 from `demo/spec.md`: a PiCar control
-model that combines a frozen Qwen 2.5-VL base model, LoRA adapters, and a new
-8-way value head inside the `SSRAgent` training framework.
+model that combines a frozen Qwen 2.5-VL base model, LoRA adapters, and a
+continuous actor-critic control stack inside the `SSRAgent` training framework.
 
 ## Design goals
 
 - Keep the base VLM frozen and read-mostly.
-- Train only LoRA parameters and the new value head.
-- Represent robot decisions as one of 8 discrete actions first.
-- Convert those discrete actions into the 4-key PiCar vector dictionary used by
+- Train only LoRA parameters plus the actor/critic control heads.
+- Keep agentic action selection available during the mixed-control phase.
+- Learn robot control directly in the 4-key PiCar vector space used by
   `apply_vector`.
 - Let the model own action interpolation by `t`, so the environment only sends
   observations and executes returned vectors.
@@ -39,7 +39,7 @@ Dataclasses that define the model/environment contract:
 
 ### `action_space.py`
 
-Defines the 8 discrete actions and the deterministic mapping from those actions
+Defines the 8 agentic actions and the deterministic mapping from those actions
 into PiCar vector dictionaries with keys:
 
 - `pan`
@@ -52,6 +52,8 @@ This module also handles:
 - action-name/index conversion
 - one-hot encoding
 - one-hot to vector conversion
+- vector-to-tensor conversion
+- vector/tensor clamping to PiCar control bounds
 - vector interpolation by `t`
 
 ### `replay_buffer.py`
@@ -73,6 +75,7 @@ The backbone is responsible for:
 - producing an agentic action choice
 - optionally producing a VLM loss term
 - optionally generating text for TTS
+- switching to a text-only generation prompt once `t = 1`
 
 ### `picar_agent.py`
 
@@ -82,9 +85,9 @@ Responsibilities:
 
 - inherit from `SSRAgent`
 - run inference through `forward()`
-- produce both the agentic and value-driven actions
-- convert both branches into 4-key PiCar action vectors
-- mix those vectors by `t`
+- produce both the agentic and actor-driven actions
+- mix those vectors by `t` to form the executed action
+- score continuous state-action pairs with a single critic
 - define the combined loss:
   - `0.5 * VLM loss`
   - `0.5 * RL loss`
@@ -102,16 +105,15 @@ The model returns one `ModelActionOutput`:
 
 - `agentic_action_name`
 - `agentic_action_one_hot`
-- `value_logits`
-- `value_action_one_hot`
 - `agentic_action_vector`
-- `value_action_vector`
-- `mixed_action_vector`
+- `actor_action_vector`
+- `executed_action_vector`
+- `critic_value`
 - `generated_text`
 
 The environment should:
 
-1. send `mixed_action_vector` to the PiCar API; and
+1. send `executed_action_vector` to the PiCar API; and
 2. if `generated_text` is non-empty, speak it with the speech subsystem.
 
 ## Training flow
@@ -120,7 +122,7 @@ The environment should:
 to compute:
 
 - `L_vlm`: supervised VLM/tool-call loss
-- `L_rl`: Huber TD loss on the 8-way value head
+- `L_rl`: continuous actor-critic loss
 
 with the default combined objective:
 
@@ -128,8 +130,8 @@ with the default combined objective:
 L = 0.5 * L_vlm + 0.5 * L_rl
 ```
 
-The RL bootstrap target uses `.detach()` on the next-state values in the first
-pass, as discussed in planning.
+The RL path uses detached agentic action vectors, a Huber critic loss, and a
+bootstrap target built from target actor/critic heads.
 
 ## Usage sketch
 
@@ -146,7 +148,7 @@ observation = ModelObservation(
 )
 
 action = model.forward(observation)
-vector = action.mixed_action_vector
+vector = action.executed_action_vector
 ```
 
 ## Dependencies

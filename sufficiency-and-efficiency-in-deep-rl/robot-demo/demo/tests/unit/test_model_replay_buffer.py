@@ -25,7 +25,7 @@ def test_transition_replay_buffer_samples_structured_batches():
     buffer.add(
         Transition(
             observation=_observation(0),
-            action_index=2,
+            executed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
             reward=1.0,
             next_observation=_observation(1),
             done=False,
@@ -37,7 +37,8 @@ def test_transition_replay_buffer_samples_structured_batches():
     batch = buffer.sample(batch_size=1)
 
     assert len(batch.observations) == 1
-    assert int(batch.action_index[0].item()) == 2
+    assert batch.executed_action_vector.shape == (1, 4)
+    assert float(batch.executed_action_vector[0, 3].item()) == 1.0
     assert float(batch.reward[0].item()) == 1.0
     assert batch.target_action_name == ["drive-forward"]
 
@@ -48,7 +49,7 @@ def test_transition_replay_buffer_enforces_capacity():
         buffer.add(
             Transition(
                 observation=_observation(step),
-                action_index=step % 8,
+                executed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": float(step % 2), "drive": float(step)},
                 reward=float(step),
                 next_observation=_observation(step + 1),
                 done=False,

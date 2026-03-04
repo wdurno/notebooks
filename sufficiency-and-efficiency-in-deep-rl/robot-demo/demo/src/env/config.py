@@ -18,6 +18,7 @@ class PiCarControlConfig:
     repo_root: Path = Path("/home/evan/Documents/picar-v-rl-env")
     x_resize: int | None = None
     y_resize: int | None = None
+    min_command_interval_seconds: float = 0.5
 
 
 @dataclass(frozen=True)
