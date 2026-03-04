@@ -9,6 +9,7 @@ import torch
 
 from model.config import ModelConfig
 from model.model_store import ModelStore
+from model.processor_loader import load_qwen_2_5_vl_processor
 
 from .config import RewardConfig
 from .schemas import RewardPromptSpec, RewardResult
@@ -120,12 +121,12 @@ class FrozenVLMRewardScorer:
         if self._model is not None and self._processor is not None:
             return self._model, self._processor
         try:
-            from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+            from transformers import Qwen2_5_VLForConditionalGeneration
         except ImportError as exc:
             raise RuntimeError("transformers is required for reward scoring") from exc
 
         model_path = ModelStore(self.model_config).ensure_base_model()
-        self._processor = AutoProcessor.from_pretrained(model_path)
+        self._processor = load_qwen_2_5_vl_processor(model_path)
         self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype="auto",

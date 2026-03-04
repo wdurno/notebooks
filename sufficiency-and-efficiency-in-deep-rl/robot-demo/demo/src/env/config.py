@@ -19,6 +19,9 @@ class PiCarControlConfig:
     x_resize: int | None = None
     y_resize: int | None = None
     min_command_interval_seconds: float = 0.5
+    request_timeout_seconds: float = 10.0
+    request_retry_count: int = 5
+    request_retry_sleep_seconds: float = 0.1
 
 
 @dataclass(frozen=True)

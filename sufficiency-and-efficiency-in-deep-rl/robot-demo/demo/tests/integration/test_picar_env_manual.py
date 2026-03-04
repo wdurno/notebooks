@@ -48,7 +48,7 @@ def test_manual_picar_env_smoke(tmp_path):
     )
     env_config = EnvConfig(
         data_dir=tmp_path,
-        picar=PiCarControlConfig(host=host),
+        picar=PiCarControlConfig(host=host, min_command_interval_seconds=0.5),
         reward=RewardConfig(prompt_id="reward_prompt_1"),
         speech=SpeechStreamConfig(
             sample_rate=speech_config.audio.sample_rate,

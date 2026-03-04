@@ -12,6 +12,7 @@ import torch.nn as nn
 from .action_space import ACTION_NAMES, normalized_action_name
 from .config import ModelConfig
 from .model_store import ModelStore
+from .processor_loader import load_qwen_2_5_vl_processor
 from .schemas import ModelObservation
 
 
@@ -98,8 +99,13 @@ class FakeBackbone(nn.Module):
         debug = []
         for idx, observation in enumerate(observations):
             image_tensor = _image_to_tensor(observation.image_rgb).float()
-            feature_seed = image_tensor.mean() if image_tensor.numel() else torch.tensor(0.0)
-            base = torch.full((self.hidden_size,), float(feature_seed), dtype=torch.float32)
+            feature_seed = float(image_tensor.mean().item()) if image_tensor.numel() else 0.0
+            base = torch.full(
+                (self.hidden_size,),
+                feature_seed,
+                dtype=torch.float32,
+                device=self.adapter.weight.device,
+            )
             hidden_rows.append(self.adapter(base))
             if allow_agentic_actions:
                 action_names.append(self.agentic_action_names[min(idx, len(self.agentic_action_names) - 1)])
@@ -145,7 +151,7 @@ class QwenLoRABackbone(nn.Module):
     def from_config(cls, config: ModelConfig) -> "QwenLoRABackbone":
         try:
             from peft import LoraConfig, get_peft_model
-            from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+            from transformers import Qwen2_5_VLForConditionalGeneration
         except ImportError as exc:
             raise RuntimeError(
                 "transformers and peft are required to load the Qwen LoRA backbone"
@@ -154,7 +160,7 @@ class QwenLoRABackbone(nn.Module):
         # Resolve the base model under `demo/model/` and download it on demand
         # if policy allows.
         model_path = ModelStore(config).ensure_base_model()
-        processor = AutoProcessor.from_pretrained(model_path)
+        processor = load_qwen_2_5_vl_processor(model_path)
         base_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype="auto",
