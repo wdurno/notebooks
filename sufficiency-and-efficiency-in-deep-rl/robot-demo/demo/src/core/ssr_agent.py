@@ -26,10 +26,7 @@ class SSRAgent(nn.Module):
         '''
         super(SSRAgent, self).__init__() 
         self.device = GPU 
-        self.gpu_saver = self.device 
-        if self.gpu_saver: 
-            self.gpu_saver = CPU 
-            pass 
+        self.gpu_saver = CPU if gpu_saver else self.device
         self.ssr_rank = ssr_rank 
         self.ssr_low_rank_matrix = None ## =: A 
         self.ssr_residual_diagonal = None ## =: resid 
@@ -75,7 +72,7 @@ class SSRAgent(nn.Module):
         self.ssr_low_rank_matrix = d['ssr_low_rank_matrix'].to(self.device) 
         self.ssr_residual_diagonal = d['ssr_residual_diagonal'].to(self.device) 
         self.ssr_center = d['ssr_center'].to(self.device) 
-        self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) 
+        self.ssr_prev_center = d['ssr_prev_center'].to(self.gpu_saver) if d['ssr_prev_center'] is not None else None
         self.ssr_n = d['ssr_n'] 
         self.ssr_cov_trace = d['ssr_cov_trace'] 
         self.ssr_cov_n = d['ssr_cov_n'] 
@@ -118,12 +115,14 @@ class SSRAgent(nn.Module):
                 ## prepare for a broadcast operation 
                 self.dt_mean_trend = float(self.dt_mean_trend) 
                 pass 
+            prev_center = self.ssr_prev_center.to(self.ssr_center.device)
+            delta = self.ssr_center - prev_center
             self.dt_mean_trend *= rescale 
-            self.dt_mean_trend += (self.ssr_center - self.ssr_prev_center)/(self.dt_mean_N) ## not spending memory to store many dts 
+            self.dt_mean_trend += delta/(self.dt_mean_N) ## not spending memory to store many dts 
             self.dt_mean_norm_trend *= rescale 
-            self.dt_mean_norm_trend += (self.ssr_center - self.ssr_prev_center).pow(2).sum()/(self.dt_mean_N) 
+            self.dt_mean_norm_trend += delta.pow(2).sum()/(self.dt_mean_N) 
             self.dt_mean_trace_cov *= rescale 
-            self.dt_mean_trace_cov += (self.ssr_center - self.ssr_prev_center - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
+            self.dt_mean_trace_cov += (delta - self.dt_mean_trend).pow(2).sum() / (self.dt_mean_N) 
             pass
         ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
         ## stored in sum-scale; no division by ssr_n 
@@ -200,7 +199,7 @@ class SSRAgent(nn.Module):
             loss.backward() 
             pass 
         self.optimizer.step() 
-        return float(pi), float(loss) 
+        return float(pi), float(loss.detach()) 
     def __get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
@@ -232,14 +231,14 @@ class SSRAgent(nn.Module):
         loss = self.loss(transition) 
         loss.backward() 
         for p in self.parameters(): 
+            if not p.requires_grad:
+                continue
             if p.grad is None: 
-                p.grad = torch.zeros(size=p.shape) 
+                p.grad = torch.zeros_like(p, device=p.device) 
             pass 
-        grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters()], dim=0).clone().detach() 
+        grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters() if p.requires_grad], dim=0).clone().detach() 
         return grad_vec 
     pass 
-
-
 
 
 

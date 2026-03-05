@@ -116,3 +116,37 @@ def test_optimizer_only_tracks_trainable_parameters():
     trainable_params = {id(parameter) for parameter in model.parameters() if parameter.requires_grad}
 
     assert optimizer_params == trainable_params
+
+
+def test_get_grad_vec_uses_trainable_parameters_only():
+    replay_buffer = TransitionReplayBuffer(capacity=8)
+    backbone = FakeBackbone(
+        hidden_size=4,
+        agentic_action_names=["drive-left"],
+        generated_texts=[""],
+        vlm_loss=1.0,
+    )
+    model = PiCarActionModel(
+        replay_buffer=replay_buffer,
+        config=ModelConfig(hidden_size=4, learning_rate=0.05),
+        backbone=backbone,
+    )
+
+    transition = Transition(
+        observation=_observation(0),
+        executed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 0.5},
+        reward=0.5,
+        next_observation=_observation(1),
+        done=False,
+        target_text="look-forward",
+        target_action_name="look-forward",
+        agentic_action_vector={"pan": 0.0, "tilt": 0.0, "turn": -1.0, "drive": 0.0},
+        actor_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 0.0},
+    )
+    replay_buffer.add(transition)
+
+    grad_vec = model.get_grad_vec(0)
+    param_vec = model.get_param()
+
+    assert grad_vec.shape == param_vec.shape
+    assert grad_vec.device == model.device
