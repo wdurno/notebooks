@@ -5,6 +5,7 @@ const resolutionPresetEl = document.getElementById("resolution-preset");
 const resolutionXEl = document.getElementById("resolution-x");
 const resolutionYEl = document.getElementById("resolution-y");
 const resolutionCurrentEl = document.getElementById("resolution-current");
+const frameSizeEl = document.getElementById("frame-size");
 const requestedHz = Number(document.body.dataset.cameraHz || 2);
 const effectiveHz = Number.isFinite(requestedHz) ? Math.min(2, Math.max(0.25, requestedHz)) : 2;
 const FRAME_INTERVAL_MS = Math.floor(1000 / effectiveHz);
@@ -67,6 +68,41 @@ function setResolutionUi(xResize, yResize) {
   resolutionXEl.value = xResize === null ? "" : String(xResize);
   resolutionYEl.value = yResize === null ? "" : String(yResize);
   resolutionCurrentEl.textContent = formatResolutionLabel(xResize, yResize);
+}
+
+function setFrameSizeLabel(width, height) {
+  if (!frameSizeEl) {
+    return;
+  }
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    frameSizeEl.textContent = "unknown";
+    return;
+  }
+  frameSizeEl.textContent = `${width} x ${height}`;
+}
+
+async function readBlobDimensions(blob) {
+  if (typeof createImageBitmap === "function") {
+    const bitmap = await createImageBitmap(blob);
+    const result = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return result;
+  }
+
+  return new Promise((resolve, reject) => {
+    const probe = new Image();
+    const probeUrl = URL.createObjectURL(blob);
+    probe.onload = () => {
+      const result = { width: probe.naturalWidth, height: probe.naturalHeight };
+      URL.revokeObjectURL(probeUrl);
+      resolve(result);
+    };
+    probe.onerror = () => {
+      URL.revokeObjectURL(probeUrl);
+      reject(new Error("failed to inspect frame dimensions"));
+    };
+    probe.src = probeUrl;
+  });
 }
 
 function getResolutionFromForm() {
@@ -152,6 +188,12 @@ async function refreshFrame() {
       throw new Error(`frame request failed (${response.status})`);
     }
     const blob = await response.blob();
+    try {
+      const dims = await readBlobDimensions(blob);
+      setFrameSizeLabel(dims.width, dims.height);
+    } catch {
+      setFrameSizeLabel(null, null);
+    }
     const nextUrl = URL.createObjectURL(blob);
     cameraEl.src = nextUrl;
     if (cameraObjectUrl) {
@@ -160,6 +202,7 @@ async function refreshFrame() {
     cameraObjectUrl = nextUrl;
   } catch (err) {
     // Keep showing the last successful frame to avoid black/broken image flashes.
+    setFrameSizeLabel(null, null);
     setStatus(`Camera update error: ${err.message}`);
   } finally {
     frameInFlight = false;

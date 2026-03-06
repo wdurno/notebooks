@@ -90,3 +90,31 @@ This smoke test is designed to validate the new env orchestration quickly. By
 default it uses the real speech stack, the real frozen reward scorer, and a
 fast fake action-policy backbone so the robot loop starts promptly. If you want
 to exercise the full Qwen action path as well, set `PICAR_USE_REAL_ACTION_MODEL=1`.
+
+## Manual vision stream test
+
+Run (default 30 seconds):
+
+```bash
+PICAR_V_HOST=<host:port> pytest demo/tests/integration/vision_test.py -s
+```
+
+Change duration with a command-line flag:
+
+```bash
+PICAR_V_HOST=<host:port> pytest demo/tests/integration/vision_test.py -s --vision-seconds=45
+```
+
+Run until you stop it with `Ctrl-C`:
+
+```bash
+PICAR_V_HOST=<host:port> pytest demo/tests/integration/vision_test.py -s --vision-seconds=-1
+```
+
+This test:
+
+1. prints instructions and reminds you that `Ctrl-C` ends early;
+2. runs the `PiCarGymEnv` loop with per-step prompts asking the robot to
+   describe what it sees;
+3. streams frames to a desktop OpenCV window; and
+4. plays generated robot text through TTS on each step.

@@ -7,6 +7,7 @@ continuous actor-critic control stack inside the `SSRAgent` training framework.
 ## Design goals
 
 - Keep the base VLM frozen and read-mostly.
+- Use QLoRA-style 4-bit quantization (NF4) for the base VLM to reduce GPU memory.
 - Train only LoRA parameters plus the actor/critic control heads.
 - Keep agentic action selection available during the mixed-control phase.
 - Learn robot control directly in the 4-key PiCar vector space used by
@@ -65,8 +66,8 @@ to work with `SSRAgent` without modifying the read-only code in `demo/src/core`.
 
 Backbone abstraction layer.
 
-- `QwenLoRABackbone`: first-pass Hugging Face + PEFT implementation for the real
-  frozen VLM with LoRA adapters
+- `QwenLoRABackbone`: Hugging Face + PEFT + bitsandbytes implementation for
+  a frozen 4-bit QLoRA base VLM with LoRA adapters
 - `FakeBackbone`: deterministic lightweight backbone used by unit tests
 
 The backbone is responsible for:
@@ -159,8 +160,11 @@ Real Qwen-backed usage additionally expects:
 
 - `transformers`
 - `peft`
+- `bitsandbytes`
 - `Pillow`
 - `huggingface_hub`
+
+Real QLoRA-backed usage also requires CUDA-capable hardware.
 
 The base model is expected under `demo/model/vlm/qwen2.5-vl-3b/base/`, with
 auto-download support controlled by the VLM manifest.

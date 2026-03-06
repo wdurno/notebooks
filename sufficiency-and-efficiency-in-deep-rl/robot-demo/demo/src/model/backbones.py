@@ -145,17 +145,28 @@ class QwenLoRABackbone(nn.Module):
         self.config = config
         self.model = model
         self.processor = processor
-        self.hidden_size = int(getattr(model.config, "hidden_size"))
+        self.hidden_size = _resolve_model_hidden_size(model)
 
     @classmethod
     def from_config(cls, config: ModelConfig) -> "QwenLoRABackbone":
         try:
-            from peft import LoraConfig, get_peft_model
-            from transformers import Qwen2_5_VLForConditionalGeneration
+            from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+            from transformers import BitsAndBytesConfig, Qwen2_5_VLForConditionalGeneration
         except ImportError as exc:
             raise RuntimeError(
-                "transformers and peft are required to load the Qwen LoRA backbone"
+                "transformers, peft, and bitsandbytes are required to load the Qwen QLoRA backbone"
             ) from exc
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("QLoRA 4-bit loading requires CUDA-capable hardware.")
+
+        bnb_compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=bnb_compute_dtype,
+        )
 
         # Resolve the base model under `demo/model/` and download it on demand
         # if policy allows.
@@ -163,13 +174,11 @@ class QwenLoRABackbone(nn.Module):
         processor = load_qwen_2_5_vl_processor(model_path)
         base_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_path,
-            torch_dtype="auto",
+            torch_dtype=bnb_compute_dtype,
             device_map="auto",
+            quantization_config=quantization_config,
         )
-        # The underlying Qwen weights are frozen; only LoRA adapters and the
-        # outer value head should receive gradients.
-        for parameter in base_model.parameters():
-            parameter.requires_grad = False
+        base_model = prepare_model_for_kbit_training(base_model)
         lora_config = LoraConfig(
             r=config.lora_rank,
             lora_alpha=config.lora_alpha,
@@ -228,7 +237,7 @@ class QwenLoRABackbone(nn.Module):
         )
         # First-pass pooling strategy: use the final token representation after
         # multimodal fusion. This gives a fixed-width vector of size
-        # `model.config.hidden_size`.
+        # equal to the language hidden state size.
         pooled_hidden_state = outputs.hidden_states[-1][:, -1, :]
 
         # Generation is used only for the agentic branch / optional speech text.
@@ -346,6 +355,32 @@ class QwenLoRABackbone(nn.Module):
 
 def _copy_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return copy.deepcopy(list(messages))
+
+
+def _resolve_model_hidden_size(model: nn.Module) -> int:
+    config = getattr(model, "config", None)
+    if config is None:
+        raise ValueError("Backbone model must expose a `config` object")
+
+    candidates = [
+        getattr(config, "hidden_size", None),
+        getattr(getattr(config, "text_config", None), "hidden_size", None),
+        getattr(getattr(config, "language_config", None), "hidden_size", None),
+        getattr(getattr(config, "text_config", None), "d_model", None),
+        getattr(getattr(config, "language_config", None), "d_model", None),
+    ]
+    for value in candidates:
+        if value is None:
+            continue
+        hidden_size = int(value)
+        if hidden_size > 0:
+            return hidden_size
+
+    raise ValueError(
+        "Unable to resolve language hidden size from model config. "
+        "Expected one of: config.hidden_size, config.text_config.hidden_size, "
+        "config.language_config.hidden_size."
+    )
 
 
 def _ensure_image_placeholder(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

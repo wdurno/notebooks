@@ -12,7 +12,7 @@ SRC_ROOT = PROJECT_ROOT / "demo" / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from model.backbones import QwenLoRABackbone, _ensure_image_placeholder
+from model.backbones import QwenLoRABackbone, _ensure_image_placeholder, _resolve_model_hidden_size
 from model.config import ModelConfig
 from model.schemas import ModelObservation
 
@@ -101,3 +101,15 @@ def test_qwen_backbone_encode_uses_chat_template_messages():
     assert output.agentic_action_names == ["drive-forward"]
     assert output.generated_texts == ["moving"]
     assert float(output.vlm_loss.item()) == 1.25
+
+
+def test_resolve_model_hidden_size_uses_nested_text_config():
+    model = SimpleNamespace(
+        config=SimpleNamespace(
+            text_config=SimpleNamespace(hidden_size=3584),
+        )
+    )
+
+    hidden_size = _resolve_model_hidden_size(model)
+
+    assert hidden_size == 3584

@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import time
 from typing import Any
 
+import torch
+
 from model import ModelObservation, Transition
 
 from .config import EnvConfig
@@ -168,7 +170,8 @@ class PiCarGymEnv:
 
         # The model owns action interpolation and returns the final mixed PiCar
         # control vector ready to send to the robot API.
-        action = self.model.forward(observation)
+        with torch.inference_mode():
+            action = self.model.forward(observation)
         if action.generated_text and self.speaker is not None:
             self.speaker.speak(action.generated_text)
         self._respect_command_rate_limit()

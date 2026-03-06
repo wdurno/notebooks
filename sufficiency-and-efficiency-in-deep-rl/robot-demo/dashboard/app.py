@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import threading
@@ -20,7 +21,15 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger("dashboard")
 
 
-def _encode_jpeg_from_frame(frame: Any) -> bytes:
+def _resize_pil_if_requested(image: Image.Image, *, x_resize: int | None, y_resize: int | None) -> Image.Image:
+    if x_resize is None or y_resize is None:
+        return image
+    return image.resize((x_resize, y_resize), resample=Image.BILINEAR)
+
+
+def _encode_jpeg_from_frame(
+    frame: Any, *, x_resize: int | None = None, y_resize: int | None = None
+) -> bytes:
     try:
         import numpy as np
     except ModuleNotFoundError as exc:
@@ -33,9 +42,54 @@ def _encode_jpeg_from_frame(frame: Any) -> bytes:
         # car_env camera frames are BGR; convert to RGB for correct display colors.
         frame = frame[..., [2, 1, 0]]
 
+    image = _resize_pil_if_requested(Image.fromarray(frame), x_resize=x_resize, y_resize=y_resize)
     out = io.BytesIO()
-    Image.fromarray(frame).save(out, format="JPEG")
+    image.save(out, format="JPEG")
     return out.getvalue()
+
+
+def _encode_jpeg_from_image_bytes(
+    image_bytes: bytes, *, x_resize: int | None = None, y_resize: int | None = None
+) -> bytes:
+    try:
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        preview = image_bytes[:80]
+        raise RuntimeError(
+            f"Failed to decode `/img` response as an image. First bytes: {preview!r}"
+        ) from exc
+
+    image = _resize_pil_if_requested(image, x_resize=x_resize, y_resize=y_resize)
+    out = io.BytesIO()
+    image.save(out, format="JPEG")
+    return out.getvalue()
+
+
+def _parse_json_frame_payload(text: str, *, content_type: str) -> Any | None:
+    candidate = (text or "").lstrip()
+    if "application/json" not in content_type and not candidate.startswith(("[", "{")):
+        return None
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+    frame_data = None
+    if isinstance(payload, list) and payload and isinstance(payload[0], list):
+        frame_data = payload[0]
+    elif isinstance(payload, dict) and "image" in payload:
+        frame_data = payload["image"]
+
+    if frame_data is None:
+        return None
+
+    try:
+        import numpy as np
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("numpy is required to decode JSON camera payloads") from exc
+
+    return np.array(frame_data, dtype=np.uint8)
 
 
 @dataclass
@@ -44,6 +98,7 @@ class RobotAdapter:
     host: str
     x_resize: int | None
     y_resize: int | None
+    _prefer_raw_img: bool = False
 
     @classmethod
     def build(cls) -> "RobotAdapter":
@@ -88,10 +143,23 @@ class RobotAdapter:
             raise ValueError(f"unknown camera action: {action}")
 
     def frame(self) -> bytes:
-        frame, _, _, _ = self.car_client.img(
-            self.host, x_resize=self.x_resize, y_resize=self.y_resize
-        )
-        return _encode_jpeg_from_frame(frame)
+        if self._prefer_raw_img:
+            return self._frame_from_raw_img()
+
+        try:
+            frame, _, _, _ = self.car_client.img(
+                self.host, x_resize=self.x_resize, y_resize=self.y_resize
+            )
+            return _encode_jpeg_from_frame(
+                frame,
+                x_resize=self.x_resize,
+                y_resize=self.y_resize,
+            )
+        except Exception as exc:
+            if not self._prefer_raw_img:
+                LOGGER.warning("car_client.img failed, falling back to direct /img request: %s", exc)
+            self._prefer_raw_img = True
+            return self._frame_from_raw_img()
 
     def set_resolution(self, x_resize: int | None, y_resize: int | None) -> None:
         self.x_resize = x_resize
@@ -108,6 +176,49 @@ class RobotAdapter:
         response = requests.get(url, timeout=5)
         if response.status_code != 200:
             raise RuntimeError(f"{route} not available on robot API (status {response.status_code})")
+
+    def _frame_from_raw_img(self) -> bytes:
+        params = None
+        if self.x_resize is not None and self.y_resize is not None:
+            params = {
+                "x_resize": self.x_resize,
+                "y_resize": self.y_resize,
+            }
+
+        last_exc: Exception | None = None
+        for _ in range(3):
+            try:
+                response = requests.get(f"http://{self.host}/img", params=params, timeout=8)
+                if response.status_code != 200:
+                    raise RuntimeError(f"/img returned status {response.status_code}")
+
+                content_type = response.headers.get("Content-Type", "")
+                frame = _parse_json_frame_payload(response.text, content_type=content_type)
+                if frame is not None:
+                    return _encode_jpeg_from_frame(
+                        frame,
+                        x_resize=self.x_resize,
+                        y_resize=self.y_resize,
+                    )
+                return _encode_jpeg_from_image_bytes(
+                    response.content,
+                    x_resize=self.x_resize,
+                    y_resize=self.y_resize,
+                )
+            except Exception as exc:
+                last_exc = exc
+                time.sleep(0.1)
+
+        raise RuntimeError(f"Failed to retrieve /img after retries: {last_exc}") from last_exc
+
+
+def _placeholder_jpeg(x_resize: int | None, y_resize: int | None) -> bytes:
+    width = x_resize if x_resize is not None else 160
+    height = y_resize if y_resize is not None else 120
+    image = Image.new("RGB", (width, height), color=(20, 20, 20))
+    out = io.BytesIO()
+    image.save(out, format="JPEG")
+    return out.getvalue()
 
 
 def _env_int(name: str) -> int | None:
@@ -168,7 +279,10 @@ def create_app() -> Flask:
                 LOGGER.exception("Failed to retrieve frame")
                 if cache["jpeg"]:
                     return cache["jpeg"]
-                raise
+                jpeg = _placeholder_jpeg(adapter.x_resize, adapter.y_resize)
+                cache["jpeg"] = jpeg
+                cache["last_time"] = now
+                return jpeg
 
     @app.get("/")
     def index() -> str:

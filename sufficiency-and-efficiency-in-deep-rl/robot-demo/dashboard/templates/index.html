@@ -35,10 +35,10 @@
           <label for="resolution-preset">Camera resolution</label>
           <select id="resolution-preset">
             <option value="default">API default</option>
+            <option value="40x30">40 x 30</option>
             <option value="80x60">80 x 60</option>
             <option value="120x90">120 x 90</option>
             <option value="160x120">160 x 120</option>
-            <option value="320x240">320 x 240</option>
             <option value="custom">Custom</option>
           </select>
           <div class="resolution-inputs">
@@ -47,6 +47,7 @@
             <button type="submit">Apply</button>
           </div>
           <p class="resolution-note">Current: <strong id="resolution-current">API default</strong></p>
+          <p class="resolution-note">Stream: <strong id="frame-size">unknown</strong></p>
         </form>
         <p><strong>Keyboard:</strong> <code>W/A/S/D</code> drive, arrow keys control camera (<code>down = forward</code>).</p>
 

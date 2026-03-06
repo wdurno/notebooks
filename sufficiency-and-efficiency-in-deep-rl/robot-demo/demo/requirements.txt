@@ -10,4 +10,5 @@ Pillow
 torch
 transformers
 peft
+bitsandbytes
 tqdm

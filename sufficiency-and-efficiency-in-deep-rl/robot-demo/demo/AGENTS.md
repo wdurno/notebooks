@@ -73,7 +73,6 @@ The underlying VLM is never to be modified because it will be used to evaluate t
 Use `.requires_grad=True` to control which parameters are tunable. 
 
 An additional head will be added to the VLM, encoding a value function. 
-Actions are finite and few, so we're essentially just building a Q-Learning model. 
 The value head's parameters are tunable, of course. 
 Actions are:
 1. `drive-left` 
@@ -84,6 +83,9 @@ Actions are:
 6. `look-right` 
 7. `look-up` 
 8. `look-forward` 
+
+Despite having finite actions, the linearly-combined action vectors are continuous. 
+So, we'll use an Actor-Critic model. 
 
 Since we need to fine-tune our model away from agentic commands, 
 we'll create an action vector space and linearly combine actions continuously according to some `t` between 0 and 1. 
@@ -96,7 +98,7 @@ thereby producing a computational savings when `t=1`.
 
 The loss function is a sum of two parts:
 1. **VLM loss**: this reuses the existing VLM loss function. 
-2. **RL loss**: this is a Q-Learning loss. 
+2. **RL loss**: this is an Actor-Critic loss. 
 This keeps agent's visual processing & text generation functional while still learning to play the RL game. 
 
 ## requirements 

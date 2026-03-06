@@ -11,6 +11,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from model.backbones import FakeBackbone
+from model.backbones import BackboneBatchOutput
 from model.config import ModelConfig
 from model.picar_agent import PiCarActionModel
 from model.replay_buffer import TransitionReplayBuffer
@@ -25,6 +26,23 @@ def _observation(step_index: int, t: float = 0.25) -> ModelObservation:
         t=t,
         step_index=step_index,
     )
+
+
+class BFloat16Backbone:
+    def __init__(self, hidden_size: int = 4):
+        self.hidden_size = hidden_size
+
+    def encode(self, observations, *, target_texts=None, compute_vlm_loss=False, allow_agentic_actions=True):
+        del target_texts, compute_vlm_loss, allow_agentic_actions
+        batch_size = len(observations)
+        hidden = torch.zeros((batch_size, self.hidden_size), dtype=torch.bfloat16)
+        return BackboneBatchOutput(
+            pooled_hidden_state=hidden,
+            agentic_action_names=["look-forward"] * batch_size,
+            generated_texts=[""] * batch_size,
+            vlm_loss=None,
+            debug=[{} for _ in range(batch_size)],
+        )
 
 
 def test_forward_returns_mixed_vector_owned_by_model():
@@ -150,3 +168,16 @@ def test_get_grad_vec_uses_trainable_parameters_only():
 
     assert grad_vec.shape == param_vec.shape
     assert grad_vec.device == model.device
+
+
+def test_forward_handles_bfloat16_backbone_hidden_state():
+    replay_buffer = TransitionReplayBuffer(capacity=4)
+    model = PiCarActionModel(
+        replay_buffer=replay_buffer,
+        config=ModelConfig(hidden_size=4, learning_rate=0.05),
+        backbone=BFloat16Backbone(hidden_size=4),
+    )
+
+    action = model.forward(_observation(0, t=0.0))
+
+    assert action.agentic_action_name == "look-forward"

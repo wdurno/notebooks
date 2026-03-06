@@ -187,7 +187,8 @@ class PiCarActionModel(SSRAgent):
             compute_vlm_loss=compute_vlm_loss,
             allow_agentic_actions=allow_agentic_actions,
         )
-        hidden_state = backbone_output.pooled_hidden_state.to(self.device)
+        head_dtype = self.actor_head.proj.weight.dtype
+        hidden_state = backbone_output.pooled_hidden_state.to(self.device, dtype=head_dtype)
         actor_action_tensor = clamp_action_tensor(self.actor_head(hidden_state))
         t_tensor = torch.tensor(
             [float(observation.t) for observation in observations],
