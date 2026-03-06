@@ -191,11 +191,11 @@ class SSRAgent(nn.Module):
         self.train() 
         self.dt_prev_pi = pi = self.optimal_lambda(pi_min=pi_min, pi_max=pi_max) 
         self.optimizer.zero_grad() 
-        ssr = self.ssr() 
+        #ssr = self.ssr() ## cannot double-use graphs 
         for _ in range(iters): 
             data = self.replay_buffer.sample(batch_size=batch_size) ## TODO provide whole-sample-in-batches option 
             loss = self.loss(data) / iters 
-            loss = pi * loss + (1 - pi) * self.ssr() 
+            loss = pi * loss + (1 - pi) * self.ssr() / iters 
             loss.backward() 
             pass 
         self.optimizer.step() 

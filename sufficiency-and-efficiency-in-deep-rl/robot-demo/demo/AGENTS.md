@@ -101,6 +101,23 @@ The loss function is a sum of two parts:
 2. **RL loss**: this is an Actor-Critic loss. 
 This keeps agent's visual processing & text generation functional while still learning to play the RL game. 
 
+## experimental design 
+
+Experimental phases:
+1. Collect initializing data: Keeping `t=0`, collect a large amount of data to populate an initial sufficient statistic estimate. Data volume must be large enough that this estimate is accurate. 
+2. Policy tuning: Sample observations while tuning the model. Allow `t` to traverse continuously and slowly from 0 to 1. In theory, this should train the agent to efficiently drop its agentic interface and rely entirely on its policy interface. 
+3. Retasking: Keeping `t=1`, allow tuning to proceed. At game start, user selects a reward prompt (default is "find the red ball"). Swapping between games allows experimental assessment of (A) resistance to catastrophic forgetting, and (2) speed to retask. 
+
+Two essential experimental modules are needed:
+1. **Experimental software**: `src/experiments/experiment_interface.py` will be the primary experiment interface. All experiments can be run with this script. It runs the PiCar via `PiCarGymEnv` game iterations. More requirements: 
+   1. Allow the user to optionally specify a `fixed_t` value for the environment. Otherwise, allow `t` to traverse from 0 to 1. If `t` is traversing, print updated values for the user's viewing as the game progresses. 
+   2. Allow the user to optionally load a model from a directory path, otherwise load the default VLM with zeroed-initialized LoRA parameters. 
+   3. Create a `uuid` name for the experiment instance and print it to screen at game start. 
+   4. Create a directory in `data/[uuid]` named after the experiment instance. Write all new observations in this directory. Don't count on the `replay_buffer` to store or index observations, because every `SSRAgent.memorize` call is paired with a `ReplayBuffer.clear` call. Frequent writing is important because experiments are likely to halt suddenly due to PiCar Raspberry Pi crashes due to low batteries. 
+   5. Create a directy in `model/[uuid]` named after the experiment instance. Use it to store model snapshots. Only store tunable parameters; it's very wasteful to store untuned VLM copies. 
+   2. Run until user hits `Ctrl-C`. 
+2. **README**: `src/experiments/tune.py` how to use the experimental interface, including the experimental phases above. For each phase, an example Bash command must be shown. 
+
 ## requirements 
 
 1. **TTS and STT**: Write a Python interface for text-to-speech (TTS) and speech-to-text (STT). 
@@ -140,6 +157,7 @@ the user should prompt you to add tests whenever needed.
 Unit tests should be fast (entirely running in under 1 min) and used to protect already-implemented feature from active development. 
 Integration tests are slow and may require the user manually setup the robot. 
 An integration test battery can take up to 10 min but shouldn't involve extensive user involvement - ideally, the user merely sets up the robot for testing. 
+5. **Experimental software**: populate `src/experiments` according to the `experimental design` section above.
 
 Do not attempt resolving all requirements at once. 
 Instead, the agent's user will specify which requirement to work on. 

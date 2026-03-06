@@ -332,6 +332,11 @@ class PiCarGymEnv:
         """Map the current step index onto the configured action-mixing ramp."""
 
         schedule = self.config.training
+        if schedule.fixed_t is not None:
+            fixed_t = float(schedule.fixed_t)
+            if fixed_t < 0.0 or fixed_t > 1.0:
+                raise ValueError(f"training.fixed_t must be in [0, 1], got {fixed_t}")
+            return fixed_t
         if schedule.t_ramp_steps <= 0:
             return schedule.t_end
         alpha = min(max(step_index, 0), schedule.t_ramp_steps) / float(schedule.t_ramp_steps)
@@ -353,8 +358,23 @@ class PiCarGymEnv:
             # SSR memorization is less frequent than SGD-style fitting because
             # it is materially more expensive and does not need to happen every
             # environment step.
-            memorized = min(training.memorize_n, replay_size)
-            self.model.memorize(n=memorized, random_idx=training.memorize_random_idx, disable_tqdm=True)
+            if training.memorize_n < 0:
+                memorize_count = replay_size
+            else:
+                memorize_count = min(training.memorize_n, replay_size)
+
+            if memorize_count > 0:
+                self.model.memorize(
+                    n=memorize_count,
+                    random_idx=training.memorize_random_idx,
+                    disable_tqdm=True,
+                )
+                # Once observations are committed into SSR sufficient statistics,
+                # they can be dropped from replay to keep memory bounded.
+                replay_buffer = self.model.replay_buffer
+                if hasattr(replay_buffer, "clear"):
+                    replay_buffer.clear(memorize_count)
+                memorized = memorize_count
         return TrainingSummary(
             triggered=True,
             replay_size=replay_size,
@@ -374,6 +394,11 @@ class PiCarGymEnv:
             "reward_prompt_id": self.config.reward.prompt_id,
             "host": self.config.picar.host,
             "history_window": self.config.history_window,
+            "t_mode": "fixed" if self.config.training.fixed_t is not None else "ramp",
+            "fixed_t": self.config.training.fixed_t,
+            "t_start": self.config.training.t_start,
+            "t_end": self.config.training.t_end,
+            "t_ramp_steps": self.config.training.t_ramp_steps,
             "initial_reward": initial_reward,
         }
         write_metadata(self.paths, self._run_metadata)

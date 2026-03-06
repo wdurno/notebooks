@@ -51,11 +51,12 @@ class RewardConfig:
 class TrainingConfig:
     train_every_steps: int = 16
     min_replay_size: int = 32
-    batch_size: int = 32
-    fit_iters: int = 1
+    batch_size: int = 1
+    fit_iters: int = 32
     memorize_every_steps: int = 64
     memorize_n: int = 64
-    memorize_random_idx: bool = True
+    memorize_random_idx: bool = False
+    fixed_t: float | None = None
     t_start: float = 0.0
     t_end: float = 1.0
     t_ramp_steps: int = 1_000

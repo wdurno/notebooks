@@ -23,12 +23,20 @@ class FakeReplayBuffer:
     def __init__(self):
         self.items = []
         self.saved_path = None
+        self.clear_calls = []
 
     def __len__(self):
         return len(self.items)
 
     def add(self, transition):
         self.items.append(transition)
+
+    def clear(self, n=None):
+        self.clear_calls.append(n)
+        if n is None or n >= len(self.items):
+            self.items = []
+            return
+        self.items = self.items[n:]
 
     def save(self, path):
         self.saved_path = Path(path)
@@ -168,9 +176,10 @@ def test_picar_env_step_records_transition_and_training(tmp_path):
     assert next_observation.step_index == 1
     assert reward == 3.0
     assert done is False
-    assert len(model.replay_buffer) == 1
+    assert len(model.replay_buffer) == 0
     assert model.fit_calls == [(4, 2)]
     assert model.memorize_calls == [(1, False, True)]
+    assert model.replay_buffer.clear_calls == [1]
     assert speaker.spoken == ["moving forward"]
     assert client.applied_vectors == [{"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0}]
     assert info["training"].triggered is True
@@ -181,6 +190,40 @@ def test_picar_env_step_records_transition_and_training(tmp_path):
     assert (run_dir / "logs" / "events.jsonl").exists()
     assert (run_dir / "blobs" / "replay_buffer.pkl").exists()
     assert (run_dir / "artifacts" / "picar_policy.state.pt").exists()
+
+
+def test_picar_env_memorize_minus_one_clears_all_replay(tmp_path):
+    model = FakeModel()
+    reward_scorer = FakeRewardScorer()
+    client = FakePiCarClient()
+    config = EnvConfig(
+        data_dir=tmp_path,
+        training=TrainingConfig(
+            train_every_steps=1,
+            min_replay_size=1,
+            batch_size=1,
+            fit_iters=1,
+            memorize_every_steps=1,
+            memorize_n=-1,
+            memorize_random_idx=False,
+            t_ramp_steps=10,
+        ),
+    )
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=reward_scorer,
+        picar_client=client,
+        config=config,
+    )
+
+    model.replay_buffer.add("prefill")
+    env.reset()
+    _, _, _, info = env.step()
+
+    assert model.memorize_calls == [(2, False, True)]
+    assert model.replay_buffer.clear_calls == [2]
+    assert len(model.replay_buffer) == 0
+    assert info["training"].memorized == 2
 
 
 def test_picar_env_rate_limits_vector_commands(tmp_path, monkeypatch):
@@ -211,3 +254,60 @@ def test_picar_env_rate_limits_vector_commands(tmp_path, monkeypatch):
     env._respect_command_rate_limit()
 
     assert sleeps == [pytest.approx(0.3)]
+
+
+def test_interpolation_t_uses_fixed_value_when_configured(tmp_path):
+    env = PiCarGymEnv(
+        model=FakeModel(),
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        config=EnvConfig(
+            data_dir=tmp_path,
+            training=TrainingConfig(
+                fixed_t=1.0,
+                t_start=0.0,
+                t_end=0.0,
+                t_ramp_steps=10,
+            ),
+        ),
+    )
+
+    assert env._interpolation_t(0) == pytest.approx(1.0)
+    assert env._interpolation_t(100) == pytest.approx(1.0)
+
+
+def test_interpolation_t_uses_ramp_when_fixed_t_is_none(tmp_path):
+    env = PiCarGymEnv(
+        model=FakeModel(),
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        config=EnvConfig(
+            data_dir=tmp_path,
+            training=TrainingConfig(
+                fixed_t=None,
+                t_start=0.2,
+                t_end=0.8,
+                t_ramp_steps=10,
+            ),
+        ),
+    )
+
+    assert env._interpolation_t(0) == pytest.approx(0.2)
+    assert env._interpolation_t(5) == pytest.approx(0.5)
+    assert env._interpolation_t(10) == pytest.approx(0.8)
+    assert env._interpolation_t(999) == pytest.approx(0.8)
+
+
+def test_interpolation_t_rejects_invalid_fixed_t(tmp_path):
+    env = PiCarGymEnv(
+        model=FakeModel(),
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        config=EnvConfig(
+            data_dir=tmp_path,
+            training=TrainingConfig(fixed_t=1.25),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="training.fixed_t must be in \\[0, 1\\]"):
+        env._interpolation_t(0)
