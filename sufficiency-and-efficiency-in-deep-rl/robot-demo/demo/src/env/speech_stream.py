@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -8,6 +9,8 @@ from typing import Any
 
 from .config import SpeechStreamConfig
 from .schemas import QueuedSpeechEvent
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -157,10 +160,12 @@ class ContinuousSpeechStream:
         text = (result.text or "").strip()
         if not text:
             return None
+        LOGGER.info("[stt] captured text=%r", text)
         event = QueuedSpeechEvent(text=text, received_at=time.time(), metadata={"segments": getattr(result, "segments", [])})
         try:
             self._event_queue.put_nowait(event)
         except queue.Full:
+            LOGGER.warning("[stt] dropped utterance because event queue is full")
             return None
         return None
 

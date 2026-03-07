@@ -26,6 +26,9 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - Persists snapshots in `model/<uuid>/snapshots/`.
 - Reuses the policy backbone's single 4-bit Qwen instance for reward scoring
   (reward pass runs frozen/inference-only with adapters disabled).
+- Treats malformed agent JSON as invalid speech output:
+  - no fallback text is spoken
+  - step reward gets a default `-1.0` adjustment
 - Stores only tunable parameters in snapshots, plus SSR sufficient statistics and replay metadata.
 - Keeps at most `--snapshot-keep` snapshots (default `3`).
 - Runs until interrupted with `Ctrl-C`.
@@ -42,6 +45,11 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--snapshot-keep INT` (default `3`)
 - `--data-root PATH` (optional, default `demo/data`)
 - `--model-root PATH` (optional, default `demo/model`)
+- `--log-level {DEBUG,INFO,WARNING,ERROR}` (default `WARNING`)
+
+Use `--log-level INFO` during debugging to print captured STT text, raw model
+generation text (including malformed output), and reward base/adjustment/final
+values per step.
 
 ## Experimental phases
 
@@ -57,6 +65,8 @@ Behavior:
 
 - No training/memorization loop is triggered.
 - One initial snapshot is written to `model/<uuid>/snapshots/`.
+- If the policy emits malformed action JSON, speech is suppressed and a `-1.0`
+  reward adjustment is applied for that step.
 
 If the PiCar crashes (for example, low battery), just swap batteries and run the
 same phase-1 command again. Each restart creates a new run UUID directory under
@@ -101,6 +111,7 @@ Behavior:
 
 - `t` traverses linearly in steps with visible logs.
 - Snapshot is written after each memorization event.
+- Malformed action JSON is penalized by `-1.0` and does not get spoken.
 
 ### 3) Retasking (`t=1` by default, tuning enabled)
 

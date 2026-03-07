@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from .schemas import ExperimentRunConfig
@@ -62,11 +63,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Sample random replay indices during SSR memorization.",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="WARNING",
+        help="Set runtime logging verbosity.",
+    )
     return parser
+
+
+def _configure_logging(level_name: str) -> None:
+    level = getattr(logging, str(level_name).upper(), logging.WARNING)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    _configure_logging(args.log_level)
     from .run_controller import run_experiment
 
     config = ExperimentRunConfig(

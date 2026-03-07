@@ -281,15 +281,22 @@ class QwenLoRABackbone(nn.Module):
                 )[0]
             )
         if allow_agentic_actions:
-            parsed = [_parse_action_and_text(text) for text in decoded]
+            parsed = [_parse_action_and_text_with_status(text) for text in decoded]
         else:
-            parsed = [("look-forward", text.strip()) for text in decoded]
+            parsed = [("look-forward", text.strip(), True) for text in decoded]
         action_names = [item[0] for item in parsed]
         generated_texts = [item[1] for item in parsed]
-        debug = [
-            {"raw_generation": text, "generated_logp_sum": float(generated_logp_sums[idx].detach().cpu().item())}
-            for idx, text in enumerate(decoded)
-        ]
+        json_valid_flags = [bool(item[2]) for item in parsed]
+        debug = []
+        for idx, text in enumerate(decoded):
+            debug.append(
+                {
+                    "raw_generation": text,
+                    "generated_logp_sum": float(generated_logp_sums[idx].detach().cpu().item()),
+                    "json_expected": bool(allow_agentic_actions),
+                    "json_valid": bool(json_valid_flags[idx]) if allow_agentic_actions else True,
+                }
+            )
         vlm_loss = None
         target_logp_sums = pooled_hidden_state.sum(dim=1) * 0.0
         if target_texts and any(text is not None and text.strip() for text in target_texts):
@@ -515,16 +522,21 @@ def _normalize_content(content: Any) -> list[dict[str, Any]]:
 
 
 def _parse_action_and_text(text: str) -> tuple[str, str]:
+    action_name, spoken_text, _ = _parse_action_and_text_with_status(text)
+    return action_name, spoken_text
+
+
+def _parse_action_and_text_with_status(text: str) -> tuple[str, str, bool]:
     # Prefer strict JSON output, but retain a forgiving fallback so early
     # prompting failures do not crash the whole interaction loop.
     candidate = (text or "").strip()
     if not candidate:
-        return "look-forward", ""
+        return "look-forward", "", False
     try:
         payload = json.loads(candidate)
         action_name = normalized_action_name(str(payload.get("action", "")))
         spoken_text = str(payload.get("say", "")).strip()
-        return action_name, spoken_text
+        return action_name, spoken_text, True
     except json.JSONDecodeError:
         json_match = re.search(r"\{.*\}", candidate, flags=re.DOTALL)
         if json_match:
@@ -532,11 +544,13 @@ def _parse_action_and_text(text: str) -> tuple[str, str]:
                 payload = json.loads(json_match.group(0))
                 action_name = normalized_action_name(str(payload.get("action", "")))
                 spoken_text = str(payload.get("say", "")).strip()
-                return action_name, spoken_text
+                return action_name, spoken_text, True
             except json.JSONDecodeError:
                 pass
         action_name = _extract_action_name(candidate)
-        return action_name, candidate
+        # Suppress malformed fallback text for speech output. The environment
+        # can still inspect the debug metadata and apply penalties.
+        return action_name, "", False
 
 
 def _image_to_tensor(image_rgb: Any) -> torch.Tensor:

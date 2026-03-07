@@ -32,7 +32,7 @@ class ModelConfig:
     target_update_tau: float = 0.05
     actor_anchor_weight: float = 1.0
     generation_max_new_tokens: int = 64
-    generation_temperature: float = 0.8
+    generation_temperature: float = 0.3
     generation_top_p: float = 0.95
     generation_top_k: int = 0
     lora_rank: int = 8

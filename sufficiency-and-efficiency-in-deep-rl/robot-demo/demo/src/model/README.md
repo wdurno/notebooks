@@ -29,6 +29,7 @@ Top-level model configuration, including:
 - VLM model location under `demo/model/`
 - optimizer settings
 - LoRA settings
+- generation settings (default `temperature=0.3`)
 - loss-term weighting controls
 - RL discount `gamma`
 

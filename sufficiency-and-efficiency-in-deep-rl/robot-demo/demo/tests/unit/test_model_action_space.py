@@ -51,4 +51,4 @@ def test_parse_action_and_text_uses_last_exact_action_match():
         "Choose exactly one action from drive-left, drive-right, look-up. Final answer: look-up"
     )
     assert action_name == "look-up"
-    assert spoken_text.endswith("look-up")
+    assert spoken_text == ""

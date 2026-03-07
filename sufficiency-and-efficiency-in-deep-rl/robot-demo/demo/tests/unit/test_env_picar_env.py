@@ -76,6 +76,21 @@ class FakeModel(nn.Module):
         Path(path + ".ssr.pt").write_bytes(b"ssr")
 
 
+class FakeMalformedJsonModel(FakeModel):
+    def forward(self, observation):
+        del observation
+        return ModelActionOutput(
+            agentic_action_name="drive-forward",
+            agentic_action_one_hot=torch.tensor([0, 0, 1, 0, 0, 0, 0, 0], dtype=torch.float32),
+            agentic_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
+            actor_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
+            executed_action_vector={"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
+            critic_value=1.5,
+            generated_text="garbled fallback text",
+            debug={"json_expected": True, "json_valid": False},
+        )
+
+
 class FakeRewardScorer:
     def __init__(self):
         self.calls = 0
@@ -224,6 +239,31 @@ def test_picar_env_memorize_minus_one_clears_all_replay(tmp_path):
     assert model.replay_buffer.clear_calls == [2]
     assert len(model.replay_buffer) == 0
     assert info["training"].memorized == 2
+
+
+def test_picar_env_penalizes_malformed_json_and_suppresses_speech(tmp_path):
+    model = FakeMalformedJsonModel()
+    reward_scorer = FakeRewardScorer()
+    client = FakePiCarClient()
+    speaker = FakeSpeaker()
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=reward_scorer,
+        picar_client=client,
+        speaker=speaker,
+        config=EnvConfig(data_dir=tmp_path),
+    )
+
+    env.reset()
+    next_observation, reward, _, info = env.step()
+
+    assert reward == pytest.approx(2.0)
+    assert next_observation.last_reward == pytest.approx(2.0)
+    assert speaker.spoken == []
+    assert info["malformed_json"] is True
+    assert info["reward_adjustment"] == pytest.approx(-1.0)
+    assert model.replay_buffer.items[-1].reward == pytest.approx(2.0)
+    assert model.replay_buffer.items[-1].metadata["malformed_json"] is True
 
 
 def test_picar_env_rate_limits_vector_commands(tmp_path, monkeypatch):

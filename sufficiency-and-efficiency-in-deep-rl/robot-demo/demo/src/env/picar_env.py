@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 import time
@@ -16,6 +17,10 @@ except ModuleNotFoundError:
 from .config import EnvConfig
 from .persistence import append_jsonl, create_experiment_paths, save_frame_array, save_model_artifacts, save_replay_snapshot, write_metadata
 from .schemas import ExperimentPaths, RewardResult, TrainingSummary
+
+LOGGER = logging.getLogger(__name__)
+
+MALFORMED_JSON_REWARD_PENALTY = -1.0
 
 
 def build_operator_message(
@@ -125,6 +130,8 @@ class PiCarGymEnv:
         frame = self.picar_client.reset()
         reward_result = self.reward_scorer.score(frame)
         user_texts = [event.text for event in self._drain_speech_events()]
+        if user_texts:
+            LOGGER.info("[stt] step=%d drained_texts=%r", self.step_index, user_texts)
         user_message = build_operator_message(
             user_texts=user_texts,
             reward_result=reward_result,
@@ -155,6 +162,8 @@ class PiCarGymEnv:
         # Speech is collected continuously in the background; each step simply
         # drains whatever complete utterances arrived since the previous one.
         user_texts = [event.text for event in self._drain_speech_events()]
+        if user_texts:
+            LOGGER.info("[stt] step=%d drained_texts=%r", self.step_index, user_texts)
         current_frame = self.picar_client.capture_image()
         reward_result = self.reward_scorer.score(current_frame)
         user_message = build_operator_message(
@@ -178,8 +187,34 @@ class PiCarGymEnv:
         # control vector ready to send to the robot API.
         with torch.inference_mode():
             action = self.model.forward(observation)
-        if action.generated_text and self.speaker is not None:
+        action_debug = action.debug if isinstance(action.debug, dict) else {}
+        json_expected = bool(action_debug.get("json_expected", False))
+        json_valid = bool(action_debug.get("json_valid", True))
+        malformed_json = json_expected and not json_valid
+        reward_adjustment = MALFORMED_JSON_REWARD_PENALTY if malformed_json else 0.0
+        step_reward = float(reward_result.clipped_reward + reward_adjustment)
+        LOGGER.info(
+            "[model] step=%d mode=%s action=%s json_valid=%s generated_text=%r raw_generation=%r",
+            self.step_index,
+            "mixed" if observation.t < 1.0 else "actor_only",
+            action.agentic_action_name,
+            json_valid,
+            action.generated_text,
+            action_debug.get("raw_generation"),
+        )
+        LOGGER.info(
+            "[reward] step=%d base=%.3f adjustment=%.3f final=%.3f raw_text=%r",
+            self.step_index,
+            float(reward_result.clipped_reward),
+            float(reward_adjustment),
+            float(step_reward),
+            reward_result.raw_text,
+        )
+        if action.generated_text and self.speaker is not None and not malformed_json:
+            LOGGER.info("[tts] step=%d speaking text=%r", self.step_index, action.generated_text)
             self.speaker.speak(action.generated_text)
+        elif malformed_json:
+            LOGGER.info("[tts] step=%d speech_suppressed reason=malformed_json", self.step_index)
         self._respect_command_rate_limit()
         action_receipt = self.picar_client.apply_vector(action.executed_action_vector)
         self._last_vector_command_at = time.monotonic()
@@ -206,7 +241,7 @@ class PiCarGymEnv:
             image_rgb=next_frame,
             messages=self.history,
             t=self._interpolation_t(self.step_index + 1),
-            last_reward=reward_result.clipped_reward,
+            last_reward=step_reward,
             done=False,
             step_index=self.step_index + 1,
             metadata={"reward_prompt_id": reward_result.prompt_id},
@@ -218,7 +253,7 @@ class PiCarGymEnv:
         transition = Transition(
             observation=observation,
             executed_action_vector=action.executed_action_vector,
-            reward=reward_result.clipped_reward,
+            reward=step_reward,
             next_observation=next_observation,
             done=False,
             target_text=target_text,
@@ -231,6 +266,8 @@ class PiCarGymEnv:
                 "generated_text": action.generated_text,
                 "agentic_action_name": action.agentic_action_name,
                 "execution_mode": execution_mode,
+                "malformed_json": malformed_json,
+                "reward_adjustment": reward_adjustment,
                 "action_receipt": action_receipt,
             },
         )
@@ -248,7 +285,9 @@ class PiCarGymEnv:
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "step_index": self.step_index,
-                    "reward": reward_result.clipped_reward,
+                    "reward": step_reward,
+                    "reward_base": float(reward_result.clipped_reward),
+                    "reward_adjustment": reward_adjustment,
                     "reward_raw_text": reward_result.raw_text,
                     "user_texts": user_texts,
                     "action": {
@@ -259,22 +298,25 @@ class PiCarGymEnv:
                         "critic_value": action.critic_value,
                         "generated_text": action.generated_text,
                         "execution_mode": execution_mode,
+                        "malformed_json": malformed_json,
                     },
                     "training": asdict(training_summary),
                     "frame_path": str(frame_path) if frame_path is not None else None,
                 },
             )
 
-        self.last_reward = reward_result.clipped_reward
+        self.last_reward = step_reward
         self.step_index += 1
         info = {
             "reward_result": reward_result,
+            "reward_adjustment": reward_adjustment,
+            "malformed_json": malformed_json,
             "action": action,
             "user_texts": user_texts,
             "training": training_summary,
             "action_receipt": action_receipt,
         }
-        return next_observation, reward_result.clipped_reward, False, info
+        return next_observation, step_reward, False, info
 
     def run_forever(self) -> None:
         """Run the control loop until the operator interrupts with `Ctrl-C`."""
