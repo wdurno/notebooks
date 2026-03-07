@@ -134,6 +134,96 @@ L = 0.5 * L_vlm + 0.5 * L_rl
 The RL path uses detached agentic action vectors, a Huber critic loss, and a
 bootstrap target built from target actor/critic heads.
 
+## Loss details
+
+For a minibatch of size $B$, let:
+
+- $s_i$: current hidden state for sample $i$
+- $s'_i$: next hidden state for sample $i$
+- $r_i$: reward
+- $d_i \in \{0,1\}$: done flag
+- $t_i \in [0,1]$: interpolation coefficient
+- $a^{\text{exec}}_i$: executed action from replay (used for critic TD fit)
+- $a^{\text{agentic}}_i$: agentic action vector from the backbone
+- $a^{\text{actor}}_i$: actor-head action vector
+- $\bar a^{\text{actor}}_i$, $\bar Q$: target actor and target critic
+
+The total objective is:
+
+$$
+\mathcal{L}_{\text{total}}
+=
+\alpha\,\mathcal{L}_{\text{vlm}}
++
+\beta\,\mathcal{L}_{\text{rl}},
+\qquad
+\mathcal{L}_{\text{rl}}=\mathcal{L}_{\text{actor}}+\mathcal{L}_{\text{critic}}.
+$$
+
+with defaults $\alpha=\beta=0.5$.
+
+The TD target for the critic is:
+
+$$
+y_i
+=
+r_i + \gamma (1-d_i)\,\bar Q\!\left(
+s'_i,\;
+\operatorname{mix}\!\left(
+\operatorname{detach}(a^{\text{agentic}\prime}_i),
+\bar a^{\text{actor}}_i,
+t_i'
+\right)
+\right).
+$$
+
+The critic loss is Huber (smooth L1):
+
+$$
+\mathcal{L}_{\text{critic}}
+=
+\frac{1}{B}\sum_{i=1}^{B}
+\operatorname{Huber}\!\left(
+Q(s_i, a^{\text{exec}}_i)-y_i
+\right).
+$$
+
+For actor optimization, the mixed action is:
+
+$$
+\tilde a_i
+=
+\operatorname{mix}\!\left(
+\operatorname{detach}(a^{\text{agentic}}_i),
+a^{\text{actor}}_i,
+t_i
+\right).
+$$
+
+The anchor term penalizes actor drift from the detached agentic prior:
+
+$$
+p_i = \left\|a^{\text{actor}}_i-\operatorname{detach}(a^{\text{agentic}}_i)\right\|_2^2,
+\qquad
+w_i = \lambda_{\text{anchor}}(1-t_i),
+$$
+
+where $\lambda_{\text{anchor}}=\texttt{actor\_anchor\_weight}$.
+
+The actor loss is:
+
+$$
+\mathcal{L}_{\text{actor}}
+=
+-\frac{1}{B}\sum_{i=1}^{B} Q(s_i,\tilde a_i)
++
+\frac{1}{B}\sum_{i=1}^{B} w_i\,p_i.
+$$
+
+Implementation note: critic parameters are temporarily frozen when computing the
+actor value term, so this term updates actor/backbone paths but not critic
+weights.
+
 ## Usage sketch
 
 ```python
