@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 import json
 import re
 from dataclasses import dataclass
@@ -7,9 +8,14 @@ from typing import Any
 
 import torch
 
-from model.config import ModelConfig
-from model.model_store import ModelStore
-from model.processor_loader import load_qwen_2_5_vl_processor
+try:
+    from src.model.config import ModelConfig
+    from src.model.model_store import ModelStore
+    from src.model.processor_loader import load_qwen_2_5_vl_processor
+except ModuleNotFoundError:
+    from model.config import ModelConfig
+    from model.model_store import ModelStore
+    from model.processor_loader import load_qwen_2_5_vl_processor
 
 from .config import RewardConfig
 from .schemas import RewardPromptSpec, RewardResult
@@ -70,10 +76,16 @@ class FrozenVLMRewardScorer:
         *,
         model_config: ModelConfig | None = None,
         registry: RewardPromptRegistry | None = None,
+        shared_model: Any | None = None,
+        shared_processor: Any | None = None,
+        disable_shared_adapter: bool = True,
     ):
         self.config = config
         self.registry = registry or RewardPromptRegistry.default()
         self.model_config = model_config or ModelConfig(allow_downloads=config.allow_downloads)
+        self._shared_model = shared_model
+        self._shared_processor = shared_processor
+        self._disable_shared_adapter = bool(disable_shared_adapter)
         self._model = None
         self._processor = None
 
@@ -100,7 +112,13 @@ class FrozenVLMRewardScorer:
         processor_inputs = processor(text=[prompt_text], images=[pil_image], return_tensors="pt")
         model_device = next(model.parameters()).device
         model_inputs = {name: tensor.to(model_device) for name, tensor in processor_inputs.items()}
-        generated_ids = model.generate(**model_inputs, max_new_tokens=self.config.generation_max_new_tokens)
+        with torch.inference_mode():
+            with self._shared_model_inference_context(model):
+                generated_ids = model.generate(
+                    **model_inputs,
+                    max_new_tokens=self.config.generation_max_new_tokens,
+                    do_sample=False,
+                )
         prompt_length = int(model_inputs["attention_mask"][0].sum().item())
         completion_ids = generated_ids[0, prompt_length:]
         raw_text = processor.batch_decode([completion_ids], skip_special_tokens=True)[0].strip()
@@ -118,6 +136,10 @@ class FrozenVLMRewardScorer:
         )
 
     def _load_model_and_processor(self):
+        if self._shared_model is not None or self._shared_processor is not None:
+            if self._shared_model is None or self._shared_processor is None:
+                raise ValueError("Both `shared_model` and `shared_processor` must be provided together.")
+            return self._shared_model, self._shared_processor
         if self._model is not None and self._processor is not None:
             return self._model, self._processor
         try:
@@ -136,6 +158,21 @@ class FrozenVLMRewardScorer:
         for parameter in self._model.parameters():
             parameter.requires_grad = False
         return self._model, self._processor
+
+    @contextmanager
+    def _shared_model_inference_context(self, model: Any):
+        """Temporarily enforce frozen deterministic inference for shared-model reward scoring."""
+
+        with ExitStack() as stack:
+            was_training = bool(getattr(model, "training", False))
+            if was_training:
+                model.eval()
+                stack.callback(model.train, True)
+            if self._disable_shared_adapter:
+                disable_adapter = getattr(model, "disable_adapter", None)
+                if callable(disable_adapter):
+                    stack.enter_context(disable_adapter())
+            yield
 
 
 def _extract_reward_value(text: str) -> float:

@@ -58,6 +58,9 @@ Responsibilities:
 - parse strict JSON or numeric reward outputs
 - clip rewards to the configured range
 - score frames with the untuned base VLM
+- in experiment runs, reuse the policy backbone's shared 4-bit Qwen model and
+  temporarily disable LoRA adapters during reward inference to keep rewards
+  stationary without loading a second heavy Qwen instance
 
 ### `picar_bridge.py`
 

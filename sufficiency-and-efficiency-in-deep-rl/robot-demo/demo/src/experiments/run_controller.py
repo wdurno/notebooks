@@ -8,24 +8,44 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from env import (
-    EnvConfig,
-    FrozenVLMRewardScorer,
-    PiCarControlConfig,
-    PiCarGymEnv,
-    RewardConfig,
-    RewardPromptRegistry,
-    RewardPromptSpec,
-    SpeechStreamConfig,
-    TrainingConfig,
-)
-from env.picar_bridge import PiCarControlClient
-from env.speech_stream import ContinuousSpeechStream
-from model import ModelConfig, PiCarActionModel, TransitionReplayBuffer
-from speech.audio_io import AudioIO
-from speech.config import SpeechConfig
-from speech.stt import FasterWhisperSTT
-from speech.tts import PiperTTS
+try:
+    from src.env import (
+        EnvConfig,
+        FrozenVLMRewardScorer,
+        PiCarControlConfig,
+        PiCarGymEnv,
+        RewardConfig,
+        RewardPromptRegistry,
+        RewardPromptSpec,
+        SpeechStreamConfig,
+        TrainingConfig,
+    )
+    from src.env.picar_bridge import PiCarControlClient
+    from src.env.speech_stream import ContinuousSpeechStream
+    from src.model import ModelConfig, PiCarActionModel, TransitionReplayBuffer
+    from src.speech.audio_io import AudioIO
+    from src.speech.config import SpeechConfig
+    from src.speech.stt import FasterWhisperSTT
+    from src.speech.tts import PiperTTS
+except ModuleNotFoundError:
+    from env import (
+        EnvConfig,
+        FrozenVLMRewardScorer,
+        PiCarControlConfig,
+        PiCarGymEnv,
+        RewardConfig,
+        RewardPromptRegistry,
+        RewardPromptSpec,
+        SpeechStreamConfig,
+        TrainingConfig,
+    )
+    from env.picar_bridge import PiCarControlClient
+    from env.speech_stream import ContinuousSpeechStream
+    from model import ModelConfig, PiCarActionModel, TransitionReplayBuffer
+    from speech.audio_io import AudioIO
+    from speech.config import SpeechConfig
+    from speech.stt import FasterWhisperSTT
+    from speech.tts import PiperTTS
 
 from .observation_store import ObservationStore
 from .schemas import ExperimentRunConfig, ExperimentRunSummary
@@ -167,11 +187,16 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
             flush=True,
         )
 
+    shared_reward_model = getattr(getattr(model, "backbone", None), "model", None)
+    shared_reward_processor = getattr(getattr(model, "backbone", None), "processor", None)
     reward_registry, reward_prompt_id = _build_reward_registry(config.reward_prompt)
     reward_scorer = FrozenVLMRewardScorer(
         RewardConfig(prompt_id=reward_prompt_id),
         model_config=ModelConfig(model_dir=model_root),
         registry=reward_registry,
+        shared_model=shared_reward_model,
+        shared_processor=shared_reward_processor,
+        disable_shared_adapter=True,
     )
 
     speech_config = SpeechConfig(model_dir=model_root)

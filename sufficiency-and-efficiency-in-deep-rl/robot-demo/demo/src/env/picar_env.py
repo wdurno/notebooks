@@ -8,7 +8,10 @@ from typing import Any
 
 import torch
 
-from model import ModelObservation, Transition
+try:
+    from src.model import ModelObservation, Transition
+except ModuleNotFoundError:
+    from model import ModelObservation, Transition
 
 from .config import EnvConfig
 from .persistence import append_jsonl, create_experiment_paths, save_frame_array, save_model_artifacts, save_replay_snapshot, write_metadata

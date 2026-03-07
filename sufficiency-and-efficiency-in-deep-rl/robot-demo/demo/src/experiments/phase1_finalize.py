@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
-from model import ModelConfig, ModelObservation, PiCarActionModel, Transition, TransitionReplayBuffer
+try:
+    from src.model import ModelConfig, ModelObservation, PiCarActionModel, Transition, TransitionReplayBuffer
+except ModuleNotFoundError:
+    from model import ModelConfig, ModelObservation, PiCarActionModel, Transition, TransitionReplayBuffer
 
 from .snapshot_store import SnapshotStore, resolve_snapshot_path
 

@@ -22,7 +22,10 @@ from .config import ModelConfig
 from .replay_buffer import TransitionReplayBuffer
 from .schemas import ModelActionOutput, ModelObservation, TransitionBatch
 
-from core.ssr_agent import SSRAgent
+try:
+    from src.core.ssr_agent import SSRAgent
+except ModuleNotFoundError:
+    from core.ssr_agent import SSRAgent
 
 
 @dataclass(frozen=True)

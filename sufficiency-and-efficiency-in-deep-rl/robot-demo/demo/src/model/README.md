@@ -9,6 +9,9 @@ continuous actor-critic control stack inside the `SSRAgent` training framework.
 - Keep the base VLM frozen and read-mostly.
 - Use QLoRA-style 4-bit quantization (NF4) for the base VLM to reduce GPU memory.
 - Train only LoRA parameters plus the actor/critic control heads.
+- Reuse the same quantized base Qwen instance for both policy generation and
+  reward prompting; reward scoring runs in frozen inference mode with adapters
+  disabled.
 - Keep agentic action selection available during the mixed-control phase.
 - Learn robot control directly in the 4-key PiCar vector space used by
   `apply_vector`.

@@ -24,6 +24,8 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - Persists observations in `data/<uuid>/observations.jsonl`.
 - Persists compressed frame blobs in `data/<uuid>/images/step_*.npz`.
 - Persists snapshots in `model/<uuid>/snapshots/`.
+- Reuses the policy backbone's single 4-bit Qwen instance for reward scoring
+  (reward pass runs frozen/inference-only with adapters disabled).
 - Stores only tunable parameters in snapshots, plus SSR sufficient statistics and replay metadata.
 - Keeps at most `--snapshot-keep` snapshots (default `3`).
 - Runs until interrupted with `Ctrl-C`.
