@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import asdict
+import os
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from uuid import uuid4
 from env import (
     EnvConfig,
     FrozenVLMRewardScorer,
+    PiCarControlConfig,
     PiCarGymEnv,
     RewardConfig,
     RewardPromptRegistry,
@@ -129,6 +131,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     observation_store = ObservationStore(data_run_dir)
     snapshot_store = SnapshotStore(model_run_dir, max_keep=config.snapshot_keep)
     training_config, training_enabled, t_is_traversing = build_training_config(config)
+    picar_host = _resolve_picar_host(config)
 
     started_at = datetime.now(timezone.utc).isoformat()
     run_metadata = {
@@ -139,6 +142,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "reward_prompt": config.reward_prompt,
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
+        "picar_host": picar_host,
     }
     observation_store.write_run_metadata(run_metadata)
     snapshot_store.write_run_metadata(run_metadata)
@@ -146,6 +150,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     print(f"[experiment] uuid={run_uuid}", flush=True)
     print(f"[experiment] data_dir={data_run_dir}", flush=True)
     print(f"[experiment] model_dir={model_run_dir}", flush=True)
+    print(f"[experiment] picar_host={picar_host}", flush=True)
 
     replay_buffer = TransitionReplayBuffer(capacity=10_000)
     model_config = ModelConfig(model_dir=model_root)
@@ -172,10 +177,12 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     speech_config = SpeechConfig(model_dir=model_root)
     speech_stream = ContinuousSpeechStream(SpeechStreamConfig(), transcriber=FasterWhisperSTT(speech_config))
     speaker = _Speaker(tts=PiperTTS(speech_config), audio=AudioIO(speech_config.audio))
+    base_picar_config = EnvConfig().picar
+    picar_config = replace(base_picar_config, host=picar_host)
     env = PiCarGymEnv(
         model=model,
         reward_scorer=reward_scorer,
-        picar_client=PiCarControlClient(EnvConfig().picar),
+        picar_client=PiCarControlClient(picar_config),
         speech_stream=speech_stream,
         speaker=speaker,
         config=EnvConfig(
@@ -313,3 +320,12 @@ def _validate_config(config: ExperimentRunConfig) -> None:
     if int(config.snapshot_keep) < 1:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
     return None
+
+
+def _resolve_picar_host(config: ExperimentRunConfig) -> str:
+    if config.picar_host is not None and config.picar_host.strip():
+        return config.picar_host.strip()
+    env_host = os.environ.get("PICAR_V_HOST")
+    if env_host is not None and env_host.strip():
+        return env_host.strip()
+    return PiCarControlConfig().host

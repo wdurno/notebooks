@@ -12,6 +12,12 @@ Run from the `demo/` directory:
 python -m src.experiments.experiment_interface --help
 ```
 
+Set the PiCar API endpoint the same way as the integration tests:
+
+```bash
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
+```
+
 ## What it does
 
 - Creates a new UUID for each run and prints it at startup.
@@ -25,6 +31,7 @@ python -m src.experiments.experiment_interface --help
 ## Core CLI flags
 
 - `--phase {init,tune,retask}`
+- `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
 - `--fixed-t FLOAT` (optional)
 - `--t-step FLOAT` (default `0.001`)
 - `--t-log-every INT` (default `1`)
@@ -39,7 +46,7 @@ python -m src.experiments.experiment_interface --help
 ### 1) Initialize data (`t=0`, no tuning)
 
 ```bash
-python -m src.experiments.experiment_interface \
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
   --phase init \
   --fixed-t 0.0
 ```
@@ -49,10 +56,40 @@ Behavior:
 - No training/memorization loop is triggered.
 - One initial snapshot is written to `model/<uuid>/snapshots/`.
 
+If the PiCar crashes (for example, low battery), just swap batteries and run the
+same phase-1 command again. Each restart creates a new run UUID directory under
+`data/`, and phase 1 is designed for aggregating many independent collection
+runs.
+
+Crash-handling workflow:
+
+1. Start phase 1 and let it collect until failure or `Ctrl-C`.
+2. Restart phase 1 with the same command after recovery.
+3. Repeat until enough data is collected across multiple `data/<uuid>` runs.
+4. Keep all phase-1 run directories; they are intended to be merged later for
+   offline tuning + memorization.
+
+Why phase-1 restart examples usually omit `--load-snapshot`:
+
+- In phase 1, the model is not tuned or memorized.
+- So each restart with default initialization is effectively equivalent for
+  collection-only runs.
+- If you intentionally started phase 1 from a custom snapshot, pass
+  `--load-snapshot` again on restart to keep the same initialization source.
+
+Example restart with explicit snapshot source:
+
+```bash
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
+  --phase init \
+  --fixed-t 0.0 \
+  --load-snapshot model/<prior-uuid>/snapshots
+```
+
 ### 2) Policy tuning (`t` traverses 0 -> 1)
 
 ```bash
-python -m src.experiments.experiment_interface \
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
   --phase tune \
   --t-step 0.001 \
   --t-log-every 1
@@ -66,7 +103,7 @@ Behavior:
 ### 3) Retasking (`t=1` by default, tuning enabled)
 
 ```bash
-python -m src.experiments.experiment_interface \
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
   --phase retask \
   --reward-prompt "find the blue cube" \
   --load-snapshot model/<prior-uuid>/snapshots
@@ -94,3 +131,34 @@ model/<uuid>/
     snapshot-step-000000-initial.pt
     snapshot-step-000640-memorize-mem-0064.pt
 ```
+
+## Phase-1 Finalization (offline tune + full memorize)
+
+After collecting many phase-1 runs, finalize them into a fresh
+`model/<new-uuid>/` state:
+
+```bash
+python -m src.experiments.phase1_finalize \
+  --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
+  --epochs 3 \
+  --batch-size 8 \
+  --fit-iters 32
+```
+
+Optional: initialize from an existing snapshot first:
+
+```bash
+python -m src.experiments.phase1_finalize \
+  --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
+  --load-snapshot model/<prior-uuid>/snapshots \
+  --epochs 3 \
+  --batch-size 8 \
+  --fit-iters 32
+```
+
+What `phase1_finalize` does:
+
+1. Loads transitions reconstructed from all provided `data/<uuid>/observations.jsonl` runs.
+2. Tunes the model offline on the aggregated replay buffer.
+3. Memorizes all loaded replay into SSR sufficient statistics.
+4. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.

@@ -9,7 +9,7 @@ SRC_ROOT = PROJECT_ROOT / "demo" / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from experiments.run_controller import build_training_config
+from experiments.run_controller import _resolve_picar_host, build_training_config
 from experiments.schemas import ExperimentRunConfig
 from experiments.snapshot_store import resolve_snapshot_path
 
@@ -80,3 +80,15 @@ def test_resolve_snapshot_path_accepts_file_or_directory(tmp_path):
     nested_file = nested / "snapshot-step-000030-memorize.pt"
     nested_file.write_bytes(b"z")
     assert resolve_snapshot_path(run_dir) == nested_file
+
+
+def test_resolve_picar_host_prefers_cli_then_env_then_default(monkeypatch):
+    monkeypatch.delenv("PICAR_V_HOST", raising=False)
+    config = ExperimentRunConfig(phase="init")
+    assert _resolve_picar_host(config) == "127.0.0.1:5000"
+
+    monkeypatch.setenv("PICAR_V_HOST", "10.0.0.22:5000")
+    assert _resolve_picar_host(config) == "10.0.0.22:5000"
+
+    config_cli = ExperimentRunConfig(phase="init", picar_host="10.0.0.44:6000")
+    assert _resolve_picar_host(config_cli) == "10.0.0.44:6000"

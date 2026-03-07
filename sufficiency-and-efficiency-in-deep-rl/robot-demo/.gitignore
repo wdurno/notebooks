@@ -63,6 +63,8 @@ demo/model/vlm/**
 
 # Generated experiment data.
 demo/data/**
+demo/data/**/*.npz
+demo/data/**/*.npy
 
 # Keep model documentation and manifests visible to git.
 !demo/model/README.md
@@ -75,3 +77,7 @@ demo/data/**
 !demo/model/vlm/
 !demo/model/vlm/.gitkeep
 !demo/data/README.md
+
+# UUID-scoped experiment model outputs (snapshots + metadata).
+demo/model/*/run_meta.json
+demo/model/*/snapshots/**

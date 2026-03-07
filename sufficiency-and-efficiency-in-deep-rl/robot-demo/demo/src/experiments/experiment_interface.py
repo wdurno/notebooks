@@ -12,6 +12,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run PiCar experimental phases with UUID-scoped data/model persistence.",
     )
     parser.add_argument("--phase", choices=("init", "tune", "retask"), required=True)
+    parser.add_argument(
+        "--picar-host",
+        type=str,
+        default=None,
+        help="PiCar API host:port (overrides PICAR_V_HOST if provided).",
+    )
     parser.add_argument("--fixed-t", type=float, default=None, help="Pin interpolation t in [0, 1].")
     parser.add_argument(
         "--t-step",
@@ -65,6 +71,7 @@ def main() -> int:
 
     config = ExperimentRunConfig(
         phase=args.phase,
+        picar_host=args.picar_host,
         fixed_t=args.fixed_t,
         t_step=args.t_step,
         t_log_every=args.t_log_every,

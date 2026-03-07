@@ -1,0 +1,366 @@
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+from uuid import uuid4
+
+from model import ModelConfig, ModelObservation, PiCarActionModel, Transition, TransitionReplayBuffer
+
+from .snapshot_store import SnapshotStore, resolve_snapshot_path
+
+
+@dataclass(frozen=True)
+class Phase1FinalizeConfig:
+    data_runs: list[Path]
+    model_root: Path | None = None
+    load_snapshot: Path | None = None
+    epochs: int = 1
+    batch_size: int = 8
+    fit_iters: int = 32
+    memorize_random_idx: bool = False
+    snapshot_keep: int = 3
+    run_uuid: str | None = None
+
+
+@dataclass(frozen=True)
+class Phase1FinalizeSummary:
+    run_uuid: str
+    model_run_dir: Path
+    snapshot_path: Path
+    source_run_count: int
+    transitions_loaded: int
+    fit_calls: int
+    memorized_count: int
+
+
+def default_demo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="phase1_finalize",
+        description="Finalize phase-1 data by offline tuning and full memorization.",
+    )
+    parser.add_argument(
+        "--data-runs",
+        nargs="+",
+        type=Path,
+        required=True,
+        help="One or more phase-1 run directories under demo/data.",
+    )
+    parser.add_argument(
+        "--model-root",
+        type=Path,
+        default=None,
+        help="Model root directory (default: demo/model).",
+    )
+    parser.add_argument(
+        "--load-snapshot",
+        type=Path,
+        default=None,
+        help="Optional snapshot path/dir to initialize from before tuning.",
+    )
+    parser.add_argument("--epochs", type=int, default=1, help="Number of offline epochs over replay sampling.")
+    parser.add_argument("--batch-size", type=int, default=8, help="Replay batch size for each fit call.")
+    parser.add_argument("--fit-iters", type=int, default=32, help="Iterations per `model.fit(...)` call.")
+    parser.add_argument(
+        "--memorize-random-idx",
+        action="store_true",
+        help="Use random replay indices during final SSR memorization.",
+    )
+    parser.add_argument("--snapshot-keep", type=int, default=3, help="Snapshot retention count.")
+    parser.add_argument("--run-uuid", type=str, default=None, help="Optional explicit output UUID.")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    config = Phase1FinalizeConfig(
+        data_runs=[Path(path) for path in args.data_runs],
+        model_root=args.model_root,
+        load_snapshot=args.load_snapshot,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        fit_iters=args.fit_iters,
+        memorize_random_idx=bool(args.memorize_random_idx),
+        snapshot_keep=args.snapshot_keep,
+        run_uuid=args.run_uuid,
+    )
+    summary = run_phase1_finalize(config)
+    print(
+        f"[phase1_finalize] done uuid={summary.run_uuid} "
+        f"sources={summary.source_run_count} transitions={summary.transitions_loaded} "
+        f"fit_calls={summary.fit_calls} memorized={summary.memorized_count} "
+        f"snapshot={summary.snapshot_path}",
+        flush=True,
+    )
+    return 0
+
+
+def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
+    _validate_config(config)
+    run_uuid = config.run_uuid or str(uuid4())
+    model_root = (config.model_root or (default_demo_root() / "model")).resolve()
+    model_run_dir = model_root / run_uuid
+    model_run_dir.mkdir(parents=True, exist_ok=False)
+    source_runs = resolve_data_runs(config.data_runs)
+    transitions_estimate = sum(count_step_rows(path) for path in source_runs)
+    if transitions_estimate <= 0:
+        raise ValueError("No `source=step` rows found in the provided data runs.")
+
+    replay_buffer = TransitionReplayBuffer(capacity=transitions_estimate)
+    transitions_loaded = 0
+    max_step_index = 0
+    for run_dir in source_runs:
+        for transition in iter_transitions_from_run(run_dir):
+            replay_buffer.add(transition)
+            transitions_loaded += 1
+            max_step_index = max(max_step_index, int(transition.next_observation.step_index))
+
+    if transitions_loaded <= 0:
+        raise ValueError("No transitions could be reconstructed from the provided runs.")
+
+    model = PiCarActionModel(
+        replay_buffer=replay_buffer,
+        config=ModelConfig(model_dir=model_root),
+    )
+    snapshot_store = SnapshotStore(model_run_dir, max_keep=config.snapshot_keep)
+
+    loaded_snapshot_path = None
+    if config.load_snapshot is not None:
+        loaded_snapshot_path = resolve_snapshot_path(config.load_snapshot)
+        result = snapshot_store.load_into_model(snapshot_path=loaded_snapshot_path, model=model)
+        print(
+            f"[phase1_finalize] loaded snapshot={result.path} "
+            f"trainable_keys={len(result.loaded_trainable_keys)} ssr={result.has_ssr_state}",
+            flush=True,
+        )
+
+    steps_per_epoch = max(1, int(math.ceil(len(replay_buffer) / float(max(1, config.batch_size)))))
+    fit_calls = 0
+    last_pi = None
+    last_loss = None
+    for epoch_idx in range(config.epochs):
+        for _ in range(steps_per_epoch):
+            batch_size = min(max(1, config.batch_size), len(replay_buffer))
+            pi, loss = model.fit(batch_size=batch_size, iters=config.fit_iters)
+            fit_calls += 1
+            last_pi = float(pi)
+            last_loss = float(loss)
+        print(
+            f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
+            f"fit_calls={fit_calls} replay_size={len(replay_buffer)} "
+            f"last_pi={last_pi:.4f} last_loss={last_loss:.6f}",
+            flush=True,
+        )
+
+    memorized_count = len(replay_buffer)
+    model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=True)
+    snapshot_path = snapshot_store.save_snapshot(
+        model=model,
+        replay_buffer=replay_buffer,
+        step_index=max_step_index,
+        t=0.0,
+        reason="phase1-finalize",
+        memorize_count=memorized_count,
+    )
+    if hasattr(replay_buffer, "clear"):
+        replay_buffer.clear(memorized_count)
+
+    metadata = {
+        "uuid": run_uuid,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "loaded_snapshot": str(loaded_snapshot_path) if loaded_snapshot_path is not None else None,
+        "source_runs": [str(path) for path in source_runs],
+        "source_run_count": len(source_runs),
+        "transitions_loaded": transitions_loaded,
+        "epochs": config.epochs,
+        "batch_size": config.batch_size,
+        "fit_iters": config.fit_iters,
+        "fit_calls": fit_calls,
+        "memorized_count": memorized_count,
+        "snapshot_path": str(snapshot_path),
+        "max_source_step_index": max_step_index,
+        "snapshot_keep": config.snapshot_keep,
+    }
+    snapshot_store.write_run_metadata(metadata)
+    return Phase1FinalizeSummary(
+        run_uuid=run_uuid,
+        model_run_dir=model_run_dir,
+        snapshot_path=snapshot_path,
+        source_run_count=len(source_runs),
+        transitions_loaded=transitions_loaded,
+        fit_calls=fit_calls,
+        memorized_count=memorized_count,
+    )
+
+
+def resolve_data_runs(data_runs: Iterable[Path]) -> list[Path]:
+    resolved: list[Path] = []
+    for path in data_runs:
+        run_dir = Path(path).resolve()
+        if not run_dir.is_dir():
+            raise FileNotFoundError(f"Data run directory not found: {run_dir}")
+        observations_path = run_dir / "observations.jsonl"
+        if not observations_path.is_file():
+            raise FileNotFoundError(f"Missing observations file: {observations_path}")
+        resolved.append(run_dir)
+    if not resolved:
+        raise ValueError("At least one data run directory must be provided.")
+    return resolved
+
+
+def count_step_rows(run_dir: Path) -> int:
+    count = 0
+    observations_path = Path(run_dir) / "observations.jsonl"
+    with observations_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            if str(payload.get("source", "")).lower() == "step":
+                count += 1
+    return count
+
+
+def iter_transitions_from_run(run_dir: Path) -> Iterable[Transition]:
+    observations_path = Path(run_dir) / "observations.jsonl"
+    prev_observation: ModelObservation | None = None
+    with observations_path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in {observations_path}:{line_number}") from exc
+            observation = observation_from_row(run_dir, row)
+            source = str(row.get("source", "")).lower()
+            if prev_observation is None:
+                prev_observation = observation
+                continue
+            if source != "step":
+                prev_observation = observation
+                continue
+
+            action = row.get("action") or {}
+            executed_action_vector = _optional_action_vector(action.get("executed_action_vector"))
+            reward = row.get("reward")
+            if executed_action_vector is None or reward is None:
+                prev_observation = observation
+                continue
+            transition = Transition(
+                observation=prev_observation,
+                executed_action_vector=executed_action_vector,
+                reward=float(reward),
+                next_observation=observation,
+                done=bool(row.get("done", False)),
+                target_text=build_target_text(action=action, observation_t=float(prev_observation.t)),
+                logp_beta_sum=_optional_float(action.get("logp_beta_sum")),
+                target_action_name=_optional_str(action.get("agentic_action_name")),
+                agentic_action_vector=_optional_action_vector(action.get("agentic_action_vector")),
+                actor_action_vector=_optional_action_vector(action.get("actor_action_vector")),
+                metadata={
+                    "source_run_dir": str(run_dir),
+                    "source_line": line_number,
+                    "source_row_metadata": row.get("metadata", {}),
+                },
+            )
+            yield transition
+            prev_observation = observation
+
+
+def observation_from_row(run_dir: Path, row: dict[str, Any]) -> ModelObservation:
+    image_rel_path = row.get("image_path")
+    if not image_rel_path:
+        raise ValueError("Observation row is missing `image_path`.")
+    image_path = Path(run_dir) / str(image_rel_path)
+    image_rgb = load_image_array(image_path)
+    messages = row.get("messages", [])
+    metadata = row.get("metadata", {})
+    if not isinstance(messages, list):
+        messages = []
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return ModelObservation(
+        image_rgb=image_rgb,
+        messages=messages,
+        t=float(row.get("t", 0.0)),
+        last_reward=float(row.get("last_reward", 0.0)),
+        done=bool(row.get("done", False)),
+        step_index=int(row.get("step_index", 0)),
+        metadata=metadata,
+    )
+
+
+def load_image_array(path: Path) -> Any:
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError("numpy is required for loading stored observations") from exc
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing image blob: {path}")
+    payload = np.load(path, allow_pickle=False)
+    if "image" not in payload:
+        raise ValueError(f"Missing `image` array in blob: {path}")
+    return payload["image"]
+
+
+def build_target_text(*, action: dict[str, Any], observation_t: float) -> str | None:
+    generated_text = str(action.get("generated_text", "") or "").strip()
+    action_name = _optional_str(action.get("agentic_action_name"))
+    if action_name and observation_t < 1.0:
+        return json.dumps(
+            {"action": action_name, "say": generated_text},
+            ensure_ascii=True,
+        )
+    if generated_text:
+        return generated_text
+    return None
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _optional_action_vector(value: Any) -> dict[str, float] | None:
+    if value is None or not isinstance(value, dict):
+        return None
+    vector = {}
+    for key in ("pan", "tilt", "turn", "drive"):
+        vector[key] = float(value.get(key, 0.0))
+    return vector
+
+
+def _validate_config(config: Phase1FinalizeConfig) -> None:
+    if int(config.epochs) < 1:
+        raise ValueError(f"--epochs must be >= 1, got {config.epochs}")
+    if int(config.batch_size) < 1:
+        raise ValueError(f"--batch-size must be >= 1, got {config.batch_size}")
+    if int(config.fit_iters) < 1:
+        raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
+    if int(config.snapshot_keep) < 1:
+        raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

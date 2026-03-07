@@ -11,6 +11,7 @@ ExperimentPhase = Literal["init", "tune", "retask"]
 @dataclass(frozen=True)
 class ExperimentRunConfig:
     phase: ExperimentPhase
+    picar_host: str | None = None
     fixed_t: float | None = None
     t_step: float = 0.001
     t_log_every: int = 1
