@@ -111,7 +111,10 @@ class PiCarGymEnv:
         self.history = []
         self.step_index = 0
         self.last_reward = 0.0
-        self.paths = create_experiment_paths(self.config.data_dir, self.config.experiment_name_prefix)
+        if self.config.enable_persistence:
+            self.paths = create_experiment_paths(self.config.data_dir, self.config.experiment_name_prefix)
+        else:
+            self.paths = None
         self._run_metadata = {}
         self._last_vector_command_at = None
         if self.speech_stream is not None:

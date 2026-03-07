@@ -115,8 +115,8 @@ Two essential experimental modules are needed:
    3. Create a `uuid` name for the experiment instance and print it to screen at game start. 
    4. Create a directory in `data/[uuid]` named after the experiment instance. Write all new observations in this directory. Don't count on the `replay_buffer` to store or index observations, because every `SSRAgent.memorize` call is paired with a `ReplayBuffer.clear` call. Frequent writing is important because experiments are likely to halt suddenly due to PiCar Raspberry Pi crashes due to low batteries. 
    5. Create a directy in `model/[uuid]` named after the experiment instance. Use it to store model snapshots. Only store tunable parameters; it's very wasteful to store untuned VLM copies. 
-   2. Run until user hits `Ctrl-C`. 
-2. **README**: `src/experiments/tune.py` how to use the experimental interface, including the experimental phases above. For each phase, an example Bash command must be shown. 
+   6. Run until user hits `Ctrl-C`. 
+2. **README**: `src/experiments/README.md` how to use the experimental interface, including the experimental phases above. For each phase, an example Bash command must be shown. 
 
 ## requirements 
 

@@ -67,6 +67,7 @@ class EnvConfig:
     demo_root: Path = field(default_factory=default_demo_root)
     data_dir: Path = field(default_factory=default_data_dir)
     experiment_name_prefix: str = "picar-rl-env"
+    enable_persistence: bool = True
     history_window: int = 12
     checkpoint_basename: str = "picar_policy"
     write_frame_blobs: bool = True
