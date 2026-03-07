@@ -30,6 +30,7 @@ def test_transition_replay_buffer_samples_structured_batches():
             next_observation=_observation(1),
             done=False,
             target_text="drive-forward",
+            logp_beta_sum=-0.75,
             target_action_name="drive-forward",
         )
     )
@@ -40,6 +41,7 @@ def test_transition_replay_buffer_samples_structured_batches():
     assert batch.executed_action_vector.shape == (1, 4)
     assert float(batch.executed_action_vector[0, 3].item()) == 1.0
     assert float(batch.reward[0].item()) == 1.0
+    assert float(batch.logp_beta_sum[0].item()) == -0.75
     assert batch.target_action_name == ["drive-forward"]
 
 

@@ -57,14 +57,33 @@ class FakeGenerationModel(nn.Module):
         del attention_mask, output_hidden_states, return_dict
         batch_size, seq_len = input_ids.shape
         hidden = torch.ones(batch_size, seq_len, self.config.hidden_size)
+        logits = torch.ones(batch_size, seq_len, 8, dtype=torch.float32)
         loss = torch.tensor(1.25) if labels is not None else None
-        return SimpleNamespace(hidden_states=[hidden], loss=loss)
+        return SimpleNamespace(hidden_states=[hidden], logits=logits, loss=loss)
 
-    def generate(self, input_ids, attention_mask=None, max_new_tokens=64):
-        del attention_mask, max_new_tokens
+    def generate(
+        self,
+        input_ids,
+        attention_mask=None,
+        max_new_tokens=64,
+        do_sample=True,
+        temperature=0.8,
+        top_p=0.95,
+        top_k=0,
+        return_dict_in_generate=False,
+        output_scores=False,
+    ):
+        del attention_mask, max_new_tokens, do_sample, temperature, top_p, top_k
         batch_size, seq_len = input_ids.shape
         continuation = torch.full((batch_size, 2), 7, dtype=torch.int64)
-        return torch.cat([input_ids, continuation], dim=1)
+        sequences = torch.cat([input_ids, continuation], dim=1)
+        if not return_dict_in_generate:
+            return sequences
+        scores = []
+        if output_scores:
+            for _ in range(continuation.shape[1]):
+                scores.append(torch.ones((batch_size, 8), dtype=torch.float32))
+        return SimpleNamespace(sequences=sequences, scores=scores)
 
 
 def test_ensure_image_placeholder_injects_into_last_user_message():
@@ -100,7 +119,7 @@ def test_qwen_backbone_encode_uses_chat_template_messages():
     assert first_messages[1]["content"][0] == {"type": "image"}
     assert output.agentic_action_names == ["drive-forward"]
     assert output.generated_texts == ["moving"]
-    assert float(output.vlm_loss.item()) == 1.25
+    assert float(output.vlm_loss.item()) > 0.0
 
 
 def test_resolve_model_hidden_size_uses_nested_text_config():

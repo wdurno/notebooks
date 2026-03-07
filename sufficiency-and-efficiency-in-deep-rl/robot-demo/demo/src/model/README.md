@@ -26,7 +26,7 @@ Top-level model configuration, including:
 - VLM model location under `demo/model/`
 - optimizer settings
 - LoRA settings
-- loss weights `alpha` and `beta`
+- loss-term weighting controls
 - RL discount `gamma`
 
 ### `schemas.py`
@@ -89,9 +89,11 @@ Responsibilities:
 - produce both the agentic and actor-driven actions
 - mix those vectors by `t` to form the executed action
 - score continuous state-action pairs with a single critic
-- define the combined loss:
-  - `0.5 * VLM loss`
-  - `0.5 * RL loss`
+- define the combined objective across:
+  - supervised VLM loss
+  - continuous control RL loss
+  - off-policy token policy-gradient loss
+  - value-baseline regression loss
 
 ## Model / environment contract
 
@@ -111,6 +113,7 @@ The model returns one `ModelActionOutput`:
 - `executed_action_vector`
 - `critic_value`
 - `generated_text`
+- `logp_beta_sum`
 
 The environment should:
 
@@ -123,16 +126,18 @@ The environment should:
 to compute:
 
 - `L_vlm`: supervised VLM/tool-call loss
-- `L_rl`: continuous actor-critic loss
+- `L_rl`: continuous actor-critic control loss
+- `L_pg`: off-policy token policy-gradient loss
+- `L_value`: value-baseline regression loss
 
 with the default combined objective:
 
 ```text
-L = 0.5 * L_vlm + 0.5 * L_rl
+L = L_vlm + L_rl + L_pg + L_value
 ```
 
-The RL path uses detached agentic action vectors, a Huber critic loss, and a
-bootstrap target built from target actor/critic heads.
+The replay buffer stores one behavior-policy sequence log-probability per
+transition (`logp_beta_sum`) for off-policy importance weighting.
 
 ## Loss details
 
@@ -147,20 +152,24 @@ For a minibatch of size $B$, let:
 - $a^{\text{agentic}}_i$: agentic action vector from the backbone
 - $a^{\text{actor}}_i$: actor-head action vector
 - $\bar a^{\text{actor}}_i$, $\bar Q$: target actor and target critic
+- $\log P_{\beta,i}$: stored behavior-policy sequence log-probability (`logp_beta_sum`)
+- $\log P_{\theta,i}$: current-policy sequence log-probability of the replayed text
 
-The total objective is:
+The objective is:
 
 $$
 \mathcal{L}_{\text{total}}
 =
-\alpha\,\mathcal{L}_{\text{vlm}}
+\mathcal{L}_{\text{vlm}}
 +
-\beta\,\mathcal{L}_{\text{rl}},
-\qquad
-\mathcal{L}_{\text{rl}}=\mathcal{L}_{\text{actor}}+\mathcal{L}_{\text{critic}}.
+\mathcal{L}_{\text{actor}}
++
+\mathcal{L}_{\text{critic}}
++
+\mathcal{L}_{\text{pg}}
++
+\mathcal{L}_{\text{value}}.
 $$
-
-with defaults $\alpha=\beta=0.5$.
 
 The TD target for the critic is:
 
@@ -218,6 +227,35 @@ $$
 -\frac{1}{B}\sum_{i=1}^{B} Q(s_i,\tilde a_i)
 +
 \frac{1}{B}\sum_{i=1}^{B} w_i\,p_i.
+$$
+
+For the value baseline:
+
+$$
+v_i = V(s_i),\qquad
+v_i^{\text{target}} = r_i + \gamma(1-d_i)V(s'_i),
+$$
+
+$$
+\mathcal{L}_{\text{value}}
+=
+\frac{1}{B}\sum_{i=1}^{B}\operatorname{Huber}\!\left(v_i-v_i^{\text{target}}\right),
+\qquad
+\hat A_i = \operatorname{detach}\!\left(v_i^{\text{target}}-v_i\right).
+$$
+
+The off-policy token-PG term uses sequence-level importance ratios:
+
+$$
+\rho_i=\exp(\log P_{\theta,i}-\log P_{\beta,i}),
+$$
+
+$$
+\mathcal{L}_{\text{pg}}
+=
+-\frac{1}{B}\sum_{i=1}^{B}
+\rho_i\hat A_i
+\sum_{k}\log\pi_\theta(a_{i,k}\mid a_{i,<k}, s_i).
 $$
 
 Implementation note: critic parameters are temporarily frozen when computing the

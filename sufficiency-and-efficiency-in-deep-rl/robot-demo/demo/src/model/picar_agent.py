@@ -36,6 +36,9 @@ class ForwardBatchOutput:
     actor_action_tensor: torch.Tensor
     executed_action_tensor: torch.Tensor
     critic_value: torch.Tensor
+    value_estimate: torch.Tensor
+    generated_logp_sums: torch.Tensor
+    target_logp_sums: torch.Tensor
     t_tensor: torch.Tensor
     debug: list[dict[str, object]]
 
@@ -95,6 +98,7 @@ class PiCarActionModel(SSRAgent):
         self.actor_head = ContinuousActorHead(hidden_size, bias=self.config.value_head_bias)
         critic_hidden_size = int(self.config.critic_hidden_size or hidden_size)
         self.critic = ContinuousQCritic(hidden_size, critic_hidden_size=critic_hidden_size)
+        self.value_head = nn.Linear(hidden_size, 1, bias=self.config.value_head_bias)
         self.target_actor_head = copy.deepcopy(self.actor_head)
         self.target_critic = copy.deepcopy(self.critic)
         for parameter in self.target_actor_head.parameters():
@@ -125,7 +129,7 @@ class PiCarActionModel(SSRAgent):
         return batch
 
     def loss(self, transitions: TransitionBatch) -> torch.Tensor:
-        """Compute `alpha * L_vlm + beta * L_rl` with continuous actor-critic RL."""
+        """Compute the full objective over VLM, control RL, token PG, and value loss."""
 
         current = self._forward_batch(
             transitions.observations,
@@ -134,8 +138,10 @@ class PiCarActionModel(SSRAgent):
         )
         reward_tensor = transitions.reward.to(self.device)
         done_tensor = transitions.done.to(self.device)
+        logp_beta_sum = transitions.logp_beta_sum.to(self.device)
         executed_action_tensor = transitions.executed_action_vector.to(self.device)
         q_current = self.critic(current.hidden_state, executed_action_tensor)
+        value_current = self.value_head(current.hidden_state).squeeze(1)
 
         with torch.no_grad():
             next_batch = self._forward_batch(
@@ -149,9 +155,13 @@ class PiCarActionModel(SSRAgent):
                 next_batch.t_tensor,
             )
             next_q = self.target_critic(next_batch.hidden_state, next_executed_action)
+            value_next = self.value_head(next_batch.hidden_state).squeeze(1)
             td_target = reward_tensor + self.config.gamma * (1.0 - done_tensor) * next_q
+            value_target = reward_tensor + self.config.gamma * (1.0 - done_tensor) * value_next
 
         critic_loss = F.smooth_l1_loss(q_current, td_target, reduction="mean")
+        value_loss = F.smooth_l1_loss(value_current, value_target, reduction="mean")
+        advantage = (value_target - value_current).detach()
 
         agentic_detached = current.agentic_action_tensor.detach()
         actor_executed_action = mix_action_tensors(
@@ -165,7 +175,25 @@ class PiCarActionModel(SSRAgent):
         actor_loss = -actor_value.mean() + (anchor_weight * anchor_penalty).mean()
 
         rl_loss = actor_loss + critic_loss
-        total_loss = self.config.alpha * current.vlm_loss + self.config.beta * rl_loss
+        has_target_text = torch.tensor(
+            [bool(text and text.strip()) for text in transitions.target_text],
+            dtype=torch.bool,
+            device=self.device,
+        )
+        valid_pg = has_target_text & torch.isfinite(logp_beta_sum) & torch.isfinite(current.target_logp_sums)
+        if bool(valid_pg.any().item()):
+            rho = torch.exp(current.target_logp_sums.detach() - logp_beta_sum)
+            rho = torch.where(torch.isfinite(rho), rho, torch.zeros_like(rho))
+            token_pg_terms = -(rho * advantage * current.target_logp_sums)
+            token_pg_loss = token_pg_terms[valid_pg].mean()
+        else:
+            token_pg_loss = current.hidden_state.sum() * 0.0
+        total_loss = (
+            self.config.alpha * current.vlm_loss
+            + self.config.beta * rl_loss
+            + self.config.token_pg_weight * token_pg_loss
+            + self.config.value_loss_weight * value_loss
+        )
         return total_loss
 
     def fit(self, batch_size, iters=1, pi_min=0.1, pi_max=0.9):
@@ -210,6 +238,17 @@ class PiCarActionModel(SSRAgent):
         agentic_action_tensor = torch.stack(agentic_tensors, dim=0)
         executed_action_tensor = mix_action_tensors(agentic_action_tensor, actor_action_tensor, t_tensor)
         critic_value = self.critic(hidden_state, executed_action_tensor)
+        value_estimate = self.value_head(hidden_state).squeeze(1)
+        generated_logp_sums = backbone_output.generated_logp_sums
+        if generated_logp_sums is None:
+            generated_logp_sums = hidden_state.sum(dim=1) * 0.0
+        else:
+            generated_logp_sums = generated_logp_sums.to(hidden_state.device, dtype=torch.float32)
+        target_logp_sums = backbone_output.target_logp_sums
+        if target_logp_sums is None:
+            target_logp_sums = hidden_state.sum(dim=1) * 0.0
+        else:
+            target_logp_sums = target_logp_sums.to(hidden_state.device, dtype=torch.float32)
 
         for idx, observation in enumerate(observations):
             actions.append(
@@ -224,6 +263,7 @@ class PiCarActionModel(SSRAgent):
                     executed_action_vector=tensor_to_action_vector(executed_action_tensor[idx]),
                     critic_value=float(critic_value[idx].detach().cpu().item()),
                     generated_text=backbone_output.generated_texts[idx],
+                    logp_beta_sum=float(generated_logp_sums[idx].detach().cpu().item()),
                     debug=backbone_output.debug[idx] if idx < len(backbone_output.debug) else {},
                 )
             )
@@ -241,6 +281,9 @@ class PiCarActionModel(SSRAgent):
             actor_action_tensor=actor_action_tensor,
             executed_action_tensor=executed_action_tensor,
             critic_value=critic_value,
+            value_estimate=value_estimate,
+            generated_logp_sums=generated_logp_sums,
+            target_logp_sums=target_logp_sums,
             t_tensor=t_tensor,
             debug=backbone_output.debug,
         )

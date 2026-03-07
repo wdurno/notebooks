@@ -216,6 +216,7 @@ class PiCarGymEnv:
             next_observation=next_observation,
             done=False,
             target_text=target_text,
+            logp_beta_sum=action.logp_beta_sum,
             target_action_name=action.agentic_action_name,
             agentic_action_vector=action.agentic_action_vector,
             actor_action_vector=action.actor_action_vector,

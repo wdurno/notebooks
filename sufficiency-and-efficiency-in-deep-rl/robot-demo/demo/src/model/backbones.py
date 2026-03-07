@@ -8,6 +8,7 @@ from typing import Any, Optional, Protocol
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .action_space import ACTION_NAMES, normalized_action_name
 from .config import ModelConfig
@@ -38,6 +39,8 @@ class BackboneBatchOutput:
     agentic_action_names: list[str]
     generated_texts: list[str]
     vlm_loss: Optional[torch.Tensor] = None
+    generated_logp_sums: Optional[torch.Tensor] = None
+    target_logp_sums: Optional[torch.Tensor] = None
     debug: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -112,8 +115,9 @@ class FakeBackbone(nn.Module):
             else:
                 action_names.append("look-forward")
             texts.append(self.generated_texts[min(idx, len(self.generated_texts) - 1)])
-            debug.append({"step_index": observation.step_index})
+            debug.append({"step_index": observation.step_index, "generated_logp_sum": 0.0})
         pooled = torch.stack(hidden_rows, dim=0)
+        zero_vector = pooled.sum(dim=1) * 0.0
         vlm_loss = None
         if compute_vlm_loss:
             vlm_loss = pooled.sum() * 0.0 + float(self.vlm_loss_value)
@@ -122,6 +126,8 @@ class FakeBackbone(nn.Module):
             agentic_action_names=action_names,
             generated_texts=texts,
             vlm_loss=vlm_loss,
+            generated_logp_sums=zero_vector,
+            target_logp_sums=zero_vector,
             debug=debug,
         )
 
@@ -240,9 +246,31 @@ class QwenLoRABackbone(nn.Module):
         # equal to the language hidden state size.
         pooled_hidden_state = outputs.hidden_states[-1][:, -1, :]
 
-        # Generation is used only for the agentic branch / optional speech text.
-        generated_ids = self.model.generate(**model_inputs, max_new_tokens=64)
+        # Use stochastic decoding so collected text actions are sampled from the
+        # behavior policy instead of deterministic argmax decoding.
+        generation_kwargs: dict[str, Any] = {
+            "max_new_tokens": int(self.config.generation_max_new_tokens),
+            "do_sample": True,
+            "temperature": float(self.config.generation_temperature),
+            "top_p": float(self.config.generation_top_p),
+        }
+        top_k = int(self.config.generation_top_k)
+        if top_k > 0:
+            generation_kwargs["top_k"] = top_k
+        generation_output = self.model.generate(
+            **model_inputs,
+            **generation_kwargs,
+            return_dict_in_generate=True,
+            output_scores=True,
+        )
+        generated_ids = generation_output.sequences
         prompt_lengths = model_inputs["attention_mask"].sum(dim=1).tolist()
+        generated_logp_sums = _compute_generate_log_prob_sums(
+            sequences=generated_ids,
+            prompt_lengths=prompt_lengths,
+            scores=list(generation_output.scores),
+            eos_token_id=getattr(self.model.config, "eos_token_id", None),
+        )
         decoded = []
         for idx, prompt_length in enumerate(prompt_lengths):
             new_token_ids = generated_ids[idx, int(prompt_length) :]
@@ -258,21 +286,32 @@ class QwenLoRABackbone(nn.Module):
             parsed = [("look-forward", text.strip()) for text in decoded]
         action_names = [item[0] for item in parsed]
         generated_texts = [item[1] for item in parsed]
-        debug = [{"raw_generation": text} for text in decoded]
+        debug = [
+            {"raw_generation": text, "generated_logp_sum": float(generated_logp_sums[idx].detach().cpu().item())}
+            for idx, text in enumerate(decoded)
+        ]
         vlm_loss = None
-        if compute_vlm_loss and target_texts and any(text is not None for text in target_texts):
-            vlm_loss = self._compute_supervised_vlm_loss(
+        target_logp_sums = pooled_hidden_state.sum(dim=1) * 0.0
+        if target_texts and any(text is not None and text.strip() for text in target_texts):
+            vlm_loss_value, target_logp_sums = self._compute_supervised_token_stats(
                 observations=observations,
                 images=images,
                 messages_list=prepared_messages,
                 target_texts=target_texts,
                 model_device=model_device,
             )
+            if compute_vlm_loss:
+                vlm_loss = vlm_loss_value
+        elif compute_vlm_loss:
+            parameter = next(self.model.parameters())
+            vlm_loss = parameter.sum() * 0.0
         return BackboneBatchOutput(
             pooled_hidden_state=pooled_hidden_state,
             agentic_action_names=action_names,
             generated_texts=generated_texts,
             vlm_loss=vlm_loss,
+            generated_logp_sums=generated_logp_sums,
+            target_logp_sums=target_logp_sums,
             debug=debug,
         )
 
@@ -282,7 +321,7 @@ class QwenLoRABackbone(nn.Module):
         messages.extend(_copy_messages(observation.messages))
         return _ensure_image_placeholder(messages)
 
-    def _compute_supervised_vlm_loss(
+    def _compute_supervised_token_stats(
         self,
         *,
         observations: list[ModelObservation],
@@ -290,8 +329,8 @@ class QwenLoRABackbone(nn.Module):
         messages_list: list[list[dict[str, Any]]],
         target_texts: list[Optional[str]],
         model_device: torch.device,
-    ) -> torch.Tensor:
-        """Compute a prompt-masked causal loss aligned to the model inputs.
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute masked causal loss and target-sequence log-prob sums.
 
         For each sample, we tokenize:
 
@@ -305,9 +344,13 @@ class QwenLoRABackbone(nn.Module):
         implementation.
         """
 
-        per_sample_losses = []
+        per_sample_losses: list[torch.Tensor] = []
+        per_sample_logp_sums: list[torch.Tensor] = []
+        parameter = next(self.model.parameters())
+        zero = parameter.sum() * 0.0
         for observation, messages, image, target_text in zip(observations, messages_list, images, target_texts):
             if target_text is None or not target_text.strip():
+                per_sample_logp_sums.append(zero)
                 continue
             prompt_text = self.processor.apply_chat_template(
                 messages,
@@ -342,15 +385,62 @@ class QwenLoRABackbone(nn.Module):
             labels[:, :prompt_length] = -100
             outputs = self.model(
                 **full_inputs,
-                labels=labels,
                 return_dict=True,
             )
-            per_sample_losses.append(outputs.loss)
+            shift_logits = outputs.logits[:, :-1, :]
+            shift_labels = labels[:, 1:]
+            token_mask = shift_labels.ne(-100)
+            if not bool(token_mask.any().item()):
+                per_sample_logp_sums.append(zero)
+                continue
+            safe_labels = shift_labels.masked_fill(~token_mask, 0)
+            token_log_probs = F.log_softmax(shift_logits, dim=-1)
+            selected_log_probs = token_log_probs.gather(dim=-1, index=safe_labels.unsqueeze(-1)).squeeze(-1)
+            valid_log_probs = selected_log_probs[token_mask]
+            per_sample_logp_sums.append(valid_log_probs.sum())
+            per_sample_losses.append(-valid_log_probs.mean())
 
         if not per_sample_losses:
-            parameter = next(self.model.parameters())
-            return parameter.sum() * 0.0
-        return torch.stack(per_sample_losses).mean()
+            vlm_loss = zero
+        else:
+            vlm_loss = torch.stack(per_sample_losses).mean()
+        if not per_sample_logp_sums:
+            per_sample_logp_sums = [zero for _ in observations]
+        logp_sums = torch.stack([value.reshape(()) for value in per_sample_logp_sums], dim=0)
+        return vlm_loss, logp_sums
+
+
+def _compute_generate_log_prob_sums(
+    *,
+    sequences: torch.Tensor,
+    prompt_lengths: list[int],
+    scores: list[torch.Tensor],
+    eos_token_id: int | list[int] | None,
+) -> torch.Tensor:
+    batch_size = int(sequences.shape[0])
+    if not scores:
+        return torch.zeros(batch_size, dtype=torch.float32, device=sequences.device)
+    eos_ids: set[int] = set()
+    if isinstance(eos_token_id, int):
+        eos_ids.add(int(eos_token_id))
+    elif isinstance(eos_token_id, list):
+        eos_ids.update(int(token_id) for token_id in eos_token_id)
+    finished = [False] * batch_size
+    logp_sums = torch.zeros(batch_size, dtype=torch.float32, device=sequences.device)
+    for step_idx, step_scores in enumerate(scores):
+        step_log_probs = F.log_softmax(step_scores.float(), dim=-1)
+        for batch_idx in range(batch_size):
+            if finished[batch_idx]:
+                continue
+            token_position = int(prompt_lengths[batch_idx]) + step_idx
+            if token_position >= int(sequences.shape[1]):
+                finished[batch_idx] = True
+                continue
+            token_id = int(sequences[batch_idx, token_position].detach().cpu().item())
+            logp_sums[batch_idx] += step_log_probs[batch_idx, token_id]
+            if token_id in eos_ids:
+                finished[batch_idx] = True
+    return logp_sums
 
 
 def _copy_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

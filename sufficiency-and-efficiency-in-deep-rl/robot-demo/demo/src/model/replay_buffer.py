@@ -69,6 +69,16 @@ class TransitionReplayBuffer:
                 device=target_device,
             ),
             target_text=[transition.target_text for transition in transitions],
+            logp_beta_sum=torch.tensor(
+                [
+                    float(transition.logp_beta_sum)
+                    if transition.logp_beta_sum is not None
+                    else float("nan")
+                    for transition in transitions
+                ],
+                dtype=torch.float32,
+                device=target_device,
+            ),
             target_action_name=[transition.target_action_name for transition in transitions],
             agentic_action_vector=[transition.agentic_action_vector for transition in transitions],
             actor_action_vector=[transition.actor_action_vector for transition in transitions],

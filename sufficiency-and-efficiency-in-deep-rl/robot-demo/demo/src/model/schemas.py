@@ -33,6 +33,7 @@ class ModelActionOutput:
     executed_action_vector: ActionVector
     critic_value: float
     generated_text: str = ""
+    logp_beta_sum: Optional[float] = None
     debug: dict[str, Any] = field(default_factory=dict)
 
 
@@ -46,6 +47,7 @@ class Transition:
     next_observation: ModelObservation
     done: bool
     target_text: Optional[str] = None
+    logp_beta_sum: Optional[float] = None
     target_action_name: Optional[str] = None
     agentic_action_vector: Optional[ActionVector] = None
     actor_action_vector: Optional[ActionVector] = None
@@ -62,6 +64,7 @@ class TransitionBatch:
     next_observations: list[ModelObservation]
     done: torch.Tensor
     target_text: list[Optional[str]]
+    logp_beta_sum: torch.Tensor
     target_action_name: list[Optional[str]]
     agentic_action_vector: list[Optional[ActionVector]]
     actor_action_vector: list[Optional[ActionVector]]

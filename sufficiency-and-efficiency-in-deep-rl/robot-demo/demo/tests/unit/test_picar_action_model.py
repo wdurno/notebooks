@@ -78,6 +78,7 @@ def test_forward_returns_mixed_vector_owned_by_model():
     assert action.executed_action_vector["drive"] == 0.0
     assert action.critic_value == 0.0
     assert action.generated_text == "turning left"
+    assert action.logp_beta_sum == 0.0
 
 
 def test_loss_combines_vlm_and_td_terms():
