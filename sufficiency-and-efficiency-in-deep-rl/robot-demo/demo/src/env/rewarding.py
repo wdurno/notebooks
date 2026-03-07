@@ -95,8 +95,8 @@ class FrozenVLMRewardScorer:
     def score(self, image_rgb: Any) -> RewardResult:
         prompt_spec = self.registry.get(self.config.prompt_id)
         model, processor = self._load_model_and_processor()
-        if LOGGER.isEnabledFor(logging.INFO):
-            LOGGER.info("[shared-state] reward before_score %s", _adapter_state_summary(model))
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("[shared-state] reward before_score %s", _adapter_state_summary(model))
         messages = [
             {"role": "system", "content": [{"type": "text", "text": prompt_spec.prompt_text}]},
             {
@@ -177,13 +177,13 @@ class FrozenVLMRewardScorer:
                 disable_adapter = getattr(model, "disable_adapter", None)
                 if callable(disable_adapter):
                     stack.enter_context(disable_adapter())
-            if LOGGER.isEnabledFor(logging.INFO):
-                LOGGER.info("[shared-state] reward context_enter %s", _adapter_state_summary(model))
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("[shared-state] reward context_enter %s", _adapter_state_summary(model))
             yield
-            if LOGGER.isEnabledFor(logging.INFO):
-                LOGGER.info("[shared-state] reward context_exit_pre_restore %s", _adapter_state_summary(model))
-        if LOGGER.isEnabledFor(logging.INFO):
-            LOGGER.info("[shared-state] reward context_exit_post_restore %s", _adapter_state_summary(model))
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                LOGGER.debug("[shared-state] reward context_exit_pre_restore %s", _adapter_state_summary(model))
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug("[shared-state] reward context_exit_post_restore %s", _adapter_state_summary(model))
 
 
 def _adapter_state_summary(model: Any) -> dict[str, Any]:

@@ -48,9 +48,15 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--model-root PATH` (optional, default `demo/model`)
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` (default `WARNING`)
 
-Use `--log-level INFO` during debugging to print captured STT text, raw model
-generation text (including malformed output), and reward base/adjustment/final
-values per step.
+Use `--log-level INFO` for concise runtime telemetry:
+
+- step/action summaries
+- reward summaries
+- robot speech (`say`)
+- captured STT text
+
+Use `--log-level DEBUG` for deep diagnostics such as shared-model adapter state,
+raw generations, and prompt/token traces.
 
 ## Experimental phases
 

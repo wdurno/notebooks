@@ -238,9 +238,9 @@ class QwenLoRABackbone(nn.Module):
         )
         model_device = next(self.model.parameters()).device
         model_inputs = {name: tensor.to(model_device) for name, tensor in processor_inputs.items()}
-        if LOGGER.isEnabledFor(logging.INFO):
+        if LOGGER.isEnabledFor(logging.DEBUG):
             first_step = int(getattr(observations[0], "step_index", -1)) if observations else -1
-            LOGGER.info(
+            LOGGER.debug(
                 "[shared-state] policy before_forward step=%d %s",
                 first_step,
                 _adapter_state_summary(self.model),
@@ -270,9 +270,9 @@ class QwenLoRABackbone(nn.Module):
             top_k = int(self.config.generation_top_k)
             if top_k > 0:
                 generation_kwargs["top_k"] = top_k
-        if LOGGER.isEnabledFor(logging.INFO):
+        if LOGGER.isEnabledFor(logging.DEBUG):
             first_step = int(getattr(observations[0], "step_index", -1)) if observations else -1
-            LOGGER.info(
+            LOGGER.debug(
                 "[shared-state] policy before_generate step=%d %s",
                 first_step,
                 _adapter_state_summary(self.model),
@@ -364,7 +364,7 @@ class QwenLoRABackbone(nn.Module):
 
         if self._diagnostic_logged_once:
             return None
-        if not LOGGER.isEnabledFor(logging.INFO):
+        if not LOGGER.isEnabledFor(logging.DEBUG):
             return None
         if not observations:
             return None
@@ -381,7 +381,7 @@ class QwenLoRABackbone(nn.Module):
         sequence = generated_ids[first_idx]
         completion_ids = sequence[prompt_length:]
         first_new_token_ids = completion_ids[:16].detach().to("cpu").tolist()
-        LOGGER.info(
+        LOGGER.debug(
             "[diag] step=%d do_sample=%s generation_kwargs=%s input_shape=%s attention_shape=%s prompt_tokens=%d first_new_token_ids=%s prompt_preview=%r",
             step_index,
             bool(generation_kwargs.get("do_sample", False)),

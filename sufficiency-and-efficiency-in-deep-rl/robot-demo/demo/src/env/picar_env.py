@@ -203,27 +203,31 @@ class PiCarGymEnv:
         reward_adjustment = MALFORMED_JSON_REWARD_PENALTY if malformed_json else 0.0
         step_reward = float(reward_result.clipped_reward + reward_adjustment)
         LOGGER.info(
-            "[model] step=%d mode=%s action=%s json_valid=%s generated_text=%r raw_generation=%r",
+            "[model] step=%d mode=%s action=%s json_valid=%s say=%r",
             self.step_index,
             "mixed" if observation.t < 1.0 else "actor_only",
             action.agentic_action_name,
             json_valid,
             action.generated_text,
+        )
+        LOGGER.debug(
+            "[model-debug] step=%d raw_generation=%r",
+            self.step_index,
             action_debug.get("raw_generation"),
         )
         LOGGER.info(
-            "[reward] step=%d base=%.3f adjustment=%.3f final=%.3f raw_text=%r",
+            "[reward] step=%d base=%.3f adjustment=%.3f final=%.3f",
             self.step_index,
             float(reward_result.clipped_reward),
             float(reward_adjustment),
             float(step_reward),
-            reward_result.raw_text,
         )
+        LOGGER.debug("[reward-debug] step=%d raw_text=%r", self.step_index, reward_result.raw_text)
         if action.generated_text and self.speaker is not None and not malformed_json:
             LOGGER.info("[tts] step=%d speaking text=%r", self.step_index, action.generated_text)
             self.speaker.speak(action.generated_text)
         elif malformed_json:
-            LOGGER.info("[tts] step=%d speech_suppressed reason=malformed_json", self.step_index)
+            LOGGER.debug("[tts] step=%d speech_suppressed reason=malformed_json", self.step_index)
         self._respect_command_rate_limit()
         action_receipt = self.picar_client.apply_vector(action.executed_action_vector)
         self._last_vector_command_at = time.monotonic()
