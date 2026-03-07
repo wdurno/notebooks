@@ -145,6 +145,8 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
             flush=True,
         )
 
+    _set_model_optimization_mode(model)
+
     steps_per_epoch = max(1, int(math.ceil(len(replay_buffer) / float(max(1, config.batch_size)))))
     fit_calls = 0
     last_pi = None
@@ -164,6 +166,7 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
         )
 
     memorized_count = len(replay_buffer)
+    _set_model_optimization_mode(model)
     model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=True)
     snapshot_path = snapshot_store.save_snapshot(
         model=model,
@@ -363,6 +366,16 @@ def _validate_config(config: Phase1FinalizeConfig) -> None:
         raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
     if int(config.snapshot_keep) < 1:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
+
+
+def _set_model_optimization_mode(model: Any) -> None:
+    set_optimization_mode = getattr(model, "set_optimization_mode", None)
+    if callable(set_optimization_mode):
+        set_optimization_mode()
+        return None
+    if hasattr(model, "train"):
+        model.train()
+    return None
 
 
 if __name__ == "__main__":

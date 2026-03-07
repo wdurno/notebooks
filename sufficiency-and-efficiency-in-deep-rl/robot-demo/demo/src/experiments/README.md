@@ -37,6 +37,7 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 
 - `--phase {init,tune,retask}`
 - `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
+- `--deterministic-coding` (disable sampling for policy text generation)
 - `--fixed-t FLOAT` (optional)
 - `--t-step FLOAT` (default `0.001`)
 - `--t-log-every INT` (default `1`)
@@ -61,12 +62,22 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
   --fixed-t 0.0
 ```
 
+For deterministic control text decoding while debugging malformed JSON:
+
+```bash
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
+  --phase init \
+  --fixed-t 0.0 \
+  --deterministic-coding
+```
+
 Behavior:
 
 - No training/memorization loop is triggered.
 - One initial snapshot is written to `model/<uuid>/snapshots/`.
 - If the policy emits malformed action JSON, speech is suppressed and a `-1.0`
   reward adjustment is applied for that step.
+- Model stays in inference/eval mode for rollout.
 
 If the PiCar crashes (for example, low battery), just swap batteries and run the
 same phase-1 command again. Each restart creates a new run UUID directory under
@@ -112,6 +123,8 @@ Behavior:
 - `t` traverses linearly in steps with visible logs.
 - Snapshot is written after each memorization event.
 - Malformed action JSON is penalized by `-1.0` and does not get spoken.
+- Rollout sampling runs in inference/eval mode; fit/memorize blocks switch to
+  optimization/train mode and then return to eval mode.
 
 ### 3) Retasking (`t=1` by default, tuning enabled)
 
@@ -175,3 +188,5 @@ What `phase1_finalize` does:
 2. Tunes the model offline on the aggregated replay buffer.
 3. Memorizes all loaded replay into SSR sufficient statistics.
 4. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.
+
+`phase1_finalize` runs in optimization/train mode for offline fit and memorize.

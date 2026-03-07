@@ -12,6 +12,7 @@ ExperimentPhase = Literal["init", "tune", "retask"]
 class ExperimentRunConfig:
     phase: ExperimentPhase
     picar_host: str | None = None
+    deterministic_coding: bool = False
     fixed_t: float | None = None
     t_step: float = 0.001
     t_log_every: int = 1

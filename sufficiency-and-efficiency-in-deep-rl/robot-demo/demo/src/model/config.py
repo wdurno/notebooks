@@ -20,6 +20,7 @@ class ModelConfig:
     model_subdir: str = "vlm/qwen2.5-vl-3b/base"
     finetune_subdir: str = "vlm/qwen2.5-vl-3b/finetunes"
     allow_downloads: bool = True
+    deterministic_coding: bool = False
     learning_rate: float = 1e-2
     gamma: float = 0.99
     alpha: float = 1.0

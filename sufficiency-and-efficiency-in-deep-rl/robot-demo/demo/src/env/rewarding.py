@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +20,8 @@ except ModuleNotFoundError:
 
 from .config import RewardConfig
 from .schemas import RewardPromptSpec, RewardResult
+
+LOGGER = logging.getLogger(__name__)
 
 
 REWARD_PROMPT_1 = """
@@ -92,6 +95,8 @@ class FrozenVLMRewardScorer:
     def score(self, image_rgb: Any) -> RewardResult:
         prompt_spec = self.registry.get(self.config.prompt_id)
         model, processor = self._load_model_and_processor()
+        if LOGGER.isEnabledFor(logging.INFO):
+            LOGGER.info("[shared-state] reward before_score %s", _adapter_state_summary(model))
         messages = [
             {"role": "system", "content": [{"type": "text", "text": prompt_spec.prompt_text}]},
             {
@@ -172,7 +177,46 @@ class FrozenVLMRewardScorer:
                 disable_adapter = getattr(model, "disable_adapter", None)
                 if callable(disable_adapter):
                     stack.enter_context(disable_adapter())
+            if LOGGER.isEnabledFor(logging.INFO):
+                LOGGER.info("[shared-state] reward context_enter %s", _adapter_state_summary(model))
             yield
+            if LOGGER.isEnabledFor(logging.INFO):
+                LOGGER.info("[shared-state] reward context_exit_pre_restore %s", _adapter_state_summary(model))
+        if LOGGER.isEnabledFor(logging.INFO):
+            LOGGER.info("[shared-state] reward context_exit_post_restore %s", _adapter_state_summary(model))
+
+
+def _adapter_state_summary(model: Any) -> dict[str, Any]:
+    active_adapters = None
+    active_adapters_attr = getattr(model, "active_adapters", None)
+    if callable(active_adapters_attr):
+        try:
+            active_adapters = active_adapters_attr()
+        except TypeError:
+            active_adapters = str(active_adapters_attr)
+    elif active_adapters_attr is not None:
+        active_adapters = active_adapters_attr
+
+    adapter_layers = 0
+    disabled_adapter_layers = 0
+    for module in model.modules():
+        if hasattr(module, "_disable_adapters"):
+            adapter_layers += 1
+            if bool(getattr(module, "_disable_adapters", False)):
+                disabled_adapter_layers += 1
+
+    config = getattr(model, "config", None)
+    return {
+        "model_id": hex(id(model)),
+        "type": type(model).__name__,
+        "training": bool(getattr(model, "training", False)),
+        "use_cache": getattr(config, "use_cache", None),
+        "is_gradient_checkpointing": bool(getattr(model, "is_gradient_checkpointing", False)),
+        "active_adapter": getattr(model, "active_adapter", None),
+        "active_adapters": active_adapters,
+        "adapter_layers": adapter_layers,
+        "disabled_adapter_layers": disabled_adapter_layers,
+    }
 
 
 def _extract_reward_value(text: str) -> float:

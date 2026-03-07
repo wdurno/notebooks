@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
@@ -15,6 +16,8 @@ from .config import ModelConfig
 from .model_store import ModelStore
 from .processor_loader import load_qwen_2_5_vl_processor
 from .schemas import ModelObservation
+
+LOGGER = logging.getLogger(__name__)
 
 
 CONTROL_SYSTEM_PROMPT = (
@@ -152,6 +155,7 @@ class QwenLoRABackbone(nn.Module):
         self.model = model
         self.processor = processor
         self.hidden_size = _resolve_model_hidden_size(model)
+        self._diagnostic_logged_once = False
 
     @classmethod
     def from_config(cls, config: ModelConfig) -> "QwenLoRABackbone":
@@ -234,6 +238,13 @@ class QwenLoRABackbone(nn.Module):
         )
         model_device = next(self.model.parameters()).device
         model_inputs = {name: tensor.to(model_device) for name, tensor in processor_inputs.items()}
+        if LOGGER.isEnabledFor(logging.INFO):
+            first_step = int(getattr(observations[0], "step_index", -1)) if observations else -1
+            LOGGER.info(
+                "[shared-state] policy before_forward step=%d %s",
+                first_step,
+                _adapter_state_summary(self.model),
+            )
         # Request hidden states so the outer model can attach its own value head
         # to the fused representation instead of modifying the frozen backbone.
         outputs = self.model(
@@ -248,15 +259,24 @@ class QwenLoRABackbone(nn.Module):
 
         # Use stochastic decoding so collected text actions are sampled from the
         # behavior policy instead of deterministic argmax decoding.
+        do_sample = not bool(getattr(self.config, "deterministic_coding", False))
         generation_kwargs: dict[str, Any] = {
             "max_new_tokens": int(self.config.generation_max_new_tokens),
-            "do_sample": True,
-            "temperature": float(self.config.generation_temperature),
-            "top_p": float(self.config.generation_top_p),
+            "do_sample": do_sample,
         }
-        top_k = int(self.config.generation_top_k)
-        if top_k > 0:
-            generation_kwargs["top_k"] = top_k
+        if do_sample:
+            generation_kwargs["temperature"] = float(self.config.generation_temperature)
+            generation_kwargs["top_p"] = float(self.config.generation_top_p)
+            top_k = int(self.config.generation_top_k)
+            if top_k > 0:
+                generation_kwargs["top_k"] = top_k
+        if LOGGER.isEnabledFor(logging.INFO):
+            first_step = int(getattr(observations[0], "step_index", -1)) if observations else -1
+            LOGGER.info(
+                "[shared-state] policy before_generate step=%d %s",
+                first_step,
+                _adapter_state_summary(self.model),
+            )
         generation_output = self.model.generate(
             **model_inputs,
             **generation_kwargs,
@@ -265,6 +285,14 @@ class QwenLoRABackbone(nn.Module):
         )
         generated_ids = generation_output.sequences
         prompt_lengths = model_inputs["attention_mask"].sum(dim=1).tolist()
+        self._log_generation_diagnostics_once(
+            observations=observations,
+            prompts=prompts,
+            model_inputs=model_inputs,
+            generated_ids=generated_ids,
+            prompt_lengths=prompt_lengths,
+            generation_kwargs=generation_kwargs,
+        )
         generated_logp_sums = _compute_generate_log_prob_sums(
             sequences=generated_ids,
             prompt_lengths=prompt_lengths,
@@ -321,6 +349,51 @@ class QwenLoRABackbone(nn.Module):
             target_logp_sums=target_logp_sums,
             debug=debug,
         )
+
+    def _log_generation_diagnostics_once(
+        self,
+        *,
+        observations: list[ModelObservation],
+        prompts: list[str],
+        model_inputs: dict[str, torch.Tensor],
+        generated_ids: torch.Tensor,
+        prompt_lengths: list[float],
+        generation_kwargs: dict[str, Any],
+    ) -> None:
+        """Emit one detailed generation diagnostic record for prompt/debug triage."""
+
+        if self._diagnostic_logged_once:
+            return None
+        if not LOGGER.isEnabledFor(logging.INFO):
+            return None
+        if not observations:
+            return None
+
+        first_idx = 0
+        step_index = int(getattr(observations[first_idx], "step_index", -1))
+        prompt = prompts[first_idx] if first_idx < len(prompts) else ""
+        prompt_preview = prompt if len(prompt) <= 800 else f"{prompt[:800]}...[truncated]"
+        prompt_length = int(prompt_lengths[first_idx]) if first_idx < len(prompt_lengths) else 0
+        input_ids = model_inputs.get("input_ids")
+        attention_mask = model_inputs.get("attention_mask")
+        input_shape = tuple(input_ids.shape) if input_ids is not None else None
+        attention_shape = tuple(attention_mask.shape) if attention_mask is not None else None
+        sequence = generated_ids[first_idx]
+        completion_ids = sequence[prompt_length:]
+        first_new_token_ids = completion_ids[:16].detach().to("cpu").tolist()
+        LOGGER.info(
+            "[diag] step=%d do_sample=%s generation_kwargs=%s input_shape=%s attention_shape=%s prompt_tokens=%d first_new_token_ids=%s prompt_preview=%r",
+            step_index,
+            bool(generation_kwargs.get("do_sample", False)),
+            {key: generation_kwargs[key] for key in sorted(generation_kwargs)},
+            input_shape,
+            attention_shape,
+            prompt_length,
+            first_new_token_ids,
+            prompt_preview,
+        )
+        self._diagnostic_logged_once = True
+        return None
 
     def _build_chat_messages(self, observation: ModelObservation, *, allow_agentic_actions: bool) -> list[dict[str, Any]]:
         system_prompt = CONTROL_SYSTEM_PROMPT if allow_agentic_actions else SAY_ONLY_SYSTEM_PROMPT
@@ -478,6 +551,39 @@ def _resolve_model_hidden_size(model: nn.Module) -> int:
         "Expected one of: config.hidden_size, config.text_config.hidden_size, "
         "config.language_config.hidden_size."
     )
+
+
+def _adapter_state_summary(model: Any) -> dict[str, Any]:
+    active_adapters = None
+    active_adapters_attr = getattr(model, "active_adapters", None)
+    if callable(active_adapters_attr):
+        try:
+            active_adapters = active_adapters_attr()
+        except TypeError:
+            active_adapters = str(active_adapters_attr)
+    elif active_adapters_attr is not None:
+        active_adapters = active_adapters_attr
+
+    adapter_layers = 0
+    disabled_adapter_layers = 0
+    for module in model.modules():
+        if hasattr(module, "_disable_adapters"):
+            adapter_layers += 1
+            if bool(getattr(module, "_disable_adapters", False)):
+                disabled_adapter_layers += 1
+
+    config = getattr(model, "config", None)
+    return {
+        "model_id": hex(id(model)),
+        "type": type(model).__name__,
+        "training": bool(getattr(model, "training", False)),
+        "use_cache": getattr(config, "use_cache", None),
+        "is_gradient_checkpointing": bool(getattr(model, "is_gradient_checkpointing", False)),
+        "active_adapter": getattr(model, "active_adapter", None),
+        "active_adapters": active_adapters,
+        "adapter_layers": adapter_layers,
+        "disabled_adapter_layers": disabled_adapter_layers,
+    }
 
 
 def _ensure_image_placeholder(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

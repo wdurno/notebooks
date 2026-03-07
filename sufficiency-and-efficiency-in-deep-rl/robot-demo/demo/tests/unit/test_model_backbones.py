@@ -52,6 +52,7 @@ class FakeGenerationModel(nn.Module):
         super().__init__()
         self.config = SimpleNamespace(hidden_size=4)
         self.proj = nn.Linear(1, 1)
+        self.generate_calls = []
 
     def forward(self, input_ids, attention_mask=None, output_hidden_states=False, return_dict=True, labels=None):
         del attention_mask, output_hidden_states, return_dict
@@ -61,19 +62,10 @@ class FakeGenerationModel(nn.Module):
         loss = torch.tensor(1.25) if labels is not None else None
         return SimpleNamespace(hidden_states=[hidden], logits=logits, loss=loss)
 
-    def generate(
-        self,
-        input_ids,
-        attention_mask=None,
-        max_new_tokens=64,
-        do_sample=True,
-        temperature=0.8,
-        top_p=0.95,
-        top_k=0,
-        return_dict_in_generate=False,
-        output_scores=False,
-    ):
-        del attention_mask, max_new_tokens, do_sample, temperature, top_p, top_k
+    def generate(self, input_ids, **kwargs):
+        self.generate_calls.append(dict(kwargs))
+        return_dict_in_generate = bool(kwargs.get("return_dict_in_generate", False))
+        output_scores = bool(kwargs.get("output_scores", False))
         batch_size, seq_len = input_ids.shape
         continuation = torch.full((batch_size, 2), 7, dtype=torch.int64)
         sequences = torch.cat([input_ids, continuation], dim=1)
@@ -98,9 +90,10 @@ def test_ensure_image_placeholder_injects_into_last_user_message():
 
 def test_qwen_backbone_encode_uses_chat_template_messages():
     processor = FakeProcessor()
+    model = FakeGenerationModel()
     backbone = QwenLoRABackbone(
         config=ModelConfig(hidden_size=4),
-        model=FakeGenerationModel(),
+        model=model,
         processor=processor,
     )
     observation = ModelObservation(
@@ -120,6 +113,37 @@ def test_qwen_backbone_encode_uses_chat_template_messages():
     assert output.agentic_action_names == ["drive-forward"]
     assert output.generated_texts == ["moving"]
     assert float(output.vlm_loss.item()) > 0.0
+    assert model.generate_calls
+    generation_kwargs = model.generate_calls[-1]
+    assert generation_kwargs["do_sample"] is True
+    assert generation_kwargs["temperature"] == 0.3
+    assert generation_kwargs["top_p"] == 0.95
+
+
+def test_qwen_backbone_encode_can_disable_sampling():
+    processor = FakeProcessor()
+    model = FakeGenerationModel()
+    backbone = QwenLoRABackbone(
+        config=ModelConfig(hidden_size=4, deterministic_coding=True),
+        model=model,
+        processor=processor,
+    )
+    observation = ModelObservation(
+        image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        messages=[{"role": "user", "content": [{"type": "text", "text": "drive"}]}],
+        t=0.0,
+        step_index=0,
+    )
+
+    output = backbone.encode([observation], target_texts=[None], compute_vlm_loss=False)
+
+    assert output.agentic_action_names == ["drive-forward"]
+    assert model.generate_calls
+    generation_kwargs = model.generate_calls[-1]
+    assert generation_kwargs["do_sample"] is False
+    assert "temperature" not in generation_kwargs
+    assert "top_p" not in generation_kwargs
+    assert "top_k" not in generation_kwargs
 
 
 def test_resolve_model_hidden_size_uses_nested_text_config():

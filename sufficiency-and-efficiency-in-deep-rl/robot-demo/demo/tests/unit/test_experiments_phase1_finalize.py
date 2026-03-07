@@ -11,6 +11,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from experiments.phase1_finalize import (
+    _set_model_optimization_mode,
     build_target_text,
     count_step_rows,
     iter_transitions_from_run,
@@ -130,3 +131,22 @@ def test_build_target_text_switches_at_t_equals_one():
 
     assert at_agentic == '{"action": "look-left", "say": "checking left"}'
     assert at_actor_only == "checking left"
+
+
+def test_set_model_optimization_mode_prefers_explicit_hook():
+    class DummyModel:
+        def __init__(self):
+            self.called = 0
+            self.train_called = 0
+
+        def set_optimization_mode(self):
+            self.called += 1
+
+        def train(self):
+            self.train_called += 1
+
+    model = DummyModel()
+    _set_model_optimization_mode(model)
+
+    assert model.called == 1
+    assert model.train_called == 0

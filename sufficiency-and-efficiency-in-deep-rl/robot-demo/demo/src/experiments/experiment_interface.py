@@ -19,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="PiCar API host:port (overrides PICAR_V_HOST if provided).",
     )
+    parser.add_argument(
+        "--deterministic-coding",
+        action="store_true",
+        help="Use deterministic policy text decoding (do_sample=False).",
+    )
     parser.add_argument("--fixed-t", type=float, default=None, help="Pin interpolation t in [0, 1].")
     parser.add_argument(
         "--t-step",
@@ -88,6 +93,7 @@ def main() -> int:
     config = ExperimentRunConfig(
         phase=args.phase,
         picar_host=args.picar_host,
+        deterministic_coding=bool(args.deterministic_coding),
         fixed_t=args.fixed_t,
         t_step=args.t_step,
         t_log_every=args.t_log_every,

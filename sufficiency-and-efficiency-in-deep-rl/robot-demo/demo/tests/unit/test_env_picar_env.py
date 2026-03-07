@@ -51,9 +51,12 @@ class FakeModel(nn.Module):
         self.replay_buffer = FakeReplayBuffer()
         self.fit_calls = []
         self.memorize_calls = []
+        self.forward_observations = []
+        self.inference_mode_calls = 0
+        self.optimization_mode_calls = 0
 
     def forward(self, observation):
-        del observation
+        self.forward_observations.append(observation)
         return ModelActionOutput(
             agentic_action_name="drive-forward",
             agentic_action_one_hot=torch.tensor([0, 0, 1, 0, 0, 0, 0, 0], dtype=torch.float32),
@@ -74,6 +77,14 @@ class FakeModel(nn.Module):
     def save(self, path):
         Path(path + ".state.pt").write_bytes(b"state")
         Path(path + ".ssr.pt").write_bytes(b"ssr")
+
+    def set_inference_mode(self):
+        self.inference_mode_calls += 1
+        self.eval()
+
+    def set_optimization_mode(self):
+        self.optimization_mode_calls += 1
+        self.train()
 
 
 class FakeMalformedJsonModel(FakeModel):
@@ -194,6 +205,8 @@ def test_picar_env_step_records_transition_and_training(tmp_path):
     assert len(model.replay_buffer) == 0
     assert model.fit_calls == [(4, 2)]
     assert model.memorize_calls == [(1, False, True)]
+    assert model.optimization_mode_calls == 1
+    assert model.inference_mode_calls == 3
     assert model.replay_buffer.clear_calls == [1]
     assert speaker.spoken == ["moving forward"]
     assert client.applied_vectors == [{"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0}]
@@ -236,6 +249,7 @@ def test_picar_env_memorize_minus_one_clears_all_replay(tmp_path):
     _, _, _, info = env.step()
 
     assert model.memorize_calls == [(2, False, True)]
+    assert model.optimization_mode_calls == 1
     assert model.replay_buffer.clear_calls == [2]
     assert len(model.replay_buffer) == 0
     assert info["training"].memorized == 2
@@ -264,6 +278,24 @@ def test_picar_env_penalizes_malformed_json_and_suppresses_speech(tmp_path):
     assert info["reward_adjustment"] == pytest.approx(-1.0)
     assert model.replay_buffer.items[-1].reward == pytest.approx(2.0)
     assert model.replay_buffer.items[-1].metadata["malformed_json"] is True
+
+
+def test_picar_env_step_avoids_duplicate_user_message_from_reset(tmp_path):
+    model = FakeModel()
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        config=EnvConfig(data_dir=tmp_path),
+    )
+
+    env.reset()
+    env.step()
+
+    assert model.forward_observations
+    first_step_observation = model.forward_observations[0]
+    user_messages = [message for message in first_step_observation.messages if message.get("role") == "user"]
+    assert len(user_messages) == 1
 
 
 def test_picar_env_rate_limits_vector_commands(tmp_path, monkeypatch):

@@ -30,6 +30,7 @@ Top-level model configuration, including:
 - optimizer settings
 - LoRA settings
 - generation settings (default `temperature=0.3`)
+- deterministic decoding control (`deterministic_coding`)
 - loss-term weighting controls
 - RL discount `gamma`
 
@@ -98,6 +99,9 @@ Responsibilities:
   - continuous control RL loss
   - off-policy token policy-gradient loss
   - value-baseline regression loss
+- expose explicit mode switches:
+  - `set_inference_mode()` for rollout sampling/generation
+  - `set_optimization_mode()` for fit/memorize phases
 
 ## Model / environment contract
 

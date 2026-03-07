@@ -160,6 +160,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "started_at": started_at,
         "load_snapshot": str(config.load_snapshot) if config.load_snapshot is not None else None,
         "reward_prompt": config.reward_prompt,
+        "deterministic_coding": bool(config.deterministic_coding),
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
         "picar_host": picar_host,
@@ -173,7 +174,10 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     print(f"[experiment] picar_host={picar_host}", flush=True)
 
     replay_buffer = TransitionReplayBuffer(capacity=10_000)
-    model_config = ModelConfig(model_dir=model_root)
+    model_config = ModelConfig(
+        model_dir=model_root,
+        deterministic_coding=bool(config.deterministic_coding),
+    )
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
         config=model_config,

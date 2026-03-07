@@ -127,6 +127,7 @@ class PiCarGymEnv:
         self._last_vector_command_at = None
         if self.speech_stream is not None:
             self.speech_stream.start()
+        self._set_model_inference_mode()
         frame = self.picar_client.reset()
         reward_result = self.reward_scorer.score(frame)
         user_texts = [event.text for event in self._drain_speech_events()]
@@ -161,6 +162,7 @@ class PiCarGymEnv:
 
         # Speech is collected continuously in the background; each step simply
         # drains whatever complete utterances arrived since the previous one.
+        self._set_model_inference_mode()
         user_texts = [event.text for event in self._drain_speech_events()]
         if user_texts:
             LOGGER.info("[stt] step=%d drained_texts=%r", self.step_index, user_texts)
@@ -172,7 +174,14 @@ class PiCarGymEnv:
             step_index=self.step_index,
             last_reward=self.last_reward,
         )
-        current_messages = trim_history(self.history + [user_message], self.config.history_window)
+        if (
+            self.history
+            and self.history[-1].get("role") == "user"
+            and self.history[-1].get("content") == user_message.get("content")
+        ):
+            current_messages = trim_history(self.history, self.config.history_window)
+        else:
+            current_messages = trim_history(self.history + [user_message], self.config.history_window)
         observation = ModelObservation(
             image_rgb=current_frame,
             messages=current_messages,
@@ -401,29 +410,33 @@ class PiCarGymEnv:
         if (self.step_index + 1) % training.train_every_steps != 0:
             return TrainingSummary(triggered=False, replay_size=replay_size)
 
-        pi, loss = self.model.fit(batch_size=training.batch_size, iters=training.fit_iters)
-        memorized = None
-        if training.memorize_every_steps > 0 and (self.step_index + 1) % training.memorize_every_steps == 0:
-            # SSR memorization is less frequent than SGD-style fitting because
-            # it is materially more expensive and does not need to happen every
-            # environment step.
-            if training.memorize_n < 0:
-                memorize_count = replay_size
-            else:
-                memorize_count = min(training.memorize_n, replay_size)
+        self._set_model_optimization_mode()
+        try:
+            pi, loss = self.model.fit(batch_size=training.batch_size, iters=training.fit_iters)
+            memorized = None
+            if training.memorize_every_steps > 0 and (self.step_index + 1) % training.memorize_every_steps == 0:
+                # SSR memorization is less frequent than SGD-style fitting because
+                # it is materially more expensive and does not need to happen every
+                # environment step.
+                if training.memorize_n < 0:
+                    memorize_count = replay_size
+                else:
+                    memorize_count = min(training.memorize_n, replay_size)
 
-            if memorize_count > 0:
-                self.model.memorize(
-                    n=memorize_count,
-                    random_idx=training.memorize_random_idx,
-                    disable_tqdm=True,
-                )
-                # Once observations are committed into SSR sufficient statistics,
-                # they can be dropped from replay to keep memory bounded.
-                replay_buffer = self.model.replay_buffer
-                if hasattr(replay_buffer, "clear"):
-                    replay_buffer.clear(memorize_count)
-                memorized = memorize_count
+                if memorize_count > 0:
+                    self.model.memorize(
+                        n=memorize_count,
+                        random_idx=training.memorize_random_idx,
+                        disable_tqdm=True,
+                    )
+                    # Once observations are committed into SSR sufficient statistics,
+                    # they can be dropped from replay to keep memory bounded.
+                    replay_buffer = self.model.replay_buffer
+                    if hasattr(replay_buffer, "clear"):
+                        replay_buffer.clear(memorize_count)
+                    memorized = memorize_count
+        finally:
+            self._set_model_inference_mode()
         return TrainingSummary(
             triggered=True,
             replay_size=replay_size,
@@ -431,6 +444,24 @@ class PiCarGymEnv:
             loss=float(loss),
             memorized=memorized,
         )
+
+    def _set_model_inference_mode(self) -> None:
+        set_inference_mode = getattr(self.model, "set_inference_mode", None)
+        if callable(set_inference_mode):
+            set_inference_mode()
+            return None
+        if hasattr(self.model, "eval"):
+            self.model.eval()
+        return None
+
+    def _set_model_optimization_mode(self) -> None:
+        set_optimization_mode = getattr(self.model, "set_optimization_mode", None)
+        if callable(set_optimization_mode):
+            set_optimization_mode()
+            return None
+        if hasattr(self.model, "train"):
+            self.model.train()
+        return None
 
     def _write_run_metadata(self, *, initial_reward: float) -> None:
         """Write the initial run metadata file as soon as a run starts."""

@@ -204,6 +204,36 @@ class PiCarActionModel(SSRAgent):
         self._soft_update_targets()
         return result
 
+    def set_inference_mode(self) -> None:
+        """Switch model to rollout/inference mode."""
+
+        self.eval()
+        backbone_model = getattr(self.backbone, "model", None)
+        if backbone_model is not None:
+            backbone_model.eval()
+            disable_checkpointing = getattr(backbone_model, "gradient_checkpointing_disable", None)
+            if callable(disable_checkpointing):
+                try:
+                    disable_checkpointing()
+                except Exception:
+                    pass
+        return None
+
+    def set_optimization_mode(self) -> None:
+        """Switch model to optimization mode for fitting/memorization."""
+
+        self.train()
+        backbone_model = getattr(self.backbone, "model", None)
+        if backbone_model is not None:
+            backbone_model.train()
+            enable_checkpointing = getattr(backbone_model, "gradient_checkpointing_enable", None)
+            if callable(enable_checkpointing):
+                try:
+                    enable_checkpointing()
+                except Exception:
+                    pass
+        return None
+
     def _forward_batch(
         self,
         observations: list[ModelObservation],
