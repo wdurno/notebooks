@@ -16,6 +16,7 @@ class QueuedSpeechEvent:
 class RewardPromptSpec:
     prompt_id: str
     prompt_text: str
+    task_text: str | None = None
     min_reward: float = 0.0
     max_reward: float = 10.0
 

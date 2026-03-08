@@ -27,13 +27,14 @@ LOGGER = logging.getLogger(__name__)
 REWARD_PROMPT_1 = """
 You are a reinforcement learning assistant in charge of deciding rewards.
 You are receiving images from a mobile, robotic camera.
-We start with a simple task for the robot: finding a red ball.
+Primary visual task: finding a red ball.
 If you see a red ball in the image, you are to return a reward in [1, 10], otherwise zero.
 If the ball is far away, return a 1.
 If the ball is close enough to fill the screen while still being fully visible, return a 10.
 If the ball is too close, entirely filling the screen, return a 1.
 For intermediary distances, return interpolated values in (1, 10).
 So, the robot only gets the highest score when the red ball is the right distance from the camera.
+The environment applies command-following shaping separately (+2 on completion, -2 when ignored).
 Return JSON with exactly one key: `reward`.
 Example output when no red ball is visible:
 {"reward": 0}
@@ -48,7 +49,13 @@ class RewardPromptRegistry:
 
     @classmethod
     def default(cls) -> "RewardPromptRegistry":
-        spec = RewardPromptSpec(prompt_id="reward_prompt_1", prompt_text=REWARD_PROMPT_1, min_reward=0.0, max_reward=10.0)
+        spec = RewardPromptSpec(
+            prompt_id="reward_prompt_1",
+            prompt_text=REWARD_PROMPT_1,
+            task_text="find the red ball",
+            min_reward=0.0,
+            max_reward=10.0,
+        )
         return cls(prompts={spec.prompt_id: spec})
 
     def get(self, prompt_id: str) -> RewardPromptSpec:
@@ -137,7 +144,10 @@ class FrozenVLMRewardScorer:
             raw_text=raw_text,
             reward=reward,
             clipped_reward=clipped_reward,
-            metadata={"prompt_text": prompt_spec.prompt_text},
+            metadata={
+                "prompt_text": prompt_spec.prompt_text,
+                "task_text": prompt_spec.task_text,
+            },
         )
 
     def _load_model_and_processor(self):

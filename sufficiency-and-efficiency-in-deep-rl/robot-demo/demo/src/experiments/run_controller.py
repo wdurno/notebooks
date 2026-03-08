@@ -310,25 +310,32 @@ def _build_reward_registry(prompt_text: str) -> tuple[RewardPromptRegistry, str]
             prompt_text=(
                 "You are a reinforcement learning reward scorer for a PiCar-V robot.\n"
                 "Return JSON with exactly one key: `reward`.\n"
-                "Task: find the red ball.\n"
+                "Primary visual task: find the red ball.\n"
+                "A separate environment-side shaping term handles command-following "
+                "(+2 when the robot follows a user command to completion, -2 when ignored).\n"
                 "If the task is not visible, return 0.\n"
                 "If the task is strongly satisfied, return a value near 10.\n"
                 "Use values in [0, 10]."
             ),
+            task_text=default_prompt,
             min_reward=0.0,
             max_reward=10.0,
         )
     else:
+        custom_task = prompt_text.strip()
         spec = RewardPromptSpec(
             prompt_id="reward_prompt_custom",
             prompt_text=(
                 "You are a reinforcement learning reward scorer for a PiCar-V robot.\n"
                 "Return JSON with exactly one key: `reward`.\n"
-                f"Task: {prompt_text.strip()}.\n"
+                f"Primary visual task: {custom_task}.\n"
+                "A separate environment-side shaping term handles command-following "
+                "(+2 when the robot follows a user command to completion, -2 when ignored).\n"
                 "If the task is not visible or not being satisfied, return 0.\n"
                 "If the task is strongly satisfied, return a value near 10.\n"
                 "Use values in [0, 10]."
             ),
+            task_text=custom_task,
             min_reward=0.0,
             max_reward=10.0,
         )

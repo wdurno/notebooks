@@ -29,6 +29,9 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - Treats malformed agent JSON as invalid speech output:
   - no fallback text is spoken
   - step reward gets a default `-1.0` adjustment
+- Applies command-following reward shaping in the env loop:
+  - `+2.0` when a recognized user command is followed to completion
+  - `-2.0` when a recognized pending command is ignored
 - Stores only tunable parameters in snapshots, plus SSR sufficient statistics and replay metadata.
 - Keeps at most `--snapshot-keep` snapshots (default `3`).
 - Runs until interrupted with `Ctrl-C`.
@@ -56,6 +59,7 @@ Use `--log-level INFO` for concise runtime telemetry:
 - reward summaries
 - robot speech (`say`)
 - captured STT text
+- command-following reward events (`+2/-2`) and command status
 
 Use `--log-level DEBUG` for deep diagnostics such as shared-model adapter state,
 raw generations, and prompt/token traces.
@@ -63,6 +67,8 @@ raw generations, and prompt/token traces.
 Context/image behavior notes:
 
 - `--history-window` controls how many recent messages are retained in rolling context.
+- Every submitted policy context now includes a persistent goal `system` message at
+  the oldest slot (primary task + always follow user commands).
 - By default, only the most recent user message is image-tagged.
 - With `--all-images`, every retained user message is image-tagged (reusing the current frame for each image slot).
 

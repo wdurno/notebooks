@@ -158,6 +158,25 @@ class FakeSpeechStream:
         return [QueuedSpeechEvent(text="find the red ball", received_at=0.0)]
 
 
+class ScriptedSpeechStream:
+    def __init__(self, texts: list[str]):
+        self.started = False
+        self.stopped = False
+        self._texts = list(texts)
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+    def drain(self):
+        if not self._texts:
+            return []
+        text = self._texts.pop(0)
+        return [QueuedSpeechEvent(text=text, received_at=0.0)]
+
+
 class FakeSpeaker:
     def __init__(self):
         self.spoken = []
@@ -278,6 +297,42 @@ def test_picar_env_penalizes_malformed_json_and_suppresses_speech(tmp_path):
     assert info["reward_adjustment"] == pytest.approx(-1.0)
     assert model.replay_buffer.items[-1].reward == pytest.approx(2.0)
     assert model.replay_buffer.items[-1].metadata["malformed_json"] is True
+
+
+def test_picar_env_injects_persistent_goal_system_message(tmp_path):
+    model = FakeModel()
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        config=EnvConfig(data_dir=tmp_path),
+    )
+
+    observation = env.reset()
+
+    assert observation.messages
+    assert observation.messages[0]["role"] == "system"
+    system_text = observation.messages[0]["content"][0]["text"]
+    assert "Persistent goals:" in system_text
+    assert "follow operator commands" in system_text
+
+
+def test_picar_env_rewards_command_completion_and_penalizes_ignores(tmp_path):
+    model = FakeModel()
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        speech_stream=ScriptedSpeechStream(["hello robot", "drive backward", "drive forward"]),
+        config=EnvConfig(data_dir=tmp_path),
+    )
+
+    env.reset()
+    reward_ignored = env.step()[1]
+    reward_completed = env.step()[1]
+
+    assert reward_ignored == pytest.approx(1.0)
+    assert reward_completed == pytest.approx(5.0)
 
 
 def test_picar_env_step_avoids_duplicate_user_message_from_reset(tmp_path):

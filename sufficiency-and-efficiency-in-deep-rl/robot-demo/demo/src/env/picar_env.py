@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict
+import re
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import time
 from typing import Any
@@ -10,8 +11,10 @@ from typing import Any
 import torch
 
 try:
+    from src.model.action_space import ACTION_NAMES
     from src.model import ModelObservation, Transition
 except ModuleNotFoundError:
+    from model.action_space import ACTION_NAMES
     from model import ModelObservation, Transition
 
 from .config import EnvConfig
@@ -21,6 +24,15 @@ from .schemas import ExperimentPaths, RewardResult, TrainingSummary
 LOGGER = logging.getLogger(__name__)
 
 MALFORMED_JSON_REWARD_PENALTY = -1.0
+COMMAND_FOLLOW_COMPLETION_REWARD = 2.0
+COMMAND_IGNORED_PENALTY = -2.0
+
+
+@dataclass
+class PendingUserCommand:
+    action_name: str
+    remaining_steps: int
+    source_text: str
 
 
 def build_operator_message(
@@ -64,6 +76,102 @@ def trim_history(history: list[dict[str, Any]], history_window: int) -> list[dic
     return list(history[-history_window:])
 
 
+def build_goal_system_message(*, reward_result: RewardResult) -> dict[str, Any]:
+    task_text = str(reward_result.metadata.get("task_text") or "").strip()
+    if not task_text:
+        task_text = f"task linked to reward prompt `{reward_result.prompt_id}`"
+    text = (
+        "Persistent goals:\n"
+        f"1) Primary task: {task_text}.\n"
+        "2) Always follow operator commands faithfully; if a command requests repeated "
+        "actions, continue until completion.\n"
+        "3) If the operator asks a question, provide a direct spoken answer in `say`."
+    )
+    return {
+        "role": "system",
+        "content": [{"type": "text", "text": text}],
+    }
+
+
+def _is_goal_system_message(message: dict[str, Any]) -> bool:
+    if message.get("role") != "system":
+        return False
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        text = str(item.get("text") or "")
+        if text.startswith("Persistent goals:"):
+            return True
+    return False
+
+
+def _normalize_command_text(text: str) -> str:
+    return str(text or "").strip().lower().replace("_", "-")
+
+
+def _extract_action_command(text: str) -> str | None:
+    normalized = _normalize_command_text(text)
+    if not normalized:
+        return None
+    pattern_map = {
+        "drive-left": (r"\bdrive\s+left\b", r"\bgo\s+left\b", r"\bturn\s+left\b"),
+        "drive-right": (r"\bdrive\s+right\b", r"\bgo\s+right\b", r"\bturn\s+right\b"),
+        "drive-forward": (r"\bdrive\s+forward\b", r"\bdrive\s+forwards\b", r"\bgo\s+forward\b"),
+        "drive-backward": (r"\bdrive\s+backward\b", r"\bdrive\s+backwards\b", r"\bgo\s+backward\b", r"\bgo\s+back\b"),
+        "look-left": (r"\blook\s+left\b",),
+        "look-right": (r"\blook\s+right\b",),
+        "look-up": (r"\blook\s+up\b",),
+        "look-forward": (r"\blook\s+forward\b", r"\blook\s+ahead\b"),
+    }
+    for action_name in ACTION_NAMES:
+        for pattern in pattern_map.get(action_name, ()):
+            if re.search(pattern, normalized):
+                return action_name
+    return None
+
+
+def _extract_command_repetitions(text: str) -> int:
+    normalized = _normalize_command_text(text)
+    numeric_match = re.search(r"\b(\d+)\b", normalized)
+    if numeric_match:
+        return max(1, int(numeric_match.group(1)))
+    word_to_int = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+    }
+    for word, value in word_to_int.items():
+        if re.search(rf"\b{word}\b", normalized):
+            return value
+    return 1
+
+
+def extract_pending_user_command(user_texts: list[str]) -> PendingUserCommand | None:
+    for text in reversed(user_texts):
+        action_name = _extract_action_command(text)
+        if action_name is None:
+            continue
+        repetitions = _extract_command_repetitions(text)
+        return PendingUserCommand(
+            action_name=action_name,
+            remaining_steps=repetitions,
+            source_text=str(text),
+        )
+    return None
+
+
 class PiCarGymEnv:
     """Gym-like PiCar environment that owns the orchestration loop.
 
@@ -103,6 +211,7 @@ class PiCarGymEnv:
         self.paths: ExperimentPaths | None = None
         self._run_metadata: dict[str, Any] = {}
         self._last_vector_command_at: float | None = None
+        self._pending_user_command: PendingUserCommand | None = None
         self._started = False
         self._closed = False
 
@@ -125,6 +234,7 @@ class PiCarGymEnv:
             self.paths = None
         self._run_metadata = {}
         self._last_vector_command_at = None
+        self._pending_user_command = None
         if self.speech_stream is not None:
             self.speech_stream.start()
         self._set_model_inference_mode()
@@ -139,7 +249,7 @@ class PiCarGymEnv:
             step_index=self.step_index,
             last_reward=self.last_reward,
         )
-        messages = trim_history([user_message], self.config.history_window)
+        messages = self._with_goal_message([user_message], reward_result=reward_result)
         observation = ModelObservation(
             image_rgb=frame,
             messages=messages,
@@ -166,6 +276,16 @@ class PiCarGymEnv:
         user_texts = [event.text for event in self._drain_speech_events()]
         if user_texts:
             LOGGER.info("[stt] step=%d drained_texts=%r", self.step_index, user_texts)
+            command = extract_pending_user_command(user_texts)
+            if command is not None:
+                self._pending_user_command = command
+                LOGGER.info(
+                    "[command] step=%d pending action=%s remaining_steps=%d source=%r",
+                    self.step_index,
+                    command.action_name,
+                    command.remaining_steps,
+                    command.source_text,
+                )
         current_frame = self.picar_client.capture_image()
         reward_result = self.reward_scorer.score(current_frame)
         user_message = build_operator_message(
@@ -179,9 +299,9 @@ class PiCarGymEnv:
             and self.history[-1].get("role") == "user"
             and self.history[-1].get("content") == user_message.get("content")
         ):
-            current_messages = trim_history(self.history, self.config.history_window)
+            current_messages = self._with_goal_message(self.history, reward_result=reward_result)
         else:
-            current_messages = trim_history(self.history + [user_message], self.config.history_window)
+            current_messages = self._with_goal_message(self.history + [user_message], reward_result=reward_result)
         observation = ModelObservation(
             image_rgb=current_frame,
             messages=current_messages,
@@ -200,7 +320,9 @@ class PiCarGymEnv:
         json_expected = bool(action_debug.get("json_expected", False))
         json_valid = bool(action_debug.get("json_valid", True))
         malformed_json = json_expected and not json_valid
-        reward_adjustment = MALFORMED_JSON_REWARD_PENALTY if malformed_json else 0.0
+        malformed_adjustment = MALFORMED_JSON_REWARD_PENALTY if malformed_json else 0.0
+        command_adjustment, command_status = self._score_command_following(action.agentic_action_name)
+        reward_adjustment = float(malformed_adjustment + command_adjustment)
         step_reward = float(reward_result.clipped_reward + reward_adjustment)
         LOGGER.info(
             "[model] step=%d mode=%s action=%s json_valid=%s say=%r",
@@ -216,11 +338,13 @@ class PiCarGymEnv:
             action_debug.get("raw_generation"),
         )
         LOGGER.info(
-            "[reward] step=%d base=%.3f adjustment=%.3f final=%.3f",
+            "[reward] step=%d base=%.3f malformed_adj=%.3f command_adj=%.3f final=%.3f command_status=%s",
             self.step_index,
             float(reward_result.clipped_reward),
-            float(reward_adjustment),
+            float(malformed_adjustment),
+            float(command_adjustment),
             float(step_reward),
+            command_status,
         )
         LOGGER.debug("[reward-debug] step=%d raw_text=%r", self.step_index, reward_result.raw_text)
         if action.generated_text and self.speaker is not None and not malformed_json:
@@ -247,7 +371,7 @@ class PiCarGymEnv:
             "role": "assistant",
             "content": [{"type": "text", "text": assistant_payload}],
         }
-        self.history = trim_history(current_messages + [assistant_message], self.config.history_window)
+        self.history = self._with_goal_message(current_messages + [assistant_message], reward_result=reward_result)
 
         next_frame = self.picar_client.capture_image()
         next_observation = ModelObservation(
@@ -280,6 +404,9 @@ class PiCarGymEnv:
                 "agentic_action_name": action.agentic_action_name,
                 "execution_mode": execution_mode,
                 "malformed_json": malformed_json,
+                "command_status": command_status,
+                "command_adjustment": command_adjustment,
+                "malformed_json_adjustment": malformed_adjustment,
                 "reward_adjustment": reward_adjustment,
                 "action_receipt": action_receipt,
             },
@@ -300,7 +427,10 @@ class PiCarGymEnv:
                     "step_index": self.step_index,
                     "reward": step_reward,
                     "reward_base": float(reward_result.clipped_reward),
+                    "reward_malformed_adjustment": float(malformed_adjustment),
+                    "reward_command_adjustment": float(command_adjustment),
                     "reward_adjustment": reward_adjustment,
+                    "command_status": command_status,
                     "reward_raw_text": reward_result.raw_text,
                     "user_texts": user_texts,
                     "action": {
@@ -322,7 +452,10 @@ class PiCarGymEnv:
         self.step_index += 1
         info = {
             "reward_result": reward_result,
+            "reward_malformed_adjustment": float(malformed_adjustment),
+            "reward_command_adjustment": float(command_adjustment),
             "reward_adjustment": reward_adjustment,
+            "command_status": command_status,
             "malformed_json": malformed_json,
             "action": action,
             "user_texts": user_texts,
@@ -370,6 +503,46 @@ class PiCarGymEnv:
             save_model_artifacts(self.model, self.paths.artifacts_dir, self.config.checkpoint_basename)
         self._closed = True
         return None
+
+    def _with_goal_message(
+        self,
+        history: list[dict[str, Any]],
+        *,
+        reward_result: RewardResult,
+    ) -> list[dict[str, Any]]:
+        goal_message = build_goal_system_message(reward_result=reward_result)
+        non_goal_messages = [message for message in history if not _is_goal_system_message(message)]
+        if self.config.history_window <= 1:
+            return [goal_message]
+        tail_messages = trim_history(non_goal_messages, self.config.history_window - 1)
+        return [goal_message] + tail_messages
+
+    def _score_command_following(self, action_name: str) -> tuple[float, str]:
+        pending = self._pending_user_command
+        if pending is None:
+            return 0.0, "none"
+        if action_name == pending.action_name:
+            pending.remaining_steps -= 1
+            if pending.remaining_steps <= 0:
+                self._pending_user_command = None
+                LOGGER.info(
+                    "[reward-command] step=%d status=completed action=%s delta=%.1f source=%r",
+                    self.step_index,
+                    action_name,
+                    COMMAND_FOLLOW_COMPLETION_REWARD,
+                    pending.source_text,
+                )
+                return COMMAND_FOLLOW_COMPLETION_REWARD, "completed"
+            return 0.0, f"in_progress({pending.remaining_steps})"
+        LOGGER.info(
+            "[reward-command] step=%d status=ignored expected=%s got=%s delta=%.1f source=%r",
+            self.step_index,
+            pending.action_name,
+            action_name,
+            COMMAND_IGNORED_PENALTY,
+            pending.source_text,
+        )
+        return COMMAND_IGNORED_PENALTY, f"ignored(expected={pending.action_name})"
 
     def _drain_speech_events(self) -> list[Any]:
         """Return any queued speech events without blocking the control loop."""
