@@ -30,11 +30,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=12,
         help="Number of recent messages kept in rolling context.",
     )
-    parser.add_argument(
+    image_group = parser.add_mutually_exclusive_group()
+    image_group.add_argument(
         "--all-images",
+        dest="all_images",
         action="store_true",
-        help="Attach an image placeholder to every user message in context.",
+        help="Attach an image placeholder to every retained user message.",
     )
+    image_group.add_argument(
+        "--latest-image-only",
+        dest="all_images",
+        action="store_false",
+        help="Only attach an image placeholder to the most recent user message (default).",
+    )
+    parser.set_defaults(all_images=False)
     parser.add_argument("--fixed-t", type=float, default=None, help="Pin interpolation t in [0, 1].")
     parser.add_argument(
         "--t-step",

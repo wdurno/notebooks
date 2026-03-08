@@ -129,11 +129,11 @@ def test_qwen_backbone_encode_uses_chat_template_messages():
     assert generation_kwargs["top_p"] == 0.95
 
 
-def test_qwen_backbone_default_keeps_single_image_for_latest_message():
+def test_qwen_backbone_latest_image_only_keeps_single_image_for_latest_message():
     processor = FakeProcessor()
     model = FakeGenerationModel()
     backbone = QwenLoRABackbone(
-        config=ModelConfig(hidden_size=4),
+        config=ModelConfig(hidden_size=4, all_images=False),
         model=model,
         processor=processor,
     )
@@ -159,7 +159,7 @@ def test_qwen_backbone_default_keeps_single_image_for_latest_message():
     assert user_messages[-1]["content"][0] == {"type": "image"}
 
 
-def test_qwen_backbone_all_images_adds_image_for_each_user_message():
+def test_qwen_backbone_default_adds_image_for_each_user_message():
     processor = FakeProcessor()
     model = FakeGenerationModel()
     backbone = QwenLoRABackbone(

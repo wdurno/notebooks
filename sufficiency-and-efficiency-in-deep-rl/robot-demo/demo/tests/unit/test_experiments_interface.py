@@ -26,7 +26,7 @@ def test_parser_accepts_deterministic_coding_flag():
     assert args.deterministic_coding is True
 
 
-def test_parser_accepts_history_window_and_all_images_flags():
+def test_parser_accepts_history_window_and_image_mode_flags():
     parser = build_parser()
     args = parser.parse_args(
         ["--phase", "init", "--history-window", "18", "--all-images"],

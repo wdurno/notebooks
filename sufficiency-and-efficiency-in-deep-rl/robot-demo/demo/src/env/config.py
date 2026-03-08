@@ -16,8 +16,8 @@ def default_data_dir() -> Path:
 class PiCarControlConfig:
     host: str = "127.0.0.1:5000"
     repo_root: Path = Path("/home/evan/Documents/picar-v-rl-env")
-    x_resize: int | None = 80
-    y_resize: int | None = 60
+    x_resize: int | None = 160
+    y_resize: int | None = 120
     min_command_interval_seconds: float = 0.5
     request_timeout_seconds: float = 10.0
     request_retry_count: int = 5

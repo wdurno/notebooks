@@ -80,6 +80,8 @@ def load_qwen_2_5_vl_processor(model_path: str | Path):
 
     image_processor = Qwen2VLImageProcessor.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # Decoder-only generation with batched variable-length prompts expects left padding.
+    tokenizer.padding_side = "left"
     return Qwen2_5_VLImageOnlyProcessor(
         image_processor=image_processor,
         tokenizer=tokenizer,

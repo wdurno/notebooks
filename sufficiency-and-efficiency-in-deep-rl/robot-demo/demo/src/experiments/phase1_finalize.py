@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,6 +17,8 @@ except ModuleNotFoundError:
 
 from .snapshot_store import SnapshotStore, resolve_snapshot_path
 
+LOGGER = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class Phase1FinalizeConfig:
@@ -25,6 +28,7 @@ class Phase1FinalizeConfig:
     epochs: int = 1
     batch_size: int = 8
     fit_iters: int = 32
+    progress_every: int = 0
     memorize_random_idx: bool = False
     snapshot_keep: int = 3
     run_uuid: str | None = None
@@ -73,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=8, help="Replay batch size for each fit call.")
     parser.add_argument("--fit-iters", type=int, default=32, help="Iterations per `model.fit(...)` call.")
     parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=0,
+        help="Log fit progress every N replay steps inside each epoch (0 = auto cadence).",
+    )
+    parser.add_argument(
         "--memorize-random-idx",
         action="store_true",
         help="Use random replay indices during final SSR memorization.",
@@ -83,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    _configure_logging()
     args = build_parser().parse_args()
     config = Phase1FinalizeConfig(
         data_runs=[Path(path) for path in args.data_runs],
@@ -91,17 +102,17 @@ def main() -> int:
         epochs=args.epochs,
         batch_size=args.batch_size,
         fit_iters=args.fit_iters,
+        progress_every=args.progress_every,
         memorize_random_idx=bool(args.memorize_random_idx),
         snapshot_keep=args.snapshot_keep,
         run_uuid=args.run_uuid,
     )
     summary = run_phase1_finalize(config)
-    print(
+    LOGGER.info(
         f"[phase1_finalize] done uuid={summary.run_uuid} "
         f"sources={summary.source_run_count} transitions={summary.transitions_loaded} "
         f"fit_calls={summary.fit_calls} memorized={summary.memorized_count} "
         f"snapshot={summary.snapshot_path}",
-        flush=True,
     )
     return 0
 
@@ -139,30 +150,50 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
     if config.load_snapshot is not None:
         loaded_snapshot_path = resolve_snapshot_path(config.load_snapshot)
         result = snapshot_store.load_into_model(snapshot_path=loaded_snapshot_path, model=model)
-        print(
+        LOGGER.info(
             f"[phase1_finalize] loaded snapshot={result.path} "
             f"trainable_keys={len(result.loaded_trainable_keys)} ssr={result.has_ssr_state}",
-            flush=True,
         )
 
     _set_model_optimization_mode(model)
 
     steps_per_epoch = max(1, int(math.ceil(len(replay_buffer) / float(max(1, config.batch_size)))))
+    total_fit_calls_expected = int(config.epochs) * int(steps_per_epoch)
     fit_calls = 0
     last_pi = None
     last_loss = None
+    LOGGER.info(
+        f"[phase1_finalize] start epochs={config.epochs} replay_size={len(replay_buffer)} "
+        f"batch_size={config.batch_size} fit_iters={config.fit_iters} "
+        f"steps_per_epoch={steps_per_epoch} planned_fit_calls={total_fit_calls_expected}",
+    )
     for epoch_idx in range(config.epochs):
-        for _ in range(steps_per_epoch):
+        LOGGER.info(
+            f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
+            f"step=0/{steps_per_epoch} fit_calls={fit_calls}/{total_fit_calls_expected}",
+        )
+        for step_idx in range(steps_per_epoch):
             batch_size = min(max(1, config.batch_size), len(replay_buffer))
             pi, loss = model.fit(batch_size=batch_size, iters=config.fit_iters)
             fit_calls += 1
             last_pi = float(pi)
             last_loss = float(loss)
-        print(
+            step_in_epoch = step_idx + 1
+            if _should_log_epoch_progress(
+                step_in_epoch=step_in_epoch,
+                steps_per_epoch=steps_per_epoch,
+                progress_every=config.progress_every,
+            ):
+                LOGGER.info(
+                    f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
+                    f"step={step_in_epoch}/{steps_per_epoch} "
+                    f"fit_calls={fit_calls}/{total_fit_calls_expected} "
+                    f"last_pi={last_pi:.4f} last_loss={last_loss:.6f}",
+                )
+        LOGGER.info(
             f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
             f"fit_calls={fit_calls} replay_size={len(replay_buffer)} "
             f"last_pi={last_pi:.4f} last_loss={last_loss:.6f}",
-            flush=True,
         )
 
     memorized_count = len(replay_buffer)
@@ -189,6 +220,7 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
         "epochs": config.epochs,
         "batch_size": config.batch_size,
         "fit_iters": config.fit_iters,
+        "progress_every": config.progress_every,
         "fit_calls": fit_calls,
         "memorized_count": memorized_count,
         "snapshot_path": str(snapshot_path),
@@ -364,8 +396,19 @@ def _validate_config(config: Phase1FinalizeConfig) -> None:
         raise ValueError(f"--batch-size must be >= 1, got {config.batch_size}")
     if int(config.fit_iters) < 1:
         raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
+    if int(config.progress_every) < 0:
+        raise ValueError(f"--progress-every must be >= 0, got {config.progress_every}")
     if int(config.snapshot_keep) < 1:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
+
+
+def _configure_logging() -> None:
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+        return None
+    root_logger.setLevel(logging.INFO)
+    return None
 
 
 def _set_model_optimization_mode(model: Any) -> None:
@@ -376,6 +419,15 @@ def _set_model_optimization_mode(model: Any) -> None:
     if hasattr(model, "train"):
         model.train()
     return None
+
+
+def _should_log_epoch_progress(step_in_epoch: int, steps_per_epoch: int, progress_every: int) -> bool:
+    if step_in_epoch <= 0:
+        return False
+    if step_in_epoch >= steps_per_epoch:
+        return True
+    interval = int(progress_every) if int(progress_every) > 0 else max(1, steps_per_epoch // 10)
+    return (step_in_epoch % interval) == 0
 
 
 if __name__ == "__main__":

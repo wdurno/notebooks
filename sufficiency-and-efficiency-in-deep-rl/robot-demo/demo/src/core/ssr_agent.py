@@ -5,6 +5,7 @@
 import random 
 import torch 
 import torch.nn as nn 
+from tqdm import tqdm 
 
 from .lanczos import l_lanczos, combine_krylov_spaces 
 from .replay_buffer import Object 
@@ -192,7 +193,7 @@ class SSRAgent(nn.Module):
         self.dt_prev_pi = pi = self.optimal_lambda(pi_min=pi_min, pi_max=pi_max) 
         self.optimizer.zero_grad() 
         #ssr = self.ssr() ## cannot double-use graphs 
-        for _ in range(iters): 
+        for _ in tqdm(range(iters), desc='fit iters'): 
             data = self.replay_buffer.sample(batch_size=batch_size) ## TODO provide whole-sample-in-batches option 
             loss = self.loss(data) / iters 
             loss = pi * loss + (1 - pi) * self.ssr() / iters 

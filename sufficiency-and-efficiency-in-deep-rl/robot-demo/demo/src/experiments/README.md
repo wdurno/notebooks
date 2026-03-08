@@ -42,7 +42,8 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
 - `--deterministic-coding` (disable sampling for policy text generation)
 - `--history-window INT` (default `12`)
-- `--all-images` (attach an image placeholder to all user messages in context)
+- `--latest-image-only` (default behavior: only image-tag the most recent user message)
+- `--all-images` (image-tag every retained user message)
 - `--fixed-t FLOAT` (optional)
 - `--t-step FLOAT` (default `0.001`)
 - `--t-log-every INT` (default `1`)
@@ -129,6 +130,45 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
   --load-snapshot model/<prior-uuid>/snapshots
 ```
 
+#### Phase 1 Finalization (offline tune + full memorize)
+
+After collecting many phase-1 runs, finalize them into a fresh
+`model/<new-uuid>/` state:
+
+```bash
+python -m src.experiments.phase1_finalize \
+  --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
+  --epochs 3 \
+  --batch-size 1 \
+  --fit-iters 32
+```
+
+Optional: initialize from an existing snapshot first:
+
+```bash
+python -m src.experiments.phase1_finalize \
+  --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
+  --load-snapshot model/<prior-uuid>/snapshots \
+  --epochs 3 \
+  --batch-size 8 \
+  --fit-iters 32
+```
+
+What `phase1_finalize` does:
+
+1. Loads transitions reconstructed from all provided `data/<uuid>/observations.jsonl` runs.
+2. Tunes the model offline on the aggregated replay buffer.
+3. Memorizes all loaded replay into SSR sufficient statistics.
+4. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.
+
+Progress logging:
+
+- Prints a run-start summary including `steps_per_epoch` and planned fit calls.
+- Prints intra-epoch progress logs at an automatic cadence (~10 updates/epoch).
+- Use `--progress-every N` to override cadence (`0` keeps auto cadence).
+
+`phase1_finalize` runs in optimization/train mode for offline fit and memorize.
+
 ### 2) Policy tuning (`t` traverses 0 -> 1)
 
 ```bash
@@ -177,36 +217,3 @@ model/<uuid>/
     snapshot-step-000000-initial.pt
     snapshot-step-000640-memorize-mem-0064.pt
 ```
-
-## Phase-1 Finalization (offline tune + full memorize)
-
-After collecting many phase-1 runs, finalize them into a fresh
-`model/<new-uuid>/` state:
-
-```bash
-python -m src.experiments.phase1_finalize \
-  --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
-  --epochs 3 \
-  --batch-size 8 \
-  --fit-iters 32
-```
-
-Optional: initialize from an existing snapshot first:
-
-```bash
-python -m src.experiments.phase1_finalize \
-  --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
-  --load-snapshot model/<prior-uuid>/snapshots \
-  --epochs 3 \
-  --batch-size 8 \
-  --fit-iters 32
-```
-
-What `phase1_finalize` does:
-
-1. Loads transitions reconstructed from all provided `data/<uuid>/observations.jsonl` runs.
-2. Tunes the model offline on the aggregated replay buffer.
-3. Memorizes all loaded replay into SSR sufficient statistics.
-4. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.
-
-`phase1_finalize` runs in optimization/train mode for offline fit and memorize.
