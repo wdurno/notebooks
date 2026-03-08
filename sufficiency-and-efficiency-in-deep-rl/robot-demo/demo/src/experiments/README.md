@@ -38,6 +38,8 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--phase {init,tune,retask}`
 - `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
 - `--deterministic-coding` (disable sampling for policy text generation)
+- `--history-window INT` (default `12`)
+- `--all-images` (attach an image placeholder to all user messages in context)
 - `--fixed-t FLOAT` (optional)
 - `--t-step FLOAT` (default `0.001`)
 - `--t-log-every INT` (default `1`)
@@ -57,6 +59,12 @@ Use `--log-level INFO` for concise runtime telemetry:
 
 Use `--log-level DEBUG` for deep diagnostics such as shared-model adapter state,
 raw generations, and prompt/token traces.
+
+Context/image behavior notes:
+
+- `--history-window` controls how many recent messages are retained in rolling context.
+- By default, only the most recent user message is image-tagged.
+- With `--all-images`, every retained user message is image-tagged (reusing the current frame for each image slot).
 
 ## Experimental phases
 

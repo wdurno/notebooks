@@ -213,12 +213,13 @@ class QwenLoRABackbone(nn.Module):
         except ImportError as exc:
             raise RuntimeError("Pillow is required to process RGB images for the VLM") from exc
 
-        images = []
+        per_sample_images = []
         prompts = []
         prepared_messages = []
         for observation in observations:
-            images.append(Image.fromarray(observation.image_rgb))
+            latest_image = Image.fromarray(observation.image_rgb)
             messages = self._build_chat_messages(observation, allow_agentic_actions=allow_agentic_actions)
+            per_sample_images.append(_build_images_for_messages(messages, latest_image))
             prepared_messages.append(messages)
             prompts.append(
                 self.processor.apply_chat_template(
@@ -232,7 +233,7 @@ class QwenLoRABackbone(nn.Module):
         # work with plain RGB frames and message objects.
         processor_inputs = self.processor(
             text=prompts,
-            images=images,
+            images=_prepare_batch_images_for_processor(per_sample_images),
             padding=True,
             return_tensors="pt",
         )
@@ -330,7 +331,7 @@ class QwenLoRABackbone(nn.Module):
         if target_texts and any(text is not None and text.strip() for text in target_texts):
             vlm_loss_value, target_logp_sums = self._compute_supervised_token_stats(
                 observations=observations,
-                images=images,
+                per_sample_images=per_sample_images,
                 messages_list=prepared_messages,
                 target_texts=target_texts,
                 model_device=model_device,
@@ -399,13 +400,16 @@ class QwenLoRABackbone(nn.Module):
         system_prompt = CONTROL_SYSTEM_PROMPT if allow_agentic_actions else SAY_ONLY_SYSTEM_PROMPT
         messages = [{"role": "system", "content": [{"type": "text", "text": system_prompt}]}]
         messages.extend(_copy_messages(observation.messages))
-        return _ensure_image_placeholder(messages)
+        messages = _ensure_image_placeholder(messages)
+        if bool(getattr(self.config, "all_images", False)):
+            messages = _ensure_image_placeholders_for_all_user_messages(messages)
+        return messages
 
     def _compute_supervised_token_stats(
         self,
         *,
         observations: list[ModelObservation],
-        images: list[Any],
+        per_sample_images: list[list[Any]],
         messages_list: list[list[dict[str, Any]]],
         target_texts: list[Optional[str]],
         model_device: torch.device,
@@ -428,7 +432,9 @@ class QwenLoRABackbone(nn.Module):
         per_sample_logp_sums: list[torch.Tensor] = []
         parameter = next(self.model.parameters())
         zero = parameter.sum() * 0.0
-        for observation, messages, image, target_text in zip(observations, messages_list, images, target_texts):
+        for observation, messages, sample_images, target_text in zip(
+            observations, messages_list, per_sample_images, target_texts
+        ):
             if target_text is None or not target_text.strip():
                 per_sample_logp_sums.append(zero)
                 continue
@@ -451,12 +457,12 @@ class QwenLoRABackbone(nn.Module):
             )
             prompt_inputs = self.processor(
                 text=[prompt_text],
-                images=[image],
+                images=_prepare_single_images_for_processor(sample_images),
                 return_tensors="pt",
             )
             full_inputs = self.processor(
                 text=[full_prompt],
-                images=[image],
+                images=_prepare_single_images_for_processor(sample_images),
                 return_tensors="pt",
             )
             full_inputs = {name: tensor.to(model_device) for name, tensor in full_inputs.items()}
@@ -602,6 +608,40 @@ def _ensure_image_placeholder(messages: list[dict[str, Any]]) -> list[dict[str, 
         }
     )
     return copied
+
+
+def _ensure_image_placeholders_for_all_user_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    copied = _copy_messages(messages)
+    for message in copied:
+        if message.get("role") != "user":
+            continue
+        content = _normalize_content(message.get("content"))
+        if any(isinstance(item, dict) and item.get("type") == "image" for item in content):
+            message["content"] = content
+            continue
+        message["content"] = [{"type": "image"}] + content
+    return copied
+
+
+def _build_images_for_messages(messages: list[dict[str, Any]], latest_image: Any) -> list[Any]:
+    image_count = 0
+    for message in messages:
+        for item in _normalize_content(message.get("content")):
+            if isinstance(item, dict) and item.get("type") == "image":
+                image_count += 1
+    return [latest_image] * max(1, image_count)
+
+
+def _prepare_batch_images_for_processor(per_sample_images: list[list[Any]]) -> list[Any] | list[list[Any]]:
+    if len(per_sample_images) == 1:
+        return per_sample_images[0]
+    if all(len(sample_images) == 1 for sample_images in per_sample_images):
+        return [sample_images[0] for sample_images in per_sample_images]
+    return per_sample_images
+
+
+def _prepare_single_images_for_processor(sample_images: list[Any]) -> list[Any]:
+    return list(sample_images)
 
 
 def _message_has_image(message: dict[str, Any]) -> bool:

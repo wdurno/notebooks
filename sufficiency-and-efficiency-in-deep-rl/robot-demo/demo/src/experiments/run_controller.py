@@ -161,6 +161,8 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "load_snapshot": str(config.load_snapshot) if config.load_snapshot is not None else None,
         "reward_prompt": config.reward_prompt,
         "deterministic_coding": bool(config.deterministic_coding),
+        "history_window": int(config.history_window),
+        "all_images": bool(config.all_images),
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
         "picar_host": picar_host,
@@ -177,6 +179,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     model_config = ModelConfig(
         model_dir=model_root,
         deterministic_coding=bool(config.deterministic_coding),
+        all_images=bool(config.all_images),
     )
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
@@ -217,6 +220,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         config=EnvConfig(
             data_dir=data_run_dir / ".env_internal",
             enable_persistence=False,
+            history_window=int(config.history_window),
             reward=RewardConfig(prompt_id=reward_prompt_id),
             speech=SpeechStreamConfig(),
             training=training_config,
@@ -348,6 +352,8 @@ def _validate_config(config: ExperimentRunConfig) -> None:
         raise ValueError(f"--t-log-every must be >= 1, got {config.t_log_every}")
     if int(config.snapshot_keep) < 1:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
+    if int(config.history_window) < 1:
+        raise ValueError(f"--history-window must be >= 1, got {config.history_window}")
     return None
 
 

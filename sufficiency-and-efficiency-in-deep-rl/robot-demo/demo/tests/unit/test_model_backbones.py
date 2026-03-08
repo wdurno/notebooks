@@ -20,6 +20,7 @@ from model.schemas import ModelObservation
 class FakeProcessor:
     def __init__(self):
         self.template_calls = []
+        self.encode_calls = []
 
     def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
         self.template_calls.append(
@@ -33,6 +34,14 @@ class FakeProcessor:
         return f"roles={roles};generation={add_generation_prompt}"
 
     def __call__(self, text, images, padding=False, return_tensors="pt"):
+        self.encode_calls.append(
+            {
+                "text": text,
+                "images": images,
+                "padding": padding,
+                "return_tensors": return_tensors,
+            }
+        )
         batch_size = len(text)
         seq_len = 6 if any("False" in item for item in text) else 4
         input_ids = torch.arange(batch_size * seq_len, dtype=torch.int64).reshape(batch_size, seq_len)
@@ -118,6 +127,66 @@ def test_qwen_backbone_encode_uses_chat_template_messages():
     assert generation_kwargs["do_sample"] is True
     assert generation_kwargs["temperature"] == 0.3
     assert generation_kwargs["top_p"] == 0.95
+
+
+def test_qwen_backbone_default_keeps_single_image_for_latest_message():
+    processor = FakeProcessor()
+    model = FakeGenerationModel()
+    backbone = QwenLoRABackbone(
+        config=ModelConfig(hidden_size=4),
+        model=model,
+        processor=processor,
+    )
+    observation = ModelObservation(
+        image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "first question"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "first answer"}]},
+            {"role": "user", "content": [{"type": "text", "text": "second question"}]},
+        ],
+        t=0.0,
+        step_index=3,
+    )
+
+    backbone.encode([observation], target_texts=[None], compute_vlm_loss=False)
+
+    first_encode = processor.encode_calls[0]
+    assert isinstance(first_encode["images"], list)
+    assert len(first_encode["images"]) == 1
+    first_messages = processor.template_calls[0]["messages"]
+    user_messages = [message for message in first_messages if message["role"] == "user"]
+    assert user_messages[0]["content"][0] != {"type": "image"}
+    assert user_messages[-1]["content"][0] == {"type": "image"}
+
+
+def test_qwen_backbone_all_images_adds_image_for_each_user_message():
+    processor = FakeProcessor()
+    model = FakeGenerationModel()
+    backbone = QwenLoRABackbone(
+        config=ModelConfig(hidden_size=4, all_images=True),
+        model=model,
+        processor=processor,
+    )
+    observation = ModelObservation(
+        image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "first question"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "first answer"}]},
+            {"role": "user", "content": [{"type": "text", "text": "second question"}]},
+        ],
+        t=0.0,
+        step_index=4,
+    )
+
+    backbone.encode([observation], target_texts=[None], compute_vlm_loss=False)
+
+    first_encode = processor.encode_calls[0]
+    assert isinstance(first_encode["images"], list)
+    assert len(first_encode["images"]) == 2
+    first_messages = processor.template_calls[0]["messages"]
+    user_messages = [message for message in first_messages if message["role"] == "user"]
+    assert user_messages[0]["content"][0] == {"type": "image"}
+    assert user_messages[1]["content"][0] == {"type": "image"}
 
 
 def test_qwen_backbone_encode_can_disable_sampling():
