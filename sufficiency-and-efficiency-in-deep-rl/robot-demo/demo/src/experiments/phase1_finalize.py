@@ -27,7 +27,7 @@ class Phase1FinalizeConfig:
     load_snapshot: Path | None = None
     epochs: int = 1
     batch_size: int = 8
-    fit_iters: int = 32
+    fit_iters: int | None = None
     prompt_token_window: int = 512
     progress_every: int = 0
     memorize_random_idx: bool = False
@@ -76,7 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--epochs", type=int, default=1, help="Number of offline epochs over replay sampling.")
     parser.add_argument("--batch-size", type=int, default=8, help="Replay batch size for each fit call.")
-    parser.add_argument("--fit-iters", type=int, default=32, help="Iterations per `model.fit(...)` call.")
+    parser.add_argument(
+        "--fit-iters",
+        type=int,
+        default=None,
+        help=(
+            "Iterations per `model.fit(...)` call. If omitted, defaults to "
+            "ceil(replay_size / batch_size) for an approximate one-pass epoch."
+        ),
+    )
     parser.add_argument(
         "--prompt-token-window",
         type=int,
@@ -87,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--progress-every",
         type=int,
         default=0,
-        help="Log fit progress every N replay steps inside each epoch (0 = auto cadence).",
+        help="Log fit progress every N epochs (0 = auto cadence).",
     )
     parser.add_argument(
         "--memorize-random-idx",
@@ -170,44 +178,37 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
 
     _set_model_optimization_mode(model)
 
-    steps_per_epoch = max(1, int(math.ceil(len(replay_buffer) / float(max(1, config.batch_size)))))
-    total_fit_calls_expected = int(config.epochs) * int(steps_per_epoch)
+    effective_fit_iters = _resolve_fit_iters(
+        replay_size=len(replay_buffer),
+        batch_size=int(config.batch_size),
+        fit_iters=config.fit_iters,
+    )
+    optimizer_steps_planned = int(config.epochs)
     fit_calls = 0
     last_pi = None
     last_loss = None
     LOGGER.info(
         f"[phase1_finalize] start epochs={config.epochs} replay_size={len(replay_buffer)} "
-        f"batch_size={config.batch_size} fit_iters={config.fit_iters} "
-        f"steps_per_epoch={steps_per_epoch} planned_fit_calls={total_fit_calls_expected}",
+        f"batch_size={config.batch_size} fit_iters={effective_fit_iters} "
+        f"optimizer_steps_planned={optimizer_steps_planned}",
     )
+    batch_size = min(max(1, config.batch_size), len(replay_buffer))
     for epoch_idx in range(config.epochs):
-        LOGGER.info(
-            f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
-            f"step=0/{steps_per_epoch} fit_calls={fit_calls}/{total_fit_calls_expected}",
-        )
-        for step_idx in range(steps_per_epoch):
-            batch_size = min(max(1, config.batch_size), len(replay_buffer))
-            pi, loss = model.fit(batch_size=batch_size, iters=config.fit_iters)
-            fit_calls += 1
-            last_pi = float(pi)
-            last_loss = float(loss)
-            step_in_epoch = step_idx + 1
-            if _should_log_epoch_progress(
-                step_in_epoch=step_in_epoch,
-                steps_per_epoch=steps_per_epoch,
-                progress_every=config.progress_every,
-            ):
-                LOGGER.info(
-                    f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
-                    f"step={step_in_epoch}/{steps_per_epoch} "
-                    f"fit_calls={fit_calls}/{total_fit_calls_expected} "
-                    f"last_pi={last_pi:.4f} last_loss={last_loss:.6f}",
-                )
-        LOGGER.info(
-            f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
-            f"fit_calls={fit_calls} replay_size={len(replay_buffer)} "
-            f"last_pi={last_pi:.4f} last_loss={last_loss:.6f}",
-        )
+        pi, loss = model.fit(batch_size=batch_size, iters=effective_fit_iters)
+        fit_calls += 1
+        last_pi = float(pi)
+        last_loss = float(loss)
+        if _should_log_epoch_progress(
+            epoch_number=epoch_idx + 1,
+            total_epochs=int(config.epochs),
+            progress_every=config.progress_every,
+        ):
+            LOGGER.info(
+                f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
+                f"optimizer_steps={fit_calls}/{optimizer_steps_planned} "
+                f"fit_iters={effective_fit_iters} last_pi={last_pi:.4f} "
+                f"last_loss={last_loss:.6f}",
+            )
 
     memorized_count = len(replay_buffer)
     _set_model_optimization_mode(model)
@@ -232,7 +233,8 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
         "transitions_loaded": transitions_loaded,
         "epochs": config.epochs,
         "batch_size": config.batch_size,
-        "fit_iters": config.fit_iters,
+        "fit_iters": effective_fit_iters,
+        "fit_iters_requested": config.fit_iters,
         "prompt_token_window": config.prompt_token_window,
         "progress_every": config.progress_every,
         "fit_calls": fit_calls,
@@ -408,7 +410,7 @@ def _validate_config(config: Phase1FinalizeConfig) -> None:
         raise ValueError(f"--epochs must be >= 1, got {config.epochs}")
     if int(config.batch_size) < 1:
         raise ValueError(f"--batch-size must be >= 1, got {config.batch_size}")
-    if int(config.fit_iters) < 1:
+    if config.fit_iters is not None and int(config.fit_iters) < 1:
         raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
     if int(config.prompt_token_window) < 0:
         raise ValueError(
@@ -440,13 +442,20 @@ def _set_model_optimization_mode(model: Any) -> None:
     return None
 
 
-def _should_log_epoch_progress(step_in_epoch: int, steps_per_epoch: int, progress_every: int) -> bool:
-    if step_in_epoch <= 0:
+def _resolve_fit_iters(*, replay_size: int, batch_size: int, fit_iters: int | None) -> int:
+    if fit_iters is not None:
+        return max(1, int(fit_iters))
+    safe_batch_size = max(1, int(batch_size))
+    return max(1, int(math.ceil(int(replay_size) / float(safe_batch_size))))
+
+
+def _should_log_epoch_progress(epoch_number: int, total_epochs: int, progress_every: int) -> bool:
+    if epoch_number <= 0:
         return False
-    if step_in_epoch >= steps_per_epoch:
+    if epoch_number >= total_epochs:
         return True
-    interval = int(progress_every) if int(progress_every) > 0 else max(1, steps_per_epoch // 10)
-    return (step_in_epoch % interval) == 0
+    interval = int(progress_every) if int(progress_every) > 0 else max(1, int(total_epochs) // 10)
+    return (epoch_number % interval) == 0
 
 
 if __name__ == "__main__":

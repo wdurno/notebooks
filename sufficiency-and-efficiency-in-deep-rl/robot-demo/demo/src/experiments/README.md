@@ -143,7 +143,6 @@ python -m src.experiments.phase1_finalize \
   --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
   --epochs 3 \
   --batch-size 1 \
-  --fit-iters 32 \
   --prompt-token-window 512
 ```
 
@@ -162,14 +161,16 @@ python -m src.experiments.phase1_finalize \
 What `phase1_finalize` does:
 
 1. Loads transitions reconstructed from all provided `data/<uuid>/observations.jsonl` runs.
-2. Tunes the model offline on the aggregated replay buffer.
+2. Tunes the model offline on the aggregated replay buffer with one optimizer step per epoch.
+   By default, `fit_iters` is auto-set to `ceil(replay_size / batch_size)` for an approximate one-pass epoch;
+   optionally override with `--fit-iters` to cap or increase per-epoch compute.
 3. Memorizes all loaded replay into SSR sufficient statistics.
 4. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.
 
 Progress logging:
 
-- Prints a run-start summary including `steps_per_epoch` and planned fit calls.
-- Prints intra-epoch progress logs at an automatic cadence (~10 updates/epoch).
+- Prints a run-start summary including replay size, effective `fit_iters`, and planned optimizer steps.
+- Prints epoch progress logs at an automatic cadence (~10 updates/run).
 - Use `--progress-every N` to override cadence (`0` keeps auto cadence).
 - Use `--prompt-token-window` to enforce the same prompt cap during offline finalize on already-collected runs.
 

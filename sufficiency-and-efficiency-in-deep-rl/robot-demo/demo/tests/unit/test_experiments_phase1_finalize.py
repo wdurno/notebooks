@@ -12,6 +12,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from experiments.phase1_finalize import (
     Phase1FinalizeConfig,
+    _resolve_fit_iters,
     _validate_config,
     _set_model_optimization_mode,
     build_parser,
@@ -160,6 +161,7 @@ def test_phase1_finalize_parser_prompt_token_window_defaults():
     args = parser.parse_args(["--data-runs", "data/run-a"])
 
     assert args.prompt_token_window == 512
+    assert args.fit_iters is None
 
 
 def test_phase1_finalize_validate_rejects_negative_prompt_token_window():
@@ -171,3 +173,22 @@ def test_phase1_finalize_validate_rejects_negative_prompt_token_window():
         assert "--prompt-token-window" in str(exc)
     else:
         raise AssertionError("Expected ValueError for negative prompt token window.")
+
+
+def test_phase1_finalize_validate_rejects_non_positive_fit_iters():
+    config = Phase1FinalizeConfig(data_runs=[Path("/tmp/run")], fit_iters=0)
+
+    try:
+        _validate_config(config)
+    except ValueError as exc:
+        assert "--fit-iters" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for non-positive fit_iters.")
+
+
+def test_phase1_finalize_resolve_fit_iters_defaults_to_approx_one_pass():
+    assert _resolve_fit_iters(replay_size=60, batch_size=4, fit_iters=None) == 15
+
+
+def test_phase1_finalize_resolve_fit_iters_respects_explicit_override():
+    assert _resolve_fit_iters(replay_size=60, batch_size=4, fit_iters=7) == 7
