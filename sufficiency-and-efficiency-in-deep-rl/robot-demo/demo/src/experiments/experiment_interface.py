@@ -30,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=12,
         help="Number of recent messages kept in rolling context.",
     )
+    parser.add_argument(
+        "--prompt-token-window",
+        type=int,
+        default=512,
+        help="Token budget cap for model prompts (0 disables token-based truncation).",
+    )
     image_group = parser.add_mutually_exclusive_group()
     image_group.add_argument(
         "--all-images",
@@ -116,6 +122,7 @@ def main() -> int:
         deterministic_coding=bool(args.deterministic_coding),
         history_window=int(args.history_window),
         all_images=bool(args.all_images),
+        prompt_token_window=int(args.prompt_token_window),
         fixed_t=args.fixed_t,
         t_step=args.t_step,
         t_log_every=args.t_log_every,

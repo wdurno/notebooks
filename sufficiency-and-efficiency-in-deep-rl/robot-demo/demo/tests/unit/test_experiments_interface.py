@@ -17,6 +17,7 @@ def test_parser_defaults_deterministic_coding_to_false():
     assert args.deterministic_coding is False
     assert args.history_window == 12
     assert args.all_images is False
+    assert args.prompt_token_window == 512
 
 
 def test_parser_accepts_deterministic_coding_flag():
@@ -29,8 +30,9 @@ def test_parser_accepts_deterministic_coding_flag():
 def test_parser_accepts_history_window_and_image_mode_flags():
     parser = build_parser()
     args = parser.parse_args(
-        ["--phase", "init", "--history-window", "18", "--all-images"],
+        ["--phase", "init", "--history-window", "18", "--all-images", "--prompt-token-window", "256"],
     )
 
     assert args.history_window == 18
     assert args.all_images is True
+    assert args.prompt_token_window == 256

@@ -28,6 +28,7 @@ class Phase1FinalizeConfig:
     epochs: int = 1
     batch_size: int = 8
     fit_iters: int = 32
+    prompt_token_window: int = 512
     progress_every: int = 0
     memorize_random_idx: bool = False
     snapshot_keep: int = 3
@@ -77,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=8, help="Replay batch size for each fit call.")
     parser.add_argument("--fit-iters", type=int, default=32, help="Iterations per `model.fit(...)` call.")
     parser.add_argument(
+        "--prompt-token-window",
+        type=int,
+        default=512,
+        help="Token budget cap for prompts during offline finalize fit (0 disables token-based truncation).",
+    )
+    parser.add_argument(
         "--progress-every",
         type=int,
         default=0,
@@ -102,6 +109,7 @@ def main() -> int:
         epochs=args.epochs,
         batch_size=args.batch_size,
         fit_iters=args.fit_iters,
+        prompt_token_window=args.prompt_token_window,
         progress_every=args.progress_every,
         memorize_random_idx=bool(args.memorize_random_idx),
         snapshot_keep=args.snapshot_keep,
@@ -142,7 +150,12 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
 
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
-        config=ModelConfig(model_dir=model_root),
+        config=ModelConfig(
+            model_dir=model_root,
+            prompt_token_window=(
+                int(config.prompt_token_window) if int(config.prompt_token_window) > 0 else None
+            ),
+        ),
     )
     snapshot_store = SnapshotStore(model_run_dir, max_keep=config.snapshot_keep)
 
@@ -220,6 +233,7 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
         "epochs": config.epochs,
         "batch_size": config.batch_size,
         "fit_iters": config.fit_iters,
+        "prompt_token_window": config.prompt_token_window,
         "progress_every": config.progress_every,
         "fit_calls": fit_calls,
         "memorized_count": memorized_count,
@@ -396,6 +410,11 @@ def _validate_config(config: Phase1FinalizeConfig) -> None:
         raise ValueError(f"--batch-size must be >= 1, got {config.batch_size}")
     if int(config.fit_iters) < 1:
         raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
+    if int(config.prompt_token_window) < 0:
+        raise ValueError(
+            "--prompt-token-window must be >= 0 (0 disables token truncation), "
+            f"got {config.prompt_token_window}"
+        )
     if int(config.progress_every) < 0:
         raise ValueError(f"--progress-every must be >= 0, got {config.progress_every}")
     if int(config.snapshot_keep) < 1:

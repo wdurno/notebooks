@@ -30,8 +30,30 @@ class FakeProcessor:
                 "add_generation_prompt": add_generation_prompt,
             }
         )
+        if tokenize:
+            token_count = 0
+            for message in messages:
+                token_count += 2
+                for item in message.get("content", []):
+                    if not isinstance(item, dict):
+                        token_count += len(str(item).split())
+                        continue
+                    item_type = item.get("type")
+                    if item_type == "image":
+                        token_count += 1
+                        continue
+                    if item_type == "text":
+                        token_count += max(1, len(str(item.get("text", "")).split()))
+            if add_generation_prompt:
+                token_count += 1
+            return list(range(max(1, token_count)))
         roles = ",".join(message["role"] for message in messages)
-        return f"roles={roles};generation={add_generation_prompt}"
+        text_blocks = []
+        for message in messages:
+            for item in message.get("content", []):
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_blocks.append(str(item.get("text", "")))
+        return f"roles={roles};generation={add_generation_prompt};text={' '.join(text_blocks)}"
 
     def __call__(self, text, images, padding=False, return_tensors="pt"):
         self.encode_calls.append(
@@ -213,6 +235,92 @@ def test_qwen_backbone_encode_can_disable_sampling():
     assert "temperature" not in generation_kwargs
     assert "top_p" not in generation_kwargs
     assert "top_k" not in generation_kwargs
+
+
+def test_qwen_backbone_token_window_preserves_persistent_goal_system_message():
+    processor = FakeProcessor()
+    model = FakeGenerationModel()
+    backbone = QwenLoRABackbone(
+        config=ModelConfig(hidden_size=4, prompt_token_window=32),
+        model=model,
+        processor=processor,
+    )
+    observation = ModelObservation(
+        image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        messages=[
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "Persistent goals:\n1) Find the red ball."}],
+            },
+            {"role": "user", "content": [{"type": "text", "text": " ".join(["older"] * 40)}]},
+            {"role": "assistant", "content": [{"type": "text", "text": " ".join(["response"] * 40)}]},
+        ],
+        t=0.0,
+        step_index=5,
+    )
+
+    backbone.encode([observation], target_texts=[None], compute_vlm_loss=False)
+
+    final_prompt_call = next(
+        call
+        for call in processor.template_calls
+        if call["tokenize"] is False and call["add_generation_prompt"] is True
+    )
+    first_messages = final_prompt_call["messages"]
+    assert first_messages[0]["role"] == "system"
+    assert "PiCar-V robot" in first_messages[0]["content"][0]["text"]
+    goal_messages = [
+        message
+        for message in first_messages
+        if message.get("role") == "system"
+        and any(
+            isinstance(item, dict)
+            and item.get("type") == "text"
+            and str(item.get("text", "")).startswith("Persistent goals:")
+            for item in message.get("content", [])
+        )
+    ]
+    assert len(goal_messages) == 1
+
+
+def test_qwen_backbone_token_window_clips_single_long_latest_message():
+    processor = FakeProcessor()
+    model = FakeGenerationModel()
+    backbone = QwenLoRABackbone(
+        config=ModelConfig(hidden_size=4, prompt_token_window=96),
+        model=model,
+        processor=processor,
+    )
+    long_text = " ".join(["drive-forward"] * 300)
+    observation = ModelObservation(
+        image_rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        messages=[
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "Persistent goals:\n1) Find the red ball."}],
+            },
+            {"role": "user", "content": [{"type": "text", "text": long_text}]},
+        ],
+        t=0.0,
+        step_index=6,
+    )
+
+    backbone.encode([observation], target_texts=[None], compute_vlm_loss=False)
+
+    final_prompt_call = next(
+        call
+        for call in processor.template_calls
+        if call["tokenize"] is False and call["add_generation_prompt"] is True
+    )
+    first_messages = final_prompt_call["messages"]
+    assert first_messages[-1]["role"] == "user"
+    user_text = next(
+        item["text"]
+        for item in first_messages[-1]["content"]
+        if isinstance(item, dict) and item.get("type") == "text"
+    )
+    assert user_text.endswith("[truncated]")
+    assert backbone._prompt_token_count(first_messages) <= 96
 
 
 def test_resolve_model_hidden_size_uses_nested_text_config():

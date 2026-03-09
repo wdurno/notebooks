@@ -42,6 +42,7 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
 - `--deterministic-coding` (disable sampling for policy text generation)
 - `--history-window INT` (default `12`)
+- `--prompt-token-window INT` (default `512`, `0` disables token truncation)
 - `--latest-image-only` (default behavior: only image-tag the most recent user message)
 - `--all-images` (image-tag every retained user message)
 - `--fixed-t FLOAT` (optional)
@@ -68,8 +69,10 @@ raw generations, and prompt/token traces.
 Context/image behavior notes:
 
 - `--history-window` controls how many recent messages are retained in rolling context.
+- `--prompt-token-window` adds a tokenizer-level cap before policy/replay prompts are sent to the model.
 - Every submitted policy context now includes a persistent goal `system` message at
   the oldest slot (primary task + always follow user commands).
+- Token truncation always preserves control `system` context and the persistent goal `system` message when present.
 - By default, only the most recent user message is image-tagged.
 - With `--all-images`, every retained user message is image-tagged (reusing the current frame for each image slot).
 
@@ -140,7 +143,8 @@ python -m src.experiments.phase1_finalize \
   --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
   --epochs 3 \
   --batch-size 1 \
-  --fit-iters 32
+  --fit-iters 32 \
+  --prompt-token-window 512
 ```
 
 Optional: initialize from an existing snapshot first:
@@ -151,7 +155,8 @@ python -m src.experiments.phase1_finalize \
   --load-snapshot model/<prior-uuid>/snapshots \
   --epochs 3 \
   --batch-size 8 \
-  --fit-iters 32
+  --fit-iters 32 \
+  --prompt-token-window 384
 ```
 
 What `phase1_finalize` does:
@@ -166,6 +171,7 @@ Progress logging:
 - Prints a run-start summary including `steps_per_epoch` and planned fit calls.
 - Prints intra-epoch progress logs at an automatic cadence (~10 updates/epoch).
 - Use `--progress-every N` to override cadence (`0` keeps auto cadence).
+- Use `--prompt-token-window` to enforce the same prompt cap during offline finalize on already-collected runs.
 
 `phase1_finalize` runs in optimization/train mode for offline fit and memorize.
 

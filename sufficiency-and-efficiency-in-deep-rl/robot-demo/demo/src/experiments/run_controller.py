@@ -163,6 +163,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "deterministic_coding": bool(config.deterministic_coding),
         "history_window": int(config.history_window),
         "all_images": bool(config.all_images),
+        "prompt_token_window": int(config.prompt_token_window),
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
         "picar_host": picar_host,
@@ -180,6 +181,9 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         model_dir=model_root,
         deterministic_coding=bool(config.deterministic_coding),
         all_images=bool(config.all_images),
+        prompt_token_window=(
+            int(config.prompt_token_window) if int(config.prompt_token_window) > 0 else None
+        ),
     )
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
@@ -361,6 +365,10 @@ def _validate_config(config: ExperimentRunConfig) -> None:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
     if int(config.history_window) < 1:
         raise ValueError(f"--history-window must be >= 1, got {config.history_window}")
+    if int(config.prompt_token_window) < 0:
+        raise ValueError(
+            f"--prompt-token-window must be >= 0 (0 disables token truncation), got {config.prompt_token_window}"
+        )
     return None
 
 

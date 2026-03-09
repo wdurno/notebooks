@@ -11,7 +11,10 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from experiments.phase1_finalize import (
+    Phase1FinalizeConfig,
+    _validate_config,
     _set_model_optimization_mode,
+    build_parser,
     build_target_text,
     count_step_rows,
     iter_transitions_from_run,
@@ -150,3 +153,21 @@ def test_set_model_optimization_mode_prefers_explicit_hook():
 
     assert model.called == 1
     assert model.train_called == 0
+
+
+def test_phase1_finalize_parser_prompt_token_window_defaults():
+    parser = build_parser()
+    args = parser.parse_args(["--data-runs", "data/run-a"])
+
+    assert args.prompt_token_window == 512
+
+
+def test_phase1_finalize_validate_rejects_negative_prompt_token_window():
+    config = Phase1FinalizeConfig(data_runs=[Path("/tmp/run")], prompt_token_window=-1)
+
+    try:
+        _validate_config(config)
+    except ValueError as exc:
+        assert "--prompt-token-window" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for negative prompt token window.")

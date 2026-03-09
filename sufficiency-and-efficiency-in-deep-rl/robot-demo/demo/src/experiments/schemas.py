@@ -15,6 +15,7 @@ class ExperimentRunConfig:
     deterministic_coding: bool = False
     history_window: int = 12
     all_images: bool = False
+    prompt_token_window: int = 512
     fixed_t: float | None = None
     t_step: float = 0.001
     t_log_every: int = 1

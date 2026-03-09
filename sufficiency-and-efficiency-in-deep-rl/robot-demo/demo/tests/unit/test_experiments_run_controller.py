@@ -69,6 +69,13 @@ def test_build_training_config_rejects_bad_history_window():
         build_training_config(config)
 
 
+def test_build_training_config_rejects_negative_prompt_token_window():
+    config = ExperimentRunConfig(phase="tune", prompt_token_window=-1)
+
+    with pytest.raises(ValueError, match="--prompt-token-window"):
+        build_training_config(config)
+
+
 def test_resolve_snapshot_path_accepts_file_or_directory(tmp_path):
     snapshots_dir = tmp_path / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)

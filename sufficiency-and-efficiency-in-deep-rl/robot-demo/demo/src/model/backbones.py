@@ -32,6 +32,7 @@ SAY_ONLY_SYSTEM_PROMPT = (
     "Do not emit tool calls, action names, or control commands. "
     "Reply with concise plain text only."
 )
+PERSISTENT_GOALS_PREFIX = "Persistent goals:"
 
 
 @dataclass(frozen=True)
@@ -403,7 +404,138 @@ class QwenLoRABackbone(nn.Module):
         messages = _ensure_image_placeholder(messages)
         if bool(getattr(self.config, "all_images", False)):
             messages = _ensure_image_placeholders_for_all_user_messages(messages)
+        messages = self._apply_prompt_token_window(messages)
+        messages = _ensure_image_placeholder(messages)
+        if bool(getattr(self.config, "all_images", False)):
+            messages = _ensure_image_placeholders_for_all_user_messages(messages)
         return messages
+
+    def _apply_prompt_token_window(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        configured_window = getattr(self.config, "prompt_token_window", None)
+        if configured_window is None:
+            return messages
+        token_window = int(configured_window)
+        if token_window <= 0:
+            return messages
+
+        full_token_count = self._prompt_token_count(messages)
+        if full_token_count is None or full_token_count <= token_window:
+            return messages
+
+        mandatory_indices: list[int] = [0]
+        goal_index = _find_persistent_goal_system_message_index(messages)
+        if goal_index is not None and goal_index not in mandatory_indices:
+            mandatory_indices.append(goal_index)
+        mandatory_indices.sort()
+        selected_indices: set[int] = set(mandatory_indices)
+        mandatory_messages = [messages[idx] for idx in mandatory_indices]
+        mandatory_tokens = self._prompt_token_count(mandatory_messages)
+        if mandatory_tokens is None:
+            return messages
+        if mandatory_tokens > token_window:
+            # Fall back to mandatory system context when budget cannot fit more.
+            return mandatory_messages
+
+        for idx in range(len(messages) - 1, -1, -1):
+            if idx in selected_indices:
+                continue
+            trial_indices = sorted((*selected_indices, idx))
+            trial_messages = [messages[item_idx] for item_idx in trial_indices]
+            trial_tokens = self._prompt_token_count(trial_messages)
+            if trial_tokens is None:
+                return messages
+            if trial_tokens <= token_window:
+                selected_indices.add(idx)
+
+        truncated_messages = [messages[idx] for idx in range(len(messages)) if idx in selected_indices]
+        latest_text_index = _find_latest_text_message_index(messages)
+        if latest_text_index is None or latest_text_index in selected_indices:
+            return truncated_messages
+        clipped = self._clip_latest_message_to_budget(
+            base_messages=truncated_messages,
+            original_message=messages[latest_text_index],
+            token_window=token_window,
+        )
+        if clipped is not None:
+            return [*truncated_messages, clipped]
+        return truncated_messages
+
+    def _clip_latest_message_to_budget(
+        self,
+        *,
+        base_messages: list[dict[str, Any]],
+        original_message: dict[str, Any],
+        token_window: int,
+    ) -> dict[str, Any] | None:
+        normalized = _normalize_content(original_message.get("content"))
+        full_text = "\n".join(
+            str(item.get("text", ""))
+            for item in normalized
+            if isinstance(item, dict) and item.get("type") == "text"
+        ).strip()
+        if not full_text:
+            return None
+        marker = " [truncated]"
+        low = 1
+        high = len(full_text)
+        best_message: dict[str, Any] | None = None
+        while low <= high:
+            mid = (low + high) // 2
+            clipped_text = f"{full_text[:mid].rstrip()}{marker}"
+            candidate = _message_with_single_text(message=original_message, text=clipped_text)
+            candidate_tokens = self._prompt_token_count([*base_messages, candidate])
+            if candidate_tokens is None:
+                return None
+            if candidate_tokens <= token_window:
+                best_message = candidate
+                low = mid + 1
+            else:
+                high = mid - 1
+
+        if best_message is not None:
+            return best_message
+        tiny_candidate = _message_with_single_text(message=original_message, text=marker.strip())
+        tiny_tokens = self._prompt_token_count([*base_messages, tiny_candidate])
+        if tiny_tokens is not None and tiny_tokens <= token_window:
+            return tiny_candidate
+        return None
+
+    def _prompt_token_count(self, messages: list[dict[str, Any]]) -> int | None:
+        try:
+            template_tokens = self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+            )
+        except Exception:
+            return None
+        if isinstance(template_tokens, torch.Tensor):
+            return int(template_tokens.numel())
+        if isinstance(template_tokens, (list, tuple)):
+            return int(len(template_tokens))
+        if isinstance(template_tokens, dict):
+            input_ids = template_tokens.get("input_ids")
+            if isinstance(input_ids, torch.Tensor):
+                return int(input_ids.numel())
+            if isinstance(input_ids, (list, tuple)):
+                if input_ids and isinstance(input_ids[0], (list, tuple)):
+                    return int(len(input_ids[0]))
+                return int(len(input_ids))
+        if isinstance(template_tokens, str):
+            tokenizer = getattr(self.processor, "tokenizer", None)
+            if callable(tokenizer):
+                try:
+                    encoded = tokenizer(template_tokens, add_special_tokens=False)
+                except Exception:
+                    encoded = None
+                if isinstance(encoded, dict):
+                    input_ids = encoded.get("input_ids")
+                    if isinstance(input_ids, (list, tuple)):
+                        if input_ids and isinstance(input_ids[0], (list, tuple)):
+                            return int(len(input_ids[0]))
+                        return int(len(input_ids))
+            return int(len(template_tokens.split()))
+        return None
 
     def _compute_supervised_token_stats(
         self,
@@ -531,6 +663,60 @@ def _compute_generate_log_prob_sums(
 
 def _copy_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return copy.deepcopy(list(messages))
+
+
+def _find_persistent_goal_system_message_index(messages: list[dict[str, Any]]) -> int | None:
+    for idx, message in enumerate(messages):
+        if _is_persistent_goal_system_message(message):
+            return idx
+    return None
+
+
+def _find_latest_text_message_index(messages: list[dict[str, Any]]) -> int | None:
+    for idx in range(len(messages) - 1, -1, -1):
+        message = messages[idx]
+        role = str(message.get("role") or "")
+        if role not in ("user", "assistant"):
+            continue
+        content = _normalize_content(message.get("content"))
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text" and str(item.get("text", "")).strip():
+                return idx
+    return None
+
+
+def _is_persistent_goal_system_message(message: dict[str, Any]) -> bool:
+    if str(message.get("role") or "") != "system":
+        return False
+    for item in _normalize_content(message.get("content")):
+        if not isinstance(item, dict) or item.get("type") != "text":
+            continue
+        text = str(item.get("text") or "")
+        if text.startswith(PERSISTENT_GOALS_PREFIX):
+            return True
+    return False
+
+
+def _message_with_single_text(*, message: dict[str, Any], text: str) -> dict[str, Any]:
+    content = _normalize_content(message.get("content"))
+    replaced_content: list[dict[str, Any]] = []
+    inserted_text = False
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "text":
+            if not inserted_text:
+                replaced_content.append({"type": "text", "text": text})
+                inserted_text = True
+            continue
+        if isinstance(item, dict):
+            replaced_content.append(dict(item))
+            continue
+        replaced_content.append({"type": "text", "text": str(item)})
+    if not inserted_text:
+        replaced_content.append({"type": "text", "text": text})
+    return {
+        "role": str(message.get("role", "user")),
+        "content": replaced_content,
+    }
 
 
 def _resolve_model_hidden_size(model: nn.Module) -> int:
