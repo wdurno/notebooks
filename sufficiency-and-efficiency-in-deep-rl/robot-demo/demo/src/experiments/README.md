@@ -142,7 +142,7 @@ After collecting many phase-1 runs, finalize them into a fresh
 python -m src.experiments.phase1_finalize \
   --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
   --epochs 3 \
-  --batch-size 1 \
+  --batch-size 3 \
   --prompt-token-window 512
 ```
 
@@ -172,6 +172,7 @@ Progress logging:
 - Prints a run-start summary including replay size, effective `fit_iters`, and planned optimizer steps.
 - Prints epoch progress logs at an automatic cadence (~10 updates/run).
 - Use `--progress-every N` to override cadence (`0` keeps auto cadence).
+- Use `--log-level DEBUG` to emit SSR tensor and CUDA memory diagnostics after memorize and before fit.
 - Use `--prompt-token-window` to enforce the same prompt cap during offline finalize on already-collected runs.
 
 `phase1_finalize` runs in optimization/train mode for offline fit and memorize.

@@ -214,7 +214,7 @@ class SSRAgent(nn.Module):
         def get_grad_generator(): 
             'l-Lanczos alg uses grad at least `ssr_rank` times' 
             def grad_generator(): 
-                self.eval() 
+                self.train() 
                 for idx in range(n): 
                     if random_idx: 
                         idx = random.randint(0, len(self.replay_buffer)-1)

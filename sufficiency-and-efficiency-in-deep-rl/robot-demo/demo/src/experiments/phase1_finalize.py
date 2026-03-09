@@ -104,12 +104,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--snapshot-keep", type=int, default=3, help="Snapshot retention count.")
     parser.add_argument("--run-uuid", type=str, default=None, help="Optional explicit output UUID.")
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="INFO",
+        help="Set runtime logging verbosity.",
+    )
     return parser
 
 
 def main() -> int:
-    _configure_logging()
     args = build_parser().parse_args()
+    _configure_logging(args.log_level)
     config = Phase1FinalizeConfig(
         data_runs=[Path(path) for path in args.data_runs],
         model_root=args.model_root,
@@ -176,6 +182,12 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
             f"trainable_keys={len(result.loaded_trainable_keys)} ssr={result.has_ssr_state}",
         )
 
+    memorized_count = len(replay_buffer)
+    _set_model_optimization_mode(model)
+    model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=True)
+    LOGGER.info("[phase1_finalize] memorize done count=%d", memorized_count)
+    _log_memory_diagnostics(stage="after_memorize_before_fit", model=model)
+
     _set_model_optimization_mode(model)
 
     effective_fit_iters = _resolve_fit_iters(
@@ -210,9 +222,6 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
                 f"last_loss={last_loss:.6f}",
             )
 
-    memorized_count = len(replay_buffer)
-    _set_model_optimization_mode(model)
-    model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=True)
     snapshot_path = snapshot_store.save_snapshot(
         model=model,
         replay_buffer=replay_buffer,
@@ -423,12 +432,13 @@ def _validate_config(config: Phase1FinalizeConfig) -> None:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
 
 
-def _configure_logging() -> None:
+def _configure_logging(level_name: str) -> None:
+    level = getattr(logging, str(level_name).upper(), logging.INFO)
     root_logger = logging.getLogger()
     if not root_logger.handlers:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+        logging.basicConfig(level=level, format="%(levelname)s %(message)s")
         return None
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(level)
     return None
 
 
@@ -456,6 +466,65 @@ def _should_log_epoch_progress(epoch_number: int, total_epochs: int, progress_ev
         return True
     interval = int(progress_every) if int(progress_every) > 0 else max(1, int(total_epochs) // 10)
     return (epoch_number % interval) == 0
+
+
+def _log_memory_diagnostics(*, stage: str, model: Any) -> None:
+    if not LOGGER.isEnabledFor(logging.DEBUG):
+        return None
+    try:
+        import torch
+    except Exception:
+        return None
+
+    def _tensor_mib(value: Any) -> float:
+        if value is None or not isinstance(value, torch.Tensor):
+            return 0.0
+        return float(value.numel() * value.element_size()) / (1024.0 * 1024.0)
+
+    tensor_names = ("ssr_low_rank_matrix", "ssr_residual_diagonal", "ssr_center", "ssr_prev_center")
+    for name in tensor_names:
+        tensor = getattr(model, name, None)
+        if tensor is None or not isinstance(tensor, torch.Tensor):
+            LOGGER.debug("[mem] stage=%s tensor=%s present=False", stage, name)
+            continue
+        LOGGER.debug(
+            "[mem] stage=%s tensor=%s present=True shape=%s dtype=%s device=%s size_mib=%.2f",
+            stage,
+            name,
+            tuple(tensor.shape),
+            str(tensor.dtype),
+            str(tensor.device),
+            _tensor_mib(tensor),
+        )
+
+    if not torch.cuda.is_available():
+        return None
+    device = getattr(model, "device", torch.device("cuda"))
+    try:
+        if isinstance(device, torch.device):
+            if device.type == "cuda":
+                device_index = device.index if device.index is not None else torch.cuda.current_device()
+            else:
+                device_index = torch.cuda.current_device()
+        else:
+            device_index = torch.cuda.current_device()
+        allocated = torch.cuda.memory_allocated(device_index) / (1024.0 * 1024.0)
+        reserved = torch.cuda.memory_reserved(device_index) / (1024.0 * 1024.0)
+        max_allocated = torch.cuda.max_memory_allocated(device_index) / (1024.0 * 1024.0)
+        max_reserved = torch.cuda.max_memory_reserved(device_index) / (1024.0 * 1024.0)
+        LOGGER.debug(
+            "[mem] stage=%s cuda_device=%d allocated_mib=%.2f reserved_mib=%.2f "
+            "max_allocated_mib=%.2f max_reserved_mib=%.2f",
+            stage,
+            int(device_index),
+            float(allocated),
+            float(reserved),
+            float(max_allocated),
+            float(max_reserved),
+        )
+    except Exception:
+        LOGGER.debug("[mem] stage=%s cuda_stats=unavailable", stage, exc_info=True)
+    return None
 
 
 if __name__ == "__main__":

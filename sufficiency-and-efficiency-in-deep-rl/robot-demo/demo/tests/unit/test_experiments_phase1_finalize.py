@@ -162,6 +162,7 @@ def test_phase1_finalize_parser_prompt_token_window_defaults():
 
     assert args.prompt_token_window == 512
     assert args.fit_iters is None
+    assert args.log_level == "INFO"
 
 
 def test_phase1_finalize_validate_rejects_negative_prompt_token_window():
