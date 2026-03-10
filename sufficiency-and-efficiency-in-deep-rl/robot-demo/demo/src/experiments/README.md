@@ -38,6 +38,8 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 
 ## Core CLI flags
 
+`experiment_interface.py` flags:
+
 - `--phase {init,tune,retask}`
 - `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
 - `--deterministic-coding` (disable sampling for policy text generation)
@@ -45,6 +47,7 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--prompt-token-window INT` (default `512`, `0` disables token truncation)
 - `--latest-image-only` (default behavior: only image-tag the most recent user message)
 - `--all-images` (image-tag every retained user message)
+- `--init-t FLOAT` (default `0.0`; starting `t` when traversing in phase 2 with no `--fixed-t`)
 - `--fixed-t FLOAT` (optional)
 - `--t-step FLOAT` (default `0.001`)
 - `--t-log-every INT` (default `1`)
@@ -53,7 +56,21 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--snapshot-keep INT` (default `3`)
 - `--data-root PATH` (optional, default `demo/data`)
 - `--model-root PATH` (optional, default `demo/model`)
+- `--epochs INT` (default `1`, optimizer steps per training trigger in phase 2/3)
+- `--batch-size INT` (default `1`)
+- `--fit-iters INT` (optional; if omitted, auto-resolves to `ceil(replay_size / batch_size)` at each training trigger)
+- `--train-every-steps INT` (default `16`)
+- `--min-replay-size INT` (default `32`)
+- `--memorize-every-steps INT` (default `64`)
+- `--memorize-n INT` (default `64`; use `-1` to memorize all replay items)
+- `--memorize-random-idx` (sample random replay indices during memorize)
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` (default `WARNING`)
+
+`phase1_finalize.py` extra flags:
+
+- `--epochs INT` (default `1`)
+- `--fit-iters INT` (optional; if omitted, auto-resolves to `ceil(replay_size / batch_size)`)
+- `--log-level {DEBUG,INFO,WARNING,ERROR}` (default `INFO`)
 
 Use `--log-level INFO` for concise runtime telemetry:
 
@@ -70,6 +87,7 @@ Context/image behavior notes:
 
 - `--history-window` controls how many recent messages are retained in rolling context.
 - `--prompt-token-window` adds a tokenizer-level cap before policy/replay prompts are sent to the model.
+- `--init-t` lets you resume phase 2 ramping from a non-zero interpolation point.
 - Every submitted policy context now includes a persistent goal `system` message at
   the oldest slot (primary task + always follow user commands).
 - Token truncation always preserves control `system` context and the persistent goal `system` message when present.

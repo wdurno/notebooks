@@ -438,3 +438,34 @@ def test_interpolation_t_rejects_invalid_fixed_t(tmp_path):
 
     with pytest.raises(ValueError, match="training.fixed_t must be in \\[0, 1\\]"):
         env._interpolation_t(0)
+
+
+def test_picar_env_training_uses_auto_fit_iters_and_epochs_per_trigger(tmp_path):
+    model = FakeModel()
+    env = PiCarGymEnv(
+        model=model,
+        reward_scorer=FakeRewardScorer(),
+        picar_client=FakePiCarClient(),
+        config=EnvConfig(
+            data_dir=tmp_path,
+            training=TrainingConfig(
+                train_every_steps=1,
+                min_replay_size=1,
+                epochs=2,
+                batch_size=4,
+                fit_iters=None,
+                memorize_every_steps=999,
+                t_ramp_steps=10,
+            ),
+        ),
+    )
+
+    for _ in range(4):
+        model.replay_buffer.add("prefill")
+    env.reset()
+    _, _, _, info = env.step()
+
+    # replay_size at train time is 5 => ceil(5 / 4) = 2 auto fit iters.
+    assert model.fit_calls == [(4, 2), (4, 2)]
+    assert info["training"].triggered is True
+    assert info["training"].memorized is None

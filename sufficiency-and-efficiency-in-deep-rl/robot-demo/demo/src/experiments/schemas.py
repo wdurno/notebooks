@@ -16,6 +16,7 @@ class ExperimentRunConfig:
     history_window: int = 12
     all_images: bool = False
     prompt_token_window: int = 512
+    init_t: float = 0.0
     fixed_t: float | None = None
     t_step: float = 0.001
     t_log_every: int = 1
@@ -24,8 +25,9 @@ class ExperimentRunConfig:
     snapshot_keep: int = 3
     data_root: Path | None = None
     model_root: Path | None = None
+    epochs: int = 1
     batch_size: int = 1
-    fit_iters: int = 32
+    fit_iters: int | None = None
     train_every_steps: int = 16
     min_replay_size: int = 32
     memorize_every_steps: int = 64

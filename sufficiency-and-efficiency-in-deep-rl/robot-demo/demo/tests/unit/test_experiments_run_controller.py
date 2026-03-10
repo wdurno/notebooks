@@ -43,6 +43,23 @@ def test_build_training_config_for_tune_uses_linear_ramp_step():
     assert training.t_ramp_steps == 1000
 
 
+def test_build_training_config_for_tune_respects_init_t():
+    config = ExperimentRunConfig(
+        phase="tune",
+        fixed_t=None,
+        init_t=0.4,
+        t_step=0.1,
+    )
+
+    training, _, traversing = build_training_config(config)
+
+    assert traversing is True
+    assert training.fixed_t is None
+    assert training.t_start == pytest.approx(0.4)
+    assert training.t_end == pytest.approx(1.0)
+    assert training.t_ramp_steps == 6
+
+
 def test_build_training_config_for_retask_defaults_to_t_one():
     config = ExperimentRunConfig(phase="retask")
 
@@ -73,6 +90,27 @@ def test_build_training_config_rejects_negative_prompt_token_window():
     config = ExperimentRunConfig(phase="tune", prompt_token_window=-1)
 
     with pytest.raises(ValueError, match="--prompt-token-window"):
+        build_training_config(config)
+
+
+def test_build_training_config_rejects_bad_init_t():
+    config = ExperimentRunConfig(phase="tune", init_t=1.1)
+
+    with pytest.raises(ValueError, match="--init-t"):
+        build_training_config(config)
+
+
+def test_build_training_config_rejects_non_positive_epochs():
+    config = ExperimentRunConfig(phase="tune", epochs=0)
+
+    with pytest.raises(ValueError, match="--epochs"):
+        build_training_config(config)
+
+
+def test_build_training_config_rejects_non_positive_fit_iters_when_provided():
+    config = ExperimentRunConfig(phase="tune", fit_iters=0)
+
+    with pytest.raises(ValueError, match="--fit-iters"):
         build_training_config(config)
 
 

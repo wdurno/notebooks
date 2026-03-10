@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import os
 from dataclasses import asdict, replace
@@ -51,6 +52,8 @@ from .observation_store import ObservationStore
 from .schemas import ExperimentRunConfig, ExperimentRunSummary
 from .snapshot_store import SnapshotStore, resolve_snapshot_path
 
+LOGGER = logging.getLogger(__name__)
+
 
 class _Speaker:
     def __init__(self, *, tts: PiperTTS, audio: AudioIO):
@@ -75,8 +78,9 @@ def build_training_config(config: ExperimentRunConfig) -> tuple[TrainingConfig, 
         training = TrainingConfig(
             train_every_steps=0,
             min_replay_size=max(1, int(config.min_replay_size)),
+            epochs=max(1, int(config.epochs)),
             batch_size=max(1, int(config.batch_size)),
-            fit_iters=max(1, int(config.fit_iters)),
+            fit_iters=(None if config.fit_iters is None else max(1, int(config.fit_iters))),
             memorize_every_steps=0,
             memorize_n=max(1, int(config.memorize_n)),
             memorize_random_idx=bool(config.memorize_random_idx),
@@ -92,8 +96,9 @@ def build_training_config(config: ExperimentRunConfig) -> tuple[TrainingConfig, 
         training = TrainingConfig(
             train_every_steps=max(1, int(config.train_every_steps)),
             min_replay_size=max(1, int(config.min_replay_size)),
+            epochs=max(1, int(config.epochs)),
             batch_size=max(1, int(config.batch_size)),
-            fit_iters=max(1, int(config.fit_iters)),
+            fit_iters=(None if config.fit_iters is None else max(1, int(config.fit_iters))),
             memorize_every_steps=max(1, int(config.memorize_every_steps)),
             memorize_n=int(config.memorize_n),
             memorize_random_idx=bool(config.memorize_random_idx),
@@ -108,8 +113,9 @@ def build_training_config(config: ExperimentRunConfig) -> tuple[TrainingConfig, 
         training = TrainingConfig(
             train_every_steps=max(1, int(config.train_every_steps)),
             min_replay_size=max(1, int(config.min_replay_size)),
+            epochs=max(1, int(config.epochs)),
             batch_size=max(1, int(config.batch_size)),
-            fit_iters=max(1, int(config.fit_iters)),
+            fit_iters=(None if config.fit_iters is None else max(1, int(config.fit_iters))),
             memorize_every_steps=max(1, int(config.memorize_every_steps)),
             memorize_n=int(config.memorize_n),
             memorize_random_idx=bool(config.memorize_random_idx),
@@ -120,17 +126,19 @@ def build_training_config(config: ExperimentRunConfig) -> tuple[TrainingConfig, 
         )
         return training, training_enabled, False
 
-    ramp_steps = max(1, int(math.ceil(1.0 / float(config.t_step))))
+    start_t = float(config.init_t)
+    ramp_steps = max(1, int(math.ceil((1.0 - start_t) / float(config.t_step))))
     training = TrainingConfig(
         train_every_steps=max(1, int(config.train_every_steps)),
         min_replay_size=max(1, int(config.min_replay_size)),
+        epochs=max(1, int(config.epochs)),
         batch_size=max(1, int(config.batch_size)),
-        fit_iters=max(1, int(config.fit_iters)),
+        fit_iters=(None if config.fit_iters is None else max(1, int(config.fit_iters))),
         memorize_every_steps=max(1, int(config.memorize_every_steps)),
         memorize_n=int(config.memorize_n),
         memorize_random_idx=bool(config.memorize_random_idx),
         fixed_t=None,
-        t_start=0.0,
+        t_start=start_t,
         t_end=1.0,
         t_ramp_steps=ramp_steps,
     )
@@ -164,6 +172,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "history_window": int(config.history_window),
         "all_images": bool(config.all_images),
         "prompt_token_window": int(config.prompt_token_window),
+        "init_t": float(config.init_t),
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
         "picar_host": picar_host,
@@ -351,10 +360,19 @@ def _log_t_progress(*, step_index: int, t: float) -> None:
     width = 24
     filled = int(round(width * t_clamped))
     bar = "#" * filled + "-" * (width - filled)
-    print(f"[t] step={step_index:06d} t={t_clamped:.3f} [{bar}]", flush=True)
+    message = f"[t] step={step_index:06d} t={t_clamped:.3f} [{bar}]"
+    LOGGER.info(message)
+    if not LOGGER.isEnabledFor(logging.INFO):
+        print(message, flush=True)
 
 
 def _validate_config(config: ExperimentRunConfig) -> None:
+    if int(config.epochs) < 1:
+        raise ValueError(f"--epochs must be >= 1, got {config.epochs}")
+    if config.fit_iters is not None and int(config.fit_iters) < 1:
+        raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
+    if not (0.0 <= float(config.init_t) <= 1.0):
+        raise ValueError(f"--init-t must be in [0, 1], got {config.init_t}")
     if config.fixed_t is not None and not (0.0 <= float(config.fixed_t) <= 1.0):
         raise ValueError(f"--fixed-t must be in [0, 1], got {config.fixed_t}")
     if float(config.t_step) <= 0.0:

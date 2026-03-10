@@ -589,7 +589,15 @@ class PiCarGymEnv:
 
         self._set_model_optimization_mode()
         try:
-            pi, loss = self.model.fit(batch_size=training.batch_size, iters=training.fit_iters)
+            effective_fit_iters = self._resolve_fit_iters(
+                replay_size=replay_size,
+                batch_size=training.batch_size,
+                fit_iters=training.fit_iters,
+            )
+            pi = 0.0
+            loss = 0.0
+            for _ in range(max(1, int(training.epochs))):
+                pi, loss = self.model.fit(batch_size=training.batch_size, iters=effective_fit_iters)
             memorized = None
             if training.memorize_every_steps > 0 and (self.step_index + 1) % training.memorize_every_steps == 0:
                 # SSR memorization is less frequent than SGD-style fitting because
@@ -639,6 +647,13 @@ class PiCarGymEnv:
         if hasattr(self.model, "train"):
             self.model.train()
         return None
+
+    def _resolve_fit_iters(self, *, replay_size: int, batch_size: int, fit_iters: int | None) -> int:
+        del self
+        if fit_iters is not None:
+            return max(1, int(fit_iters))
+        safe_batch_size = max(1, int(batch_size))
+        return max(1, int((int(replay_size) + safe_batch_size - 1) / safe_batch_size))
 
     def _write_run_metadata(self, *, initial_reward: float) -> None:
         """Write the initial run metadata file as soon as a run starts."""

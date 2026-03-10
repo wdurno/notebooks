@@ -18,6 +18,9 @@ def test_parser_defaults_deterministic_coding_to_false():
     assert args.history_window == 12
     assert args.all_images is False
     assert args.prompt_token_window == 512
+    assert args.init_t == 0.0
+    assert args.epochs == 1
+    assert args.fit_iters is None
 
 
 def test_parser_accepts_deterministic_coding_flag():
@@ -36,3 +39,12 @@ def test_parser_accepts_history_window_and_image_mode_flags():
     assert args.history_window == 18
     assert args.all_images is True
     assert args.prompt_token_window == 256
+
+
+def test_parser_accepts_epochs_and_fit_iters_flags():
+    parser = build_parser()
+    args = parser.parse_args(["--phase", "tune", "--epochs", "3", "--fit-iters", "9", "--init-t", "0.35"])
+
+    assert args.epochs == 3
+    assert args.fit_iters == 9
+    assert args.init_t == 0.35

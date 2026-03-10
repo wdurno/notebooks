@@ -50,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only attach an image placeholder to the most recent user message (default).",
     )
     parser.set_defaults(all_images=False)
+    parser.add_argument(
+        "--init-t",
+        type=float,
+        default=0.0,
+        help="Initial interpolation t in [0, 1] when traversing (phase tune with no --fixed-t).",
+    )
     parser.add_argument("--fixed-t", type=float, default=None, help="Pin interpolation t in [0, 1].")
     parser.add_argument(
         "--t-step",
@@ -83,8 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Root directory for model snapshots (default: demo/model).",
     )
+    parser.add_argument("--epochs", type=int, default=1, help="Optimizer steps per training trigger in phase 2/3.")
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--fit-iters", type=int, default=32)
+    parser.add_argument(
+        "--fit-iters",
+        type=int,
+        default=None,
+        help=(
+            "Iterations per `model.fit(...)` call. If omitted, auto-resolves to "
+            "ceil(replay_size / batch_size) at each training trigger."
+        ),
+    )
     parser.add_argument("--train-every-steps", type=int, default=16)
     parser.add_argument("--min-replay-size", type=int, default=32)
     parser.add_argument("--memorize-every-steps", type=int, default=64)
@@ -123,6 +138,7 @@ def main() -> int:
         history_window=int(args.history_window),
         all_images=bool(args.all_images),
         prompt_token_window=int(args.prompt_token_window),
+        init_t=float(args.init_t),
         fixed_t=args.fixed_t,
         t_step=args.t_step,
         t_log_every=args.t_log_every,
@@ -131,6 +147,7 @@ def main() -> int:
         snapshot_keep=args.snapshot_keep,
         data_root=args.data_root,
         model_root=args.model_root,
+        epochs=args.epochs,
         batch_size=args.batch_size,
         fit_iters=args.fit_iters,
         train_every_steps=args.train_every_steps,
