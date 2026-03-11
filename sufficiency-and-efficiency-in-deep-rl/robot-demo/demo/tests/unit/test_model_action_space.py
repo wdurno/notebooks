@@ -29,6 +29,12 @@ def test_one_hot_maps_to_expected_vector_dictionary():
     assert vector == {"pan": 1.0, "tilt": 0.0, "turn": 0.0, "drive": 0.0}
 
 
+def test_drive_left_vector_keeps_forward_drive():
+    one_hot = action_name_to_one_hot("drive-left")
+    vector = one_hot_to_action_vector(one_hot)
+    assert vector == {"pan": 0.0, "tilt": 0.0, "turn": -1.0, "drive": 1.0}
+
+
 def test_mixed_vectors_interpolate_with_t():
     mixed = mix_action_vectors(
         {"pan": 1.0, "tilt": 0.0, "turn": 0.0, "drive": 0.0},

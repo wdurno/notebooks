@@ -200,8 +200,10 @@ Progress logging:
 ```bash
 PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
   --phase tune \
+  --epochs 2 \
   --t-step 0.001 \
-  --t-log-every 1
+  --t-log-every 1 \
+  --log-level INFO
 ```
 
 Behavior:

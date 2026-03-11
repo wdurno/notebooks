@@ -75,7 +75,7 @@ def test_forward_returns_mixed_vector_owned_by_model():
     assert action.executed_action_vector["pan"] == 0.0
     assert action.executed_action_vector["tilt"] == pytest.approx(0.0, abs=1e-6)
     assert action.executed_action_vector["turn"] == -0.75
-    assert action.executed_action_vector["drive"] == 0.0
+    assert action.executed_action_vector["drive"] == 0.75
     assert action.critic_value == 0.0
     assert action.generated_text == "turning left"
     assert action.logp_beta_sum == 0.0

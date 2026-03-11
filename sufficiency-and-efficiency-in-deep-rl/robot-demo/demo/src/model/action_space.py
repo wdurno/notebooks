@@ -23,8 +23,10 @@ ACTION_VECTOR_BOUNDS = {
 }
 
 _ACTION_TO_VECTOR = {
-    "drive-left": {"pan": 0.0, "tilt": 0.0, "turn": -1.0, "drive": 0.0},
-    "drive-right": {"pan": 0.0, "tilt": 0.0, "turn": 1.0, "drive": 0.0},
+    # Turning actions include forward drive so the robot can change heading
+    # while steering, instead of only rotating wheels in place.
+    "drive-left": {"pan": 0.0, "tilt": 0.0, "turn": -1.0, "drive": 1.0},
+    "drive-right": {"pan": 0.0, "tilt": 0.0, "turn": 1.0, "drive": 1.0},
     "drive-forward": {"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": 1.0},
     "drive-backward": {"pan": 0.0, "tilt": 0.0, "turn": 0.0, "drive": -1.0},
     "look-left": {"pan": 1.0, "tilt": 0.0, "turn": 0.0, "drive": 0.0},
