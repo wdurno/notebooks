@@ -209,7 +209,7 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
 Behavior:
 
 - `t` traverses linearly in steps with visible logs.
-- Snapshot is written after each memorization event.
+- Snapshot is written once per training step when fit and/or memorization occurs.
 - Malformed action JSON is penalized by `-1.0` and does not get spoken.
 - Rollout sampling runs in inference/eval mode; fit/memorize blocks switch to
   optimization/train mode and then return to eval mode.

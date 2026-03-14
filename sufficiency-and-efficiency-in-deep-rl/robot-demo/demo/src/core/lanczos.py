@@ -4,7 +4,7 @@ import torch
 import traceback 
 from typing import Callable, Optional, Iterable, Tuple 
 #from tqdm import tqdm 
-from tqdm.notebook import tqdm 
+from tqdm.auto import tqdm 
 
 def lanczos(AAT, r): 
     'Lanczos algorithm: produce AA^T = V T V^T' 
@@ -59,8 +59,10 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
         return torch.zeros([p, 1]) 
     def multiply_fisher_information(x, disable_tqdm=disable_tqdm):
         grad_generator = get_grad_generator() 
+        pbar = tqdm(grad_generator(), disable=disable_tqdm) 
         out = 0. 
-        for g in grad_generator():
+        # for g in grad_generator(): 
+        for g in pbar:
             #gTx = g.transpose(0,1).matmul(x) 
             #ggTx = g.matmul(gTx) 
             #out += ggTx 
@@ -88,7 +90,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     next_v = next_v - diag * v 
     vecs.append(v) ## wiki says to add this vector, even before FI multiplication  
     diags.append(diag) 
-    pbar = tqdm(range(r-1), disable=disable_tqdm) 
+    pbar = tqdm(range(r-1), disable=True) 
     for _ in pbar: 
         prev_v = v 
         off_diag = torch.sqrt(next_v.transpose(0,1).matmul(next_v))

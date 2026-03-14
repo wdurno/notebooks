@@ -280,15 +280,24 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
                 _log_t_progress(step_index=steps_completed, t=float(next_observation.t))
 
             training_summary = info.get("training")
+            fit_triggered = bool(getattr(training_summary, "triggered", False))
             memorized = getattr(training_summary, "memorized", None)
-            if training_enabled and memorized is not None and memorized > 0:
+            memorized_count = int(memorized) if memorized is not None and memorized > 0 else None
+            memorized_triggered = memorized_count is not None
+            if training_enabled and (fit_triggered or memorized_triggered):
+                if fit_triggered and memorized_triggered:
+                    snapshot_reason = "fit+memorize"
+                elif fit_triggered:
+                    snapshot_reason = "fit"
+                else:
+                    snapshot_reason = "memorize"
                 snapshot_path = snapshot_store.save_snapshot(
                     model=model,
                     replay_buffer=model.replay_buffer,
                     step_index=steps_completed,
                     t=float(next_observation.t),
-                    reason="memorize",
-                    memorize_count=int(memorized),
+                    reason=snapshot_reason,
+                    memorize_count=memorized_count,
                 )
                 print(f"[snapshot] saved={snapshot_path.name}", flush=True)
 

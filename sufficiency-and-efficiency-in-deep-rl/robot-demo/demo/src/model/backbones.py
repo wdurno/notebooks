@@ -251,6 +251,9 @@ class QwenLoRABackbone(nn.Module):
         # to the fused representation instead of modifying the frozen backbone.
         outputs = self.model(
             **model_inputs,
+            # We only consume hidden states in this path; restricting logits to the
+            # last token avoids materializing full-sequence vocab projections.
+            logits_to_keep=1,
             output_hidden_states=True,
             return_dict=True,
         )
@@ -501,6 +504,20 @@ class QwenLoRABackbone(nn.Module):
         return None
 
     def _prompt_token_count(self, messages: list[dict[str, Any]]) -> int | None:
+        def _count_from_input_ids(input_ids: Any) -> int | None:
+            if isinstance(input_ids, torch.Tensor):
+                return int(input_ids.numel())
+            if isinstance(input_ids, (list, tuple)):
+                if not input_ids:
+                    return 0
+                first = input_ids[0]
+                if isinstance(first, torch.Tensor):
+                    return int(first.numel())
+                if isinstance(first, (list, tuple)):
+                    return int(len(first))
+                return int(len(input_ids))
+            return None
+
         try:
             template_tokens = self.processor.apply_chat_template(
                 messages,
@@ -509,18 +526,24 @@ class QwenLoRABackbone(nn.Module):
             )
         except Exception:
             return None
-        if isinstance(template_tokens, torch.Tensor):
-            return int(template_tokens.numel())
-        if isinstance(template_tokens, (list, tuple)):
-            return int(len(template_tokens))
-        if isinstance(template_tokens, dict):
-            input_ids = template_tokens.get("input_ids")
-            if isinstance(input_ids, torch.Tensor):
-                return int(input_ids.numel())
-            if isinstance(input_ids, (list, tuple)):
-                if input_ids and isinstance(input_ids[0], (list, tuple)):
-                    return int(len(input_ids[0]))
-                return int(len(input_ids))
+        token_count = _count_from_input_ids(template_tokens)
+        if token_count is not None:
+            return token_count
+
+        # `transformers` may return `BatchEncoding` here, which is mapping-like
+        # but not a plain dict.
+        input_ids = None
+        getter = getattr(template_tokens, "get", None)
+        if callable(getter):
+            input_ids = getter("input_ids")
+        if input_ids is None:
+            payload = getattr(template_tokens, "data", None)
+            if isinstance(payload, dict):
+                input_ids = payload.get("input_ids")
+        token_count = _count_from_input_ids(input_ids)
+        if token_count is not None:
+            return token_count
+
         if isinstance(template_tokens, str):
             tokenizer = getattr(self.processor, "tokenizer", None)
             if callable(tokenizer):
@@ -528,12 +551,16 @@ class QwenLoRABackbone(nn.Module):
                     encoded = tokenizer(template_tokens, add_special_tokens=False)
                 except Exception:
                     encoded = None
-                if isinstance(encoded, dict):
-                    input_ids = encoded.get("input_ids")
-                    if isinstance(input_ids, (list, tuple)):
-                        if input_ids and isinstance(input_ids[0], (list, tuple)):
-                            return int(len(input_ids[0]))
-                        return int(len(input_ids))
+                if encoded is not None:
+                    encoded_ids = None
+                    encoded_getter = getattr(encoded, "get", None)
+                    if callable(encoded_getter):
+                        encoded_ids = encoded_getter("input_ids")
+                    if encoded_ids is None and isinstance(encoded, dict):
+                        encoded_ids = encoded.get("input_ids")
+                    token_count = _count_from_input_ids(encoded_ids)
+                    if token_count is not None:
+                        return token_count
             return int(len(template_tokens.split()))
         return None
 

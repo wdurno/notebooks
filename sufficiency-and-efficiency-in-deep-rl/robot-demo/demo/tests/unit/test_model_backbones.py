@@ -78,6 +78,21 @@ class FakeProcessor:
         return ['{"action": "drive-forward", "say": "moving"}' for _ in sequences]
 
 
+class FakeBatchEncoding:
+    def __init__(self, payload):
+        self.data = dict(payload)
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
+
+class FakeBatchEncodingProcessor(FakeProcessor):
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
+        if tokenize:
+            return FakeBatchEncoding({"input_ids": [[10, 11, 12, 13]]})
+        return super().apply_chat_template(messages, tokenize=tokenize, add_generation_prompt=add_generation_prompt)
+
+
 class FakeGenerationModel(nn.Module):
     def __init__(self):
         super().__init__()
@@ -321,6 +336,22 @@ def test_qwen_backbone_token_window_clips_single_long_latest_message():
     )
     assert user_text.endswith("[truncated]")
     assert backbone._prompt_token_count(first_messages) <= 96
+
+
+def test_qwen_backbone_prompt_token_count_supports_batch_encoding_like_output():
+    processor = FakeBatchEncodingProcessor()
+    model = FakeGenerationModel()
+    backbone = QwenLoRABackbone(
+        config=ModelConfig(hidden_size=4, prompt_token_window=512),
+        model=model,
+        processor=processor,
+    )
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": "hello world"}]}]
+
+    token_count = backbone._prompt_token_count(messages)
+
+    assert token_count == 4
 
 
 def test_resolve_model_hidden_size_uses_nested_text_config():

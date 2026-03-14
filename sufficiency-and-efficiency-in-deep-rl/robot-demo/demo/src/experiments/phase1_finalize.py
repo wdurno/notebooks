@@ -184,7 +184,7 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
 
     memorized_count = len(replay_buffer)
     _set_model_optimization_mode(model)
-    model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=True)
+    model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=False)
     LOGGER.info("[phase1_finalize] memorize done count=%d", memorized_count)
     _log_memory_diagnostics(stage="after_memorize_before_fit", model=model)
 

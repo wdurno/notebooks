@@ -78,6 +78,6 @@ demo/data/**/*.npy
 !demo/model/vlm/.gitkeep
 !demo/data/README.md
 
-# UUID-scoped experiment model outputs (snapshots + metadata).
-demo/model/*/run_meta.json
-demo/model/*/snapshots/**
+# Experiment model outputs (snapshots + metadata) at any depth.
+demo/model/**/run_meta.json
+demo/model/**/snapshots/**
