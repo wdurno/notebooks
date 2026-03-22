@@ -69,11 +69,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Print t progress every N steps when traversing.",
     )
-    parser.add_argument(
+    load_group = parser.add_mutually_exclusive_group()
+    load_group.add_argument(
         "--load-snapshot",
         type=Path,
         default=None,
         help="Optional snapshot path or directory to initialize model state from.",
+    )
+    load_group.add_argument(
+        "--load-latest-from-model-root",
+        action="store_true",
+        help="Load the most recent snapshot found under --model-root.",
     )
     parser.add_argument(
         "--reward-prompt",
@@ -91,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--epochs", type=int, default=1, help="Optimizer steps per training trigger in phase 2/3.")
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--learning-rate", type=float, default=0.1, help="Optimizer learning rate.")
     parser.add_argument(
         "--fit-iters",
         type=int,
@@ -143,12 +150,14 @@ def main() -> int:
         t_step=args.t_step,
         t_log_every=args.t_log_every,
         load_snapshot=args.load_snapshot,
+        load_latest_from_model_root=bool(args.load_latest_from_model_root),
         reward_prompt=args.reward_prompt,
         snapshot_keep=args.snapshot_keep,
         data_root=args.data_root,
         model_root=args.model_root,
         epochs=args.epochs,
         batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
         fit_iters=args.fit_iters,
         train_every_steps=args.train_every_steps,
         min_replay_size=args.min_replay_size,

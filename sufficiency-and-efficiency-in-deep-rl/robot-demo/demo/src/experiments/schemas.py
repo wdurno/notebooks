@@ -21,12 +21,14 @@ class ExperimentRunConfig:
     t_step: float = 0.001
     t_log_every: int = 1
     load_snapshot: Path | None = None
+    load_latest_from_model_root: bool = False
     reward_prompt: str = "find the red ball"
     snapshot_keep: int = 3
     data_root: Path | None = None
     model_root: Path | None = None
     epochs: int = 1
     batch_size: int = 1
+    learning_rate: float = 0.1
     fit_iters: int | None = None
     train_every_steps: int = 16
     min_replay_size: int = 32

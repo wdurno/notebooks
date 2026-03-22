@@ -26,8 +26,12 @@ class Phase1FinalizeConfig:
     model_root: Path | None = None
     load_snapshot: Path | None = None
     epochs: int = 1
+    skip_memorization: bool = False
     batch_size: int = 8
+    learning_rate: float = 0.1
+    grad_clip: float | None = None
     fit_iters: int | None = None
+    scale_ssr: float = 1000.0
     prompt_token_window: int = 512
     progress_every: int = 0
     memorize_random_idx: bool = False
@@ -39,11 +43,12 @@ class Phase1FinalizeConfig:
 class Phase1FinalizeSummary:
     run_uuid: str
     model_run_dir: Path
-    snapshot_path: Path
+    snapshot_path: Path | None
     source_run_count: int
     transitions_loaded: int
     fit_calls: int
     memorized_count: int
+    no_op: bool = False
 
 
 def default_demo_root() -> Path:
@@ -66,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--model-root",
         type=Path,
         default=None,
-        help="Model root directory (default: demo/model).",
+        help="Root directory for output snapshots (default: demo/model).",
     )
     parser.add_argument(
         "--load-snapshot",
@@ -74,8 +79,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional snapshot path/dir to initialize from before tuning.",
     )
-    parser.add_argument("--epochs", type=int, default=1, help="Number of offline epochs over replay sampling.")
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=1,
+        help="Number of offline epochs over replay sampling (0 = memorize-only unless --skip-memorization).",
+    )
+    parser.add_argument(
+        "--skip-memorization",
+        action="store_true",
+        help="Skip SSR memorization and reuse already-memorized SSR from a loaded snapshot.",
+    )
     parser.add_argument("--batch-size", type=int, default=8, help="Replay batch size for each fit call.")
+    parser.add_argument("--learning-rate", type=float, default=0.1, help="Optimizer learning rate.")
+    parser.add_argument(
+        "--grad-clip",
+        type=float,
+        default=None,
+        help="Optional gradient-norm clipping threshold applied before each optimizer step.",
+    )
     parser.add_argument(
         "--fit-iters",
         type=int,
@@ -102,6 +124,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use random replay indices during final SSR memorization.",
     )
+    parser.add_argument(
+        "--scale-ssr",
+        type=float,
+        default=1000.0,
+        help=(
+            "Scale memorized SSR in-place before fitting: "
+            "ssr_low_rank_matrix *= sqrt(s), ssr_residual_diagonal *= s."
+        ),
+    )
     parser.add_argument("--snapshot-keep", type=int, default=3, help="Snapshot retention count.")
     parser.add_argument("--run-uuid", type=str, default=None, help="Optional explicit output UUID.")
     parser.add_argument(
@@ -121,8 +152,12 @@ def main() -> int:
         model_root=args.model_root,
         load_snapshot=args.load_snapshot,
         epochs=args.epochs,
+        skip_memorization=bool(args.skip_memorization),
         batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        grad_clip=args.grad_clip,
         fit_iters=args.fit_iters,
+        scale_ssr=args.scale_ssr,
         prompt_token_window=args.prompt_token_window,
         progress_every=args.progress_every,
         memorize_random_idx=bool(args.memorize_random_idx),
@@ -130,6 +165,14 @@ def main() -> int:
         run_uuid=args.run_uuid,
     )
     summary = run_phase1_finalize(config)
+    if summary.no_op:
+        LOGGER.info(
+            "[phase1_finalize] no-op uuid=%s sources=%d transitions=%d",
+            summary.run_uuid,
+            summary.source_run_count,
+            summary.transitions_loaded,
+        )
+        return 0
     LOGGER.info(
         f"[phase1_finalize] done uuid={summary.run_uuid} "
         f"sources={summary.source_run_count} transitions={summary.transitions_loaded} "
@@ -142,9 +185,9 @@ def main() -> int:
 def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
     _validate_config(config)
     run_uuid = config.run_uuid or str(uuid4())
-    model_root = (config.model_root or (default_demo_root() / "model")).resolve()
-    model_run_dir = model_root / run_uuid
-    model_run_dir.mkdir(parents=True, exist_ok=False)
+    model_assets_root = (default_demo_root() / "model").resolve()
+    snapshot_root = (config.model_root or model_assets_root).resolve()
+    model_run_dir = snapshot_root / run_uuid
     source_runs = resolve_data_runs(config.data_runs)
     transitions_estimate = sum(count_step_rows(path) for path in source_runs)
     if transitions_estimate <= 0:
@@ -162,15 +205,33 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
     if transitions_loaded <= 0:
         raise ValueError("No transitions could be reconstructed from the provided runs.")
 
+    if bool(config.skip_memorization) and int(config.epochs) == 0:
+        LOGGER.info(
+            "[phase1_finalize] no-op requested (--skip-memorization with --epochs=0); "
+            "skipping memorization, scaling, fitting, and snapshot writing.",
+        )
+        return Phase1FinalizeSummary(
+            run_uuid=run_uuid,
+            model_run_dir=model_run_dir,
+            snapshot_path=None,
+            source_run_count=len(source_runs),
+            transitions_loaded=transitions_loaded,
+            fit_calls=0,
+            memorized_count=0,
+            no_op=True,
+        )
+
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
         config=ModelConfig(
-            model_dir=model_root,
+            model_dir=model_assets_root,
+            learning_rate=float(config.learning_rate),
             prompt_token_window=(
                 int(config.prompt_token_window) if int(config.prompt_token_window) > 0 else None
             ),
         ),
     )
+    model_run_dir.mkdir(parents=True, exist_ok=False)
     snapshot_store = SnapshotStore(model_run_dir, max_keep=config.snapshot_keep)
 
     loaded_snapshot_path = None
@@ -182,55 +243,84 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
             f"trainable_keys={len(result.loaded_trainable_keys)} ssr={result.has_ssr_state}",
         )
 
-    memorized_count = len(replay_buffer)
-    _set_model_optimization_mode(model)
-    model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=False)
-    LOGGER.info("[phase1_finalize] memorize done count=%d", memorized_count)
-    _log_memory_diagnostics(stage="after_memorize_before_fit", model=model)
+    memorized_count = 0
+    if not bool(config.skip_memorization):
+        memorized_count = len(replay_buffer)
+        _set_model_optimization_mode(model)
+        model.memorize(n=memorized_count, random_idx=config.memorize_random_idx, disable_tqdm=False)
+        LOGGER.info("[phase1_finalize] memorize done count=%d", memorized_count)
+        if int(config.epochs) == 0:
+            LOGGER.info(
+                "[phase1_finalize] memorize-only mode (--epochs=0): not applying --scale-ssr and not fitting.",
+            )
+        _log_memory_diagnostics(stage="after_memorize_before_fit", model=model)
+    else:
+        LOGGER.info("[phase1_finalize] skipping memorization per --skip-memorization.")
 
-    _set_model_optimization_mode(model)
+    scale_ssr_applied = False
+    if int(config.epochs) > 0:
+        _scale_ssr_in_place(model=model, scale_ssr=float(config.scale_ssr))
+        scale_ssr_applied = True
+        _log_memory_diagnostics(stage="after_scale_ssr_before_fit", model=model)
 
-    effective_fit_iters = _resolve_fit_iters(
-        replay_size=len(replay_buffer),
-        batch_size=int(config.batch_size),
-        fit_iters=config.fit_iters,
-    )
-    optimizer_steps_planned = int(config.epochs)
+    effective_fit_iters: int | None = None
+    optimizer_steps_planned = int(config.epochs) if int(config.epochs) > 0 else 0
     fit_calls = 0
     last_pi = None
     last_loss = None
-    LOGGER.info(
-        f"[phase1_finalize] start epochs={config.epochs} replay_size={len(replay_buffer)} "
-        f"batch_size={config.batch_size} fit_iters={effective_fit_iters} "
-        f"optimizer_steps_planned={optimizer_steps_planned}",
-    )
-    batch_size = min(max(1, config.batch_size), len(replay_buffer))
-    for epoch_idx in range(config.epochs):
-        pi, loss = model.fit(batch_size=batch_size, iters=effective_fit_iters)
-        fit_calls += 1
-        last_pi = float(pi)
-        last_loss = float(loss)
-        if _should_log_epoch_progress(
-            epoch_number=epoch_idx + 1,
-            total_epochs=int(config.epochs),
-            progress_every=config.progress_every,
-        ):
-            LOGGER.info(
-                f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
-                f"optimizer_steps={fit_calls}/{optimizer_steps_planned} "
-                f"fit_iters={effective_fit_iters} last_pi={last_pi:.4f} "
-                f"last_loss={last_loss:.6f}",
-            )
 
+    if int(config.epochs) > 0:
+        _set_model_optimization_mode(model)
+        effective_fit_iters = _resolve_fit_iters(
+            replay_size=len(replay_buffer),
+            batch_size=int(config.batch_size),
+            fit_iters=config.fit_iters,
+        )
+        LOGGER.info(
+            f"[phase1_finalize] start epochs={config.epochs} replay_size={len(replay_buffer)} "
+            f"batch_size={config.batch_size} fit_iters={effective_fit_iters} "
+            f"optimizer_steps_planned={optimizer_steps_planned} grad_clip={config.grad_clip}",
+        )
+        batch_size = min(max(1, config.batch_size), len(replay_buffer))
+        for epoch_idx in range(config.epochs):
+            pi, loss = model.fit(batch_size=batch_size, iters=effective_fit_iters, grad_clip=config.grad_clip)
+            fit_calls += 1
+            last_pi = float(pi)
+            last_loss = float(loss)
+            _log_epoch_training_diagnostics(
+                epoch_number=epoch_idx + 1,
+                total_epochs=int(config.epochs),
+                model=model,
+                last_pi=last_pi,
+                last_loss=last_loss,
+                fit_iters=effective_fit_iters,
+            )
+            if _should_log_epoch_progress(
+                epoch_number=epoch_idx + 1,
+                total_epochs=int(config.epochs),
+                progress_every=config.progress_every,
+            ):
+                LOGGER.info(
+                    f"[phase1_finalize] epoch={epoch_idx + 1}/{config.epochs} "
+                    f"optimizer_steps={fit_calls}/{optimizer_steps_planned} "
+                    f"fit_iters={effective_fit_iters} last_pi={last_pi:.4f} "
+                    f"last_loss={last_loss:.6f}",
+                )
+
+    snapshot_reason = "phase1-finalize"
+    if int(config.epochs) == 0:
+        snapshot_reason = "phase1-finalize-memorize-only"
+    elif bool(config.skip_memorization):
+        snapshot_reason = "phase1-finalize-fit-only"
     snapshot_path = snapshot_store.save_snapshot(
         model=model,
         replay_buffer=replay_buffer,
         step_index=max_step_index,
         t=0.0,
-        reason="phase1-finalize",
-        memorize_count=memorized_count,
+        reason=snapshot_reason,
+        memorize_count=(memorized_count if memorized_count > 0 else None),
     )
-    if hasattr(replay_buffer, "clear"):
+    if memorized_count > 0 and hasattr(replay_buffer, "clear"):
         replay_buffer.clear(memorized_count)
 
     metadata = {
@@ -241,9 +331,14 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
         "source_run_count": len(source_runs),
         "transitions_loaded": transitions_loaded,
         "epochs": config.epochs,
+        "skip_memorization": config.skip_memorization,
         "batch_size": config.batch_size,
+        "learning_rate": config.learning_rate,
+        "grad_clip": config.grad_clip,
         "fit_iters": effective_fit_iters,
         "fit_iters_requested": config.fit_iters,
+        "scale_ssr": config.scale_ssr,
+        "scale_ssr_applied": scale_ssr_applied,
         "prompt_token_window": config.prompt_token_window,
         "progress_every": config.progress_every,
         "fit_calls": fit_calls,
@@ -261,6 +356,7 @@ def run_phase1_finalize(config: Phase1FinalizeConfig) -> Phase1FinalizeSummary:
         transitions_loaded=transitions_loaded,
         fit_calls=fit_calls,
         memorized_count=memorized_count,
+        no_op=False,
     )
 
 
@@ -415,12 +511,18 @@ def _optional_action_vector(value: Any) -> dict[str, float] | None:
 
 
 def _validate_config(config: Phase1FinalizeConfig) -> None:
-    if int(config.epochs) < 1:
-        raise ValueError(f"--epochs must be >= 1, got {config.epochs}")
+    if int(config.epochs) < 0:
+        raise ValueError(f"--epochs must be >= 0, got {config.epochs}")
     if int(config.batch_size) < 1:
         raise ValueError(f"--batch-size must be >= 1, got {config.batch_size}")
+    if float(config.learning_rate) <= 0.0:
+        raise ValueError(f"--learning-rate must be > 0, got {config.learning_rate}")
+    if config.grad_clip is not None and float(config.grad_clip) <= 0.0:
+        raise ValueError(f"--grad-clip must be > 0 when provided, got {config.grad_clip}")
     if config.fit_iters is not None and int(config.fit_iters) < 1:
         raise ValueError(f"--fit-iters must be >= 1, got {config.fit_iters}")
+    if float(config.scale_ssr) < 0.0:
+        raise ValueError(f"--scale-ssr must be >= 0, got {config.scale_ssr}")
     if int(config.prompt_token_window) < 0:
         raise ValueError(
             "--prompt-token-window must be >= 0 (0 disables token truncation), "
@@ -430,6 +532,105 @@ def _validate_config(config: Phase1FinalizeConfig) -> None:
         raise ValueError(f"--progress-every must be >= 0, got {config.progress_every}")
     if int(config.snapshot_keep) < 1:
         raise ValueError(f"--snapshot-keep must be >= 1, got {config.snapshot_keep}")
+
+
+def _scale_ssr_in_place(*, model: Any, scale_ssr: float) -> None:
+    ssr_low_rank_matrix = getattr(model, "ssr_low_rank_matrix", None)
+    ssr_residual_diagonal = getattr(model, "ssr_residual_diagonal", None)
+    if ssr_low_rank_matrix is None or ssr_residual_diagonal is None:
+        raise ValueError("Expected SSR tensors after memorize, but found missing SSR state.")
+    sqrt_scale = math.sqrt(float(scale_ssr))
+    ssr_low_rank_matrix.mul_(sqrt_scale)
+    ssr_residual_diagonal.mul_(float(scale_ssr))
+    LOGGER.info(
+        "[phase1_finalize] scale_ssr applied s=%g sqrt_s=%g",
+        float(scale_ssr),
+        float(sqrt_scale),
+    )
+    return None
+
+
+def _log_epoch_training_diagnostics(
+    *,
+    epoch_number: int,
+    total_epochs: int,
+    model: Any,
+    last_pi: float,
+    last_loss: float,
+    fit_iters: int,
+) -> None:
+    try:
+        import torch
+    except Exception:
+        return None
+    with torch.no_grad():
+        theta = model.get_param().detach()
+        center = getattr(model, "ssr_center", None)
+        delta_l2 = float("nan")
+        delta_max_abs = float("nan")
+        if isinstance(center, torch.Tensor):
+            delta = theta - center.to(theta.device)
+            delta_l2 = float(torch.linalg.vector_norm(delta).item())
+            delta_max_abs = float(delta.abs().max().item())
+
+        ssr_value = float("nan")
+        try:
+            ssr_tensor = model.ssr()
+            if isinstance(ssr_tensor, torch.Tensor):
+                ssr_value = float(ssr_tensor.detach().item())
+            else:
+                ssr_value = float(ssr_tensor)
+        except Exception:
+            ssr_value = float("nan")
+
+        grad_sq_sum = 0.0
+        grad_max_abs = 0.0
+        has_grad = False
+        for parameter in model.parameters():
+            if not parameter.requires_grad or parameter.grad is None:
+                continue
+            grad = parameter.grad.detach()
+            has_grad = True
+            grad_sq_sum += float((grad.float() ** 2).sum().item())
+            grad_max_abs = max(grad_max_abs, float(grad.abs().max().item()))
+        grad_l2 = math.sqrt(grad_sq_sum) if has_grad else 0.0
+
+        params_finite = True
+        for parameter in model.parameters():
+            if not parameter.requires_grad:
+                continue
+            if not bool(torch.isfinite(parameter.detach()).all().item()):
+                params_finite = False
+                break
+
+    ssr_component = float("nan")
+    approx_non_ssr_component = float("nan")
+    approx_unmixed_non_ssr = float("nan")
+    if math.isfinite(ssr_value):
+        ssr_component = (1.0 - float(last_pi)) * ssr_value / float(max(1, int(fit_iters)))
+        approx_non_ssr_component = float(last_loss) - ssr_component
+        if float(last_pi) != 0.0:
+            approx_unmixed_non_ssr = approx_non_ssr_component / float(last_pi)
+
+    LOGGER.info(
+        "[phase1_finalize][diag] epoch=%d/%d "
+        "delta_l2=%g delta_max_abs=%g ssr=%g "
+        "last_loss=%g ssr_component=%g approx_non_ssr_component=%g approx_unmixed_non_ssr=%g "
+        "grad_l2=%g grad_max_abs=%g params_finite=%s",
+        int(epoch_number),
+        int(total_epochs),
+        float(delta_l2),
+        float(delta_max_abs),
+        float(ssr_value),
+        float(last_loss),
+        float(ssr_component),
+        float(approx_non_ssr_component),
+        float(approx_unmixed_non_ssr),
+        float(grad_l2),
+        float(grad_max_abs),
+        bool(params_finite),
+    )
+    return None
 
 
 def _configure_logging(level_name: str) -> None:

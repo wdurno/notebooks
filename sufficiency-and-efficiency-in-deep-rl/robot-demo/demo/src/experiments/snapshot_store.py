@@ -106,6 +106,35 @@ def resolve_snapshot_path(path: Path) -> Path:
     return matches[-1]
 
 
+def resolve_latest_snapshot_from_model_root(model_root: Path) -> Path:
+    root = Path(model_root)
+    if root.is_file():
+        return root
+    if not root.exists():
+        raise FileNotFoundError(f"Model root does not exist: {root}")
+
+    candidate_paths: list[Path] = []
+    try:
+        candidate_paths.append(resolve_snapshot_path(root))
+    except FileNotFoundError:
+        pass
+
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        try:
+            candidate_paths.append(resolve_snapshot_path(child))
+        except FileNotFoundError:
+            continue
+
+    if not candidate_paths:
+        raise FileNotFoundError(f"No snapshots found under model root: {root}")
+
+    unique_paths = sorted({path.resolve() for path in candidate_paths}, key=lambda item: str(item))
+    latest_path = max(unique_paths, key=_snapshot_sort_key)
+    return latest_path
+
+
 def _collect_trainable_state(model: Any) -> dict[str, torch.Tensor]:
     state = {}
     for name, parameter in model.named_parameters():
@@ -139,6 +168,30 @@ def _collect_replay_metadata(replay_buffer: Any) -> dict[str, Any]:
         if hasattr(replay_buffer, key):
             metadata[key] = int(getattr(replay_buffer, key))
     return metadata
+
+
+def _snapshot_sort_key(path: Path) -> tuple[datetime, float, str]:
+    created_at = _read_snapshot_created_at(path)
+    if created_at is None:
+        created_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    return created_at, float(path.stat().st_mtime), path.name
+
+
+def _read_snapshot_created_at(path: Path) -> datetime | None:
+    try:
+        payload = torch.load(path, map_location="cpu")
+    except Exception:
+        return None
+    value = payload.get("created_at")
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _slug(text: str) -> str:

@@ -188,7 +188,7 @@ class SSRAgent(nn.Module):
     def get_param(self): 
         'only for SSR calculations' 
         return torch.cat([p.reshape([-1, 1]) for p in self.parameters() if p.requires_grad], dim=0)  
-    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9): 
+    def fit(self, batch_size, iters=1, pi_min=.1, pi_max=.9, grad_clip=None): 
         self.train() 
         self.dt_prev_pi = pi = self.optimal_lambda(pi_min=pi_min, pi_max=pi_max) 
         self.optimizer.zero_grad() 
@@ -199,6 +199,11 @@ class SSRAgent(nn.Module):
             loss = pi * loss + (1 - pi) * self.ssr() / iters 
             loss.backward() 
             pass 
+        if grad_clip is not None:
+            torch.nn.utils.clip_grad_norm_(
+                [p for p in self.parameters() if p.requires_grad],
+                max_norm=float(grad_clip),
+            )
         self.optimizer.step() 
         return float(pi), float(loss.detach()) 
     def __get_get_grad_generator(self, n=None, random_idx=False): 
@@ -240,6 +245,5 @@ class SSRAgent(nn.Module):
         grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters() if p.requires_grad], dim=0).clone().detach() 
         return grad_vec 
     pass 
-
 
 

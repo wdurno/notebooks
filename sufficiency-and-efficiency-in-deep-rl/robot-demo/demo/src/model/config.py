@@ -23,7 +23,7 @@ class ModelConfig:
     deterministic_coding: bool = False
     all_images: bool = False
     prompt_token_window: int | None = 512
-    learning_rate: float = 1e-2
+    learning_rate: float = 1e-1
     gamma: float = 0.99
     alpha: float = 1.0
     beta: float = 1.0

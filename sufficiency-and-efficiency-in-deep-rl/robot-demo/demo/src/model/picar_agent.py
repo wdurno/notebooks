@@ -199,8 +199,8 @@ class PiCarActionModel(SSRAgent):
         )
         return total_loss
 
-    def fit(self, batch_size, iters=1, pi_min=0.1, pi_max=0.9):
-        result = super().fit(batch_size=batch_size, iters=iters, pi_min=pi_min, pi_max=pi_max)
+    def fit(self, batch_size, iters=1, pi_min=0.1, pi_max=0.9, grad_clip=None):
+        result = super().fit(batch_size=batch_size, iters=iters, pi_min=pi_min, pi_max=pi_max, grad_clip=grad_clip)
         self._soft_update_targets()
         return result
 

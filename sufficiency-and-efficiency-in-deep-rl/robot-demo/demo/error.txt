@@ -1,0 +1,70 @@
+2026-03-16 20:34:21,245 INFO src.experiments.run_controller: [t] step=000099 t=0.099 [##----------------------]                                                                                                                                         
+2026-03-16 20:34:23,889 INFO src.env.picar_env: [reward-command] step=99 status=ignored expected=drive-left got=drive-forward delta=-2.0 source='Back up five times, then turn left.'                                                                   
+2026-03-16 20:34:23,889 INFO src.env.picar_env: [model] step=99 mode=mixed action=drive-forward json_valid=True say='Drive forward.'                                                                                                                    
+2026-03-16 20:34:23,889 INFO src.env.picar_env: [reward] step=99 base=0.000 malformed_adj=0.000 command_adj=-2.000 final=-2.000 command_status=ignored(expected=drive-left)                                                                             
+2026-03-16 20:34:23,889 INFO src.env.picar_env: [tts] step=99 speaking text='Drive forward.'                                                                                                                                                            
+fit iters:   0%|                                                                                                                      | 0/100 [00:00<?, ?it/s]`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+Caching is incompatible with gradient checkpointing in Qwen2_5_VLDecoderLayer. Setting `past_key_values=None`.                                                                                                                                          
+fit iters: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [18:50<00:00, 11.30s/it]                                                                                          
+fit iters: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [18:48<00:00, 11.28s/it]                                                                                          
+fit iters: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [18:47<00:00, 11.28s/it]                                                                                          
+fit iters:   0%|                                                                                                                      | 0/100 [00:00<?, ?it/s]/pytorch/aten/src/ATen/native/cuda/TensorCompare.cu:109: _assert_async_cuda_kernel: block:
+ [0,0,0], thread: [0,0,0] Assertion `probability tensor contains either `inf`, `nan` or element < 0` failed.                
+fit iters:   0%|                                                                                                                      | 0/100 [00:00<?, ?it/s]                                                                                          
+Traceback (most recent call last):                            
+  File "<frozen runpy>", line 198, in _run_module_as_main                                                                                                                                                                                               
+  File "<frozen runpy>", line 88, in _run_code  
+File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/experiments/experiment_interface.py", line 178, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/experiments/experiment_interface.py", line 168, in main
+    summary = run_experiment(config)
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/experiments/run_controller.py", line 272, in run_experiment
+    next_observation, reward, done, info = env.step()
+                                           ^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/env/picar_env.py", line 415, in step
+    training_summary = self._maybe_train()
+                       ^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/env/picar_env.py", line 600, in _maybe_train
+    pi, loss = self.model.fit(batch_size=training.batch_size, iters=effective_fit_iters)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/model/picar_agent.py", line 203, in fit
+    result = super().fit(batch_size=batch_size, iters=iters, pi_min=pi_min, pi_max=pi_max, grad_clip=grad_clip)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/core/ssr_agent.py", line 198, in fit
+    loss = self.loss(data) / iters 
+           ^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/model/picar_agent.py", line 137, in loss
+    current = self._forward_batch(
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/model/picar_agent.py", line 245, in _forward_batch
+    backbone_output = self.backbone.encode(
+                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/Documents/notebooks/sufficiency-and-efficiency-in-deep-rl/robot-demo/demo/src/model/backbones.py", line 285, in encode
+    generation_output = self.model.generate(
+                        ^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/.venv/lib/python3.12/site-packages/peft/peft_model.py", line 2048, in generate
+    outputs = self.base_model.generate(*args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/.venv/lib/python3.12/site-packages/transformers/generation/utils.py", line 2668, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/evan/.venv/lib/python3.12/site-packages/transformers/generation/utils.py", line 2869, in _sample
+    while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evan/.venv/lib/python3.12/site-packages/transformers/generation/utils.py", line 2694, in _has_unfinished_sequences
+    elif this_peer_finished:
+         ^^^^^^^^^^^^^^^^^^
+torch.AcceleratorError: CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  CUDA failed with error device-side assert triggered
+Aborted (core dumped)

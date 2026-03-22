@@ -51,13 +51,15 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--fixed-t FLOAT` (optional)
 - `--t-step FLOAT` (default `0.001`)
 - `--t-log-every INT` (default `1`)
-- `--load-snapshot PATH` (optional)
+- `--load-snapshot PATH` (optional; snapshot file/dir to initialize from)
+- `--load-latest-from-model-root` (optional; auto-load most recent snapshot under `--model-root`)
 - `--reward-prompt TEXT` (default `"find the red ball"`)
 - `--snapshot-keep INT` (default `3`)
-- `--data-root PATH` (optional, default `demo/data`)
-- `--model-root PATH` (optional, default `demo/model`)
+- `--data-root PATH` (optional, default `demo/data`; run data output root)
+- `--model-root PATH` (optional, default `demo/model`; run snapshot output root)
 - `--epochs INT` (default `1`, optimizer steps per training trigger in phase 2/3)
 - `--batch-size INT` (default `1`)
+- `--learning-rate FLOAT` (default `0.1`)
 - `--fit-iters INT` (optional; if omitted, auto-resolves to `ceil(replay_size / batch_size)` at each training trigger)
 - `--train-every-steps INT` (default `16`)
 - `--min-replay-size INT` (default `32`)
@@ -68,8 +70,12 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 
 `phase1_finalize.py` extra flags:
 
-- `--epochs INT` (default `1`)
+- `--epochs INT` (default `1`; `0` = memorize-only unless `--skip-memorization`)
+- `--skip-memorization` (reuse SSR from loaded snapshot; skip new memorize pass)
+- `--learning-rate FLOAT` (default `0.1`)
+- `--grad-clip FLOAT` (optional; norm clipping before optimizer step)
 - `--fit-iters INT` (optional; if omitted, auto-resolves to `ceil(replay_size / batch_size)`)
+- `--scale-ssr FLOAT` (default `1000.0`; applied only when `--epochs > 0`)
 - `--log-level {DEBUG,INFO,WARNING,ERROR}` (default `INFO`)
 
 Use `--log-level INFO` for concise runtime telemetry:
@@ -161,6 +167,7 @@ python -m src.experiments.phase1_finalize \
   --data-runs data/<uuid1> data/<uuid2> data/<uuid3> \
   --epochs 3 \
   --batch-size 3 \
+  --scale-ssr 1000. \
   --prompt-token-window 512
 ```
 
@@ -179,11 +186,17 @@ python -m src.experiments.phase1_finalize \
 What `phase1_finalize` does:
 
 1. Loads transitions reconstructed from all provided `data/<uuid>/observations.jsonl` runs.
-2. Tunes the model offline on the aggregated replay buffer with one optimizer step per epoch.
+2. Optionally memorizes replay into SSR sufficient statistics (skipped with `--skip-memorization`).
+3. If `--epochs > 0`, scales SSR in-place by `--scale-ssr` (`A *= sqrt(s)`, `diag *= s`).
+4. If `--epochs > 0`, tunes offline on aggregated replay with one optimizer step per epoch.
    By default, `fit_iters` is auto-set to `ceil(replay_size / batch_size)` for an approximate one-pass epoch;
    optionally override with `--fit-iters` to cap or increase per-epoch compute.
-3. Memorizes all loaded replay into SSR sufficient statistics.
-4. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.
+5. Writes a final snapshot under a new `model/<new-uuid>/snapshots/`.
+
+Special mode behavior:
+
+- `--epochs 0` with memorization enabled: memorize-only snapshot (no SSR scaling, no fitting).
+- `--skip-memorization --epochs 0`: no-op (logs an INFO message and writes no snapshot artifact).
 
 Progress logging:
 
@@ -213,6 +226,16 @@ Behavior:
 - Malformed action JSON is penalized by `-1.0` and does not get spoken.
 - Rollout sampling runs in inference/eval mode; fit/memorize blocks switch to
   optimization/train mode and then return to eval mode.
+- `--model-root` controls where new run snapshots are written; base model assets are still read from `demo/model`.
+
+Consecutive phase-2 runs from a shared snapshot root:
+
+```bash
+PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface \
+  --phase tune \
+  --model-root model/phase2_runs \
+  --load-latest-from-model-root
+```
 
 ### 3) Retasking (`t=1` by default, tuning enabled)
 

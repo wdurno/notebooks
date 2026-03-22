@@ -50,7 +50,7 @@ except ModuleNotFoundError:
 
 from .observation_store import ObservationStore
 from .schemas import ExperimentRunConfig, ExperimentRunSummary
-from .snapshot_store import SnapshotStore, resolve_snapshot_path
+from .snapshot_store import SnapshotStore, resolve_latest_snapshot_from_model_root, resolve_snapshot_path
 
 LOGGER = logging.getLogger(__name__)
 
@@ -150,9 +150,11 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     run_uuid = config.run_uuid or str(uuid4())
     demo_root = default_demo_root()
     data_root = (config.data_root or (demo_root / "data")).resolve()
-    model_root = (config.model_root or (demo_root / "model")).resolve()
+    model_assets_root = (demo_root / "model").resolve()
+    snapshot_root = (config.model_root or model_assets_root).resolve()
+    load_snapshot_path = _resolve_load_snapshot_path(config=config, snapshot_root=snapshot_root)
     data_run_dir = data_root / run_uuid
-    model_run_dir = model_root / run_uuid
+    model_run_dir = snapshot_root / run_uuid
     data_run_dir.mkdir(parents=True, exist_ok=False)
     model_run_dir.mkdir(parents=True, exist_ok=False)
 
@@ -166,12 +168,14 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "uuid": run_uuid,
         "phase": config.phase,
         "started_at": started_at,
-        "load_snapshot": str(config.load_snapshot) if config.load_snapshot is not None else None,
+        "load_snapshot": str(load_snapshot_path) if load_snapshot_path is not None else None,
+        "load_latest_from_model_root": bool(config.load_latest_from_model_root),
         "reward_prompt": config.reward_prompt,
         "deterministic_coding": bool(config.deterministic_coding),
         "history_window": int(config.history_window),
         "all_images": bool(config.all_images),
         "prompt_token_window": int(config.prompt_token_window),
+        "learning_rate": float(config.learning_rate),
         "init_t": float(config.init_t),
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
@@ -187,20 +191,20 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
 
     replay_buffer = TransitionReplayBuffer(capacity=10_000)
     model_config = ModelConfig(
-        model_dir=model_root,
+        model_dir=model_assets_root,
         deterministic_coding=bool(config.deterministic_coding),
         all_images=bool(config.all_images),
         prompt_token_window=(
             int(config.prompt_token_window) if int(config.prompt_token_window) > 0 else None
         ),
+        learning_rate=float(config.learning_rate),
     )
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
         config=model_config,
     )
-    if config.load_snapshot is not None:
-        snapshot_path = resolve_snapshot_path(config.load_snapshot)
-        load_result = snapshot_store.load_into_model(snapshot_path=snapshot_path, model=model)
+    if load_snapshot_path is not None:
+        load_result = snapshot_store.load_into_model(snapshot_path=load_snapshot_path, model=model)
         print(
             f"[snapshot] loaded={load_result.path} "
             f"trainable_keys={len(load_result.loaded_trainable_keys)} ssr={load_result.has_ssr_state}",
@@ -212,14 +216,14 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     reward_registry, reward_prompt_id = _build_reward_registry(config.reward_prompt)
     reward_scorer = FrozenVLMRewardScorer(
         RewardConfig(prompt_id=reward_prompt_id),
-        model_config=ModelConfig(model_dir=model_root),
+        model_config=ModelConfig(model_dir=model_assets_root),
         registry=reward_registry,
         shared_model=shared_reward_model,
         shared_processor=shared_reward_processor,
         disable_shared_adapter=True,
     )
 
-    speech_config = SpeechConfig(model_dir=model_root)
+    speech_config = SpeechConfig(model_dir=model_assets_root)
     speech_stream = ContinuousSpeechStream(SpeechStreamConfig(), transcriber=FasterWhisperSTT(speech_config))
     speaker = _Speaker(tts=PiperTTS(speech_config), audio=AudioIO(speech_config.audio))
     base_picar_config = EnvConfig().picar
@@ -396,6 +400,10 @@ def _validate_config(config: ExperimentRunConfig) -> None:
         raise ValueError(
             f"--prompt-token-window must be >= 0 (0 disables token truncation), got {config.prompt_token_window}"
         )
+    if float(config.learning_rate) <= 0.0:
+        raise ValueError(f"--learning-rate must be > 0, got {config.learning_rate}")
+    if config.load_snapshot is not None and bool(config.load_latest_from_model_root):
+        raise ValueError("--load-snapshot and --load-latest-from-model-root are mutually exclusive")
     return None
 
 
@@ -406,3 +414,11 @@ def _resolve_picar_host(config: ExperimentRunConfig) -> str:
     if env_host is not None and env_host.strip():
         return env_host.strip()
     return PiCarControlConfig().host
+
+
+def _resolve_load_snapshot_path(*, config: ExperimentRunConfig, snapshot_root: Path) -> Path | None:
+    if config.load_snapshot is not None:
+        return resolve_snapshot_path(config.load_snapshot)
+    if bool(config.load_latest_from_model_root):
+        return resolve_latest_snapshot_from_model_root(snapshot_root)
+    return None
