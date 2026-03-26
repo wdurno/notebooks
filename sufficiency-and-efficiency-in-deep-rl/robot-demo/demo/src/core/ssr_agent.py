@@ -127,7 +127,12 @@ class SSRAgent(nn.Module):
             pass
         ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
         ## stored in sum-scale; no division by ssr_n 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), self.ssr_rank, self.ssr_model_dimension, calc_diag=True, device=self.device, disable_tqdm=disable_tqdm) 
+        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), \
+                r=min(self.ssr_rank, n, self.ssr_n+n), \
+                p=self.ssr_model_dimension, \
+                calc_diag=True, \
+                device=self.device, \
+                disable_tqdm=disable_tqdm) 
         ## handle l-Lanczos outputs 
         if self.ssr_low_rank_matrix is None: 
             ## first memorization 
