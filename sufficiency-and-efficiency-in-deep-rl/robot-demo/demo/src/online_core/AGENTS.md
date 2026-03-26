@@ -1,6 +1,6 @@
 # Oneline Core Specification 
 
-This document provides instruction to the agent on how to implement the online core. 
+This document provides instruction to the agent on how to implement the online core in `src/online_core/online_ssr_agent.py` and its supporting modules. 
 
 ## Goal 
 
@@ -66,12 +66,16 @@ $\pi > 0$ is constant, so our asmyptotic distribution will have a non-zero effec
 The estimate is asymptotically $\hat \theta_0 = \arg\max_{d\theta} \log f_X(X; \theta+d\theta) - (1-\pi)/2 d\theta^T \mathcal I d \theta$, so has an approximately Gaussian distribution. 
 2. In peronalized AI, VRAM is precious, 
 so we explore the effect of taking $\pi$ so low that our obseved estimate has only 1 sample. 
-It is _not_ Gaussian distributed, but does enjoy some degree of approximate safety. 
-Assume $\log f_X(X_n; \theta)$ is twice continuously differentiable and 
-that $\nabla \log f_X := \nabla_\theta \log f_X(X_n; \theta)$ is Lipschitz continuous in $\theta$. 
+It is _not_ Gaussian distributed, but does enjoy some degree of approximate safety, as described below.
+
+Here, we argue that a slightly elevated $\pi$ value causes single-observation updates to be safe and productive, 
+under mild regularity conditions.
+Assume $\log f_X(X_n; \theta)$ is twice continuously differentiable, 
+that $\nabla \log f_X := \nabla_\theta \log f_X(X_n; \theta)$ is Lipschitz continuous in $\theta$, 
+and existence of $\mathbb E \nabla_\theta^2 \log f_X$. 
 Then our estimate is of the form $\widehat{d\theta} = \arg\max_{d\theta} \log f_X(X_n; \theta+d\theta) - 2^{-1}\lambda d\theta^T \mathcal I d\theta \approx \arg\max_{d\theta} d\theta^T \nabla \log f_X + 2^{-1} d\theta^T \nabla^2 \log f_X d\theta - 2^{-1}\lambda d\theta^T \mathcal I d\theta $. 
 WLOG, we may take $\mathbb{E} \nabla \log f_X = 0$ by choosing $\lambda$ sufficiently large to dominate its Lipschitz continuity. 
-Further WLOG, we take $\nabla^2 \log f_X := \nabla_\theta^2 \log f_X(X_n; \theta) \leq 0$ again by choosing sufficiently large $\lambda$ to dominate it. 
+Further WLOG, we take $\nabla^2 \log f_X := \nabla_\theta^2 \log f_X(X_n; \theta) \leq 0$ again by choosing sufficiently large $\lambda$ to dominate it. (TODO check thin tail assumption) 
 So, the program's solution is $0 = \nabla \log f_X + \nabla^2 \log f_X \widehat{d\theta} - \lambda \mathcal I \widehat{d\theta} $
 $ = \nabla \log f_X - (\nabla^2 \log f_X - \lambda \mathcal I) \widehat{d\theta} $
 $ \Rightarrow \widehat{d\theta}^T(-\nabla^2 \log f_X + \lambda \mathcal I)\widehat{d\theta} = \widehat{d\theta}^T \nabla \log f_X $ 
@@ -84,9 +88,9 @@ That's why it's important to construct our estimation paradigm rigorously and ch
 
 ## Constraints
 
-1. Do not specify a `loss` function. This is still an abstract class. 
+1. Do not specify a `loss` function in `OnlineSSRAgent` because it is still an abstract class. 
 
 ## Implementation tasks 
 
-1. Lanczos variant: Implement 
+1. **Lanczos variant**: Implement a variant of `multiply_fisher_information` as found in `src/core/lanczos.py`
 2. 
