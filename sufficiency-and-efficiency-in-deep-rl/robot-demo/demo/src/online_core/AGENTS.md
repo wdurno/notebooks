@@ -148,7 +148,7 @@ We won't try to store Amari-Chentsov matrix $C_{ijk} = \mathbb E_\theta \partial
 because it's a large rank 3 tensor.
 Instead, we'll run a moving average over $d \theta$ observations and estaimte $C_{ijk} d\theta^k$. 
 $C_{ijk} d\theta^k$ will still be a high-variance estimate, 
-so we'll penalize its effect heavily whenever the signal-to-noise ratio is too high.
+so we'll penalize its effect heavily whenever the signal-to-noise ratio is too too.
 
 **Estimation**
 
@@ -165,14 +165,94 @@ if $\partial_k d\theta^k < 0$,
 then we'll add $(\partial_k d\theta^k) \partial_i \ell \partial_j \ell$ to our $NN^T$ estimate.
 In either case, $.ssr_n$ continues to increment regardless.
 
+**SNR estimation**
+
+To estimate signal-to-noise ratio efficiently, 
+we'll measure it on the per-observation contracted matrix contribution rather than on the full rank-3 tensor. 
+For a new observation with score $g := \nabla \ell$ and update $d\theta$, define
+```math
+X := (g^T d\theta) g g^T.
+```
+Then $X$ is exactly the single-sample contribution to $C_{ijk} d\theta^k$, 
+and its squared Frobenius norm is
+```math
+\|X\|_F^2 = (g^T d\theta)^2 \|g\|_2^4.
+```
+So, we can estimate signal and noise online with a moving average of only low-rank matrices and scalars. 
+Let $M_t$ denote the current moving-average estimate of $C : d\theta$, 
+stored as $P P^T - N N^T$, and let $q_t$ denote the moving average of $(g^T d\theta)^2 \|g\|_2^4$. 
+Then a practical Frobenius-scale variance estimate is
+```math
+\widehat{\mathrm{Var}}_F(X) := \max(q_t - \|M_t\|_F^2, 0),
+```
+and the effective signal-to-noise ratio is
+```math
+\mathrm{SNR}
+:=
+\frac{\|M_t\|_F}{
+\sqrt{\widehat{\mathrm{Var}}_F(X) / n_{\mathrm{ssr}} + \varepsilon}
+},
+```
+where $n_{\mathrm{ssr}}$ is the cumulative sample count already used elsewhere in the SSR estimator and $\varepsilon > 0$ is a small numerical stabilizer. 
+This is efficient because each update only needs one inner product $g^T d\theta$, one gradient norm $\|g\|_2^2$, and the Frobenius norm of the current low-rank estimate. 
+For $M_t = P P^T - N N^T$, that Frobenius norm can be computed from only small Gram matrices:
+```math
+\|M_t\|_F^2
+=
+\|P^T P\|_F^2 + \|N^T N\|_F^2 - 2 \|P^T N\|_F^2.
+```
+So, the SNR can be monitored online without ever materializing the full Amari-Chentsov tensor or even the full contracted matrix. 
+
 **Application**
 
-TODO how to calculate signal-to-noise ratio efficiently? 
+The SNR estimate above will determine how strongly Amari-Chentsov updates are allowed to perturb the Fisher estimate. 
+Introduce hyperparameter $\rho > 0$, interpreted as the signal-to-noise multiple required before the correction has substantial effect, and define
+```math
+\beta_t
+:=
+\frac{1}{1 + \rho / (\mathrm{SNR}_t + \varepsilon)}.
+```
+Then the adjusted information estimate is
+```math
+\widetilde{\mathcal I}_t
+:=
+\mathcal I_t + \beta_t M_t,
+```
+where $\mathcal I_t \approx A A^T + \mathrm{diag}(r)$ is the current Fisher estimate and $M_t \approx P P^T - N N^T$ is the contracted Amari-Chentsov correction. 
+Since $M_t$ is only symmetric, $\widetilde{\mathcal I}_t$ need not be PSD. 
+So, we will project it back into PSD space in the low-rank span already defined by the current factors. 
+
+First, form the temporary basis
+```math
+B := [A \;\; P \;\; N],
+```
+then compute a reduced QR factorization $B = QR$. 
+If each factor uses rank at most $r$, then $Q$ has shape $p \times k$ with $k \leq 3r$, 
+so all remaining linear algebra occurs in a small GPU-friendly subspace. 
+Within that basis, compute
+```math
+S := Q^T \widetilde{\mathcal I}_t Q.
+```
+This matrix is only $k \times k$, and can be assembled from the stored low-rank factors without materializing any full $p \times p$ matrix. 
+Next, diagonalize
+```math
+S = U \Lambda U^T,
+```
+clip negative eigenvalues to obtain $\Lambda_+$, and retain only the top $r$ nonnegative directions. 
+Finally, reconstruct the compressed PSD factor
+```math
+A_{\mathrm{new}} := Q U_r \Lambda_{+,r}^{1/2}.
+```
+This yields a new low-rank Fisher factor of shape $p \times r$, 
+so the expanded $p \times k$ representation is only temporary and rank never grows across observations. 
+If useful in practice, any discarded positive spectral mass may be absorbed into the residual diagonal term rather than dropped. 
 
 ## Constraints
 
 1. Do not specify a `loss` function in `OnlineSSRAgent` because it is still an abstract class. 
 2. Do not modify anything in `src/core/`.
+3. The data model should extend the original `SSRAgent` state, so we may load snapshots derived from `SSRAgent` instances.
+4. Re-use existing `SSRAgent` attributes when possible to maintain single source of truth.
 
 ## Implementation tasks 
 
@@ -183,6 +263,18 @@ For `OnlineSSRAgent`, please define `__get_get_grad_generator` to return `get_gr
 which returns `grad_generator`, a generator of one and only existing current gradient. 
 It's assumed that gradients have already been calculated. 
 If they haven't, throw an error. 
-2. **Async actions**: `OnlineSSRAgent` 
-3. TODO: Amari-Chentsov 
-4. TODO: fit 
+2. **`act` function**: `OnlineSSRAgent` needs an abstract `act` function used to send instructions to the agent mid fit loop. 
+While `act` is allowed to have useful side effects (like populating the replay buffer), 
+the abstract definition returns a reward to be used in fitting. 
+This allows all activations to be produced precisely once per action and optimization.
+3. **`amari_chentsov_update` function**: `OnlineSSRAgent` needs this non-abstract function to facilitate the Amari-Chentsov update as described in the above `Amari-Chentsov numerical stratgy` section.
+4. **`fit` function**: Override the existing `SSRAgent.fit` function in `OnlineSSRAgent`. 
+Only keep arguments `self`, `iters,` and `grad_clip`, since `pi` is no-longer batch-optimal. 
+Have these arguments:
+   1. `iters` defines how many times the one observation is iterated upon. Zero is an acceptable number, since sometimes we're just memorizing.
+   2. `pi` needs to be an optional float argument or `0.00001` as default. 
+   3. `memorize` (boolean) determines whether `memorize` is called. If `True` and `iters > 1`, then only memorize on the final iteration.
+   4. `amari_chentsov_update` (boolean) determines whether to run `amari_chentsov_update`. If `True` and `iters > 1`, then only update on the final iteration. 
+The `fit` loop executes as:
+TODO pick-up here
+
