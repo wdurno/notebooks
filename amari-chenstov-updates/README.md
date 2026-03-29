@@ -58,7 +58,7 @@ Whenever a model is at $\theta$, it draws samples
 from $d(\theta)$. 
 When we update our model with the new data to some $\widehat{d(\theta)}$, 
 then we say the model is now at $\theta \gets \widehat{d(\theta)}$. 
-Naturally, much of our work assumes $d\theta := d(\theta)$ is a small value. 
+Naturally, much of our work assumes $d\theta := d(\theta) - \theta$ is a small value. 
 
 It is convenient to further assume the existence of a well-defined and finite gradient field $\mathbb E_\theta \nabla_\theta \ell$ 
 and Hessians $\mathbb E_\theta \nabla_\theta^2 \ell$, Amari-Chentsov tensors $\mathbb E_\theta \nabla_\theta^3 \ell$, 
@@ -111,34 +111,32 @@ $$ d\Theta_t = \pi b(\Theta_t) dt + \sqrt{\pi \mathcal I^{-1} (\Theta_t)} dW_t $
 
 ### Optimal $\pi$ as stochastic control 
 
-TODO: ill-posed, do not vary $\| d\theta_t \|$. Control $\pi$.
+Unproven here, a one-step MSE-optimal estimate of $\theta_{t+1}$ is obtained by choosing
+$$ \pi_t^* = \mathrm{tr}\left[ \mathcal I^{-1}(\theta_t) n^{-1} \right] / \left( 2 \| d\theta_t \|^2 \right). $$
+This is naturally interpreted as a feedback rule for $\pi_t$, not for $\| d\theta_t \|$. 
+Indeed, in application the true gap $d\theta_t$ belongs to the environment, while $\pi_t$ is the quantity we may choose. 
 
-Unproven here, an MSE-optimal estimate of $\theta_{t+1}$ is obtained by choosing $\pi = \mathrm{tr}\left[ \mathcal I^{-1}(\theta_t) n^{-1} \right] / \left( 2 \| d\theta_t \|^2 \right)$. 
-Choosing $\pi = 1/2$ constantly, we get $n = \mathrm{tr}\left[ \mathcal I^{-1}(\theta_t) \right] / \| d\theta_t \|^2 $.
-However, this implies $\| d\theta_t \| = \sqrt{\mathrm{tr}\left[ \mathcal I^{-1}(\theta_t) \right] / n} = O(n^{-1/2})$, 
-a contradiction. 
-
-So, we'll instead choose a different limit and thus limiting process. 
+So, we instead choose a different limit and thus limiting process. 
 A model at $\theta_{k,n}^*$ has true generating point $ \theta_{k,n}^* + d\theta_{k,n}^* = \theta_{k,n}^* + b(\theta_{k,n}^*) / \sqrt{n} $. 
-This gives us update equation:
+Allowing $\pi_{k,n} \in [0,1]$ to vary adaptively gives the controlled update equation:
 
-$$ \theta_{k+1,n}^* = \theta_{k,n}^* + \pi \frac{b(\theta_{k,n}^*)}{\sqrt n} + \sqrt{\pi \mathcal I^{-1}(\theta_{k,n}^*) / n} \, \xi_k $$
+$$ \theta_{k+1,n}^* = \theta_{k,n}^* + \pi_{k,n} \frac{b(\theta_{k,n}^*)}{\sqrt n} + \sqrt{\pi_{k,n} \mathcal I^{-1}(\theta_{k,n}^*) / n} \, \xi_k $$
 
-Taking $\pi = 1/2, k = \lfloor \sqrt n t \rfloor$, and assuming $b$ and $\mathcal I^{-1}$ are Lipschitz continuous, 
-we get a new discrete process without a contradiction.
+Taking $k = \lfloor \sqrt n t \rfloor$, and assuming $b$ and $\mathcal I^{-1}$ are Lipschitz continuous, 
+we get a controlled discrete process with:
 - $\Delta_{k,n} := \theta_{k+1,n}^* - \theta_{k,n}^*$
-- $ \Rightarrow \mathbb E [ \Delta_{k,n} \, | \, \mathcal F_k ] = 2^{-1} b(\theta_{k,n}^*) / \sqrt n $ and
-- $ \mathrm{Cov} [ \Delta_{k,n} \, | \, \mathcal F_k ] = 2^{-1} \mathcal I^{-1}(\theta_{k,n}^*) / n $. 
-- $ \sum_{j=1}^{k-1} \mathbb E [ \Delta_{j,n} \, | \, \mathcal F_j ] = \sum_{j=1}^{\lfloor \sqrt n t \rfloor-1} b(\theta_{j,n}^*) / (2 \sqrt n) = O( \sqrt n / \sqrt n) $ by Lipchitz, so the deterministic term converges.
-- $ \sum_{j=1}^{k-1} \mathrm{Cov} [ \Delta_{j,n} \, | \, \mathcal F_j ] = \sum_{j=1}^{\lfloor \sqrt n t \rfloor-1} 2^{-1} \mathcal I^{-1}(\theta_{j,n}^*) / n = O( \sqrt n / n)$ by Lipschitz, so the stochastic term vanishes.
+- $ \Rightarrow \mathbb E [ \Delta_{k,n} \, | \, \mathcal F_k ] = \pi_{k,n} b(\theta_{k,n}^*) / \sqrt n $ and
+- $ \mathrm{Cov} [ \Delta_{k,n} \, | \, \mathcal F_k ] = \pi_{k,n} \mathcal I^{-1}(\theta_{k,n}^*) / n $. 
+- $ \sum_{j=1}^{k-1} \mathbb E [ \Delta_{j,n} \, | \, \mathcal F_j ] = \sum_{j=1}^{\lfloor \sqrt n t \rfloor-1} \pi_{j,n} b(\theta_{j,n}^*) / \sqrt n = O(\sqrt n / \sqrt n) $, a Riemann sum which converges by Lipschitz continuity.
+- $ \sum_{j=1}^{k-1} \mathrm{Cov} [ \Delta_{j,n} \, | \, \mathcal F_j ] = \sum_{j=1}^{\lfloor \sqrt n t \rfloor-1} \pi_{j,n} \mathcal I^{-1}(\theta_{j,n}^*) / n = O( \sqrt n / n)$, so the stochastic term vanishes.
 
-So, optimal control causes randomness to vanish with large sample sizes, 
-leaving us with a path integral $\Theta_t^* = \Theta_0^* + 2^{-1} \int_0^t b(\Theta_s) ds$ 
-or simply $\dot \Theta_t^* = 2^{-1} b( \Theta_t^*)$. 
+So, stochastic control still causes randomness to vanish with large sample sizes, 
+leaving us with controlled path integral $\Theta_t^* = \Theta_0^* + \int_0^t \pi_s b(\Theta_s^*) ds$ 
+or simply $\dot \Theta_t^* = \pi_t b( \Theta_t^*)$. 
 Of course, no true sample size is ever infinite, 
-so we may find it pragmatic to approximately model the discrete process with small-noise SDE $\Theta_t^\varepsilon$:
+so we may find it pragmatic to approximately model the discrete process with controlled small-noise SDE $\Theta_t^\varepsilon$:
 
-$$ d\Theta_t^\varepsilon = 2^{-1} b(\Theta_t^\varepsilon) dt + \sqrt{\varepsilon / 2} \mathcal I^{-1/2}(\Theta_t^\varepsilon) dWt, \; \varepsilon = n^{-1/2}.$$
+$$ d\Theta_t^\varepsilon = \pi_t b(\Theta_t^\varepsilon) dt + \sqrt{\varepsilon \pi_t} \mathcal I^{-1/2}(\Theta_t^\varepsilon) dW_t, \; \varepsilon = n^{-1/2}.$$
 
 ### Why MNIST is mathematically comparable to Reinforcement Learning (RL) 
 
