@@ -12,8 +12,8 @@ then you will implement the target scope according to your mutual understanding 
 ## Directory organization 
 
 - `.gitignore`: Please add to this as you work to avoid a crowded repo. 
-- `simple_mnist`: This directory stores a minimalist experiment. Expect another `AGENTS.md` file there, adding detail.
-- `scalable_mnist`: This directory stores the same experiment as `simple_mnist`, but now subjecting it to the rigors of scalable deep learning. Again, expect an `AGENTS.md` file there.
+- `numerical_experiment`: This experiment evaluates the effectiveness of different sufficient statistic strategies guiding SDEs behaving like our models, as described in [mathematical_overview](mathematical_overview.ipynb).
+- `mnist_experiment`: This directory stores a minimalist experiment. Expect another `AGENTS.md` file there, adding detail.
 - `demo`: This directory stores a demonstration of the applied values of the findings from the experiments.
 - `src`: This directory stores all shared software between `simple_mnist`, `scalable_mnist`, and `demo`. Please try to keep this code base coherent, minimalist, and clearly documented. 
 - `cache`: This directory stores any large files should not be uploaded to GitHub, including model files and data. 

@@ -21,20 +21,12 @@ It is entirely possible a moving average Fisher Information Matrix (FIM) estimat
 
 A series of experiments will be run, 
 improving our understanding of Amari-Chentsov updates complicating science with applied rigor. 
-1. **simple_mnist**: is an RL-equivalent, simple experiment helping us understand when Amari-Chentsov updates are most-useful. 
+1. **numerical_experiment**: is an abstract numerical experiment studying how tracking different sufficient statistics can most-optimally guide SDEs according to the theory derived in [mathematical_overview](mathematical_overview.ipynb). It'll help us understand numerical & statistical viability.
+2. **mnist_experiment**: is an RL-equivalent, simple experiment helping us understand when Amari-Chentsov updates are most-useful. 
 The primary task: correctly classify 9s as the sample proportion of 9s increases from 0% to 50%. 
 To see how RL can be equivalent to an MNIST experiment, see [mathematical_overview](mathematical_overview.ipynb). 
 Small models will be used. 
 Approximations will be avoided when possible. 
-Both online and batch fitting will be tested. 
-2. **scalable_mnist**: Subjects the same experiment to the rigors scalable deep learning. 
-Models will remain small, but they'll be subjected computationally scalable approximations. 
-Particularly, the FIM estimate will be modeled with a low-rank approximation, 
-and the Amari-Chentsov tensor product $C : d\theta$, a merely symmetric matrix, 
-will be modeled as a difference of two low-rank, PSD matrices $PP^T - NN^T$. 
-This brings space complexity back to $O(p)$ for $p$ parameters, 
-so can survive scaling to large models in application, 
-especially when combined with LoRA. 
 Both online and batch fitting will be tested. 
 3. **demo**: An RL and robotics demo will illustrate the applied benefits as discovered in experiments 1 and 2. 
 Only online fitting will be illustrated because batch fitting user experience is poor - it's _no fun_ to wait for fitting. 
