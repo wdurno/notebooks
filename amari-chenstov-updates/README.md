@@ -11,6 +11,10 @@ Provided updates occur in batches of data, we may invoke the Central Limit Theor
 In this case, the first-order Taylor Series adjustment is done by estimating the Amari-Chentsov tensor [2] or its derivatives. 
 See [mathematical_overview](mathematical_overview.ipynb) for more detail and a frequentist construction of EWC. 
 
+## Conclusion: Halting progress
+
+See [mathematical_overview](mathematical_overview.ipynb) for details. 
+
 ## Why are experiments needed? 
 
 Despite rigorous mathematical argument, this work explores the applied value of Amari-Chentsov updates. 
