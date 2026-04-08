@@ -28,224 +28,259 @@ where $n$ is the same size and $p$ is the tunable parameter count.
 
 ## Mathematical argument 
 
-For $X_{1:n} = (X_1, X_2, \ldots, X_n)$, 
-observe that $\hat \theta_n = \arg\max_\theta n^{-1} \log f_X(X; \theta) $
-$ = \arg\max_\theta n^{-1} \log f_X(X_n; \theta) + n^{-1} \log f_X(X_{1:n-1}; \theta) $ 
-$ \approx_{a.s.} \arg\max_\theta n^{-1} f_X(X_n; \theta) + \frac{n-1}{2n} (\theta - \theta_{n-1})^T \mathcal I(\theta_{n-1}) (\theta - \theta_{n-1}) $ 
-assuming $X_i \sim_{iid} f_X(x; \theta_{n-1}) $ and $n-1$ large. 
-So, for each new observation, we'll use estimator $\hat \theta_n = \arg_max_\theta n^{-1} \log f_X(X_n; \theta) - \frac{n-1}{2n}(\theta - \hat \theta_{n-1})^T \hat{\mathcal I}(\theta_{n-1}) (\theta - \hat \theta_{n-1}) $.
-Some practical accommodations:
-1. $n$ may be given a max value to ensure learning doesn't slow too much.
-2. If initial information in $\hat{\mathcal I}(\theta_0)$ is very valuable, it may be up-scaled to simulated to protect it.
+The online core keeps its Fisher Information Matrix (FIM) estimate relevant with a score-only exponential moving average (EMA) process. 
+This is the mathematically coherent object for our application: it is genuinely online, only requires the current observation's score, and admits a rigorous stochastic-process interpretation. 
 
-To maintain an up-to-date estimate for $\hat{\mathcal I}(\theta_{n-1})$ can be done rigorously, 
-but requires some numerical and statistical heuristics. 
-In this work, we assume the initial model at $\theta_0$ was fit with a large dataset, 
-so both $\hat \theta_0$ and $\hat{\mathcal I}(\theta_0)$ are accurate. 
-Using a Talor series expansion, we see that 
-$\left[ \mathcal I(\theta + d\theta) \right]_{ij} = \mathbb E_{\theta + d\theta} \partial_i \ell \partial_j \ell $
-$ \approx \mathbb E_\theta \partial_i \ell \partial_j \ell + \mathbb E_\theta \partial_i \ell \partial_j \ell \partial_k \ell d \theta^k =: \left[ \mathcal I(\theta) + C : d\theta \right]_{ij} $, 
-assuming normal increments, $\partial_i := \partial/\partial \theta_i$, and $\ell := \log f_X(X_{1:n-1}; \theta) $.
-Notice that $C$ is the Amari-Chentsov tensor.
-Practical accommodations:
-1. We're assuming Gaussian increments. This is argued via locally via Local Asymptotic Normality (LAN), but not globally.
-2. $C$ is a rank-3 tensor of likely unmanagable size, so we won't estimate it directly. Instead, we'll estimate $C : d\theta$.
-3. $\widehat{C : d\theta}$ is a high-variance estimator. We'll use a moving average over observations and shrink its effect when variance is large.
-4. This update only works if our initial $\mathcal I(\theta_0)$ estimate is accurate, so we assume the initial model is fit on a very large dataset. In application, models don't ship with an $\mathcal I(\theta_0)$ estimate, so we'll have to manually sample our own data from $\theta_0$ as an initialization step.
+Formally, the rigorous construction is indexed by a small parameter $\delta > 0$. 
+As $\delta \to 0^+$, let $n_\delta \to \infty$ be the effective sample size induced by the EMA memory horizon, let $\pi_\delta \to 0$ be the EMA gain, and let $\pi_{k,\delta} \in [0,1]$ be the control variable used in the online update itself. 
+In application we suppress $\delta$ and expose only a single user-facing argument `pi`, but the asymptotic argument below keeps these roles separate.
 
-To argue Gaussian increments with an asymptotic approximation, 
-it's not enough to have a single observation $X_n \sim f_X(x; \theta_n)$, 
-otherwise its effect will average-out to zero. 
-Instead, we argue a proportion $\pi$ of the sample is distributed according to $\theta_n$. 
-To achieve this, we assume a mixture model where $(X_i | M_i) \sim_{iid} f_X(x; \theta_n)^{M_i} f_X(x; \theta_{n-1})^{1-M_i}$,
- $M_i \in \{0,1\}$, and $\mathbb P [M_i = 1] = \pi$. 
-In RL experiments, we know which observations come before and after a model update, so each $M_i$ is observed. 
-
-To argue Gaussian increments, we assume a consistently large batch of new observations. 
-Since we use an asymptotic approximation, any finite batch size will average to zero, 
-so instead we insist on a proportion $\pi$ of samples that are new. 
-Then, in application, we'll drive this proportion down to a single observation, 
-which will degrade normality (safely) and give us a substantial VRAM savings.
-1. Assume a mixture model depending on Bernoulli $M_i$ with $\mathbb P [M_i = 1] = \pi$. 
-$X_i$ observations with $M_i = 0$ from before a model update so $(X_i | M_i = 0) \sim_{iid} f_X(x; \theta)$, 
-while $M_i = 1$ are from after so $(X_i | M_i = 1) ## Software engineering strategy
-
-\sim_{iid} f_X(x; \theta + d\theta)$
-Since we control when model updates occur, all $M_i$ values are observed and known. 
-$\pi > 0$ is constant, so our asmyptotic distribution will have a non-zero effect from new data. 
-The estimate is asymptotically $\hat \theta_0 = \arg\max_{d\theta} \log f_X(X; \theta+d\theta) - (1-\pi)/2 d\theta^T \mathcal I d \theta$, so has an approximately Gaussian distribution. 
-2. In peronalized AI, VRAM is precious, 
-so we explore the effect of taking $\pi$ so low that our obseved estimate has only 1 sample. 
-It is _not_ Gaussian distributed, but does enjoy some degree of approximate safety, as described below.
-
-Here, we argue that a slightly elevated $\pi$ value causes single-observation updates to be safe and productive, 
-under mild regularity conditions.
-Assume $\log f_X(X_n; \theta)$ is twice continuously differentiable, 
-that $\mathcal I(\theta)$ is positive definite on the update subspace, 
-and that the score admits the local expansion
+For score
 ```math
-\mathbb E_{\theta + d\theta}[\nabla_\theta \log f_X(X_n; \theta)]
-= \mathcal I(\theta) d\theta + r(d\theta),
+s_{k,\delta} := \nabla_\theta \ell(X_{k,\delta}; \theta_{k,\delta}),
+```
+define the EMA auxiliary score process
+```math
+\bar s_{k,\delta} = (1-\pi_\delta)\bar s_{k-1,\delta} + \pi_\delta s_{k,\delta},
 \qquad
-\|r(d\theta)\|_{\mathcal I^{-1}} = o(\|d\theta\|_{\mathcal I}).
+Y_{k,\delta} := \sqrt{\frac{2-\pi_\delta}{\pi_\delta}} \, \bar s_{k,\delta}.
 ```
-Further, assume $\lambda$ is chosen so that the regularized curvature
+Assume:
+1. the score has uniformly bounded third absolute moment,
+2. the drift field $b(\theta)$ and FIM $\mathcal I(\theta)$ are Lipschitz continuous, and
+3. the parameter moves slowly across one EMA memory horizon, in the sense that
 ```math
--\nabla_\theta^2 \log f_X(X_n; \theta) + \lambda \mathcal I(\theta)
-```
-dominates $c_0 \lambda \mathcal I(\theta)$ for some constant $c_0 \in (0,1]$, 
-either deterministically or with high probability under a tail bound on the Hessian. 
-Then our single-observation estimator is locally
-```math
-\widehat{d\theta}
-\approx
-\arg\max_{d\theta}
-\left\{
-\log f_X(X_n; \theta+d\theta) - 2^{-1}\lambda d\theta^T \mathcal I d\theta
-\right\}
-\approx
-\arg\max_{d\theta}
-\left\{
-d\theta^T \nabla \log f_X
-+ 2^{-1} d\theta^T \nabla^2 \log f_X d\theta
-- 2^{-1}\lambda d\theta^T \mathcal I d\theta
-\right\}.
-```
-Its first-order condition yields
-```math
-\begin{aligned}
-0
-&= \nabla \log f_X + \nabla^2 \log f_X \widehat{d\theta} - \lambda \mathcal I \widehat{d\theta}, \\
-\widehat{d\theta}^T(-\nabla^2 \log f_X + \lambda \mathcal I)\widehat{d\theta}
-&= \widehat{d\theta}^T \nabla \log f_X.
-\end{aligned}
-```
-
-On the event that $-\nabla^2 \log f_X + \lambda \mathcal I \succeq c_0 \lambda \mathcal I$, we obtain
-```math
-\begin{aligned}
-c_0 \lambda \| \widehat{d\theta} \|_{\mathcal I}^2
-&\leq \widehat{d\theta}^T(-\nabla^2 \log f_X + \lambda \mathcal I)\widehat{d\theta} \\
-&= \widehat{d\theta}^T \nabla \log f_X \\
-&= (\mathcal I^{1/2} \widehat{d\theta})^T (\mathcal I^{-1/2} \nabla \log f_X) \\
-&\leq \| \widehat{d\theta} \|_{\mathcal I} \| \nabla \log f_X \|_{\mathcal I^{-1}},
-\end{aligned}
-```
-so
-```math
-\| \widehat{d\theta} \|_{\mathcal I}
-\leq
-c_0^{-1}\lambda^{-1} \| \nabla \log f_X \|_{\mathcal I^{-1}}.
-```
-Thus the information-distance traveled by a single update is controlled by the score magnitude and shrinks like $\lambda^{-1}$ up to the curvature constant $c_0^{-1}$. 
-Under the local score expansion above, large $\lambda$ also keeps the bias term small indirectly by shrinking $d\theta$. 
-So, an intelligently chosen $\lambda$ provides a direct safety knob: larger values make single-observation updates safer, while smaller values trade safety for responsiveness. 
-The mixing proportion $\pi$ is the corresponding data-side knob that determines how conservative this regularization must be. 
-
-## Amari-Chentsov numerical stratgy 
-
-We won't try to store Amari-Chentsov matrix $C_{ijk} = \mathbb E_\theta \partial_i \ell \partial_j \ell \partial_k \ell$, 
-because it's a large rank 3 tensor.
-Instead, we'll run a moving average over $d \theta$ observations and estaimte $C_{ijk} d\theta^k$. 
-$C_{ijk} d\theta^k$ will still be a high-variance estimate, 
-so we'll penalize its effect heavily whenever the signal-to-noise ratio is too too.
-
-**Estimation**
-
-For every new $d\theta$ observation, we'll improve our $C_{ijk} d\theta^k$ esimate. 
-Since it's a symmetric matrix, not necessarily PSD nor NSD, 
-we'll track two PSD estimates, the positive part $P$ and the negative part $N$. 
-So, our estimate will be $PP^T - NN^T$. 
-We'll leverage our existing `src/core/lanczos.py` package to update $P$ and $N$.
-
-Notice that $\partial_k d\theta^k$ is a scalar, positive or negative. 
-If $\partial_k d\theta^k > 0$, 
-then we'll add $(\partial_k d\theta^k) \partial_i \ell \partial_j \ell$ to our $PP^T$ estimate.
-if $\partial_k d\theta^k < 0$, 
-then we'll add $(\partial_k d\theta^k) \partial_i \ell \partial_j \ell$ to our $NN^T$ estimate.
-In either case, $.ssr_n$ continues to increment regardless.
-
-**SNR estimation**
-
-To estimate signal-to-noise ratio efficiently, 
-we'll measure it on the per-observation contracted matrix contribution rather than on the full rank-3 tensor. 
-For a new observation with score $g := \nabla \ell$ and update $d\theta$, define
-```math
-X := (g^T d\theta) g g^T.
-```
-Then $X$ is exactly the single-sample contribution to $C_{ijk} d\theta^k$, 
-and its squared Frobenius norm is
-```math
-\|X\|_F^2 = (g^T d\theta)^2 \|g\|_2^4.
-```
-So, we can estimate signal and noise online with a moving average of only low-rank matrices and scalars. 
-Let $M_t$ denote the current moving-average estimate of $C : d\theta$, 
-stored as $P P^T - N N^T$, and let $q_t$ denote the moving average of $(g^T d\theta)^2 \|g\|_2^4$. 
-Then a practical Frobenius-scale variance estimate is
-```math
-\widehat{\mathrm{Var}}_F(X) := \max(q_t - \|M_t\|_F^2, 0),
-```
-and the effective signal-to-noise ratio is
-```math
-\mathrm{SNR}
+\Delta_{k,\delta}
 :=
-\frac{\|M_t\|_F}{
-\sqrt{\widehat{\mathrm{Var}}_F(X) / n_{\mathrm{ssr}} + \varepsilon}
-},
-```
-where $n_{\mathrm{ssr}}$ is the cumulative sample count already used elsewhere in the SSR estimator and $\varepsilon > 0$ is a small numerical stabilizer. 
-This is efficient because each update only needs one inner product $g^T d\theta$, one gradient norm $\|g\|_2^2$, and the Frobenius norm of the current low-rank estimate. 
-For $M_t = P P^T - N N^T$, that Frobenius norm can be computed from only small Gram matrices:
-```math
-\|M_t\|_F^2
+\sum_{j \geq 0}
+\pi_\delta (1-\pi_\delta)^j
+\|\theta_{k-j,\delta} - \theta_{k,\delta}\|
 =
-\|P^T P\|_F^2 + \|N^T N\|_F^2 - 2 \|P^T N\|_F^2.
+O(\delta),
 ```
-So, the SNR can be monitored online without ever materializing the full Amari-Chentsov tensor or even the full contracted matrix. 
+so the frozen-parameter approximation remains accurate locally.
 
-**Application**
-
-The SNR estimate above will determine how strongly Amari-Chentsov updates are allowed to perturb the Fisher estimate. 
-Introduce hyperparameter $\rho > 0$, interpreted as the signal-to-noise multiple required before the correction has substantial effect, and define
+Then, for frozen $\theta$, a weighted Lindeberg-Feller argument gives
 ```math
-\beta_t
+Y_{k,\delta} \Rightarrow \mathcal N(0, \mathcal I(\theta)),
+```
+and here is the key proof sketch. Under frozen $\theta$, the scores are iid with mean zero and covariance $\mathcal I(\theta)$. 
+Unrolling the EMA gives
+```math
+Y_{k,\delta}
+=
+\sum_{j \geq 0} w_{j,\pi_\delta} s_{k-j,\delta},
+\qquad
+w_{j,\pi}
 :=
-\frac{1}{1 + \rho / (\mathrm{SNR}_t + \varepsilon)}.
+\sqrt{\pi(2-\pi)}(1-\pi)^j.
 ```
-Then the adjusted information estimate is
+These weights satisfy
 ```math
-\widetilde{\mathcal I}_t
-:=
-\mathcal I_t + \beta_t M_t,
+\sum_{j \geq 0} w_{j,\pi}^2
+=
+\pi(2-\pi)\sum_{j \geq 0}(1-\pi)^{2j}
+=
+1,
+\qquad
+\max_j |w_{j,\pi}|
+=
+\sqrt{\pi(2-\pi)}
+\to 0
 ```
-where $\mathcal I_t \approx A A^T + \mathrm{diag}(r)$ is the current Fisher estimate and $M_t \approx P P^T - N N^T$ is the contracted Amari-Chentsov correction. 
-Since $M_t$ is only symmetric, $\widetilde{\mathcal I}_t$ need not be PSD. 
-So, we will project it back into PSD space in the low-rank span already defined by the current factors. 
+as $\pi \to 0$. So, for any fixed test vector $v$, the scalar projection
+```math
+v^T Y_{k,\delta} = \sum_{j \geq 0} w_{j,\pi_\delta} \, v^T s_{k-j,\delta}
+```
+is a weighted triangular array with total variance
+```math
+\sum_{j \geq 0} w_{j,\pi_\delta}^2 \, v^T \mathcal I(\theta) v
+=
+v^T \mathcal I(\theta) v.
+```
+If the score has bounded third absolute moment, then the Lindeberg condition follows from
+```math
+\sum_j
+\mathbb E\!\left[
+(w_{j,\pi_\delta} v^T s_{k-j,\delta})^2
+\mathbf 1_{\{|w_{j,\pi_\delta} v^T s_{k-j,\delta}|>\varepsilon\}}
+\right]
+\leq
+\frac{\max_j |w_{j,\pi_\delta}|}{\varepsilon}
+\sup_{k,\delta}\mathbb E |v^T s_{k,\delta}|^3
+\cdot
+\sum_j w_{j,\pi_\delta}^2
+\to 0.
+```
+Hence each projection converges to
+```math
+v^T Y_{k,\delta} \Rightarrow \mathcal N(0, v^T \mathcal I(\theta) v),
+```
+and the Cramer-Wold device yields the vector limit
+```math
+Y_{k,\delta} \Rightarrow \mathcal N(0, \mathcal I(\theta)).
+```
+Under the slow-motion assumption the same remains locally valid along the online trajectory up to approximation error $O(\sqrt{\pi_\delta} + \delta)$. 
+So, although each update uses only one observation, the normalized EMA score behaves like a Gaussianized auxiliary process with covariance $\mathcal I(\theta_{k,\delta})$. 
 
-First, form the temporary basis
+This motivates the online update model
 ```math
-B := [A \;\; P \;\; N],
+\theta_{k+1,\delta}
+=
+\theta_{k,\delta}
++
+\pi_{k,\delta} \frac{b(\theta_{k,\delta})}{n_\delta}
++
+\sqrt{\frac{\pi_{k,\delta}}{n_\delta}} \, \mathcal I^{-1}(\theta_{k,\delta}) Y_{k,\delta},
 ```
-then compute a reduced QR factorization $B = QR$. 
-If each factor uses rank at most $r$, then $Q$ has shape $p \times k$ with $k \leq 3r$, 
-so all remaining linear algebra occurs in a small GPU-friendly subspace. 
-Within that basis, compute
+where the covariance approximation inherits the same $O(\sqrt{\pi_\delta} + \delta)$ error. 
+Equivalently, for a local displacement $d\theta_{k,\delta}$,
 ```math
-S := Q^T \widetilde{\mathcal I}_t Q.
+\hat \theta_{k+1,\delta} - \theta_{k,\delta}
+\approx
+\mathcal N \left(
+\pi_{k,\delta} d\theta_{k,\delta},
+\;
+\pi_{k,\delta} \mathcal I^{-1}(\theta_{k,\delta}) / n_\delta
+\right).
 ```
-This matrix is only $k \times k$, and can be assembled from the stored low-rank factors without materializing any full $p \times p$ matrix. 
-Next, diagonalize
+This gives the same qualitative scaling as the large-batch EWC argument, but now with true single-observation memory usage. 
+
+To construct the diffusion limit, define the triangular-array increments
 ```math
-S = U \Lambda U^T,
+\Xi_{k,n_\delta}^{(\delta)}
+:=
+\pi_{k,\delta} \frac{b(\theta_{k,\delta})}{n_\delta}
++
+\sqrt{\frac{\pi_{k,\delta}}{n_\delta}} \, \mathcal I^{-1}(\theta_{k,\delta}) Y_{k,\delta},
 ```
-clip negative eigenvalues to obtain $\Lambda_+$, and retain only the top $r$ nonnegative directions. 
-Finally, reconstruct the compressed PSD factor
+so that $\theta_{k+1,\delta} - \theta_{k,\delta} = \Xi_{k,n_\delta}^{(\delta)}$. 
+With respect to the natural filtration $\mathcal F_{k,\delta}$,
 ```math
-A_{\mathrm{new}} := Q U_r \Lambda_{+,r}^{1/2}.
+\mathbb E[\Xi_{k,n_\delta}^{(\delta)} \mid \mathcal F_{k,\delta}]
+=
+\pi_{k,\delta} \frac{b(\theta_{k,\delta})}{n_\delta}
++
+o(n_\delta^{-1}),
 ```
-This yields a new low-rank Fisher factor of shape $p \times r$, 
-so the expanded $p \times k$ representation is only temporary and rank never grows across observations. 
-If useful in practice, any discarded positive spectral mass may be absorbed into the residual diagonal term rather than dropped. 
+and
+```math
+\mathrm{Cov}[\Xi_{k,n_\delta}^{(\delta)} \mid \mathcal F_{k,\delta}]
+=
+\pi_{k,\delta} \frac{\mathcal I^{-1}(\theta_{k,\delta})}{n_\delta}
++
+O\!\left(\frac{\sqrt{\pi_\delta}+\delta}{n_\delta}\right).
+```
+Assume also that $\pi_{\lfloor n_\delta t \rfloor,\delta} \to \pi_t$ locally uniformly on compact time intervals. 
+If $k = \lfloor n_\delta t \rfloor$, the maximal increment norm vanishes, the predictable drift sums converge to
+```math
+\sum_{j < n_\delta t}
+\mathbb E[\Xi_{j,n_\delta}^{(\delta)} \mid \mathcal F_{j,\delta}]
+\to
+\int_0^t \pi_s b(\Theta_s)\,ds,
+```
+and the predictable quadratic variation converges to
+```math
+\sum_{j < n_\delta t}
+\mathrm{Cov}[\Xi_{j,n_\delta}^{(\delta)} \mid \mathcal F_{j,\delta}]
+\to
+\int_0^t \pi_s \mathcal I^{-1}(\Theta_s)\,ds.
+```
+Thus standard triangular-array martingale convergence yields the diffusion limit
+```math
+d\Theta_t
+=
+\pi_t b(\Theta_t)dt
++
+\sqrt{\pi_t}\,\mathcal I^{-1/2}(\Theta_t)dW_t.
+```
+Taking $\delta \to 0$ is what makes the frozen-parameter error disappear and turns the discrete EMA process into this continuous stochastic evolution.
+
+The sufficient statistic should therefore be updated by EMA, not by a long-running arithmetic average. 
+Define the per-observation Fisher contribution
+```math
+Z_{k,\delta} := s_{k,\delta} s_{k,\delta}^T,
+```
+and update
+```math
+\bar{\mathcal I}_{k,\delta}
+:=
+(1-\pi_\delta)\bar{\mathcal I}_{k-1,\delta} + \pi_\delta Z_{k,\delta}.
+```
+In implementation, $\bar{\mathcal I}_{k,\delta}$ will still be stored in the low-rank-plus-diagonal style already used by SSR, 
+but it now estimates a recency-weighted FIM rather than a cumulative average over all past data. 
+This exponential forgetting is essential: it keeps the statistic relevant while $\theta_{k,\delta}$ drifts, 
+and it is what aligns the implementation with the stochastic-process model above. 
+Operationally, this EMA behavior should be realized through an `mfi_alternate` operator passed into Lanczos rather than by rewriting the existing `memorize` routine. 
+
+At step $k$, the fit loop processes a single observation and uses the current SSR regularizer built from $\bar{\mathcal I}_{k,\delta}$. 
+The user may pass a fixed $\pi := \pi_{k,\delta}$, but the default should be the online optimal choice derived below. 
+Let the true next generating point be
+```math
+\theta_{k+1,\delta}^* := \theta_{k,\delta} + d\theta_{k,\delta}.
+```
+Under the Gaussian approximation above,
+```math
+\mathbb E \| \hat \theta_{k+1,\delta} - \theta_{k+1,\delta}^* \|^2
+\approx
+\| (\pi_{k,\delta} - 1)d\theta_{k,\delta} \|^2
++
+\pi_{k,\delta} \, \mathrm{tr}\left[\mathcal I^{-1}(\theta_{k,\delta}) / n_\delta\right].
+```
+Differentiating in $\pi_{k,\delta}$ gives the one-step MSE-optimal rule
+```math
+\pi_{k,\delta}^*
+=
+1
+-
+\mathrm{tr}\left[\mathcal I^{-1}(\theta_{k,\delta}) / n_\delta\right]
+/
+\left(2 \| d\theta_{k,\delta} \|^2 + \varepsilon \right),
+\qquad
+\varepsilon > 0.
+```
+In practice, clip $\pi_{k,\delta}^*$ to $[0,1]$ and estimate its ingredients from the online diagnostics already tracked by the agent. 
+If the user supplies `pi`, use that value directly. 
+Otherwise, use the clipped online estimate of $\pi_{k,\delta}^*$ as the default. 
+
+This optimal rule changes the natural scaling of the controlled process. 
+Write the true generating point as
+```math
+\theta_{k,n_\delta}^{*,\delta}
++
+\frac{b(\theta_{k,n_\delta}^{*,\delta})}{\sqrt{n_\delta}},
+```
+so the observed recursion becomes
+```math
+\theta_{k+1,n_\delta}^{*,\delta}
+=
+\theta_{k,n_\delta}^{*,\delta}
++
+\pi_{k,\delta}^* \frac{b(\theta_{k,n_\delta}^{*,\delta})}{\sqrt{n_\delta}}
++
+\sqrt{\pi_{k,\delta}^* \, \mathcal I^{-1}(\theta_{k,n_\delta}^{*,\delta}) / n_\delta}\,\xi_{k,\delta},
+\qquad
+\xi_{k,\delta} \approx \mathcal N(0, I_p).
+```
+If $k = \lfloor \sqrt{n_\delta} t \rfloor$, then the accumulated drift remains order one while the accumulated covariance is only order $n_\delta^{-1/2}$. 
+So the stochastic term vanishes asymptotically and the controlled path limit is
+```math
+d\Theta_t^*
+=
+\pi_t^* b(\Theta_t^*)dt.
+```
+For finite data we retain the noise and model the process by the small-noise SDE
+```math
+d\Theta_t^{\varepsilon,\delta}
+=
+\pi_t^* b(\Theta_t^{\varepsilon,\delta})dt
++
+\sqrt{\varepsilon \pi_t^*}\,\mathcal I^{-1/2}(\Theta_t^{\varepsilon,\delta}) dW_t,
+\qquad
+\varepsilon = n_\delta^{-1/2}.
+```
+We do not implement either SDE directly. 
+Their role in this document is to show that the EMA-based online design and the default $\pi_{k,\delta}^*$ rule are mathematically coherent, not merely heuristic. 
 
 ## Constraints
 
@@ -258,7 +293,7 @@ If useful in practice, any discarded positive spectral mass may be absorbed into
 
 1. **`__get_get_grad_generator` variant**: `SSRAgent` recalculates gradients upon `memorize` calls, 
 because storing them takes too much memory for large batches. 
-Fortunately, online learning needs only apply a single, already chached gradient. 
+Fortunately, online learning needs only apply a single, already cached gradient. 
 For `OnlineSSRAgent`, please define `__get_get_grad_generator` to return `get_grad_generator` 
 which returns `grad_generator`, a generator of one and only existing current gradient. 
 It's assumed that gradients have already been calculated. 
@@ -267,14 +302,26 @@ If they haven't, throw an error.
 While `act` is allowed to have useful side effects (like populating the replay buffer), 
 the abstract definition returns a reward to be used in fitting. 
 This allows all activations to be produced precisely once per action and optimization.
-3. **`amari_chentsov_update` function**: `OnlineSSRAgent` needs this non-abstract function to facilitate the Amari-Chentsov update as described in the above `Amari-Chentsov numerical stratgy` section.
+3. **`mfi_alternate` EMA rule**: Do not rewrite `SSRAgent.memorize`. 
+Instead, provide an `mfi_alternate` function for use with `src/core/lanczos.py:l_lanczos`. 
+This function should encode the EMA-weighted Fisher update rule while preserving the existing `memorize` machinery. 
+Concretely, if the current observation contributes score $s_t$ and therefore $Z_t = s_t s_t^T$, then the operator used by Lanczos should act like the recency-weighted FIM
+```math
+\bar{\mathcal I}_t
+=
+(1-\pi)\bar{\mathcal I}_{t-1} + \pi Z_t.
+```
+So, for a vector $x$, `mfi_alternate(x)` should represent multiplication by the EMA-updated Fisher estimate rather than by the cumulative-average Fisher estimate. 
+This keeps the implementation aligned with the online theory while reusing the existing low-rank Lanczos pipeline. 
 4. **`fit` function**: Override the existing `SSRAgent.fit` function in `OnlineSSRAgent`. 
-Only keep arguments `self`, `iters,` and `grad_clip`, since `pi` is no-longer batch-optimal. 
 Have these arguments:
-   1. `iters` defines how many times the one observation is iterated upon. Zero is an acceptable number, since sometimes we're just memorizing.
-   2. `pi` needs to be an optional float argument or `0.00001` as default. 
-   3. `memorize` (boolean) determines whether `memorize` is called. If `True` and `iters > 1`, then only memorize on the final iteration.
-   4. `amari_chentsov_update` (boolean) determines whether to run `amari_chentsov_update`. If `True` and `iters > 1`, then only update on the final iteration. 
-The `fit` loop executes as:
-TODO pick-up here
-
+   1. `iters` defines how many times the current observation is iterated upon. Zero is acceptable, since sometimes we're only memorizing.
+   2. `pi` is an optional float override. If omitted, compute the clipped online estimate of $\pi^*$ from the diagnostics implied above.
+   3. `memorize` (boolean) determines whether the EMA-aware Fisher memorization is applied. If `True` and `iters > 1`, only memorize on the final iteration.
+   4. `grad_clip` remains optional as in the base class.
+The fit loop should:
+   1. obtain one new observation via `act`,
+   2. compute the single-observation loss,
+   3. combine the immediate loss with the SSR regularizer using the current `pi`,
+   4. backpropagate and apply `optimizer.step()`, and
+   5. if `memorize` is enabled, call the existing memorization pathway with the EMA-aware `mfi_alternate` behavior so the Fisher estimate stays recency-weighted without recomputing activations.

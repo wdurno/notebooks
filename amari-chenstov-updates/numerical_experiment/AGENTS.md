@@ -92,7 +92,7 @@ The function should return `X(theta)`.
 ## Sampling distribution 
 
 There is no need to simulate any underlying distribution. 
-Instead, we are statistically modelling score distributions. 
+Instead, we are statistically modelling our auxiliary score distributions, as described in [mathematical_overview](../mathematical_overview.ipynb). 
 We'll _lean into_ our SDE results, and sample all scores from a multivariate Gaussian distribution. 
 For a model with parameter `theta`, it will samples scores from `theta + X(theta)`. 
 An easy way to do this is to sample from `\mathcal N ( 0, g_ij(theta + X(theta)))`. 
