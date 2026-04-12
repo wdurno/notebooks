@@ -191,6 +191,7 @@ class PiCarGymEnv:
         self,
         *,
         model: Any,
+        trainer: Any | None = None,
         reward_scorer: Any,
         picar_client: Any,
         speech_stream: Any | None = None,
@@ -200,6 +201,7 @@ class PiCarGymEnv:
         """Construct the environment with externally supplied runtime services."""
 
         self.model = model
+        self.trainer = trainer
         self.reward_scorer = reward_scorer
         self.picar_client = picar_client
         self.speech_stream = speech_stream
@@ -412,7 +414,7 @@ class PiCarGymEnv:
             },
         )
         self.model.replay_buffer.add(transition)
-        training_summary = self._maybe_train()
+        training_summary = self._maybe_train(transition=transition)
 
         frame_path = None
         if self.paths is not None and self.config.write_frame_blobs:
@@ -577,7 +579,7 @@ class PiCarGymEnv:
         alpha = min(max(step_index, 0), schedule.t_ramp_steps) / float(schedule.t_ramp_steps)
         return float(schedule.t_start + alpha * (schedule.t_end - schedule.t_start))
 
-    def _maybe_train(self) -> TrainingSummary:
+    def _maybe_train(self, *, transition: Transition) -> TrainingSummary:
         """Run periodic policy updates once replay has enough data."""
 
         replay_size = len(self.model.replay_buffer)
@@ -594,6 +596,15 @@ class PiCarGymEnv:
                 batch_size=training.batch_size,
                 fit_iters=training.fit_iters,
             )
+            if self.trainer is not None:
+                return self.trainer.train(
+                    model=self.model,
+                    transition=transition,
+                    training=training,
+                    replay_size=replay_size,
+                    effective_fit_iters=effective_fit_iters,
+                    step_index=self.step_index,
+                )
             pi = 0.0
             loss = 0.0
             for _ in range(max(1, int(training.epochs))):

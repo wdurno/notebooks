@@ -15,7 +15,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from env.config import EnvConfig, TrainingConfig
 from env.picar_env import PiCarGymEnv
-from env.schemas import QueuedSpeechEvent, RewardResult
+from env.schemas import QueuedSpeechEvent, RewardResult, TrainingSummary
 from model.schemas import ModelActionOutput
 
 
@@ -185,6 +185,24 @@ class FakeSpeaker:
         self.spoken.append(text)
 
 
+class FakeTrainer:
+    def __init__(self):
+        self.calls = []
+
+    def train(self, *, model, transition, training, replay_size, effective_fit_iters, step_index):
+        self.calls.append(
+            {
+                "model": model,
+                "transition": transition,
+                "training": training,
+                "replay_size": replay_size,
+                "effective_fit_iters": effective_fit_iters,
+                "step_index": step_index,
+            }
+        )
+        return TrainingSummary(triggered=True, replay_size=replay_size, pi=0.2, loss=0.8, memorized=1)
+
+
 def test_picar_env_step_records_transition_and_training(tmp_path):
     model = FakeModel()
     reward_scorer = FakeRewardScorer()
@@ -272,6 +290,47 @@ def test_picar_env_memorize_minus_one_clears_all_replay(tmp_path):
     assert model.replay_buffer.clear_calls == [2]
     assert len(model.replay_buffer) == 0
     assert info["training"].memorized == 2
+
+
+def test_picar_env_uses_training_adapter_when_provided(tmp_path):
+    model = FakeModel()
+    trainer = FakeTrainer()
+    reward_scorer = FakeRewardScorer()
+    client = FakePiCarClient()
+    config = EnvConfig(
+        data_dir=tmp_path,
+        training=TrainingConfig(
+            train_every_steps=1,
+            min_replay_size=1,
+            batch_size=3,
+            fit_iters=4,
+            memorize_every_steps=1,
+            memorize_n=1,
+            memorize_random_idx=False,
+            t_ramp_steps=10,
+        ),
+    )
+    env = PiCarGymEnv(
+        model=model,
+        trainer=trainer,
+        reward_scorer=reward_scorer,
+        picar_client=client,
+        config=config,
+    )
+
+    env.reset()
+    _, _, _, info = env.step()
+    env.close()
+
+    assert model.fit_calls == []
+    assert model.memorize_calls == []
+    assert len(trainer.calls) == 1
+    assert trainer.calls[0]["effective_fit_iters"] == 4
+    assert trainer.calls[0]["replay_size"] == 1
+    assert trainer.calls[0]["step_index"] == 0
+    assert trainer.calls[0]["transition"].reward == 3.0
+    assert info["training"].pi == 0.2
+    assert info["training"].memorized == 1
 
 
 def test_picar_env_penalizes_malformed_json_and_suppresses_speech(tmp_path):

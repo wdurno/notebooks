@@ -73,9 +73,12 @@ class SnapshotStore:
         model.load_state_dict(model_state, strict=False)
 
         ssr_state = payload.get("ssr_state")
-        has_ssr_state = bool(ssr_state)
+        has_ssr_state = _has_material_ssr_state(ssr_state)
         if has_ssr_state and hasattr(model, "load_ssr_dict"):
             model.load_ssr_dict(ssr_state)
+        post_snapshot_load = getattr(model, "post_snapshot_load", None)
+        if callable(post_snapshot_load):
+            post_snapshot_load()
         return SnapshotLoadResult(
             path=Path(snapshot_path),
             loaded_trainable_keys=loaded_keys,
@@ -168,6 +171,21 @@ def _collect_replay_metadata(replay_buffer: Any) -> dict[str, Any]:
         if hasattr(replay_buffer, key):
             metadata[key] = int(getattr(replay_buffer, key))
     return metadata
+
+
+def _has_material_ssr_state(ssr_state: Any) -> bool:
+    if not isinstance(ssr_state, dict):
+        return False
+    material_keys = (
+        "ssr_low_rank_matrix",
+        "ssr_residual_diagonal",
+        "ssr_center",
+        "ssr_prev_center",
+        "ssr_weight_sq_sum",
+        "ssr_effective_n",
+        "ssr_inv_trace",
+    )
+    return any(ssr_state.get(key) is not None for key in material_keys)
 
 
 def _snapshot_sort_key(path: Path) -> tuple[datetime, float, str]:

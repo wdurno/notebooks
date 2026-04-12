@@ -15,6 +15,7 @@ from .action_space import (
     tensor_to_action_vector,
 )
 from .config import ModelConfig, default_demo_root, default_model_dir
+from .online_picar_agent import OnlinePiCarActionModel
 from .picar_agent import PiCarActionModel
 from .replay_buffer import TransitionReplayBuffer
 from .schemas import ModelActionOutput, ModelObservation, Transition, TransitionBatch
@@ -25,6 +26,7 @@ __all__ = [
     "ModelActionOutput",
     "ModelConfig",
     "ModelObservation",
+    "OnlinePiCarActionModel",
     "PiCarActionModel",
     "Transition",
     "TransitionBatch",

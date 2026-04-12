@@ -14,6 +14,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--phase", choices=("init", "tune", "retask"), required=True)
     parser.add_argument(
+        "--update-mode",
+        choices=("auto", "batch", "online"),
+        default="auto",
+        help="Choose the training backend (`auto`: init=batch, tune/retask=online).",
+    )
+    parser.add_argument(
         "--picar-host",
         type=str,
         default=None,
@@ -140,6 +146,7 @@ def main() -> int:
 
     config = ExperimentRunConfig(
         phase=args.phase,
+        update_mode=args.update_mode,
         picar_host=args.picar_host,
         deterministic_coding=bool(args.deterministic_coding),
         history_window=int(args.history_window),

@@ -6,11 +6,13 @@ from typing import Literal
 
 
 ExperimentPhase = Literal["init", "tune", "retask"]
+ExperimentUpdateMode = Literal["auto", "batch", "online"]
 
 
 @dataclass(frozen=True)
 class ExperimentRunConfig:
     phase: ExperimentPhase
+    update_mode: ExperimentUpdateMode = "auto"
     picar_host: str | None = None
     deterministic_coding: bool = False
     history_window: int = 12

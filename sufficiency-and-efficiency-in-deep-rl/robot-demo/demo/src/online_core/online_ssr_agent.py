@@ -131,7 +131,7 @@ class OnlineSSRAgent(SSRAgent):
         return None
 
     def memorize(self, pi=None, disable_tqdm=False):
-        del disable_tqdm
+        del disable_tqdm # kept only for SSRAgent interface compatibility; unused in the online EMA formulation 
         gradient = self._require_current_grad_vector().to(self.device)
         self._update_center_statistics()
         if self.ssr_model_dimension is None:

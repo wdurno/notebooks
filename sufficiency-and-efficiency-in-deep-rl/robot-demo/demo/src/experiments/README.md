@@ -41,6 +41,7 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 `experiment_interface.py` flags:
 
 - `--phase {init,tune,retask}`
+- `--update-mode {auto,batch,online}` (default `auto`; `init -> batch`, `tune/retask -> online`)
 - `--picar-host HOST:PORT` (optional CLI override for `PICAR_V_HOST`)
 - `--deterministic-coding` (disable sampling for policy text generation)
 - `--history-window INT` (default `12`)
@@ -88,6 +89,13 @@ Use `--log-level INFO` for concise runtime telemetry:
 
 Use `--log-level DEBUG` for deep diagnostics such as shared-model adapter state,
 raw generations, and prompt/token traces.
+
+Update-mode notes:
+
+- `auto` keeps the CLI stable while selecting the intended backend per phase.
+- `batch` uses the original replay/batch-optimized `PiCarActionModel`.
+- `online` uses `OnlinePiCarActionModel`, which consumes the freshly created transition each training trigger and applies the online SSR mechanics from `src/online_core/`.
+- In online mode, the familiar CLI flags stay available for experimental consistency, but replay-specific knobs such as `--batch-size`, `--fit-iters`, `--memorize-n`, and `--memorize-random-idx` are not central to the update rule.
 
 Context/image behavior notes:
 
@@ -207,6 +215,7 @@ Progress logging:
 - Use `--prompt-token-window` to enforce the same prompt cap during offline finalize on already-collected runs.
 
 `phase1_finalize` runs in optimization/train mode for offline fit and memorize.
+It always uses the batch SSR model, even if later online phases will load the resulting snapshot.
 
 ### 2) Policy tuning (`t` traverses 0 -> 1)
 
@@ -223,6 +232,7 @@ Behavior:
 
 - `t` traverses linearly in steps with visible logs.
 - Snapshot is written once per training step when fit and/or memorization occurs.
+- With the default `--update-mode auto`, phase 2 uses the online PiCar model and trainer adapter while keeping the same CLI entrypoint.
 - Malformed action JSON is penalized by `-1.0` and does not get spoken.
 - Rollout sampling runs in inference/eval mode; fit/memorize blocks switch to
   optimization/train mode and then return to eval mode.
@@ -251,6 +261,13 @@ Behavior:
 - New UUID directories are always created.
 - Prior snapshot loading is optional.
 - If `--fixed-t` is not passed, retask defaults to `t=1`.
+- With the default `--update-mode auto`, retask also uses the online PiCar model and trainer adapter.
+
+Snapshot compatibility notes:
+
+- Phase-1 snapshots remain valid initialization sources for phases 2 and 3.
+- Snapshot loading restores trainable weights plus any material SSR state.
+- After loading, target actor/critic networks are hard-synchronized from the restored live weights so bootstrapped value updates start from a stable, self-consistent target state.
 
 ## Output layout
 

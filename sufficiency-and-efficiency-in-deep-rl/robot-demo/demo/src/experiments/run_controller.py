@@ -23,7 +23,7 @@ try:
     )
     from src.env.picar_bridge import PiCarControlClient
     from src.env.speech_stream import ContinuousSpeechStream
-    from src.model import ModelConfig, PiCarActionModel, TransitionReplayBuffer
+    from src.model import ModelConfig, TransitionReplayBuffer
     from src.speech.audio_io import AudioIO
     from src.speech.config import SpeechConfig
     from src.speech.stt import FasterWhisperSTT
@@ -42,12 +42,13 @@ except ModuleNotFoundError:
     )
     from env.picar_bridge import PiCarControlClient
     from env.speech_stream import ContinuousSpeechStream
-    from model import ModelConfig, PiCarActionModel, TransitionReplayBuffer
+    from model import ModelConfig, TransitionReplayBuffer
     from speech.audio_io import AudioIO
     from speech.config import SpeechConfig
     from speech.stt import FasterWhisperSTT
     from speech.tts import PiperTTS
 
+from .modeling import build_experiment_model, build_training_adapter, resolve_update_mode
 from .observation_store import ObservationStore
 from .schemas import ExperimentRunConfig, ExperimentRunSummary
 from .snapshot_store import SnapshotStore, resolve_latest_snapshot_from_model_root, resolve_snapshot_path
@@ -161,12 +162,15 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
     observation_store = ObservationStore(data_run_dir)
     snapshot_store = SnapshotStore(model_run_dir, max_keep=config.snapshot_keep)
     training_config, training_enabled, t_is_traversing = build_training_config(config)
+    resolved_update_mode = resolve_update_mode(phase=config.phase, update_mode=config.update_mode)
     picar_host = _resolve_picar_host(config)
 
     started_at = datetime.now(timezone.utc).isoformat()
     run_metadata = {
         "uuid": run_uuid,
         "phase": config.phase,
+        "update_mode": config.update_mode,
+        "resolved_update_mode": resolved_update_mode,
         "started_at": started_at,
         "load_snapshot": str(load_snapshot_path) if load_snapshot_path is not None else None,
         "load_latest_from_model_root": bool(config.load_latest_from_model_root),
@@ -199,10 +203,12 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         ),
         learning_rate=float(config.learning_rate),
     )
-    model = PiCarActionModel(
+    model = build_experiment_model(
+        config=config,
         replay_buffer=replay_buffer,
-        config=model_config,
+        model_config=model_config,
     )
+    training_adapter = build_training_adapter(config=config)
     if load_snapshot_path is not None:
         load_result = snapshot_store.load_into_model(snapshot_path=load_snapshot_path, model=model)
         print(
@@ -242,6 +248,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
             speech=SpeechStreamConfig(),
             training=training_config,
         ),
+        trainer=training_adapter,
     )
 
     steps_completed = 0

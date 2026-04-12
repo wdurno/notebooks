@@ -21,6 +21,7 @@ def test_parser_defaults_deterministic_coding_to_false():
     assert args.init_t == 0.0
     assert args.epochs == 1
     assert args.fit_iters is None
+    assert args.update_mode == "auto"
 
 
 def test_parser_accepts_deterministic_coding_flag():
@@ -48,3 +49,10 @@ def test_parser_accepts_epochs_and_fit_iters_flags():
     assert args.epochs == 3
     assert args.fit_iters == 9
     assert args.init_t == 0.35
+
+
+def test_parser_accepts_update_mode_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--phase", "retask", "--update-mode", "online"])
+
+    assert args.update_mode == "online"
