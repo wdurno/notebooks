@@ -31,6 +31,10 @@ old information.
 
 - `OnlineSSRAgent` inherits from `SSRAgent`, but owns its own online
   `memorize()`, `ssr()`, `optimal_pi()`, and `fit()` behavior.
+- Its `fit()` method is intentionally narrow: concrete agents build the current
+  scalar task loss themselves, then hand that loss to the framework so it can
+  perform the standardized post-loss sequence of SSR mixing, backward,
+  gradient caching, optional clipping, optimizer step, and EMA memorization.
 - The Fisher estimate is stored in the same low-rank-plus-diagonal style as the
   base SSR machinery, but interpreted in EMA scale rather than cumulative
   sample-sum scale.

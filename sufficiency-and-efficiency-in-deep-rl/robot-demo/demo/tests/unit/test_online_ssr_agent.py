@@ -111,42 +111,62 @@ def test_online_memorize_updates_ema_statistics():
     batch1 = SimpleBatch(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
     batch2 = SimpleBatch(torch.tensor([[2.0]]), torch.tensor([[0.0]]))
 
-    agent.fit(batch1, iters=1, pi=0.25, memorize=True)
+    loss1 = agent.loss(batch1)
+    agent.fit(loss1, pi=0.25, memorize=True)
     assert agent.ssr_n == 1
     assert agent.ssr_weight_sq_sum == pytest.approx(1.0)
     assert agent.ssr_effective_n == pytest.approx(1.0)
     assert agent.ssr_last_pi == pytest.approx(0.25)
     assert agent.current_grad_vector is not None
 
-    agent.fit(batch2, iters=1, pi=0.25, memorize=True)
+    loss2 = agent.loss(batch2)
+    agent.fit(loss2, pi=0.25, memorize=True)
     assert agent.ssr_n == 2
     assert agent.ssr_weight_sq_sum == pytest.approx(0.625)
     assert agent.ssr_effective_n == pytest.approx(1.6)
+    assert agent.ssr_inv_trace is not None
     assert agent.post_step_calls == 2
+
+
+def test_trace_fisher_inverse_reads_stored_scalar_estimate():
+    agent = ToyOnlineAgent()
+    agent.ssr_inv_trace = 3.5
+
+    trace_inverse = agent._trace_fisher_inverse()
+
+    assert float(trace_inverse) == pytest.approx(3.5)
 
 
 def test_online_optimal_pi_uses_effective_sample_size():
     agent = ToyOnlineAgent()
-    agent.ssr_residual_diagonal = torch.tensor([[2.0]], device=agent.device)
-    agent.ssr_low_rank_matrix = None
+    agent.ssr_inv_trace = 4.0
     agent.ssr_effective_n = 4.0
     agent.dt_mean_norm_trend = 2.0
 
     pi = agent.optimal_pi()
 
-    assert float(pi) == pytest.approx(0.96875, rel=1e-5)
+    assert float(pi) == pytest.approx(0.75, rel=1e-5)
 
 
 def test_online_fit_respects_user_supplied_pi_without_calling_optimal_pi(monkeypatch):
     agent = ToyOnlineAgent()
     batch = SimpleBatch(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    loss = agent.loss(batch)
 
     def fail_optimal_pi(*args, **kwargs):
         raise AssertionError("optimal_pi should not be called when pi is supplied")
 
     monkeypatch.setattr(agent, "optimal_pi", fail_optimal_pi)
 
-    pi_value, loss_value = agent.fit(batch, iters=1, pi=0.3, memorize=True)
+    pi_value, loss_value = agent.fit(loss, pi=0.3, memorize=True)
 
     assert pi_value == pytest.approx(0.3)
     assert loss_value >= 0.0
+
+
+def test_online_fit_requires_scalar_loss():
+    agent = ToyOnlineAgent()
+    loss = torch.ones(2, device=agent.device)
+
+    with pytest.raises(ValueError, match="scalar loss tensor"):
+        agent.fit(loss, pi=0.3, memorize=False)

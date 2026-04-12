@@ -260,6 +260,21 @@ n_{\mathrm{eff},t} := m_{2,t}^{-1}
 is the natural online sample size analogue entering the variance term above. 
 This comes from the same geometric-series calculation used to normalize EMA weights, now applied to the squared weights that govern variance. 
 So, `OnlineSSRAgent` should track this quantity explicitly through `ssr_weight_sq_sum` or an equivalent state variable, and expose `ssr_effective_n` for diagnostics and `optimal_pi` calculations. 
+Further, because `optimal_pi` only needs `\mathrm{tr}(\mathcal I^{-1})`, the online agent need not estimate a full inverse covariance matrix. 
+Instead, let
+```math
+\Delta_k := \theta_k - \theta_{k-1}
+```
+and track a local EMA drift estimate plus an EMA estimate of the centered squared increment norm
+```math
+\| \Delta_k - \mu_{k-1} \|^2
+```
+using the previous online gain `\pi_{k-1}` (defaulting to `1` when unavailable). 
+Under the same local Gaussian and EMA arguments already developed above, this scalar statistic estimates
+```math
+\frac{\pi_{k-1}}{n_{\mathrm{eff},k}}\mathrm{tr}\!\left(\mathcal I^{-1}(\theta_k)\right),
+```
+so `OnlineSSRAgent` can recover a local trace estimate without constructing a full covariance matrix. 
 
 This optimal rule changes the natural scaling of the controlled process. 
 Write the true generating point as
@@ -333,22 +348,24 @@ The method should:
 Do not use `combine_krylov_spaces` in the online path; it is additive and does not implement EMA semantics. 
 4. **`ssr` and `optimal_pi` functions**: Override both in `OnlineSSRAgent`. 
 The online class is no longer sum-scaled, so its regularizer should use the EMA-scaled Fisher state directly rather than dividing by cumulative `ssr_n`. 
-Likewise, `optimal_pi` should use online diagnostics and `ssr_effective_n`, not the old `optimal_lambda` interface.
+Likewise, `optimal_pi` should use online diagnostics and `ssr_effective_n`, not the old `optimal_lambda` interface. 
+In particular, it should consume a local scalar estimate of `\mathrm{tr}(\mathcal I^{-1})` derived from centered parameter increments rather than from explicit matrix inversion of the Fisher estimate.
 5. **`fit` function**: Override the existing `SSRAgent.fit` function in `OnlineSSRAgent`. 
 Have these arguments:
-   1. `data`, the already-constructed loss input for one online update,
-   2. `iters`, defining how many times that current observation is iterated upon,
-   3. `pi`, an optional float override; if omitted, compute `optimal_pi`,
-   4. `memorize` (boolean), determining whether the EMA Fisher update is applied after optimization, and
-   5. `grad_clip`, optional as in the base class.
+   1. `loss`, the already-computed scalar task loss for one online update,
+   2. `pi`, an optional float override; if omitted, compute `optimal_pi`,
+   3. `memorize` (boolean), determining whether the EMA Fisher update is applied after optimization, and
+   4. `grad_clip`, optional as in the base class.
 This fit loop should:
-   1. compute loss from the provided `data`,
-   2. combine the immediate loss with the SSR regularizer using the current `pi`,
+   1. zero optimizer gradients,
+   2. combine the provided task loss with the SSR regularizer using the current `pi`,
    3. backpropagate exactly once through the already-computed forward pass,
    4. cache the raw gradient before any clipping,
-   5. apply `optimizer.step()`,
-   6. preserve any model-specific target-network cadence through a hook, and
-   7. if `memorize` is enabled, call the online `memorize` method to update the EMA Fisher estimate without replaying the transition.
+   5. optionally clip gradients for numerical stability,
+   6. apply `optimizer.step()`,
+   7. preserve any model-specific target-network cadence through a hook, and
+   8. if `memorize` is enabled, call the online `memorize` method to update the EMA Fisher estimate without replaying the transition.
+The docstring should explicitly state that `loss` must be scalar, attached to the current graph, and not yet used in a `backward()` call.
 6. **Unit tests**: add unit tests for all new behavior. 
 At minimum:
    1. `diag_alternate` in `l_lanczos`,
