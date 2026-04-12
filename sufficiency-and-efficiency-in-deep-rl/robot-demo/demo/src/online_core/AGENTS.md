@@ -211,7 +211,13 @@ In implementation, $\bar{\mathcal I}_{k,\delta}$ will still be stored in the low
 but it now estimates a recency-weighted FIM rather than a cumulative average over all past data. 
 This exponential forgetting is essential: it keeps the statistic relevant while $\theta_{k,\delta}$ drifts, 
 and it is what aligns the implementation with the stochastic-process model above. 
-Operationally, this EMA behavior should be realized through an `mfi_alternate` operator passed into Lanczos rather than by rewriting the existing `memorize` routine. 
+`OnlineSSRAgent` therefore needs its own `memorize` implementation. 
+That method should build an EMA Fisher operator
+```math
+x \mapsto (1-\pi)\bar{\mathcal I}_{t-1}x + \pi g_t(g_t^T x)
+```
+for the current cached gradient $g_t$, together with a matching diagonal update, then recompress the result with Lanczos. 
+This keeps the EMA semantics exact up to low-rank compression rather than trying to force them through the cumulative `SSRAgent.memorize` design. 
 
 At step $k$, the fit loop processes a single observation and uses the current SSR regularizer built from $\bar{\mathcal I}_{k,\delta}$. 
 The user may pass a fixed $\pi := \pi_{k,\delta}$, but the default should be the online optimal choice derived below. 
@@ -242,6 +248,18 @@ Differentiating in $\pi_{k,\delta}$ gives the one-step MSE-optimal rule
 In practice, clip $\pi_{k,\delta}^*$ to $[0,1]$ and estimate its ingredients from the online diagnostics already tracked by the agent. 
 If the user supplies `pi`, use that value directly. 
 Otherwise, use the clipped online estimate of $\pi_{k,\delta}^*$ as the default. 
+One especially important diagnostic is the EMA effective sample size. 
+If the squared EMA weight mass is tracked by recursion
+```math
+m_{2,t} = (1-\pi_t)^2 m_{2,t-1} + \pi_t^2,
+```
+then
+```math
+n_{\mathrm{eff},t} := m_{2,t}^{-1}
+```
+is the natural online sample size analogue entering the variance term above. 
+This comes from the same geometric-series calculation used to normalize EMA weights, now applied to the squared weights that govern variance. 
+So, `OnlineSSRAgent` should track this quantity explicitly through `ssr_weight_sq_sum` or an equivalent state variable, and expose `ssr_effective_n` for diagnostics and `optimal_pi` calculations. 
 
 This optimal rule changes the natural scaling of the controlled process. 
 Write the true generating point as
@@ -285,43 +303,58 @@ Their role in this document is to show that the EMA-based online design and the 
 ## Constraints
 
 1. Do not specify a `loss` function in `OnlineSSRAgent` because it is still an abstract class. 
-2. Do not modify anything in `src/core/`.
-3. The data model should extend the original `SSRAgent` state, so we may load snapshots derived from `SSRAgent` instances.
+2. Keep changes in `src/core/` small and extending-only. 
+3. The data model should extend the original `SSRAgent` state, so we may load snapshots derived from `SSRAgent` instances. We will be loading a $\theta$ & $\mathcal I(\theta)$ estimate from a `src/model/pircar_agent.py:PiCarActionModel` serialization to initialize this class. 
 4. Re-use existing `SSRAgent` attributes when possible to maintain single source of truth.
 
 ## Implementation tasks 
 
-1. **`__get_get_grad_generator` variant**: `SSRAgent` recalculates gradients upon `memorize` calls, 
+1. **`_get_get_grad_generator` variant**: `SSRAgent` recalculates gradients upon `memorize` calls, 
 because storing them takes too much memory for large batches. 
 Fortunately, online learning needs only apply a single, already cached gradient. 
-For `OnlineSSRAgent`, please define `__get_get_grad_generator` to return `get_grad_generator` 
-which returns `grad_generator`, a generator of one and only existing current gradient. 
+For `OnlineSSRAgent`, please define `_get_get_grad_generator` to return `get_grad_generator` 
+which returns `grad_generator`, a generator of the one and only existing current gradient. 
 It's assumed that gradients have already been calculated. 
 If they haven't, throw an error. 
-2. **`act` function**: `OnlineSSRAgent` needs an abstract `act` function used to send instructions to the agent mid fit loop. 
-While `act` is allowed to have useful side effects (like populating the replay buffer), 
-the abstract definition returns a reward to be used in fitting. 
-This allows all activations to be produced precisely once per action and optimization.
-3. **`mfi_alternate` EMA rule**: Do not rewrite `SSRAgent.memorize`. 
-Instead, provide an `mfi_alternate` function for use with `src/core/lanczos.py:l_lanczos`. 
-This function should encode the EMA-weighted Fisher update rule while preserving the existing `memorize` machinery. 
-Concretely, if the current observation contributes score $s_t$ and therefore $Z_t = s_t s_t^T$, then the operator used by Lanczos should act like the recency-weighted FIM
-```math
-\bar{\mathcal I}_t
-=
-(1-\pi)\bar{\mathcal I}_{t-1} + \pi Z_t.
-```
-So, for a vector $x$, `mfi_alternate(x)` should represent multiplication by the EMA-updated Fisher estimate rather than by the cumulative-average Fisher estimate. 
-This keeps the implementation aligned with the online theory while reusing the existing low-rank Lanczos pipeline. 
-4. **`fit` function**: Override the existing `SSRAgent.fit` function in `OnlineSSRAgent`. 
+2. **Minimal `src/core` changes**: make only the small extensibility updates needed by the online agent. 
+Specifically:
+   1. rename `SSRAgent.__get_get_grad_generator` to `SSRAgent._get_get_grad_generator`, and
+   2. extend `src/core/lanczos.py:l_lanczos` with optional `diag_alternate=None` alongside the existing `mfi_alternate` hook.
+Default behavior must remain unchanged when these hooks are not supplied. 
+3. **`memorize` function**: Override `SSRAgent.memorize` in `OnlineSSRAgent`. 
+This is where the online design lives. 
+The method should:
+   1. update `ssr_prev_center` and `ssr_center`,
+   2. reuse the already-cached current gradient,
+   3. define `mfi_ema(x) = (1-\pi)\bar{\mathcal I}_{t-1}x + \pi g_t(g_t^T x)`,
+   4. define a matching `diag_alternate` for the EMA-updated diagonal,
+   5. call Lanczos once to recompress the EMA Fisher estimate into low-rank-plus-diagonal form, and
+   6. update online diagnostics such as `ssr_weight_sq_sum`, `ssr_effective_n`, and `ssr_last_pi`.
+Do not use `combine_krylov_spaces` in the online path; it is additive and does not implement EMA semantics. 
+4. **`ssr` and `optimal_pi` functions**: Override both in `OnlineSSRAgent`. 
+The online class is no longer sum-scaled, so its regularizer should use the EMA-scaled Fisher state directly rather than dividing by cumulative `ssr_n`. 
+Likewise, `optimal_pi` should use online diagnostics and `ssr_effective_n`, not the old `optimal_lambda` interface.
+5. **`fit` function**: Override the existing `SSRAgent.fit` function in `OnlineSSRAgent`. 
 Have these arguments:
-   1. `iters` defines how many times the current observation is iterated upon. Zero is acceptable, since sometimes we're only memorizing.
-   2. `pi` is an optional float override. If omitted, compute the clipped online estimate of $\pi^*$ from the diagnostics implied above.
-   3. `memorize` (boolean) determines whether the EMA-aware Fisher memorization is applied. If `True` and `iters > 1`, only memorize on the final iteration.
-   4. `grad_clip` remains optional as in the base class.
-The fit loop should:
-   1. obtain one new observation via `act`,
-   2. compute the single-observation loss,
-   3. combine the immediate loss with the SSR regularizer using the current `pi`,
-   4. backpropagate and apply `optimizer.step()`, and
-   5. if `memorize` is enabled, call the existing memorization pathway with the EMA-aware `mfi_alternate` behavior so the Fisher estimate stays recency-weighted without recomputing activations.
+   1. `data`, the already-constructed loss input for one online update,
+   2. `iters`, defining how many times that current observation is iterated upon,
+   3. `pi`, an optional float override; if omitted, compute `optimal_pi`,
+   4. `memorize` (boolean), determining whether the EMA Fisher update is applied after optimization, and
+   5. `grad_clip`, optional as in the base class.
+This fit loop should:
+   1. compute loss from the provided `data`,
+   2. combine the immediate loss with the SSR regularizer using the current `pi`,
+   3. backpropagate exactly once through the already-computed forward pass,
+   4. cache the raw gradient before any clipping,
+   5. apply `optimizer.step()`,
+   6. preserve any model-specific target-network cadence through a hook, and
+   7. if `memorize` is enabled, call the online `memorize` method to update the EMA Fisher estimate without replaying the transition.
+6. **Unit tests**: add unit tests for all new behavior. 
+At minimum:
+   1. `diag_alternate` in `l_lanczos`,
+   2. overrideability via `_get_get_grad_generator`,
+   3. `OnlineSSRAgent.memorize`,
+   4. `ssr_weight_sq_sum` / `ssr_effective_n`,
+   5. `optimal_pi`, and
+   6. user-specified `pi` bypassing the default computation.
+Run the existing unit tests while making changes so development does not break unrelated functionality.

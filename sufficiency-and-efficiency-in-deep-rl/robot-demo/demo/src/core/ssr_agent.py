@@ -127,8 +127,9 @@ class SSRAgent(nn.Module):
             pass
         ## limited memory Lanczos algo calculates Krylov space for new data's information matrix 
         ## stored in sum-scale; no division by ssr_n 
-        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self.__get_get_grad_generator(n, random_idx=random_idx), \
-                r=min(self.ssr_rank, n, self.ssr_n+n), \
+        current_ssr_n = 0 if self.ssr_n is None else self.ssr_n
+        ssr_low_rank_matrix, ssr_residual_diagonal = l_lanczos(self._get_get_grad_generator(n, random_idx=random_idx), \
+                r=min(self.ssr_rank, n, current_ssr_n+n), \
                 p=self.ssr_model_dimension, \
                 calc_diag=True, \
                 device=self.device, \
@@ -211,7 +212,7 @@ class SSRAgent(nn.Module):
             )
         self.optimizer.step() 
         return float(pi), float(loss.detach()) 
-    def __get_get_grad_generator(self, n=None, random_idx=False): 
+    def _get_get_grad_generator(self, n=None, random_idx=False): 
         ## The double get hides `self` in a function context,  
         ## packaging `get_grad_generator` for calling without 
         ## the SSRAgent instance.  
@@ -250,5 +251,3 @@ class SSRAgent(nn.Module):
         grad_vec = torch.cat([p.grad.reshape([-1, 1]) for p in self.parameters() if p.requires_grad], dim=0).clone().detach() 
         return grad_vec 
     pass 
-
-

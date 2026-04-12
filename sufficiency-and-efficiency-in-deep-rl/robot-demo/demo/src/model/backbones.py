@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import logging
 import re
@@ -18,6 +19,19 @@ from .processor_loader import load_qwen_2_5_vl_processor
 from .schemas import ModelObservation
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _forward_supports_keyword(module: nn.Module, keyword: str) -> bool:
+    try:
+        parameters = inspect.signature(module.forward).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    for parameter in parameters:
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == keyword:
+            return True
+    return False
 
 
 CONTROL_SYSTEM_PROMPT = (
@@ -249,14 +263,17 @@ class QwenLoRABackbone(nn.Module):
             )
         # Request hidden states so the outer model can attach its own value head
         # to the fused representation instead of modifying the frozen backbone.
-        outputs = self.model(
+        forward_kwargs = {
             **model_inputs,
-            # We only consume hidden states in this path; restricting logits to the
-            # last token avoids materializing full-sequence vocab projections.
-            logits_to_keep=1,
-            output_hidden_states=True,
-            return_dict=True,
-        )
+            "output_hidden_states": True,
+            "return_dict": True,
+        }
+        # We only consume hidden states in this path; when supported, restricting
+        # logits to the last token avoids materializing full-sequence vocab
+        # projections.
+        if _forward_supports_keyword(self.model, "logits_to_keep"):
+            forward_kwargs["logits_to_keep"] = 1
+        outputs = self.model(**forward_kwargs)
         # First-pass pooling strategy: use the final token representation after
         # multimodal fusion. This gives a fixed-width vector of size
         # equal to the language hidden state size.

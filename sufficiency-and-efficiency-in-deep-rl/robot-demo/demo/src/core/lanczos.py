@@ -40,7 +40,7 @@ def lanczos(AAT, r):
     VTVT = np.matmul(VTVT, np.transpose(V)) 
     return VTVT
 
-def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None, disable_tqdm=True, calc_diag=False):
+def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None, diag_alternate=None, disable_tqdm=True, calc_diag=False):
     '''
     limited-memory Lanczos algorithm
     inputs:
@@ -49,6 +49,7 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     - p: dimension of (p X p) Fisher Information 
     - device: which device to execute on 
     - mfi_alternate: an alternative function to replace the below `multiply_fisher_infromation` 
+    - diag_alternate: an alternative function returning diag(Fisher Information)
     - disable_tqdm: if True, silence the progress bar 
     - calc_diag: if True, calculate residual diagonal covariance vector 
     outputs:
@@ -118,12 +119,15 @@ def l_lanczos(get_grad_generator, r, p, eps=0., device=None, mfi_alternate=None,
     if not calc_diag: 
         return A 
     ## calc diagonal_residual = diag(Fisher Information - AA^T) 
-    grad_generator = get_grad_generator() 
-    diagonal_residual = 0. 
-    for g in grad_generator(): 
-        g = g.reshape([-1,1]) 
-        diagonal_residual += g*g ## sums to N*diag(Fisher Information) 
-        pass 
+    if diag_alternate is None:
+        grad_generator = get_grad_generator() 
+        diagonal_residual = 0. 
+        for g in grad_generator(): 
+            g = g.reshape([-1,1]) 
+            diagonal_residual += g*g ## sums to N*diag(Fisher Information) 
+            pass 
+    else:
+        diagonal_residual = diag_alternate() 
     diagonal_residual -= (A*A).sum(dim=1).reshape([-1,1]) 
     diagonal_residual[diagonal_residual < 0.] = 0. ## handle tiny numerical errors 
     return A, diagonal_residual.reshape([-1,1])  

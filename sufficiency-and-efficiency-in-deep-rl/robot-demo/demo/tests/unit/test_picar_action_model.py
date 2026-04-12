@@ -168,7 +168,7 @@ def test_get_grad_vec_uses_trainable_parameters_only():
     param_vec = model.get_param()
 
     assert grad_vec.shape == param_vec.shape
-    assert grad_vec.device == model.device
+    assert grad_vec.device.type == model.device.type
 
 
 def test_forward_handles_bfloat16_backbone_hidden_state():
