@@ -31,6 +31,7 @@ class ExperimentRunConfig:
     epochs: int = 1
     batch_size: int = 1
     learning_rate: float = 0.1
+    pi: float | None = None
     fit_iters: int | None = None
     train_every_steps: int = 16
     min_replay_size: int = 32

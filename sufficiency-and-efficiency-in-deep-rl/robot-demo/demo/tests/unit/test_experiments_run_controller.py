@@ -114,6 +114,13 @@ def test_build_training_config_rejects_non_positive_fit_iters_when_provided():
         build_training_config(config)
 
 
+def test_build_training_config_rejects_pi_out_of_range():
+    config = ExperimentRunConfig(phase="tune", pi=1.5)
+
+    with pytest.raises(ValueError, match="--pi"):
+        build_training_config(config)
+
+
 def test_resolve_snapshot_path_accepts_file_or_directory(tmp_path):
     snapshots_dir = tmp_path / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)

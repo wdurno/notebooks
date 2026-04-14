@@ -61,6 +61,7 @@ PICAR_V_HOST=<host:port> python -m src.experiments.experiment_interface --help
 - `--epochs INT` (default `1`, optimizer steps per training trigger in phase 2/3)
 - `--batch-size INT` (default `1`)
 - `--learning-rate FLOAT` (default `0.1`)
+- `--pi FLOAT` (optional fixed SSR mixing / online control weight in `[0, 1]`)
 - `--fit-iters INT` (optional; if omitted, auto-resolves to `ceil(replay_size / batch_size)` at each training trigger)
 - `--train-every-steps INT` (default `16`)
 - `--min-replay-size INT` (default `32`)
@@ -95,6 +96,7 @@ Update-mode notes:
 - `auto` keeps the CLI stable while selecting the intended backend per phase.
 - `batch` uses the original replay/batch-optimized `PiCarActionModel`.
 - `online` uses `OnlinePiCarActionModel`, which consumes the freshly created transition each training trigger and applies the online SSR mechanics from `src/online_core/`.
+- `--pi` is optional. When provided, it overrides the default adaptive `pi` rule. In online mode this directly feeds the online update; in batch mode it is enforced by pinning the legacy `pi` bounds to the requested value.
 - In online mode, the familiar CLI flags stay available for experimental consistency, but replay-specific knobs such as `--batch-size`, `--fit-iters`, `--memorize-n`, and `--memorize-random-idx` are not central to the update rule.
 
 Context/image behavior notes:

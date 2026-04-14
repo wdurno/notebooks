@@ -180,6 +180,7 @@ def run_experiment(config: ExperimentRunConfig) -> ExperimentRunSummary:
         "all_images": bool(config.all_images),
         "prompt_token_window": int(config.prompt_token_window),
         "learning_rate": float(config.learning_rate),
+        "pi": (None if config.pi is None else float(config.pi)),
         "init_t": float(config.init_t),
         "training": asdict(training_config),
         "snapshot_keep": int(config.snapshot_keep),
@@ -409,6 +410,8 @@ def _validate_config(config: ExperimentRunConfig) -> None:
         )
     if float(config.learning_rate) <= 0.0:
         raise ValueError(f"--learning-rate must be > 0, got {config.learning_rate}")
+    if config.pi is not None and not (0.0 <= float(config.pi) <= 1.0):
+        raise ValueError(f"--pi must be in [0, 1], got {config.pi}")
     if config.load_snapshot is not None and bool(config.load_latest_from_model_root):
         raise ValueError("--load-snapshot and --load-latest-from-model-root are mutually exclusive")
     return None

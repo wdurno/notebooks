@@ -20,6 +20,7 @@ def test_parser_defaults_deterministic_coding_to_false():
     assert args.prompt_token_window == 512
     assert args.init_t == 0.0
     assert args.epochs == 1
+    assert args.pi is None
     assert args.fit_iters is None
     assert args.update_mode == "auto"
 
@@ -56,3 +57,10 @@ def test_parser_accepts_update_mode_flag():
     args = parser.parse_args(["--phase", "retask", "--update-mode", "online"])
 
     assert args.update_mode == "online"
+
+
+def test_parser_accepts_pi_override():
+    parser = build_parser()
+    args = parser.parse_args(["--phase", "tune", "--pi", "0.125"])
+
+    assert args.pi == 0.125

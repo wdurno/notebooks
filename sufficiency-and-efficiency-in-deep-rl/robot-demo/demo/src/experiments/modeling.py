@@ -39,6 +39,8 @@ def build_experiment_model(
 
 @dataclass(frozen=True)
 class BatchTrainingAdapter:
+    pi_override: float | None = None
+
     def train(
         self,
         *,
@@ -53,7 +55,14 @@ class BatchTrainingAdapter:
         pi = 0.0
         loss = 0.0
         for _ in range(max(1, int(training.epochs))):
-            pi, loss = model.fit(batch_size=training.batch_size, iters=effective_fit_iters)
+            fit_kwargs = {
+                "batch_size": training.batch_size,
+                "iters": effective_fit_iters,
+            }
+            if self.pi_override is not None:
+                fit_kwargs["pi_min"] = float(self.pi_override)
+                fit_kwargs["pi_max"] = float(self.pi_override)
+            pi, loss = model.fit(**fit_kwargs)
         memorized = None
         if training.memorize_every_steps > 0 and (step_index + 1) % training.memorize_every_steps == 0:
             if training.memorize_n < 0:
@@ -81,6 +90,8 @@ class BatchTrainingAdapter:
 
 @dataclass(frozen=True)
 class OnlineTrainingAdapter:
+    pi_override: float | None = None
+
     def train(
         self,
         *,
@@ -99,6 +110,7 @@ class OnlineTrainingAdapter:
             scalar_loss = model.transition_loss(transition)
             pi, loss = model.fit(
                 loss=scalar_loss,
+                pi=self.pi_override,
                 memorize=bool(memorize_now and epoch_idx == max(1, int(training.epochs)) - 1),
             )
         return TrainingSummary(
@@ -113,5 +125,5 @@ class OnlineTrainingAdapter:
 def build_training_adapter(*, config: ExperimentRunConfig):
     resolved_update_mode = resolve_update_mode(phase=config.phase, update_mode=config.update_mode)
     if resolved_update_mode == "online":
-        return OnlineTrainingAdapter()
-    return BatchTrainingAdapter()
+        return OnlineTrainingAdapter(pi_override=config.pi)
+    return BatchTrainingAdapter(pi_override=config.pi)

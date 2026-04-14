@@ -46,18 +46,18 @@ python -m src.experiments.phase1_finalize \
 
 First call: 
 ```
-PICAR_V_HOST=10.0.0.223:5000 python -m src.experiments.experiment_interface \
+PICAR_V_HOST=10.0.0.223:5000 ~/.venv/bin/python -m src.experiments.experiment_interface \
   --phase tune \
+  --update-mode online \
   --load-snapshot model/phase1-tuned \
   --model-root model/phase2 \
-  --init-t 0.0 \
   --t-step 0.001 \
-  --train-every-steps 100 \
-  --memorize-every-steps 100 \
-  --memorize-n 100 \
-  --min-replay-size 100 \
-  --epochs 10 \
-  --log-level INFO
+  --train-every-steps 1 \
+  --memorize-every-steps 1 \
+  --min-replay-size 1 \
+  --epochs 1 \
+  --pi 0.001 \
+  --log-level DEBUG
 ```
 
 Follow-up phase 2 calls: 

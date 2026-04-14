@@ -9,7 +9,7 @@ SRC_ROOT = PROJECT_ROOT / "demo" / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from experiments.modeling import build_experiment_model, resolve_update_mode
+from experiments.modeling import OnlineTrainingAdapter, build_experiment_model, resolve_update_mode
 from experiments.schemas import ExperimentRunConfig
 from experiments.snapshot_store import SnapshotStore
 from model.backbones import FakeBackbone
@@ -121,3 +121,43 @@ def test_snapshot_load_into_online_model_hard_syncs_targets(tmp_path):
         target_model.critic.parameters(),
     ):
         assert torch.allclose(target_parameter, source_parameter)
+
+
+def test_online_training_adapter_passes_pi_override_to_model_fit():
+    class FakeOnlineModel:
+        def __init__(self):
+            self.replay_buffer = [object()]
+            self.transition_losses = []
+            self.fit_calls = []
+
+        def transition_loss(self, transition):
+            self.transition_losses.append(transition)
+            return torch.tensor(1.0)
+
+        def fit(self, *, loss, pi=None, memorize=True, grad_clip=None):
+            del grad_clip
+            self.fit_calls.append({"loss": float(loss), "pi": pi, "memorize": memorize})
+            return float(pi), float(loss)
+
+    adapter = OnlineTrainingAdapter(pi_override=0.125)
+    model = FakeOnlineModel()
+    transition = _transition()
+    training = type(
+        "Training",
+        (),
+        {"epochs": 2, "memorize_every_steps": 1},
+    )()
+
+    summary = adapter.train(
+        model=model,
+        transition=transition,
+        training=training,
+        replay_size=1,
+        effective_fit_iters=1,
+        step_index=0,
+    )
+
+    assert len(model.transition_losses) == 2
+    assert [call["pi"] for call in model.fit_calls] == [0.125, 0.125]
+    assert [call["memorize"] for call in model.fit_calls] == [False, True]
+    assert summary.pi == 0.125

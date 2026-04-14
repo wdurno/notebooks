@@ -105,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=0.1, help="Optimizer learning rate.")
     parser.add_argument(
+        "--pi",
+        type=float,
+        default=None,
+        help="Optional fixed SSR mixing / online control weight in [0, 1].",
+    )
+    parser.add_argument(
         "--fit-iters",
         type=int,
         default=None,
@@ -165,6 +171,7 @@ def main() -> int:
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        pi=args.pi,
         fit_iters=args.fit_iters,
         train_every_steps=args.train_every_steps,
         min_replay_size=args.min_replay_size,
