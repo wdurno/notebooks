@@ -49,7 +49,7 @@ First call:
 PICAR_V_HOST=10.0.0.223:5000 ~/.venv/bin/python -m src.experiments.experiment_interface \
   --phase tune \
   --update-mode online \
-  --load-snapshot model/phase1-tuned \
+  --load-snapshot model/phase1-memorized \
   --model-root model/phase2 \
   --t-step 0.001 \
   --train-every-steps 1 \
@@ -57,7 +57,7 @@ PICAR_V_HOST=10.0.0.223:5000 ~/.venv/bin/python -m src.experiments.experiment_in
   --min-replay-size 1 \
   --epochs 1 \
   --pi 0.001 \
-  --log-level DEBUG
+  --log-level INFO
 ```
 
 Follow-up phase 2 calls: 
