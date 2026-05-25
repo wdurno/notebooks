@@ -5,7 +5,7 @@ import json
 import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Literal
 
 
 SPLITS = ("ewc_init", "train", "eval_seen", "eval_heldout")
@@ -128,13 +128,156 @@ def generate_rule_transform(task_id: str, seed: int, n_per_split: int, palette: 
     return examples
 
 
-def generate_case1(output_dir: Path, seed: int, n_per_split: int) -> None:
-    task_a = generate_rule_transform("task_a", seed, n_per_split, ("BLUE", "GREEN"))
-    task_b = generate_rule_transform("task_b", seed + 1, n_per_split, ("RED", "GREEN"))
+Relation = Literal["shared", "direct_conflict", "near_conflict", "rare_rule", "heldout_composition"]
+
+
+def _cycle_pick(values: list[str], index: int, rng: random.Random) -> str:
+    offset = rng.randrange(len(values))
+    return values[(index + offset) % len(values)]
+
+
+def _relation_schedule(split: str, n_per_split: int) -> list[Relation]:
+    if split == "eval_heldout":
+        pattern: list[Relation] = ["shared", "direct_conflict", "near_conflict", "rare_rule", "heldout_composition"]
+    elif split == "eval_seen":
+        pattern = ["shared", "direct_conflict", "near_conflict", "rare_rule"]
+    elif split == "train":
+        pattern = [
+            "shared",
+            "shared",
+            "shared",
+            "direct_conflict",
+            "direct_conflict",
+            "near_conflict",
+            "near_conflict",
+            "rare_rule",
+        ]
+    else:
+        pattern = [
+            "shared",
+            "shared",
+            "shared",
+            "direct_conflict",
+            "direct_conflict",
+            "near_conflict",
+            "near_conflict",
+            "rare_rule",
+        ]
+    return [pattern[index % len(pattern)] for index in range(n_per_split)]
+
+
+def _rule_transform_v2_attrs(task_id: str, relation: Relation, index: int, rng: random.Random) -> dict[str, str]:
+    number = f"{(17 * index + rng.randrange(100)) % 100:02d}"
+    if relation == "shared":
+        prefix = _cycle_pick(["CD", "GH"], index, rng)
+        priority = _cycle_pick(["LOW", "MEDIUM"], index, rng)
+        region = _cycle_pick(["NORTH", "SOUTH"], index, rng)
+        mode = _cycle_pick(["STANDARD", "BULK"], index, rng)
+        color = "GREEN"
+        frequency_bucket = "common"
+        composition_type = "seen"
+    elif relation == "direct_conflict":
+        prefix = "AB"
+        priority = _cycle_pick(["LOW", "HIGH"], index, rng)
+        region = _cycle_pick(["NORTH", "SOUTH"], index, rng)
+        mode = "STANDARD"
+        color = "RED" if task_id == "task_b" else "BLUE"
+        frequency_bucket = "common"
+        composition_type = "seen"
+    elif relation == "near_conflict":
+        prefix = "EF"
+        priority = "HIGH" if task_id == "task_b" else "LOW"
+        region = _cycle_pick(["NORTH", "SOUTH"], index, rng)
+        mode = "STANDARD"
+        color = "RED" if task_id == "task_b" else "BLUE"
+        frequency_bucket = "medium"
+        composition_type = "seen"
+    elif relation == "rare_rule":
+        prefix = "JK"
+        priority = "MEDIUM"
+        region = "EAST"
+        mode = "LEGACY"
+        color = "PURPLE"
+        frequency_bucket = "rare"
+        composition_type = "seen"
+    else:
+        prefix = "LM"
+        priority = "HIGH"
+        region = "WEST"
+        mode = "NIGHT"
+        color = "CYAN"
+        frequency_bucket = "medium"
+        composition_type = "heldout_triple"
+
+    return {
+        "prefix": prefix,
+        "number": number,
+        "priority": priority,
+        "region": region,
+        "mode": mode,
+        "color": color,
+        "frequency_bucket": frequency_bucket,
+        "composition_type": composition_type,
+    }
+
+
+def generate_rule_transform_v2(task_id: str, seed: int, n_per_split: int) -> list[Example]:
+    rng = random.Random(seed)
+    examples: list[Example] = []
+
+    for split in SPLITS:
+        for i, relation in enumerate(_relation_schedule(split, n_per_split)):
+            attrs = _rule_transform_v2_attrs(task_id, relation, i, rng)
+            code = f"{attrs['prefix']}-{attrs['number']}"
+            target = f"ROUTE_{attrs['color']}_{attrs['number']}"
+            prompt = (
+                f"Routing transform v2: Convert product code {code} with priority {attrs['priority']}, "
+                f"region {attrs['region']}, and mode {attrs['mode']} to its route label. "
+                "Answer with only the route label."
+            )
+            examples.append(
+                Example(
+                    id=f"{task_id}_{split}_{i:06d}",
+                    task_family="rule_transform_v2",
+                    task_id=task_id,
+                    split=split,
+                    prompt=prompt,
+                    target=target,
+                    answer_key=target,
+                    metadata={
+                        "entity_id": code,
+                        "rule_id": f"route_{attrs['prefix']}_{attrs['priority']}_{attrs['region']}_{attrs['mode']}",
+                        "requires_reasoning": False,
+                        "relation_to_next_task": relation,
+                        "frequency_bucket": attrs["frequency_bucket"],
+                        "composition_type": attrs["composition_type"],
+                        "prefix": attrs["prefix"],
+                        "priority": attrs["priority"],
+                        "region": attrs["region"],
+                        "mode": attrs["mode"],
+                        "validator": {"type": "regex", "pattern": r"ROUTE_[A-Z]+_[0-9]{2}"},
+                    },
+                )
+            )
+    return examples
+
+
+def generate_case1(output_dir: Path, seed: int, n_per_split: int, generator: str = "rule_transform") -> None:
+    if generator == "rule_transform":
+        task_a = generate_rule_transform("task_a", seed, n_per_split, ("BLUE", "GREEN"))
+        task_b = generate_rule_transform("task_b", seed + 1, n_per_split, ("RED", "GREEN"))
+    elif generator == "rule_transform_v2":
+        task_a = generate_rule_transform_v2("task_a", seed, n_per_split)
+        task_b = generate_rule_transform_v2("task_b", seed + 1, n_per_split)
+    else:
+        raise ValueError(f"Unknown Case 1 generator: {generator}")
+
     factory = generate_factory_qa("factory_a", seed + 2, n_per_split)
 
-    _write_jsonl(output_dir / "case1_task_a.jsonl", task_a)
-    _write_jsonl(output_dir / "case1_task_b.jsonl", task_b)
+    task_a_filename = "case1_rich_task_a.jsonl" if generator == "rule_transform_v2" else "case1_task_a.jsonl"
+    task_b_filename = "case1_rich_task_b.jsonl" if generator == "rule_transform_v2" else "case1_task_b.jsonl"
+    _write_jsonl(output_dir / task_a_filename, task_a)
+    _write_jsonl(output_dir / task_b_filename, task_b)
     _write_jsonl(output_dir / "factory_qa.jsonl", factory)
 
 
@@ -143,8 +286,9 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("data/generated"))
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--n-per-split", type=int, default=128)
+    parser.add_argument("--generator", default="rule_transform", choices=("rule_transform", "rule_transform_v2"))
     args = parser.parse_args()
-    generate_case1(args.output_dir, args.seed, args.n_per_split)
+    generate_case1(args.output_dir, args.seed, args.n_per_split, args.generator)
 
 
 if __name__ == "__main__":

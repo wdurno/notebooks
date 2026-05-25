@@ -26,15 +26,15 @@ training:
   qlora_dropout: 0.05
 
 evaluation:
-  batch_size: 1
-  max_new_tokens: 32
+  batch_size: 2
+  max_new_tokens: 12
 
 ewc:
-  n0_values: [0, 4, 8, 16, 32, 64]
-  rank_values: [0, 1, 2, 4]
-  lambda_values: [0.1, 1.0, 10.0]
+  n0_values: [64]
+  rank_values: [4]
+  lambda_values: [1.0]
   min_off_diag: 1.0e-12
 
 outputs:
-  run_dir: outputs/case1
-  metrics_path: outputs/case1/metrics.jsonl
+  run_dir: outputs/case1_full_eval_single
+  metrics_path: outputs/case1_full_eval_single/metrics.jsonl

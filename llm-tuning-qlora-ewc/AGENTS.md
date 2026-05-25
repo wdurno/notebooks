@@ -167,6 +167,28 @@ Track Task A retention both in aggregate and by conflict group:
 
 This prevents the aggregate `task_a_after_em` from hiding whether the model retains shared rules while forgetting only rules overwritten by Task B.
 
+### Rich `rule_transform_v2` data paradigm
+
+`rule_transform_v2` is the preferred Case 1 diagnostic dataset going forward.
+It replaces the binary old Case 1 behavior with metadata-sliced examples where latest-task learning is correct for some examples and incorrect for others.
+
+Each example keeps the existing JSONL contract and must include these metadata fields:
+1. `relation_to_next_task`: `shared`, `direct_conflict`, `near_conflict`, `rare_rule`, or `heldout_composition`.
+2. `frequency_bucket`: `common`, `medium`, or `rare`.
+3. `composition_type`: `seen`, `heldout_pair`, or `heldout_triple`.
+4. Existing fields: `entity_id`, `rule_id`, `requires_reasoning`, and `validator`.
+
+Interpretation:
+1. `shared`: Task A and Task B agree; this should be retained.
+2. `direct_conflict`: Task B intentionally overwrites Task A; this is not expected to be retained.
+3. `near_conflict`: Task B changes a neighboring condition, but Task A's condition should remain protected.
+4. `rare_rule`: sparse Task A rules stress whether `EWC n0` was large enough to estimate a useful precision.
+5. `heldout_composition`: recombinations of seen attributes test rule learning rather than row memorization.
+
+Primary retention probes are `shared`, `near_conflict`, `rare_rule`, and `heldout_composition`.
+`direct_conflict` should be read as an overwrite probe rather than a retention failure.
+The runner should report aggregate Task A retention and sliced before/after EM fields for each `relation_to_next_task` value.
+
 ## Experimental cases
 
 ### Case 1: EWC n0 sweep
@@ -396,3 +418,6 @@ Recent implementation note:
 1. Future prediction artifacts include example metadata.
 2. Future Case 1 metrics include conflict-aware Task A retention fields.
 3. `experiments/build_phase_1_case1.ipynb` also derives conflict-aware retention from existing prediction artifacts by joining predictions back to generated examples, so previously generated runs can still be interpreted.
+4. Evaluation now supports batched generation through config fields `evaluation.batch_size` and `evaluation.max_new_tokens`.
+5. Batched decoding slices generated outputs after the padded input width, not after each row's non-pad token count.
+6. `configs/case1_full_eval_single.yaml` uses `evaluation.batch_size: 2` and `evaluation.max_new_tokens: 12` as the first conservative speedup target.

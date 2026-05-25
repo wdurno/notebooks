@@ -37,6 +37,7 @@ def ensure_data(config: dict) -> None:
         output_dir=Path(data_cfg["generated_dir"]),
         seed=int(data_cfg.get("seed", 13)),
         n_per_split=int(data_cfg.get("n_per_split", 128)),
+        generator=str(data_cfg.get("generator", "rule_transform")),
     )
 
 
@@ -59,7 +60,8 @@ def task_a_conflict_summary(rows: list[dict[str, object]]) -> dict[str, float | 
     for row in rows:
         metadata = row.get("metadata") or {}
         rule_id = metadata.get("rule_id") if isinstance(metadata, dict) else None
-        if rule_id in CONFLICTING_TASK_A_RULES:
+        relation = metadata.get("relation_to_next_task") if isinstance(metadata, dict) else None
+        if relation == "direct_conflict" or (relation is None and rule_id in CONFLICTING_TASK_A_RULES):
             conflicting.append(row)
         else:
             nonconflicting.append(row)
@@ -72,6 +74,34 @@ def task_a_conflict_summary(rows: list[dict[str, object]]) -> dict[str, float | 
         "task_a_conflicting_em": None if conflicting_metrics is None else conflicting_metrics["exact_match"],
         "task_a_nonconflicting_em": None if nonconflicting_metrics is None else nonconflicting_metrics["exact_match"],
     }
+
+
+def metadata_slice_summary(rows: list[dict[str, object]], metadata_key: str, values: list[str]) -> dict[str, float | int | None]:
+    summary: dict[str, float | int | None] = {}
+    for value in values:
+        value_rows = []
+        for row in rows:
+            metadata = row.get("metadata") or {}
+            if isinstance(metadata, dict) and metadata.get(metadata_key) == value:
+                value_rows.append(row)
+        metrics = metric_summary(value_rows) if value_rows else None
+        summary[f"{value}_n"] = len(value_rows)
+        summary[f"{value}_em"] = None if metrics is None else metrics["exact_match"]
+    return summary
+
+
+def prefixed_slice_fields(prefix: str, before: dict[str, float | int | None], after: dict[str, float | int | None]) -> dict[str, float | int | None]:
+    fields: dict[str, float | int | None] = {}
+    for key, value in after.items():
+        if key.endswith("_n"):
+            fields[f"{prefix}_{key}"] = value
+    for key, value in before.items():
+        if key.endswith("_em"):
+            fields[f"{prefix}_{key.removesuffix('_em')}_before_em"] = value
+    for key, value in after.items():
+        if key.endswith("_em"):
+            fields[f"{prefix}_{key.removesuffix('_em')}_after_em"] = value
+    return fields
 
 
 def maybe_write_predictions(config: dict, name: str, rows: list[dict[str, object]], ewc_n0: int, ewc_rank: int, ewc_lambda: float) -> None:
@@ -114,12 +144,37 @@ def completed_keys(metrics_path: str | Path) -> set[tuple[int, int, float]]:
     return keys
 
 
+def configured_ewc_combinations(config: dict, args: argparse.Namespace | None = None) -> list[tuple[int, int, float]]:
+    if args is not None and (args.ewc_n0 is not None or args.ewc_rank is not None or args.ewc_lambda is not None):
+        n0_values = [args.ewc_n0] if args.ewc_n0 is not None else config["ewc"]["n0_values"]
+        rank_values = [args.ewc_rank] if args.ewc_rank is not None else config["ewc"]["rank_values"]
+        lambda_values = [args.ewc_lambda] if args.ewc_lambda is not None else config["ewc"]["lambda_values"]
+        return [(int(n0), int(rank), float(lambda_ewc)) for n0 in n0_values for rank in rank_values for lambda_ewc in lambda_values]
+
+    explicit_combinations = config["ewc"].get("combinations")
+    if explicit_combinations:
+        return [
+            (int(combo["n0"]), int(combo["rank"]), float(combo["lambda"]))
+            for combo in explicit_combinations
+        ]
+
+    return [
+        (int(n0), int(rank), float(lambda_ewc))
+        for n0 in config["ewc"]["n0_values"]
+        for rank in config["ewc"]["rank_values"]
+        for lambda_ewc in config["ewc"]["lambda_values"]
+    ]
+
+
 def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limit_eval: int | None = None) -> dict:
     cleanup_cuda()
     ensure_data(config)
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
+    eval_cfg = config.get("evaluation", {})
+    eval_batch_size = int(eval_cfg.get("batch_size", 1))
+    eval_max_new_tokens = int(eval_cfg.get("max_new_tokens", 32))
     model_cfg = ModelConfig(**config["model"])
     train_cfg = TrainingConfig(
         max_seq_length=int(config["training"]["max_seq_length"]),
@@ -150,7 +205,13 @@ def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limi
 
     run_start = time.time()
     task_a_train_metrics = train_supervised(model, tokenizer, task_a_train, train_cfg)
-    task_a_before_rows = evaluate_examples_with_predictions(model, tokenizer, task_a_eval)
+    task_a_before_rows = evaluate_examples_with_predictions(
+        model,
+        tokenizer,
+        task_a_eval,
+        max_new_tokens=eval_max_new_tokens,
+        batch_size=eval_batch_size,
+    )
     task_a_before = metric_summary(task_a_before_rows)
 
     ewc_state = estimate_ewc(
@@ -170,12 +231,33 @@ def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limi
         ewc_penalty=make_ewc_penalty(model, ewc_state),
         ewc_lambda=ewc_lambda,
     )
-    task_b_after_rows = evaluate_examples_with_predictions(model, tokenizer, task_b_eval)
+    task_b_after_rows = evaluate_examples_with_predictions(
+        model,
+        tokenizer,
+        task_b_eval,
+        max_new_tokens=eval_max_new_tokens,
+        batch_size=eval_batch_size,
+    )
     task_b_after = metric_summary(task_b_after_rows)
-    task_a_after_rows = evaluate_examples_with_predictions(model, tokenizer, task_a_eval)
+    task_a_after_rows = evaluate_examples_with_predictions(
+        model,
+        tokenizer,
+        task_a_eval,
+        max_new_tokens=eval_max_new_tokens,
+        batch_size=eval_batch_size,
+    )
     task_a_after = metric_summary(task_a_after_rows)
     task_a_before_conflict = task_a_conflict_summary(task_a_before_rows)
     task_a_after_conflict = task_a_conflict_summary(task_a_after_rows)
+    relation_values = ["shared", "direct_conflict", "near_conflict", "rare_rule", "heldout_composition"]
+    frequency_values = ["common", "medium", "rare"]
+    composition_values = ["seen", "heldout_pair", "heldout_triple"]
+    relation_before = metadata_slice_summary(task_a_before_rows, "relation_to_next_task", relation_values)
+    relation_after = metadata_slice_summary(task_a_after_rows, "relation_to_next_task", relation_values)
+    frequency_before = metadata_slice_summary(task_a_before_rows, "frequency_bucket", frequency_values)
+    frequency_after = metadata_slice_summary(task_a_after_rows, "frequency_bucket", frequency_values)
+    composition_before = metadata_slice_summary(task_a_before_rows, "composition_type", composition_values)
+    composition_after = metadata_slice_summary(task_a_after_rows, "composition_type", composition_values)
     maybe_write_predictions(config, "task_a_before", task_a_before_rows, ewc_n0, ewc_rank, ewc_lambda)
     maybe_write_predictions(config, "task_a_after", task_a_after_rows, ewc_n0, ewc_rank, ewc_lambda)
     maybe_write_predictions(config, "task_b_after", task_b_after_rows, ewc_n0, ewc_rank, ewc_lambda)
@@ -186,7 +268,13 @@ def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limi
         original_eval = read_jsonl(original_path)
         if limit_eval is not None:
             original_eval = original_eval[:limit_eval]
-        original_metrics = evaluate_examples(model, tokenizer, original_eval)
+        original_metrics = evaluate_examples(
+            model,
+            tokenizer,
+            original_eval,
+            max_new_tokens=eval_max_new_tokens,
+            batch_size=eval_batch_size,
+        )
 
     retention = RetentionScores(task_a_before["exact_match"], task_a_after["exact_match"])
     retention_ratios = [retention.retention_ratio]
@@ -195,6 +283,7 @@ def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limi
 
     record = {
         "case": "case1",
+        "data_generator": str(config["data"].get("generator", "rule_transform")),
         "train_n": len(task_b_train),
         "ewc_n0": ewc_state.ewc_n0,
         "er_buffer": 0,
@@ -202,6 +291,8 @@ def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limi
         "ewc_rank": ewc_rank,
         "ewc_effective_rank": ewc_state.effective_rank,
         "ewc_lambda": ewc_lambda,
+        "eval_batch_size": eval_batch_size,
+        "eval_max_new_tokens": eval_max_new_tokens,
         "target_em": task_b_after["exact_match"],
         "target_token_f1": task_b_after["token_f1"],
         "target_format_validity": task_b_after["format_validity"],
@@ -213,6 +304,9 @@ def run_single(config: dict, ewc_n0: int, ewc_rank: int, ewc_lambda: float, limi
         "task_a_conflicting_after_em": task_a_after_conflict["task_a_conflicting_em"],
         "task_a_nonconflicting_before_em": task_a_before_conflict["task_a_nonconflicting_em"],
         "task_a_nonconflicting_after_em": task_a_after_conflict["task_a_nonconflicting_em"],
+        **prefixed_slice_fields("task_a", relation_before, relation_after),
+        **prefixed_slice_fields("task_a_frequency", frequency_before, frequency_after),
+        **prefixed_slice_fields("task_a_composition", composition_before, composition_after),
         "forgetting_delta": retention.forgetting_delta,
         "retention_ratio": retention.retention_ratio,
         "average_retention": average_retention(retention_ratios),
@@ -243,21 +337,15 @@ def main() -> None:
     config = load_config(args.config)
     done = completed_keys(config["outputs"]["metrics_path"]) if args.resume else set()
 
-    n0_values = [args.ewc_n0] if args.ewc_n0 is not None else config["ewc"]["n0_values"]
-    rank_values = [args.ewc_rank] if args.ewc_rank is not None else config["ewc"]["rank_values"]
-    lambda_values = [args.ewc_lambda] if args.ewc_lambda is not None else config["ewc"]["lambda_values"]
-
-    for ewc_n0 in n0_values:
-        for ewc_rank in rank_values:
-            for ewc_lambda in lambda_values:
-                key = (int(ewc_n0), int(ewc_rank), float(ewc_lambda))
-                if key in done:
-                    print(json.dumps({"skipped_existing": True, "ewc_n0": key[0], "ewc_rank": key[1], "ewc_lambda": key[2]}))
-                    continue
-                record = run_single(config, int(ewc_n0), int(ewc_rank), float(ewc_lambda), args.limit_eval)
-                print(json.dumps(record, sort_keys=True))
-                if args.smoke:
-                    return
+    for ewc_n0, ewc_rank, ewc_lambda in configured_ewc_combinations(config, args):
+        key = (ewc_n0, ewc_rank, ewc_lambda)
+        if key in done:
+            print(json.dumps({"skipped_existing": True, "ewc_n0": key[0], "ewc_rank": key[1], "ewc_lambda": key[2]}))
+            continue
+        record = run_single(config, ewc_n0, ewc_rank, ewc_lambda, args.limit_eval)
+        print(json.dumps(record, sort_keys=True))
+        if args.smoke:
+            return
 
 
 if __name__ == "__main__":

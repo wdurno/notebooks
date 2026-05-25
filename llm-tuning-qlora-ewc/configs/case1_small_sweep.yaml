@@ -7,6 +7,7 @@ model:
   trust_remote_code: false
 
 data:
+  generator: rule_transform
   generated_dir: data/generated
   task_a_path: data/generated/case1_task_a.jsonl
   task_b_path: data/generated/case1_task_b.jsonl
@@ -23,6 +24,10 @@ training:
   qlora_rank: 8
   qlora_alpha: 16
   qlora_dropout: 0.05
+
+evaluation:
+  batch_size: 1
+  max_new_tokens: 32
 
 ewc:
   n0_values: [0, 4, 16, 64]

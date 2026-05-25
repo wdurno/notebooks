@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Sequence
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -121,23 +121,45 @@ def train_supervised(
 
 @torch.inference_mode()
 def generate_answer(model, tokenizer, prompt: str, max_new_tokens: int = 32) -> str:
+    return generate_answers(model, tokenizer, [prompt], max_new_tokens=max_new_tokens)[0]
+
+
+@torch.inference_mode()
+def generate_answers(model, tokenizer, prompts: Sequence[str], max_new_tokens: int = 32) -> list[str]:
+    if not prompts:
+        return []
     model.eval()
     device = get_primary_device(model)
-    prompt_text = format_prompt(tokenizer, prompt)
-    encoded = tokenizer(prompt_text, return_tensors="pt").to(device)
-    generated = model.generate(
-        **encoded,
-        do_sample=False,
-        max_new_tokens=max_new_tokens,
-        pad_token_id=tokenizer.pad_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-    )
-    new_tokens = generated[0, encoded["input_ids"].shape[1] :]
-    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+    prompt_texts = [format_prompt(tokenizer, prompt) for prompt in prompts]
+    old_padding_side = getattr(tokenizer, "padding_side", "right")
+    tokenizer.padding_side = "left"
+    try:
+        encoded = tokenizer(prompt_texts, return_tensors="pt", padding=True).to(device)
+        generated = model.generate(
+            **encoded,
+            do_sample=False,
+            max_new_tokens=max_new_tokens,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+    finally:
+        tokenizer.padding_side = old_padding_side
+    answers = []
+    input_width = encoded["input_ids"].shape[1]
+    for idx in range(len(prompts)):
+        new_tokens = generated[idx, input_width:]
+        answers.append(tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
+    return answers
 
 
-def evaluate_examples(model, tokenizer, examples: Iterable[JsonlExample], max_new_tokens: int = 32) -> dict[str, float]:
-    rows = evaluate_examples_with_predictions(model, tokenizer, examples, max_new_tokens=max_new_tokens)
+def evaluate_examples(
+    model,
+    tokenizer,
+    examples: Iterable[JsonlExample],
+    max_new_tokens: int = 32,
+    batch_size: int = 1,
+) -> dict[str, float]:
+    rows = evaluate_examples_with_predictions(model, tokenizer, examples, max_new_tokens=max_new_tokens, batch_size=batch_size)
     if not rows:
         return {"exact_match": 0.0, "token_f1": 0.0, "format_validity": 0.0}
     return {
@@ -152,23 +174,33 @@ def evaluate_examples_with_predictions(
     tokenizer,
     examples: Iterable[JsonlExample],
     max_new_tokens: int = 32,
+    batch_size: int = 1,
 ) -> list[dict[str, object]]:
+    examples = list(examples)
+    batch_size = max(int(batch_size), 1)
     rows: list[dict[str, object]] = []
-    for example in examples:
-        prediction = generate_answer(model, tokenizer, example.prompt, max_new_tokens=max_new_tokens)
-        validator = example.metadata.get("validator") if example.metadata else None
-        parsed_prediction = extract_constrained_answer(prediction, validator)
-        rows.append(
-            {
-                "id": example.id,
-                "prompt": example.prompt,
-                "target": example.target,
-                "metadata": example.metadata,
-                "prediction": prediction,
-                "parsed_prediction": parsed_prediction,
-                "exact_match": exact_match(parsed_prediction, example.target),
-                "token_f1": token_f1(parsed_prediction, example.target),
-                "format_validity": format_validity(parsed_prediction, validator),
-            }
+    for start in range(0, len(examples), batch_size):
+        batch_examples = examples[start : start + batch_size]
+        predictions = generate_answers(
+            model,
+            tokenizer,
+            [example.prompt for example in batch_examples],
+            max_new_tokens=max_new_tokens,
         )
+        for example, prediction in zip(batch_examples, predictions, strict=True):
+            validator = example.metadata.get("validator") if example.metadata else None
+            parsed_prediction = extract_constrained_answer(prediction, validator)
+            rows.append(
+                {
+                    "id": example.id,
+                    "prompt": example.prompt,
+                    "target": example.target,
+                    "metadata": example.metadata,
+                    "prediction": prediction,
+                    "parsed_prediction": parsed_prediction,
+                    "exact_match": exact_match(parsed_prediction, example.target),
+                    "token_f1": token_f1(parsed_prediction, example.target),
+                    "format_validity": format_validity(parsed_prediction, validator),
+                }
+            )
     return rows
