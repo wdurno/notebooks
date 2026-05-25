@@ -1,0 +1,4 @@
+{
+  "python.defaultInterpreterPath": "/home/evan/.venv/bin/python",
+  "jupyter.notebookFileRoot": "${workspaceFolder}"
+}

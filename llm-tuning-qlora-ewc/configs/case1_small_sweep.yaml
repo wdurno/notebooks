@@ -1,0 +1,35 @@
+model:
+  name: microsoft/Phi-4-mini-instruct
+  cache_dir: data/models
+  load_in_4bit: true
+  gradient_checkpointing: true
+  attn_implementation: flash_attention_2
+  trust_remote_code: false
+
+data:
+  generated_dir: data/generated
+  task_a_path: data/generated/case1_task_a.jsonl
+  task_b_path: data/generated/case1_task_b.jsonl
+  original_eval_path: data/generated/eval_original.jsonl
+  n_per_split: 128
+  seed: 13
+
+training:
+  max_seq_length: 512
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 0.0002
+  epochs: 2
+  qlora_rank: 8
+  qlora_alpha: 16
+  qlora_dropout: 0.05
+
+ewc:
+  n0_values: [0, 4, 16, 64]
+  rank_values: [0, 1, 4]
+  lambda_values: [1.0]
+  min_off_diag: 1.0e-12
+
+outputs:
+  run_dir: outputs/case1_small_sweep
+  metrics_path: outputs/case1_small_sweep/metrics.jsonl

@@ -1,0 +1,16 @@
+torch
+transformers
+accelerate
+peft
+bitsandbytes
+datasets
+flash-attn
+tqdm
+numpy
+pandas
+matplotlib
+scikit-learn
+pyyaml
+ipykernel
+notebook
+ipywidgets
