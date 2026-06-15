@@ -13,6 +13,7 @@ See [mathematical_overview](mathematical_overview.ipynb) for more detail and a f
 
 ## Conclusion: Halting progress
 
+There's a math snag: Amari-Chentsov updates require prohibitively expensive numerical operations. 
 See [mathematical_overview](mathematical_overview.ipynb) for details. 
 
 ## Why are experiments needed? 
