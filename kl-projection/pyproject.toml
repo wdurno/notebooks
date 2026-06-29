@@ -12,7 +12,6 @@ dependencies = [
   "numpy",
   "Pillow",
   "requests",
-  "torch",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +22,7 @@ server = [
   "peft",
   "piper-tts",
   "sounddevice",
+  "torch",
   "tqdm",
   "transformers",
 ]
@@ -34,6 +34,10 @@ robot = [
 test = [
   "pytest",
 ]
+
+[project.scripts]
+picar-kl-robot-server = "picar_kl.robot.app:main"
+picar-kl-phase1 = "picar_kl.phase1.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

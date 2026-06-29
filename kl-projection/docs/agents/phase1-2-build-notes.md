@@ -44,6 +44,11 @@ The new architecture is VLM/LSTM hierarchy:
 Use check-ins between build phases.
 The scope is large enough that later phases should be refined after earlier results are visible.
 
+Use split install paths.
+The GPU server does not need a true package build during normal development; use `pip install -r requirements-server.txt`.
+The Raspberry Pi robot should install a built wheel with robot-light dependencies only.
+Keep heavyweight training dependencies, including `torch`, off the base robot install.
+
 ## Target Repository Shape
 
 Expected root additions:
@@ -103,11 +108,56 @@ Tasks:
 7. Copy old integration tests into `tests/integration/`, then refactor imports.
 8. Copy old unit tests that protect reused mechanics into `tests/unit/`, then refactor imports.
 9. Copy model manifests into `/artifacts/manifests/tracked/`.
-10. Copy existing phase 1 data into `/artifacts/data/phase1/`.
-11. Copy math notebook/result material into `/notebooks/` or `/docs/humans/`, rewritten for the current experiment's context.
+10. Copy full old data into `/artifacts/data/legacy_robot_demo/`.
+11. Copy existing phase 1 subset into `/artifacts/data/phase1/` for convenience.
+12. Copy math notebook/result material into `/notebooks/` or `/docs/humans/`, rewritten for the current experiment's context.
 
 Check-in A:
 Confirm directory structure, package name, copied artifact placement, and gitignore behavior before deeper refactors.
+
+Phase A is only a staged import.
+It preserves useful source material and data inside this repo, but it does not make the copied architecture the new architecture.
+
+## Refactor Roadmap
+
+Refactoring happens by extracting narrow modules from staged legacy copies, testing the extracted behavior, then moving runtime paths onto the extracted modules.
+The staged legacy tree is reference material during this process.
+
+Phase B extracts stable interfaces:
+
+- action names and action distributions.
+- distribution-to-robot-vector conversion.
+- phase 1 record schemas and old-data compatibility loaders.
+- latency event records.
+- PiCar client/server boundaries.
+
+Phase C rewrites phase 1 runtime around those interfaces:
+
+- VLM-only control loop.
+- observation storage.
+- speech hooks where practical.
+- fake VLM and fake robot tests.
+- manual robot tests marked with `integration` and `robot`.
+- robot wheel build and Flask server entry point.
+
+Phase D builds new phase 2 training code:
+
+- visual encoder protocol.
+- VLM conditioning head.
+- LSTM policy.
+- KL projection dataset, loss, and training script.
+- old and new phase 1 data loaders.
+
+Phase E builds new phase 2 robot execution:
+
+- sparse VLM refresh every `K` steps.
+- per-step LSTM action distributions.
+- raw latency logging.
+- coherency records for later scoring.
+- fake end-to-end integration test before manual robot validation.
+
+The exit criterion is practical: ordinary phase 1 and phase 2 use should import `picar_kl` modules, not staged legacy modules.
+Legacy modules may remain temporarily as provenance and phase 3 reference material, but should not be on the main runtime path after their behavior has been extracted.
 
 ## Build Phase B: Core Interfaces
 
@@ -182,6 +232,7 @@ Scripts:
 
 ```text
 scripts/run_phase1.py
+scripts/build_robot_wheel.py
 ```
 
 Tests:
@@ -189,6 +240,14 @@ Tests:
 - Unit tests with fake VLM and fake robot client.
 - Integration test adapted from old PiCar env smoke test.
 - Manual robot test remains marked `integration` and `robot`.
+
+Packaging:
+
+- Server path: `pip install -r requirements-server.txt`.
+- Robot path: build a wheel and install robot extras on the Raspberry Pi.
+- Base package dependencies must remain robot-light.
+- `torch` and VLM/training dependencies belong in server requirements or server extras.
+- Add a `picar-kl-robot-server` entry point before robot install docs are considered complete.
 
 Check-in C:
 Experimenter can generate a small phase 1 run, inspect files, and confirm the record shape before phase 2 training depends on it.
@@ -304,10 +363,11 @@ Docs to write:
 
 1. `/docs/humans/setup.md`
 2. `/docs/humans/build.md`
-3. `/docs/humans/run_phase1.md`
-4. `/docs/humans/train_phase2.md`
-5. `/docs/humans/run_phase2_robot.md`
-6. `/docs/humans/data_layout.md`
+3. `/docs/humans/robot_install.md`
+4. `/docs/humans/run_phase1.md`
+5. `/docs/humans/train_phase2.md`
+6. `/docs/humans/run_phase2_robot.md`
+7. `/docs/humans/data_layout.md`
 
 Also update:
 
@@ -373,11 +433,15 @@ For copied code, record provenance according to `/docs/agents/import-provenance-
 6. Phase 2 depends on a VLM head not present in old code.
    Mitigation: implement the conditioning head behind a small module with fake tests before real Qwen integration.
 
+7. Packaging can accidentally pull server/training dependencies onto the Raspberry Pi.
+   Mitigation: keep base dependencies robot-light, build a wheel only for robot install, and keep server development on `requirements-server.txt`.
+
 ## Current Recommendation
 
 Proceed with the build in check-pointed phases.
-Start with Phase A and Phase B.
-Do not start phase 2 model training until copied data loads cleanly and action distribution semantics are tested.
+Before Phase C runtime work, fix the dependency split so `torch` is no longer a base package dependency.
+Then build the phase 1 loop and robot Flask entry point together.
+Do not start phase 2 model training until copied data loads cleanly, action distribution semantics are tested, and server-only dependencies are isolated from robot install.
 
 ## Build Notes
 
@@ -411,6 +475,7 @@ Copied:
 - old robot-demo source into `/src/picar_kl/legacy/robot_demo/src/`
 - old robot-demo tests into `/src/picar_kl/legacy/robot_demo/tests/`
 - old robot-demo integration tests into `/tests/integration/robot_demo/`
+- full old robot-demo data into `/artifacts/data/legacy_robot_demo/`
 - old phase 1 data into `/artifacts/data/phase1/`
 - old model manifests into `/artifacts/manifests/tracked/models/`
 - old PiCar API code into `/src/picar_kl/robot/legacy_car_env/`
@@ -431,4 +496,139 @@ Adjusted:
 Verification:
 
 - `~/.venv/bin/python -m pytest -q` passed with the scaffold smoke test.
-- phase 1 data copy is present locally and remains gitignored.
+- full old data and phase 1 subset copies are present locally and remain gitignored.
+
+### Phase B Core Interface Pass Completed
+
+Implemented:
+
+- `/src/picar_kl/actions.py`
+- `/src/picar_kl/latency.py`
+- `/src/picar_kl/records.py`
+- `/src/picar_kl/data/phase1.py`
+- `/src/picar_kl/robot/client.py`
+- `/src/picar_kl/robot/server.py`
+
+Established:
+
+- canonical eight-action order.
+- JSON-friendly action distributions.
+- deterministic distribution-to-vector conversion.
+- raw wall-clock latency event records.
+- phase 1 record types for new data.
+- legacy row conversion from `agentic_action_name` to one-hot distributions.
+- recursive phase 1 run discovery for old root UUID runs and nested `phase1` runs.
+- `.npz` image loading.
+- retrying PiCar HTTP client.
+- robot-side Flask app factory without top-level hardware imports.
+
+Added unit tests for:
+
+- action round trips.
+- distribution validation.
+- distribution-to-vector conversion.
+- latency serialization and timer behavior.
+- legacy action and observation conversion.
+- nested phase 1 run discovery.
+- phase 1 `.npz` image loading.
+- PiCar client route, vector, JPEG, and timeout behavior.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q` passed with 20 tests.
+- `~/.venv/bin/python -m py_compile` passed for new Phase B modules.
+
+Phase C starting backlog:
+
+- remove `torch` from base package dependencies and keep it server-side.
+- add a robot wheel build script.
+- add a `picar-kl-robot-server` entry point.
+- choose the exact new phase 1 writer layout.
+- adapt speech hooks behind explicit interfaces.
+- move the VLM-only runtime off staged legacy modules.
+- add fake VLM/fake robot end-to-end tests for the phase 1 loop.
+
+### Phase C Initial Runtime Pass Completed
+
+Implemented:
+
+- moved `torch` out of base package dependencies and into server extras.
+- added `picar-kl-robot-server` entry point.
+- added `picar-kl-phase1` entry point.
+- added `/scripts/build_robot_wheel.py`.
+- added `/src/picar_kl/robot/app.py`.
+- added `/src/picar_kl/io/observation_store.py`.
+- added `/src/picar_kl/vlm/control.py`.
+- added `/src/picar_kl/phase1/run.py`.
+- added `/src/picar_kl/phase1/cli.py`.
+- added `/docs/humans/robot_install.md`.
+
+Established:
+
+- server path remains `pip install -r requirements-server.txt`.
+- robot path uses a built wheel with robot extras.
+- robot server hardware imports are deferred until the command runs without `--dry-run`.
+- phase 1 runtime is protocol-driven for robot, VLM, speech source, and speaker.
+- phase 1 records now include image blobs, messages, user texts, action distributions, action receipts, generated text, and raw latency events.
+- fixed-action VLM controller exists only for smoke tests and loop validation.
+
+Added unit tests for:
+
+- pyproject dependency split and entry points.
+- phase 1 observation store.
+- VLM message construction and action parsing.
+- fake robot/fake VLM phase 1 end-to-end loop.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q` passed with 27 tests.
+- `~/.venv/bin/python -m py_compile` passed for new Phase C modules and build script.
+
+Initial pass handoff:
+
+- wire the real Qwen2.5-VL-3B phase 1 controller.
+- adapt speech hooks behind explicit interfaces.
+- decide whether `picar-kl-phase1` should allow fixed-action smoke mode by default or require an explicit flag.
+- run a robot-side dry-run/manual install check on the Raspberry Pi.
+- adapt copied integration tests to the new runtime path.
+
+### Phase C Controller and Speech Pass Completed
+
+Implemented:
+
+- `/src/picar_kl/models/store.py`.
+- `/src/picar_kl/vlm/qwen.py`.
+- `/src/picar_kl/speech/adapters.py`.
+- `/docs/humans/run_phase1.md`.
+- fake-runtime integration test under `/tests/integration/phase1/`.
+
+Established:
+
+- Qwen2.5-VL phase 1 controller loads from tracked VLM manifests and local model assets.
+- model downloads are opt-in.
+- Qwen controller defaults to JSON action parsing and returns action distributions.
+- Qwen processor has a fallback to the copied image-only processor helper.
+- fixed-action mode is explicit via `--smoke-fixed-action`.
+- speech input and output are explicit CLI flags.
+- speech adapters sit behind the existing phase 1 protocols.
+- a new-runtime integration test exercises fake robot plus fake VLM without hardware.
+
+Added unit tests for:
+
+- model manifest resolution and missing asset errors.
+- Qwen generated-action parsing with fake model and processor.
+- speech source and speaker adapters.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q` passed with 34 tests.
+- `~/.venv/bin/python -m pytest -q tests/integration/phase1/test_phase1_fake_runtime.py` passed.
+- `~/.venv/bin/python -m py_compile` passed for new controller/speech modules.
+- `~/.venv/bin/python scripts/build_robot_wheel.py --dist-dir /tmp/picar-kl-wheel-test` passed.
+- wheel metadata confirmed `torch` is server-extra only, not a base dependency.
+
+Remaining Phase C work:
+
+- run a robot-side dry-run/manual install check on the Raspberry Pi.
+- run a server-side Qwen smoke test once local model assets are available.
+- adapt copied hardware integration tests to the new robot server and phase 1 commands.
