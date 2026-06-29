@@ -38,6 +38,8 @@ Expect conversational & collaborative exploration with the experimenter and occa
 8. No large data files are to ever be `git`-committed. For example, deep learning models and experimental sampling data should not be committed. Use the `/.gitignore` file to manage this. 
 9. Maintain a coherent, elegant codebase, avoiding duplicative content. Propose refactors to the experimenter when repo elegance starts degrading. 
 
+For running Python, you'll find a virtual environment at `~/.venv`.
+
 **References:**
 1. High-level experimental intention is described in the repo root's readme file, `/README.md`. 
 2. Implementation notes are stored in `/docs/agents/`. This directory can store notes from you or guidance from the user. 

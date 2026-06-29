@@ -1,0 +1,18 @@
+{
+  "default": "whisper-large-v3-turbo-int8",
+  "models": {
+    "whisper-large-v3-turbo-int8": {
+      "name": "whisper-large-v3-turbo-int8",
+      "backend": "faster-whisper",
+      "repo_id": "Zoont/faster-whisper-large-v3-turbo-int8-ct2",
+      "target_dir": "stt/whisper-large-v3-turbo-int8",
+      "required_files": [
+        "config.json",
+        "model.bin",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "vocabulary.json"
+      ]
+    }
+  }
+}

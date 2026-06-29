@@ -378,3 +378,57 @@ For copied code, record provenance according to `/docs/agents/import-provenance-
 Proceed with the build in check-pointed phases.
 Start with Phase A and Phase B.
 Do not start phase 2 model training until copied data loads cleanly and action distribution semantics are tested.
+
+## Build Notes
+
+### Phase A Completed
+
+Phase A scaffold and import pass has been executed.
+
+Created:
+
+- `/src/picar_kl/`
+- `/tests/unit/`
+- `/tests/integration/`
+- `/config/`
+- `/experiments/configs/`
+- `/experiments/runs/`
+- `/experiments/reports/`
+- `/artifacts/manifests/tracked/`
+- `/artifacts/manifests/ephemeral/`
+- `/artifacts/models/`
+- `/artifacts/data/`
+- `/notebooks/`
+- `/docs/humans/`
+- `/scripts/`
+- `/pyproject.toml`
+- `/requirements-server.txt`
+- `/requirements-robot.txt`
+- `/.gitignore`
+
+Copied:
+
+- old robot-demo source into `/src/picar_kl/legacy/robot_demo/src/`
+- old robot-demo tests into `/src/picar_kl/legacy/robot_demo/tests/`
+- old robot-demo integration tests into `/tests/integration/robot_demo/`
+- old phase 1 data into `/artifacts/data/phase1/`
+- old model manifests into `/artifacts/manifests/tracked/models/`
+- old PiCar API code into `/src/picar_kl/robot/legacy_car_env/`
+- old PiCar API runner into `/src/picar_kl/robot/legacy_run_api.py`
+- Amari-Chentsov notebook into `/notebooks/imported/`
+
+Added provenance:
+
+- `/docs/agents/phase-a-import-provenance.md`
+- `/docs/humans/math-context.md`
+- local README files in staged legacy directories.
+
+Adjusted:
+
+- copied integration tests now point at `/src/picar_kl/legacy/robot_demo/src/`.
+- default pytest path is `/tests/unit/`, so integration tests remain manual.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q` passed with the scaffold smoke test.
+- phase 1 data copy is present locally and remains gitignored.

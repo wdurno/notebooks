@@ -1,0 +1,29 @@
+# Python build outputs
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+
+# Generated experiment and model artifacts
+artifacts/data/
+artifacts/models/
+artifacts/manifests/ephemeral/
+
+# Keep lightweight artifact manifests
+!artifacts/
+!artifacts/manifests/
+!artifacts/manifests/tracked/
+!artifacts/manifests/tracked/**
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+

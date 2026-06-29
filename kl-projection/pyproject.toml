@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "picar-kl"
+version = "0.1.0"
+description = "KL projection experiments for a two-speed PiCar-V VLM/LSTM hierarchy."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "Pillow",
+  "requests",
+  "torch",
+]
+
+[project.optional-dependencies]
+server = [
+  "bitsandbytes",
+  "faster-whisper",
+  "huggingface_hub",
+  "peft",
+  "piper-tts",
+  "sounddevice",
+  "tqdm",
+  "transformers",
+]
+robot = [
+  "Flask",
+  "numpy",
+  "opencv-python",
+]
+test = [
+  "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["src"]
+markers = [
+  "slow: tests that are intentionally slower than the default unit suite",
+  "gpu: tests requiring CUDA or heavyweight model execution",
+  "integration: integration tests outside the default unit suite",
+  "robot: tests requiring PiCar-V hardware",
+]
