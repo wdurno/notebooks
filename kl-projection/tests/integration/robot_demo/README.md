@@ -96,25 +96,31 @@ to exercise the full Qwen action path as well, set `PICAR_USE_REAL_ACTION_MODEL=
 Run (default 30 seconds):
 
 ```bash
-PICAR_V_HOST=<host:port> pytest demo/tests/integration/vision_test.py -s
+PICAR_V_HOST=<host:port> pytest tests/integration/robot_demo/vision_test.py -s
 ```
 
 Change duration with a command-line flag:
 
 ```bash
-PICAR_V_HOST=<host:port> pytest demo/tests/integration/vision_test.py -s --vision-seconds=45
+PICAR_V_HOST=<host:port> pytest tests/integration/robot_demo/vision_test.py -s --vision-seconds=45
 ```
 
 Run until you stop it with `Ctrl-C`:
 
 ```bash
-PICAR_V_HOST=<host:port> pytest demo/tests/integration/vision_test.py -s --vision-seconds=-1
+PICAR_V_HOST=<host:port> pytest tests/integration/robot_demo/vision_test.py -s --vision-seconds=-1
 ```
 
 This test:
 
 1. prints instructions and reminds you that `Ctrl-C` ends early;
-2. runs the `PiCarGymEnv` loop with per-step prompts asking the robot to
-   describe what it sees;
-3. streams frames to a desktop OpenCV window; and
-4. plays generated robot text through TTS on each step.
+2. connects to the robot Flask server through `picar_kl.robot.client.PiCarClient`;
+3. captures and validates camera frames; and
+4. optionally streams frames to a desktop OpenCV window when `PICAR_SHOW_VISION_WINDOW=1`.
+
+Optional environment variables:
+
+- `PICAR_VISION_X_RESIZE=160`
+- `PICAR_VISION_Y_RESIZE=120`
+- `PICAR_VISION_INTERVAL_SECONDS=0.2`
+- `PICAR_SHOW_VISION_WINDOW=1`

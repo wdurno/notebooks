@@ -632,3 +632,37 @@ Remaining Phase C work:
 - run a robot-side dry-run/manual install check on the Raspberry Pi.
 - run a server-side Qwen smoke test once local model assets are available.
 - adapt copied hardware integration tests to the new robot server and phase 1 commands.
+
+### Phase C Vision Integration Refactor Completed
+
+Implemented:
+
+- refactored `/tests/integration/robot_demo/vision_test.py` to use `picar_kl.robot.client.PiCarClient`.
+- updated `/tests/integration/robot_demo/README.md` for the new vision test command.
+
+Established:
+
+- `vision_test.py` is now a robot Flask server and camera smoke test.
+- it no longer imports legacy env, legacy model, reward scorer, Qwen, STT, or TTS.
+- it validates frame shape and dtype.
+- desktop frame display is optional via `PICAR_SHOW_VISION_WINDOW=1`.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q` passed with 34 tests.
+- `~/.venv/bin/python -m pytest -q tests/integration/robot_demo/vision_test.py` skipped cleanly without `PICAR_V_HOST`.
+- `~/.venv/bin/python -m py_compile tests/integration/robot_demo/vision_test.py` passed.
+
+Recommended manual sequence:
+
+1. Build wheel: `~/.venv/bin/python scripts/build_robot_wheel.py`.
+2. Install wheel on Raspberry Pi: `pip install 'dist/picar_kl-0.1.0-py3-none-any.whl[robot]'`.
+3. Start robot server on Raspberry Pi: `picar-kl-robot-server --host 0.0.0.0 --port 5000`.
+4. Run vision test from server machine: `PICAR_V_HOST=<host:port> ~/.venv/bin/python -m pytest -q tests/integration/robot_demo/vision_test.py -s`.
+
+Remaining Phase C work:
+
+- run the robot-side install/server check on the Raspberry Pi.
+- run the refactored vision test against the live Raspberry Pi server.
+- run a server-side Qwen smoke test once local model assets are available.
+- adapt the remaining copied hardware integration tests to the new robot server and phase 1 commands.

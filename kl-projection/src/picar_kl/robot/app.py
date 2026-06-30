@@ -95,12 +95,11 @@ class LegacyPiCarController:
 
 
 class LegacyPiCarCamera:
-    """Adapter around the copied PiCar camera object."""
+    """Adapter around an OpenCV PiCar camera device."""
 
-    def __init__(self) -> None:
-        from picar_kl.robot.legacy_car_env.car import img
-
-        self.img = img
+    def __init__(self, *, camera_index: int = 0) -> None:
+        self.camera_index = int(camera_index)
+        self._capture = None
 
     def capture_jpeg(
         self,
@@ -109,7 +108,8 @@ class LegacyPiCarCamera:
         y_resize: int | None = None,
         jpeg_quality: int | None = None,
     ) -> bytes:
-        ok, frame = self.img.read()
+        capture = self._open_capture()
+        ok, frame = capture.read()
         if not ok:
             raise RuntimeError("PiCar camera read failed")
         image = Image.fromarray(_bgr_to_rgb(frame))
@@ -118,6 +118,22 @@ class LegacyPiCarCamera:
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=int(jpeg_quality or 80))
         return buffer.getvalue()
+
+    def _open_capture(self):
+        if self._capture is not None and self._capture.isOpened():
+            return self._capture
+        try:
+            import cv2
+        except ImportError as exc:
+            raise RuntimeError("opencv-python is required for PiCar camera capture") from exc
+
+        capture = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
+        if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if not capture.isOpened():
+            raise RuntimeError(f"PiCar camera index {self.camera_index} did not open")
+        self._capture = capture
+        return capture
 
 
 class DryRunController:
@@ -131,6 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the PiCar robot Flask server.")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -146,7 +163,7 @@ def main() -> int:
         camera = None
     else:
         controller = LegacyPiCarController()
-        camera = LegacyPiCarCamera()
+        camera = LegacyPiCarCamera(camera_index=int(args.camera_index))
     app = create_app(controller=controller, camera=camera)
     app.run(host=args.host, port=int(args.port))
     return 0
