@@ -16,7 +16,7 @@ from speech.service import SpeechService
 
 @pytest.mark.integration
 def test_manual_speech_roundtrip():
-    config = SpeechConfig()
+    config = SpeechConfig(model_dir=PROJECT_ROOT / "artifacts" / "models")
     service = SpeechService(config)
 
     print("Manual speech test")

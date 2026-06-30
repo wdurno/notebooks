@@ -17,6 +17,7 @@ env/
 artifacts/data/
 artifacts/models/
 artifacts/manifests/ephemeral/
+src/picar_kl/legacy/robot_demo/model/
 
 # Keep lightweight artifact manifests
 !artifacts/
@@ -26,4 +27,3 @@ artifacts/manifests/ephemeral/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
-

@@ -40,8 +40,10 @@ def test_manual_picar_env_smoke(tmp_path):
 
     step_count = int(os.environ.get("PICAR_TEST_STEPS", "2"))
     use_real_action_model = os.environ.get("PICAR_USE_REAL_ACTION_MODEL", "0") == "1"
+    model_assets_root = PROJECT_ROOT / "artifacts" / "models"
 
     speech_config = SpeechConfig(
+        model_dir=model_assets_root,
         stt=STTConfig(vad_filter=True),
         tts=TTSConfig(),
         audio=AudioIOConfig(),
@@ -74,9 +76,12 @@ def test_manual_picar_env_smoke(tmp_path):
         speech_service = SpeechService(speech_config)
         detected_devices = speech_service.audio.list_devices()
         speech_stream = ContinuousSpeechStream(env_config.speech, transcriber=speech_service.stt)
-        reward_scorer = FrozenVLMRewardScorer(env_config.reward)
+        reward_scorer = FrozenVLMRewardScorer(
+            env_config.reward,
+            model_config=ModelConfig(model_dir=model_assets_root),
+        )
         picar_client = PiCarControlClient(env_config.picar)
-        model = _build_action_model(use_real_action_model=use_real_action_model)
+        model = _build_action_model(use_real_action_model=use_real_action_model, model_dir=model_assets_root)
     except MissingDependencyError as exc:
         pytest.skip(str(exc))
     except RuntimeError as exc:
@@ -166,10 +171,10 @@ def _wait_for_start(speech_stream: ContinuousSpeechStream):
     pytest.fail('Timed out waiting for the operator to say "start".')
 
 
-def _build_action_model(*, use_real_action_model: bool) -> PiCarActionModel:
+def _build_action_model(*, use_real_action_model: bool, model_dir: Path) -> PiCarActionModel:
     replay_buffer = TransitionReplayBuffer(capacity=32)
     if use_real_action_model:
-        return PiCarActionModel(replay_buffer=replay_buffer, config=ModelConfig(default_t=0.2))
+        return PiCarActionModel(replay_buffer=replay_buffer, config=ModelConfig(model_dir=model_dir, default_t=0.2))
 
     backbone = FakeBackbone(
         hidden_size=4,
@@ -178,7 +183,7 @@ def _build_action_model(*, use_real_action_model: bool) -> PiCarActionModel:
     )
     model = PiCarActionModel(
         replay_buffer=replay_buffer,
-        config=ModelConfig(hidden_size=4, learning_rate=0.01, default_t=0.2),
+        config=ModelConfig(model_dir=model_dir, hidden_size=4, learning_rate=0.01, default_t=0.2),
         backbone=backbone,
     )
     with torch.no_grad():

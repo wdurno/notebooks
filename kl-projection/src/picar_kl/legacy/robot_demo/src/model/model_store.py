@@ -22,6 +22,8 @@ class ModelStore:
 
     def load_manifest(self) -> dict[str, Any]:
         manifest_path = self.model_dir / "manifests" / "vlm_models.json"
+        if not manifest_path.exists():
+            manifest_path = _tracked_manifest_dir() / "vlm_models.json"
         with manifest_path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
 
@@ -71,3 +73,7 @@ class ModelStore:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
         return target_dir
+
+
+def _tracked_manifest_dir() -> Path:
+    return Path(__file__).resolve().parents[6] / "artifacts" / "manifests" / "tracked" / "models"

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import io
-import json
+import time
 from typing import Any
 
 import numpy as np
 from PIL import Image
 
-from picar_kl.actions import ActionVector, validate_action_vector
+from picar_kl.actions import validate_action_vector
 from picar_kl.robot.server import create_app
 
 
@@ -21,18 +21,33 @@ DRIVE_TIME = 0.5
 PAN_CENTER = 80
 TILT_CENTER = 20
 PAN_TILT_DELTA = 30
+CAMERA_WIDTH = 160
+CAMERA_HEIGHT = 120
+CAMERA_READ_ATTEMPTS = 3
+CAMERA_READ_SLEEP_SECONDS = 0.15
 
 
 class LegacyPiCarController:
     """Adapter around the copied robot hardware controls."""
 
     def __init__(self) -> None:
-        from picar_kl.robot.legacy_car_env.car import bw, fw, pan_servo, tilt_servo
+        from picar import back_wheels, front_wheels
+        from picar.SunFounder_PCA9685 import Servo
+        import picar
 
-        self.bw = bw
-        self.fw = fw
-        self.pan_servo = pan_servo
-        self.tilt_servo = tilt_servo
+        picar.setup()
+        self.bw = back_wheels.Back_Wheels()
+        self.fw = front_wheels.Front_Wheels()
+        self.pan_servo = Servo.Servo(1)
+        self.tilt_servo = Servo.Servo(2)
+
+        self.fw.offset = 0
+        self.pan_servo.offset = 10
+        self.tilt_servo.offset = 0
+        self.bw.speed = 0
+        self.fw.turn(TURN_ANGLE_CENTER)
+        self.pan_servo.write(TURN_ANGLE_CENTER)
+        self.tilt_servo.write(TURN_ANGLE_CENTER)
 
     def apply_vector(self, action_vector: dict[str, float]) -> dict[str, Any]:
         vector = validate_action_vector(action_vector)
@@ -109,8 +124,8 @@ class LegacyPiCarCamera:
         jpeg_quality: int | None = None,
     ) -> bytes:
         capture = self._open_capture()
-        ok, frame = capture.read()
-        if not ok:
+        frame = self._read_frame(capture)
+        if frame is None:
             raise RuntimeError("PiCar camera read failed")
         image = Image.fromarray(_bgr_to_rgb(frame))
         if x_resize is not None and y_resize is not None and x_resize > 0 and y_resize > 0:
@@ -127,13 +142,25 @@ class LegacyPiCarCamera:
         except ImportError as exc:
             raise RuntimeError("opencv-python is required for PiCar camera capture") from exc
 
-        capture = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
+        capture = cv2.VideoCapture(self.camera_index)
         if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
             capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
         if not capture.isOpened():
             raise RuntimeError(f"PiCar camera index {self.camera_index} did not open")
         self._capture = capture
         return capture
+
+    @staticmethod
+    def _read_frame(capture: Any) -> Any | None:
+        for attempt in range(CAMERA_READ_ATTEMPTS):
+            ok, frame = capture.read()
+            if ok and frame is not None:
+                return frame
+            if attempt + 1 < CAMERA_READ_ATTEMPTS:
+                time.sleep(CAMERA_READ_SLEEP_SECONDS)
+        return None
 
 
 class DryRunController:
@@ -148,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument("--no-camera", action="store_true", help="Start hardware controls without exposing /img.")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -163,7 +191,7 @@ def main() -> int:
         camera = None
     else:
         controller = LegacyPiCarController()
-        camera = LegacyPiCarCamera(camera_index=int(args.camera_index))
+        camera = None if args.no_camera else LegacyPiCarCamera(camera_index=int(args.camera_index))
     app = create_app(controller=controller, camera=camera)
     app.run(host=args.host, port=int(args.port))
     return 0
