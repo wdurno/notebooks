@@ -23,9 +23,9 @@ from model.backbones import FakeBackbone
 from model.config import ModelConfig
 from model.picar_agent import PiCarActionModel
 from model.replay_buffer import TransitionReplayBuffer
-from speech.config import AudioIOConfig, SpeechConfig, STTConfig, TTSConfig
-from speech.errors import MissingDependencyError, SpeechError
-from speech.service import SpeechService
+from picar_kl.speech.config import AudioIOConfig, SpeechConfig, STTConfig, TTSConfig
+from picar_kl.speech.errors import MissingDependencyError, SpeechError
+from picar_kl.speech.service import SpeechService
 
 
 START_TIMEOUT_SECONDS = 90.0

@@ -1,4 +1,4 @@
-from picar_kl.legacy.robot_demo.src.speech.manifests import load_stt_manifest, load_tts_manifest
+from picar_kl.speech.manifests import load_stt_manifest, load_tts_manifest
 
 
 def test_speech_manifests_fall_back_to_tracked_project_manifests(tmp_path):

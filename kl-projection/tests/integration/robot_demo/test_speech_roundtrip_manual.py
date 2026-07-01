@@ -1,17 +1,13 @@
 from pathlib import Path
-import sys
 
 import pytest
 
+from picar_kl.speech.config import SpeechConfig
+from picar_kl.speech.errors import MissingDependencyError, SpeechError
+from picar_kl.speech.service import SpeechService
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = PROJECT_ROOT / "src" / "picar_kl" / "legacy" / "robot_demo" / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-from speech.config import SpeechConfig
-from speech.errors import MissingDependencyError, SpeechError
-from speech.service import SpeechService
 
 
 @pytest.mark.integration

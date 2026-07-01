@@ -140,6 +140,13 @@ Phase C rewrites phase 1 runtime around those interfaces:
 - manual robot tests marked with `integration` and `robot`.
 - robot wheel build and Flask server entry point.
 
+Phase C.5 pays down avoidable legacy debt before phase 2:
+
+- extract speech from staged legacy code into first-class `picar_kl.speech` modules.
+- remove ordinary runtime dependence on `picar_kl.legacy` where practical.
+- keep staged legacy code only as provenance, phase 3 reference material, or explicitly marked integration coverage.
+- keep data collection last, after cleanup and tests.
+
 Phase D builds new phase 2 training code:
 
 - visual encoder protocol.
@@ -251,6 +258,111 @@ Packaging:
 
 Check-in C:
 Experimenter can generate a small phase 1 run, inspect files, and confirm the record shape before phase 2 training depends on it.
+
+## Build Phase C.5: Legacy Debt Cleanup Before Phase 2
+
+Goal: reduce avoidable dependence on staged legacy code before Phase D training code is built.
+Phase D should build on current `picar_kl` interfaces, not copied old repo paths.
+
+Scope:
+
+1. Mark Phase C complete and move residual work into this debt phase.
+2. Extract the legacy speech package into first-class `picar_kl.speech` modules.
+3. Replace `LegacySpeechConfig`, `LegacySpeechSource`, and `LegacySpeaker` names with neutral current-project names or compatibility aliases.
+4. Update Phase 1 CLI speech hooks to use the extracted speech implementation.
+5. Update manual speech integration tests to import `picar_kl.speech` directly instead of modifying `sys.path` to import legacy `speech.*`.
+6. Keep model assets canonical under `/artifacts/models/`.
+7. Keep tracked speech manifests under `/artifacts/manifests/tracked/models/`.
+8. Preserve staged legacy speech code only as provenance until ordinary runtime and tests no longer need it.
+9. Document any remaining `picar_kl.legacy` runtime imports explicitly.
+10. Run the default unit suite and focused speech tests after extraction.
+11. Collect more Phase 1 data only after this cleanup is stable.
+
+Extraction assessment:
+
+- Speech extraction is small-to-medium, not huge.
+- The legacy speech implementation is roughly 580 lines across config, audio I/O, STT, TTS, model store, manifests, service, and errors.
+- It is mostly self-contained around server-side dependencies: `sounddevice`, `faster-whisper`, `piper-tts`, `huggingface_hub`, and `numpy`.
+- The main risks are manual audio-device behavior and Piper subprocess behavior, both already covered by manual integration tests.
+
+Acceptance criteria:
+
+1. Phase 1 CLI speech paths do not import `picar_kl.legacy.robot_demo.src.speech`.
+2. Manual speech round-trip imports `picar_kl.speech` directly.
+3. Unit tests cover speech manifest fallback, model-store missing-asset behavior, queue/empty speech sources, and speaker/source adapters.
+4. `~/.venv/bin/python -m pytest -q` passes.
+5. Data collection remains possible after cleanup.
+
+Check-in C.5:
+Confirm whether any remaining legacy imports are acceptable before starting Phase D.
+
+### Phase C.5 Speech and Processor Extraction Completed
+
+Implemented:
+
+- extracted speech modules into `/src/picar_kl/speech/`:
+  - `audio_io.py`
+  - `config.py`
+  - `errors.py`
+  - `manifests.py`
+  - `model_store.py`
+  - `service.py`
+  - `stt.py`
+  - `tts.py`
+- changed speech defaults so canonical model assets live under `/artifacts/models/`.
+- changed speech manifest fallback to tracked manifests under `/artifacts/manifests/tracked/models/`.
+- changed Phase 1 CLI speech hooks to use `SpeechConfig`, `SpeechServiceSource`, and `SpeechServiceSpeaker`.
+- kept `LegacySpeechConfig`, `LegacySpeechSource`, and `LegacySpeaker` as compatibility aliases only.
+- changed manual speech round-trip integration to import `picar_kl.speech` directly.
+- changed manual PiCar env integration to import `picar_kl.speech` directly for audio/STT/TTS.
+- extracted the Qwen image-only processor fallback into `/src/picar_kl/vlm/processor_loader.py`.
+- changed `picar_kl.vlm.qwen` to use the extracted processor fallback instead of legacy model code.
+
+Added tests:
+
+- speech model-store missing STT/TTS asset behavior.
+- speech model-store existing TTS asset behavior.
+- Qwen image-only processor image-token expansion behavior.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q tests/unit/speech tests/unit/vlm` passed with 13 tests.
+- `~/.venv/bin/python -m pytest -q` passed with 42 tests.
+- manual speech and PiCar env integration tests collect cleanly.
+
+Remaining legacy imports outside staged provenance:
+
+- `/tests/integration/robot_demo/test_picar_env_manual.py` still imports legacy `env.*` and `model.*` modules intentionally, because it is a preserved old-env smoke test.
+- `/tests/unit/models/test_legacy_model_store.py` still imports legacy model-store modules intentionally, because it verifies old VLM manifest fallback behavior.
+
+Current ordinary runtime status:
+
+- Phase 1 speech runtime no longer imports `picar_kl.legacy.robot_demo.src.speech`.
+- Qwen Phase 1 controller no longer imports the legacy processor fallback.
+
+Continuous speech UX and open-ended collection fix:
+
+- extracted old continuous speech stream UX into `/src/picar_kl/speech/stream.py`.
+- Phase 1 now defaults to continuous speech input, TTS output, and unlimited steps.
+- use `Ctrl-C` to end an open-ended collection run.
+- completed steps are written as the robot runs.
+- run metadata records `status`, `steps_completed`, and `ended_at`.
+- `--no-speech-input` and `--no-speech-output` disable verbal communication when needed.
+- Phase 1 drains completed utterances into `user_texts` each step.
+- CLI exposes `--speech-amplitude-threshold`, `--speech-silence-seconds`, and `--speech-min-seconds` for room tuning.
+
+Post-extraction live Phase 1 smoke:
+
+- run `f279d875-45de-483b-b945-505edd3837cc` collected after speech and processor extraction.
+- 5 records and 5 image blobs were written.
+- phase 1 loader read all records and images successfully.
+- action sequence was `look-left`, then repeated `drive-forward`.
+- action distributions remained valid one-hot vectors.
+- total per-step latency stayed roughly 0.9-1.1 seconds.
+- image capture remained fast.
+- Qwen decision latency stayed roughly 0.4 seconds after the first step.
+- no record-shape regression was observed after extraction.
+
 
 ## Build Phase D: Phase 2 Offline KL Projection
 

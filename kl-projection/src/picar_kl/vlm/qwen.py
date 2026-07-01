@@ -122,7 +122,7 @@ def _load_processor(model_path: Path) -> Any:
         return AutoProcessor.from_pretrained(model_path)
     except Exception:
         try:
-            from picar_kl.legacy.robot_demo.src.model.processor_loader import load_qwen_2_5_vl_processor
+            from picar_kl.vlm.processor_loader import load_qwen_2_5_vl_processor
 
             return load_qwen_2_5_vl_processor(model_path)
         except Exception as exc:
