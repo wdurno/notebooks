@@ -9,16 +9,34 @@ Build the wheel on the server machine:
 ~/.venv/bin/python scripts/build_robot_wheel.py
 ```
 
-Install the wheel on the Raspberry Pi:
+Copy the wheel to the Raspberry Pi:
 
 ```bash
-pip install 'dist/picar_kl-0.1.0-py3-none-any.whl[robot]'
+scp dist/picar_kl-0.1.0-py3-none-any.whl pi@<robot-host>:/home/pi/picar_kl-0.1.0-py3-none-any.whl
+```
+
+Install robot dependencies on a fresh Raspberry Pi checkout:
+
+```bash
+pip install -r requirements-robot.txt
+```
+
+Reinstall just the wheel after code changes:
+
+```bash
+pip install --force-reinstall --no-deps '/home/pi/picar_kl-0.1.0-py3-none-any.whl'
 ```
 
 Run the robot Flask server:
 
 ```bash
-picar-kl-robot-server --host 0.0.0.0 --port 5000
+picar-kl-robot-server --host 0.0.0.0 --port 5000 --camera-index 0
+```
+
+For a no-camera hardware check:
+
+```bash
+picar-kl-robot-server --host 0.0.0.0 --port 5000 --no-camera
 ```
 
 For a no-hardware smoke check:

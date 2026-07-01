@@ -8,7 +8,7 @@ validated in the fast unit test suite.
 Run:
 
 ```bash
-pytest demo/tests/integration/test_speech_roundtrip_manual.py -s
+~/.venv/bin/python -m pytest tests/integration/robot_demo/test_speech_roundtrip_manual.py -s
 ```
 
 The test will:
@@ -22,8 +22,8 @@ The test will:
 
 If the assets are not already present, the speech code will attempt to download:
 
-- STT into `demo/model/stt/whisper-large-v3-turbo-int8/`
-- TTS into `demo/model/tts/piper/en_US-lessac-medium/`
+- STT into `artifacts/models/stt/whisper-large-v3-turbo-int8/`
+- TTS into `artifacts/models/tts/piper/en_US-lessac-medium/`
 
 ## Python dependencies
 
@@ -65,7 +65,7 @@ your `faster-whisper` installation is available as well.
 Run:
 
 ```bash
-PICAR_V_HOST=<host:port> pytest demo/tests/integration/test_picar_env_manual.py -s
+PICAR_V_HOST=<host:port> ~/.venv/bin/python -m pytest tests/integration/robot_demo/test_picar_env_manual.py -s
 ```
 
 Optional environment variables:
@@ -96,19 +96,19 @@ to exercise the full Qwen action path as well, set `PICAR_USE_REAL_ACTION_MODEL=
 Run (default 30 seconds):
 
 ```bash
-PICAR_V_HOST=<host:port> pytest tests/integration/robot_demo/vision_test.py -s
+PICAR_V_HOST=<host:port> ~/.venv/bin/python -m pytest tests/integration/robot_demo/vision_test.py -s
 ```
 
 Change duration with a command-line flag:
 
 ```bash
-PICAR_V_HOST=<host:port> pytest tests/integration/robot_demo/vision_test.py -s --vision-seconds=45
+PICAR_V_HOST=<host:port> ~/.venv/bin/python -m pytest tests/integration/robot_demo/vision_test.py -s --vision-seconds=45
 ```
 
 Run until you stop it with `Ctrl-C`:
 
 ```bash
-PICAR_V_HOST=<host:port> pytest tests/integration/robot_demo/vision_test.py -s --vision-seconds=-1
+PICAR_V_HOST=<host:port> ~/.venv/bin/python -m pytest tests/integration/robot_demo/vision_test.py -s --vision-seconds=-1
 ```
 
 This test:

@@ -656,13 +656,102 @@ Verification:
 Recommended manual sequence:
 
 1. Build wheel: `~/.venv/bin/python scripts/build_robot_wheel.py`.
-2. Install wheel on Raspberry Pi: `pip install 'dist/picar_kl-0.1.0-py3-none-any.whl[robot]'`.
+2. Copy and install the wheel on Raspberry Pi; use `pip install -r requirements-robot.txt` for fresh dependency setup and `pip install --force-reinstall --no-deps /home/pi/picar_kl-0.1.0-py3-none-any.whl` for code-only reinstalls.
 3. Start robot server on Raspberry Pi: `picar-kl-robot-server --host 0.0.0.0 --port 5000`.
 4. Run vision test from server machine: `PICAR_V_HOST=<host:port> ~/.venv/bin/python -m pytest -q tests/integration/robot_demo/vision_test.py -s`.
 
 Remaining Phase C work:
 
-- run the robot-side install/server check on the Raspberry Pi.
-- run the refactored vision test against the live Raspberry Pi server.
-- run a server-side Qwen smoke test once local model assets are available.
-- adapt the remaining copied hardware integration tests to the new robot server and phase 1 commands.
+- record the live robot install, camera, speech, and env smoke results.
+- run a small phase 1 data-generation smoke against the live robot.
+- keep the `legacy/...` paths as short-term debt only; move model assets under `/artifacts/models/` as refactors continue.
+
+### Phase C Live Robot and Legacy Integration Check Completed
+
+Validated:
+
+- built the robot wheel and installed it on the Raspberry Pi.
+- started `picar-kl-robot-server` on the PiCar.
+- added `--no-camera` for hardware-control checks when camera debugging blocks startup.
+- diagnosed the original USB camera as faulty after V4L streaming hung on both the Raspberry Pi and Ubuntu tower.
+- validated the replacement PiCar camera with `v4l2-ctl` and the Flask `/img` path.
+- ran the refactored manual vision integration test against the live Raspberry Pi server.
+- ran the manual speech round-trip test after routing speech models to `/artifacts/models/`.
+- ran the manual PiCar env smoke test after routing VLM models to `/artifacts/models/`.
+
+Implemented during this check:
+
+- robot server startup no longer imports the legacy camera-opening environment path.
+- legacy speech manifests fall back to tracked manifests under `/artifacts/manifests/tracked/models/`.
+- legacy VLM model manifests fall back to tracked manifests under `/artifacts/manifests/tracked/models/`.
+- copied legacy model downloads are ignored at `/src/picar_kl/legacy/robot_demo/model/`.
+
+Notes:
+
+- `/src/picar_kl/legacy/robot_demo/model/` is accidental generated state, not canonical project state.
+- canonical model assets belong under `/artifacts/models/`.
+- do not delete generated model assets without explicit experimenter approval.
+- the env smoke test exercised the legacy Qwen-backed reward path; a separate Qwen controller smoke is only useful if the next live phase 1 run does not use `picar-kl-phase1` with the real Qwen controller.
+
+Verification after doc and integration-path cleanup:
+
+- `~/.venv/bin/python -m pytest -q` passed with 38 tests.
+- `~/.venv/bin/python -m pytest -q tests/integration/phase1/test_phase1_fake_runtime.py` passed.
+
+### Phase C Live Phase 1 Smoke Completed
+
+Run:
+
+- `b69c16ec-73bf-42c9-af64-10c1ec219cd7`
+- command path: `picar_kl.phase1.cli` with real Qwen2.5-VL controller, live PiCar server, `steps=2`, `160x120` images.
+
+Validated:
+
+- `run_meta.json` records phase, task prompt, uuid, and controller metadata.
+- `observations.jsonl` contains two step records.
+- image blobs load through the phase 1 loader as `120x160x3 uint8`.
+- action distributions are valid one-hot probability vectors.
+- executed vectors match action mappings.
+- robot receipts are recorded in action metadata.
+- raw latency events are present for image capture, VLM decision, action application, and speaker.
+
+Quality notes:
+
+- first image capture was slow, likely camera warm-up; second capture was fast.
+- VLM decision latency was sub-second in this tiny run.
+- frames are very bright; future collection should watch exposure and red-ball visibility.
+- the red signal appeared small and near the left/top-left of frame.
+- action/text coherency was imperfect on step 1: action was `drive-left`, text was `Looking left.`
+
+Remaining Phase C work:
+
+- collect more operator-supervised phase 1 runs once scene lighting and ball placement look good.
+- use frozen-Qwen evaluation, not handcrafted ball-coordinate labels, as the primary data-quality and reward signal.
+
+### Phase C Longer Live Phase 1 Sample Reviewed
+
+Run:
+
+- `99ba808e-4531-434b-a028-138aa0f9d67a`
+- real Qwen2.5-VL controller, live PiCar server, `steps=10`, `160x120` images.
+- robot was allowed to drive around a living room with the red ball initially in front.
+
+Validated:
+
+- `observations.jsonl` contains 10 step records.
+- 10 image blobs are present and load through the phase 1 loader.
+- action distributions are valid one-hot vectors.
+- total per-step latency was roughly 0.9-1.1 seconds in this run.
+- image capture was fast after startup.
+- VLM decision latency was roughly 0.4 seconds after the first step.
+
+Behavioral notes:
+
+- action sequence was `look-left`, then repeated `drive-forward`.
+- generated text was broadly coherent with selected actions.
+- red object signal was visible for most frames, moved toward the left edge, then disappeared near the end.
+- Qwen did not correct left once the ball drifted toward the edge, so this is useful but noisy phase 1 data.
+
+Data-quality note:
+
+- do not depend on handcrafted `(ball_x, ball_y, ball_radius)` labels. Legacy CV ball detection exists as old robot-environment machinery, but the current experiment should treat frozen-Qwen evaluation as the primary reward/data-quality signal. Cheap image heuristics are acceptable for ad hoc inspection only.
