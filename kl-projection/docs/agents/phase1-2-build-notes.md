@@ -524,7 +524,38 @@ Remaining check-in:
 
 ## Build Phase D: Phase 2 Offline KL Projection
 
-Goal: train an LSTM from old and new phase 1 data.
+Goal: train an LSTM from old and new phase 1 data using mandatory Qwen visual-token encodings.
+This phase builds the offline KL-projection pipeline, not the robot runtime.
+
+Design decision:
+
+- Do not mean-pool visual vectors as the primary representation.
+- Preserve the per-image visual-token sequence produced by the Qwen visual stack or projection path.
+- Reduce token width with a learned projection, not by destroying the token sequence.
+- Feed the LSTM a continuous token stream across robot steps.
+- Emit action distributions only at learned action-readout tokens placed at step boundaries.
+
+Per-step token stream shape:
+
+```text
+visual_token_1 + Dh + previous_action + token_type=visual
+visual_token_2 + Dh + previous_action + token_type=visual
+...
+visual_token_N + Dh + previous_action + token_type=visual
+action_readout + Dh + previous_action + token_type=readout -> action logits
+```
+
+Definitions:
+
+- `N`: number of visual tokens for the image.
+- `Dv`: visual-token feature width.
+- `Dh`: VLM conditioning-head width.
+- `previous_action`: previous action distribution or executed action representation.
+- `action_readout`: learned token indicating that the LSTM should emit one action distribution for the current robot step.
+
+The LSTM hidden state is not reset between steps within a training sequence.
+This lets the LSTM carry temporal state while still receiving explicit previous-action information.
+`Dh` is constant for each `K`-step segment.
 
 Dataset behavior:
 
@@ -533,33 +564,84 @@ Dataset behavior:
 3. Support new data with explicit action distributions.
 4. Reconstruct old one-hot distributions from `agentic_action_name`.
 5. Reconstruct bounded VLM context with shared `picar_kl.context` machinery when records contain enough source material.
-6. Provide sequences of visual encodings, prior actions, VLM head conditioning, and target action distributions.
+6. Precompute mandatory real visual-token encodings from phase 1 images.
+7. Cache visual-token encodings under ignored artifacts so training does not recompute Qwen features every epoch.
+8. Record encoding shape metadata and fail loudly if later runs mix incompatible visual-token shapes without an explicit adapter.
+9. Provide sequences of visual-token encodings, previous actions, VLM head conditioning, readout positions, and target action distributions.
+
+Old-data compatibility:
+
+- old data has images and action names.
+- old action names deterministically reconstruct one-hot action distributions.
+- old data lacks newer latency events, context-budget metadata, and usually full reward-result/raw reward text.
+- these missing fields are not blockers for phase 2 KL projection.
+- missing fields must remain explicit rather than silently fabricated.
 
 Model behavior:
 
-1. VLM visual stack provides per-image encodings.
-2. VLM conditioning head emits one vector per `K`-series.
-3. LSTM receives visual encodings, prior action representation, and the constant VLM head vector for each step in the `K`-series.
-4. LSTM emits action distributions every step.
-5. KL loss trains LSTM distributions against VLM target distributions.
+1. Qwen visual stack provides per-image visual-token encodings.
+2. A learned visual projection maps `[Dv] -> [Dmodel]` per token.
+3. A VLM conditioning head emits one `Dh` vector per `K`-series.
+4. `Dh` is appended to each visual token and readout token in that `K`-series.
+5. Previous action representation is appended to each token for the current step.
+6. A learned action-readout token is appended after each image's visual tokens.
+7. The LSTM consumes the continuous token stream across steps.
+8. The action head reads LSTM hidden states at readout positions only.
+9. The LSTM emits action distributions over the canonical 8-action set.
+10. KL loss trains LSTM distributions against VLM target distributions.
 
-Practical simplification for first build:
+Phase D.1: Encoding Cache
 
-- Implement the phase 2 training pipeline with clean interfaces and a fake/small encoder path for tests.
-- Keep the real Qwen visual encoding path server-only and optional in tests.
-- Put visual encoding behind an explicit protocol so training code does not depend on Qwen internals.
-- The real Qwen encoder should fail clearly if Qwen dependencies, CUDA, or required model assets are unavailable.
-- Fake encoders should be used only in unit tests and lightweight integration tests.
+Goal: turn phase 1 images into reusable Qwen visual-token encodings.
 
-Example protocol shape:
+Tasks:
 
-```python
-class VisualEncoder(Protocol):
-    output_dim: int
+1. Implement a real Qwen visual-token encoder behind an explicit protocol.
+2. Decide and document the chosen Qwen tensor source after inspecting actual model outputs.
+3. Preserve visual-token sequences rather than mean-pooling them.
+4. Store encoding tensors under ignored `artifacts/data/phase2/encodings/`.
+5. Store a cache manifest with:
+   - source run id.
+   - source image path.
+   - model name and manifest path.
+   - image shape.
+   - encoding shape.
+   - tensor dtype.
+   - encoder version/config hash.
+6. Add `scripts/precompute_phase2_encodings.py`.
 
-    def encode(self, images: Sequence[Any]) -> torch.Tensor:
-        ...
-```
+Tests:
+
+1. Cache manifest round trip.
+2. Cache hit/miss behavior.
+3. Dataset refuses missing encodings in production mode.
+4. Real image-to-Qwen encoding smoke test marked `gpu`.
+
+Phase D.2: Dataset and Collation
+
+Goal: produce token-stream training batches from phase 1 records and cached encodings.
+
+Tasks:
+
+1. Load old and new phase 1 records.
+2. Resolve each record's cached visual-token encoding.
+3. Reconstruct target action distributions.
+4. Build previous-action inputs.
+5. Group records into fixed or configurable sequence windows.
+6. Build readout-position masks.
+7. Preserve enough metadata to trace losses back to source run/step.
+8. Handle old data's missing reward/context/latency fields explicitly.
+
+Tests:
+
+1. Old action-name rows reconstruct one-hot targets.
+2. New explicit distributions pass through unchanged.
+3. Collation returns visual tokens, previous actions, targets, readout masks, and metadata.
+4. Variable run lengths and short runs are handled.
+
+Phase D.3: LSTM KL Model
+
+Goal: implement the offline KL-projection model around the token-stream design.
 
 Likely modules:
 
@@ -568,25 +650,58 @@ picar_kl/models/visual.py
 picar_kl/models/vlm_head.py
 picar_kl/models/lstm_policy.py
 picar_kl/training/kl_projection.py
-picar_kl/phase2/train.py
 ```
 
-Scripts:
+Tasks:
 
-```text
-scripts/train_phase2_kl.py
-```
+1. Implement learned visual-token projection.
+2. Implement VLM conditioning head producing `Dh`.
+3. Implement learned action-readout token.
+4. Append `Dh`, previous action, and token-type features to visual/readout tokens.
+5. Run LSTM across the full token stream.
+6. Emit action logits at readout positions only.
+7. Compute KL loss against target action distributions.
+8. Keep model dimensions configurable.
 
 Tests:
 
-1. Dataset sequence collation.
-2. KL loss shape and numerical behavior.
-3. LSTM forward pass.
-4. Training step updates LSTM parameters.
-5. Old data compatibility smoke test.
+1. LSTM forward pass shape checks.
+2. Readout-mask action logits shape checks.
+3. KL loss numerical behavior.
+4. Training step updates trainable parameters.
+5. Gradients reach visual projection, VLM head, LSTM, and action head.
+
+Phase D.4: Offline Training Script
+
+Goal: train from precomputed encodings and phase 1 records.
+
+Likely modules and scripts:
+
+```text
+picar_kl/phase2/cache.py
+picar_kl/phase2/dataset.py
+picar_kl/phase2/train.py
+scripts/train_phase2_kl.py
+```
+
+Tasks:
+
+1. Add a training config/dataclass.
+2. Load phase 1 records and encoding cache manifests.
+3. Build dataset and dataloader.
+4. Train for a configurable number of epochs.
+5. Save compact run outputs under `experiments/runs/`, keeping each run under 1MB.
+6. Save large model checkpoints under ignored artifacts if needed.
+7. Log KL loss and basic dataset statistics.
+
+Tests:
+
+1. Tiny precomputed-encoding fixture can train for a few steps.
+2. Loss/logging output shape is stable.
+3. Experiment-run output stays compact.
 
 Check-in D:
-Confirm offline loss decreases on a small copied/fake dataset before adding robot execution.
+Confirm the offline pipeline consumes copied old data plus new data, uses mandatory cached Qwen visual-token encodings, and decreases KL loss on a tiny dataset before adding robot execution.
 
 ## Build Phase E: Phase 2 Robot Execution
 
