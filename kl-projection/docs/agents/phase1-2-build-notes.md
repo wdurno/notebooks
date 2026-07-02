@@ -147,6 +147,16 @@ Phase C.5 pays down avoidable legacy debt before phase 2:
 - keep staged legacy code only as provenance, phase 3 reference material, or explicitly marked integration coverage.
 - keep data collection last, after cleanup and tests.
 
+Phase C.6 restores shared VLM context and reward machinery:
+
+- extract prompt/history construction into first-class `picar_kl.context` modules.
+- extract frozen-VLM reward scoring into first-class `picar_kl.reward` modules.
+- add a shared Qwen runtime so action generation and reward scoring never load two Qwen copies.
+- restore bounded rolling history, persistent goals, reward/status context, and assistant reply history.
+- enforce a hard prompt token budget through shared context code, not phase-specific code.
+- raise the default prompt token budget from 512 to 8000.
+- record prompt-budget metadata so phase 3 can trust VRAM-related guarantees.
+
 Phase D builds new phase 2 training code:
 
 - visual encoder protocol.
@@ -211,12 +221,13 @@ Phase 1 loop:
 
 1. Drain speech events.
 2. Capture image from robot.
-3. Build VLM control messages.
-4. Generate VLM action distribution and robot speech.
-5. Convert action distribution to continuous robot vector.
-6. Apply vector to robot.
-7. Capture next image when useful.
-8. Persist record with image path, messages, user text, action distribution, executed vector, generated text, and raw latency events.
+3. Score current state with the frozen/base VLM reward scorer when enabled.
+4. Build VLM control messages through shared context machinery.
+5. Generate VLM action distribution and robot speech.
+6. Convert action distribution to continuous robot vector.
+7. Apply vector to robot.
+8. Capture next image when useful.
+9. Persist record with image path, messages, user text, action distribution, executed vector, generated text, reward/status data, and raw latency events.
 
 Important behavior:
 
@@ -224,6 +235,7 @@ Important behavior:
 - Language stays owned by VLM.
 - Action output is constrained to the small action set.
 - Existing STT/TTS features should be retained where practical.
+- Phase 1 should use shared context/reward/runtime modules once Phase C.6 is complete.
 - Data format should be compatible with old data through the phase 1 loader.
 
 Likely modules:
@@ -363,6 +375,152 @@ Post-extraction live Phase 1 smoke:
 - Qwen decision latency stayed roughly 0.4 seconds after the first step.
 - no record-shape regression was observed after extraction.
 
+## Build Phase C.6: Shared Context, Reward, and Qwen Runtime
+
+Goal: restore the useful old VLM environment behavior without trapping it inside `picar_kl.phase1`.
+The same machinery must support live phase 1 collection, phase 2 KL-projection dataset construction, and phase 3 fine tuning.
+
+Architectural rule:
+
+- `picar_kl.context` owns structured episode context and token-budget enforcement.
+- `picar_kl.reward` owns reward prompts and frozen/base VLM reward scoring.
+- `picar_kl.vlm.runtime` owns shared Qwen model and processor loading.
+- Phase packages orchestrate these modules but do not own them.
+
+Target modules:
+
+```text
+picar_kl/context/
+  __init__.py
+  budget.py
+  config.py
+  messages.py
+  protocols.py
+  state.py
+picar_kl/reward/
+  __init__.py
+  config.py
+  prompts.py
+  schemas.py
+  scoring.py
+picar_kl/vlm/runtime.py
+```
+
+Context behavior:
+
+1. Store structured episode state, not only rendered prompt strings.
+2. Preserve a persistent goal system message derived from the reward task.
+3. Add one user/status message per control step containing:
+   - operator speech.
+   - `step_index`.
+   - `last_reward`.
+   - `current_reward`.
+   - `reward_prompt_id`.
+4. Add assistant replies containing selected action and spoken text.
+5. Enforce `history_window` before token-budgeting.
+6. Enforce `prompt_token_window` after messages are assembled.
+7. Preserve mandatory system messages during token truncation.
+8. Prefer the most recent messages when context must be dropped.
+9. Clip the latest text message when that is the only way to preserve new operator input.
+10. Default `history_window` remains 180.
+11. Default `prompt_token_window` becomes 8000.
+
+Memory and VRAM guarantee:
+
+- `prompt_token_window` is the hard prompt-memory contract shared by phases.
+- `0` or `None` disables token truncation only when explicitly requested.
+- live records should include configured window values and measured prompt length when available.
+- phase 2 and phase 3 dataset builders should use the same context builder so training prompts respect the same budget collected online.
+
+Reward behavior:
+
+1. Restore the old frozen/base VLM reward scorer.
+2. Use the red-ball reward prompt as the default.
+3. Parse `{"reward": number}` while retaining the old robust numeric fallback.
+4. Clip reward to the configured reward range.
+5. Store raw reward text, unclipped reward, clipped reward, prompt id, and task text.
+6. Keep command-following reward shaping available as a current-project module, but do not force it into phase 2 training until we intentionally model it.
+
+Shared Qwen runtime behavior:
+
+1. Load Qwen model and processor once.
+2. Give the action controller and reward scorer access to the same model/processor.
+3. Reward scoring must use base/frozen inference.
+4. If adapters are present later, reward scoring enters a context that disables adapters.
+5. If adapters are absent, that context is a no-op.
+6. Runtime should expose token counting needed by `picar_kl.context`.
+
+Phase 1 migration:
+
+1. Replace `last_generated_text`-only context with `EpisodeContext`.
+2. Score current image before building control messages.
+3. Feed reward/status/history into the action VLM.
+4. Persist reward fields and context metadata in each observation record.
+5. Persist enough message/context state for phase 2 and phase 3 reconstruction.
+6. Keep open-ended collection, continuous speech, and Ctrl-C-safe metadata behavior.
+
+Phase 2 preparation:
+
+1. Dataset code should call the shared context builder rather than reimplementing prompt reconstruction.
+2. Old data without reward/status fields remains loadable.
+3. Missing reward/status fields should be explicit, not silently fabricated.
+4. KL projection can start from action distributions and images, but context reconstruction must already be available for future phase 3 compatibility.
+
+Tests:
+
+1. Reward text parsing and clipping.
+2. Reward scorer uses shared runtime and disables adapters when available.
+3. Context history trimming preserves persistent goals.
+4. Token-budget truncation keeps mandatory messages and recent context.
+5. Latest operator message clipping works under tight token budgets.
+6. Phase 1 fake run records rewards and bounded context.
+7. Old phase 1 data still loads when reward fields are missing.
+8. Shared runtime is not duplicated when both action and reward paths are enabled.
+
+Check-in C.6:
+Run a short real robot Phase 1 collection with reward scoring enabled.
+Inspect reward text, clipped reward, prompt length metadata, action latency, and qualitative coherency before starting Phase D.
+
+### Phase C.6 Shared Context and Reward Implementation Pass
+
+Implemented:
+
+- added `/src/picar_kl/context/` for shared VLM context configuration, message construction, token-budgeting, and rolling episode state.
+- changed the default shared `history_window` to 180.
+- changed the default shared `prompt_token_window` to 8000.
+- added `/src/picar_kl/reward/` for reward schemas, prompt registry, robust reward parsing, constant test scorer, and frozen/base VLM reward scoring.
+- added `/src/picar_kl/vlm/runtime.py` so action generation and reward scoring can share one loaded Qwen model and processor.
+- changed `QwenPhase1Controller` to consume the shared Qwen runtime.
+- changed Phase 1 runtime to:
+  - score the current frame before action generation.
+  - build prompts through `EpisodeContext`.
+  - persist bounded messages, reward result metadata, context-budget metadata, and reward latency.
+  - keep continuous speech, open-ended runs, and Ctrl-C-safe metadata behavior.
+- changed Phase 1 CLI to:
+  - expose `--history-window`, defaulting to 180.
+  - expose `--prompt-token-window`, defaulting to 8000.
+  - enable frozen/base VLM reward scoring by default for real Qwen runs.
+  - use one shared Qwen runtime for both action generation and reward scoring.
+  - retain fixed-action smoke runs without loading Qwen.
+
+Added tests:
+
+- context history trimming and persistent-goal preservation.
+- context token-budget truncation and latest-message clipping.
+- reward parsing, clipping, and shared-runtime reward scoring.
+- Qwen runtime prompt-token counting and adapter-disabling context.
+- Phase 1 record expectations for reward and context metadata.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q tests/unit/context tests/unit/reward tests/unit/vlm tests/unit/phase1/test_run.py` passed with 14 tests.
+- `~/.venv/bin/python -m pytest -q` passed with 53 tests.
+
+Remaining check-in:
+
+- run a short real robot Phase 1 collection with reward scoring enabled.
+- inspect reward raw text, clipped reward, prompt token metadata, action latency, and qualitative coherency.
+
 
 ## Build Phase D: Phase 2 Offline KL Projection
 
@@ -374,7 +532,8 @@ Dataset behavior:
 2. Support copied old data.
 3. Support new data with explicit action distributions.
 4. Reconstruct old one-hot distributions from `agentic_action_name`.
-5. Provide sequences of visual encodings, prior actions, VLM head conditioning, and target action distributions.
+5. Reconstruct bounded VLM context with shared `picar_kl.context` machinery when records contain enough source material.
+6. Provide sequences of visual encodings, prior actions, VLM head conditioning, and target action distributions.
 
 Model behavior:
 

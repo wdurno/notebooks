@@ -10,10 +10,12 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from picar_kl.actions import action_distribution_to_vector, distribution_to_action_name
+from picar_kl.context import ContextConfig, EpisodeContext
 from picar_kl.io.observation_store import Phase1ObservationStore
 from picar_kl.latency import LatencyEvent, LatencyTimer
 from picar_kl.records import ActionRecord, Phase1ObservationRecord
-from picar_kl.vlm.control import VLMDecision, build_phase1_messages
+from picar_kl.reward import ConstantRewardScorer, RewardResult
+from picar_kl.vlm.control import VLMDecision
 
 
 class Phase1Robot(Protocol):
@@ -39,6 +41,11 @@ class Speaker(Protocol):
         ...
 
 
+class RewardScorer(Protocol):
+    def score(self, image_rgb: Any) -> RewardResult:
+        ...
+
+
 @dataclass(frozen=True)
 class Phase1RunConfig:
     data_root: Path
@@ -46,6 +53,7 @@ class Phase1RunConfig:
     run_uuid: str | None = None
     max_steps: int | None = None
     speak_generated_text: bool = True
+    context: ContextConfig = field(default_factory=ContextConfig)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -91,12 +99,16 @@ def run_phase1(
     vlm: Phase1VLMController,
     speech_source: SpeechSource | None = None,
     speaker: Speaker | None = None,
+    reward_scorer: RewardScorer | None = None,
+    prompt_tokenizer: Any | None = None,
 ) -> Phase1RunSummary:
     run_uuid = config.run_uuid or str(uuid4())
     run_dir = Path(config.data_root) / run_uuid
     store = Phase1ObservationStore(run_dir)
     speech_source = speech_source or NoSpeechSource()
     speaker = speaker or NoSpeaker()
+    reward_scorer = reward_scorer or ConstantRewardScorer(task_text=config.task_prompt)
+    context = EpisodeContext(config=config.context)
     started_at = datetime.now(timezone.utc).isoformat()
     base_metadata = {
         "uuid": run_uuid,
@@ -106,11 +118,12 @@ def run_phase1(
         "created_at": started_at,
         "status": "running",
         "steps_completed": 0,
+        "history_window": config.context.history_window,
+        "prompt_token_window": config.context.prompt_token_window,
         "metadata": dict(config.metadata),
     }
     store.write_run_metadata(base_metadata)
 
-    last_generated_text = ""
     steps_completed = 0
     status = "completed"
     step_iter = range(int(config.max_steps)) if config.max_steps is not None else count()
@@ -122,12 +135,21 @@ def run_phase1(
                 image = robot.capture_image()
             latency_events.append(_event(timer))
             image_rgb = getattr(image, "image_rgb", image)
-            messages = build_phase1_messages(
-                task_prompt=config.task_prompt,
-                step_index=step_index,
-                user_texts=user_texts,
-                last_generated_text=last_generated_text,
-            )
+
+            with LatencyTimer("reward_scoring", metadata={"step_index": step_index}) as timer:
+                reward_result = reward_scorer.score(image_rgb)
+            latency_events.append(_event(timer))
+
+            with LatencyTimer("context_render", metadata={"step_index": step_index}) as timer:
+                context_render = context.add_observation(
+                    user_texts=user_texts,
+                    reward_result=reward_result,
+                    step_index=step_index,
+                    tokenizer=prompt_tokenizer,
+                )
+            latency_events.append(_event(timer))
+            messages = context_render.messages
+
             with LatencyTimer("vlm_decision", metadata={"step_index": step_index}) as timer:
                 decision = vlm.decide(image_rgb=image_rgb, messages=messages)
             latency_events.append(_event(timer))
@@ -142,6 +164,7 @@ def run_phase1(
                     speaker.speak(decision.generated_text)
                 latency_events.append(_event(timer))
 
+            action_name = distribution_to_action_name(decision.action_distribution)
             action = ActionRecord.from_distribution(
                 decision.action_distribution,
                 generated_text=decision.generated_text,
@@ -153,6 +176,11 @@ def run_phase1(
                     "action_receipt": action_receipt,
                 },
             )
+            context.add_assistant_action(
+                action_name=action_name,
+                generated_text=decision.generated_text,
+                reward_result=reward_result,
+            )
             record = Phase1ObservationRecord(
                 run_uuid=run_uuid,
                 run_dir=run_dir,
@@ -163,16 +191,20 @@ def run_phase1(
                 messages=messages,
                 user_texts=user_texts,
                 action=action,
-                reward=None,
+                reward=float(reward_result.clipped_reward),
                 done=False,
                 metadata={
                     "task_prompt": config.task_prompt,
-                    "action_name": distribution_to_action_name(decision.action_distribution),
+                    "action_name": action_name,
+                    "reward_result": reward_result.to_dict(),
+                    "context": {
+                        "history_window": config.context.history_window,
+                        **context_render.metadata,
+                    },
                 },
                 latency_events=tuple(latency_events),
             )
             store.append(record, image_rgb=image_rgb)
-            last_generated_text = decision.generated_text
             steps_completed = step_index + 1
     except KeyboardInterrupt:
         status = "interrupted"
@@ -193,6 +225,7 @@ def run_phase1(
         steps_completed=steps_completed,
         status=status,
     )
+
 
 def _event(timer: LatencyTimer) -> LatencyEvent:
     if timer.event is None:

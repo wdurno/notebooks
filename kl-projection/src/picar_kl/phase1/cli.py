@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from picar_kl.context import ContextConfig
 from picar_kl.phase1.run import FixedActionVLMController, NoSpeaker, NoSpeechSource, Phase1RunConfig, run_phase1
+from picar_kl.reward import ConstantRewardScorer, FrozenVLMRewardScorer, RewardConfig
 from picar_kl.robot.client import PiCarClient, PiCarClientConfig
 from picar_kl.speech.adapters import SpeechServiceSpeaker, StreamingSpeechSource
 from picar_kl.speech.config import SpeechConfig, SpeechStreamConfig
 from picar_kl.speech.service import SpeechService
 from picar_kl.vlm.qwen import QwenPhase1Config, QwenPhase1Controller
+from picar_kl.vlm.runtime import QwenRuntime, QwenRuntimeConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--vlm-model-name", default="qwen2.5-vl-3b")
     parser.add_argument("--allow-model-downloads", action="store_true")
+    parser.add_argument("--history-window", type=int, default=180)
+    parser.add_argument("--prompt-token-window", type=int, default=8000)
+    parser.add_argument("--enable-reward", dest="reward", action="store_true", default=True)
+    parser.add_argument("--no-reward", dest="reward", action="store_false")
+    parser.add_argument("--reward-prompt-id", default="reward_prompt_1")
     parser.add_argument("--enable-speech-input", dest="speech_input", action="store_true", default=True)
     parser.add_argument("--no-speech-input", dest="speech_input", action="store_false")
     parser.add_argument("--enable-speech-output", dest="speech_output", action="store_true", default=True)
@@ -50,19 +58,43 @@ def main() -> int:
             y_resize=args.y_resize,
         )
     )
+    runtime = None
     if args.smoke_fixed_action:
         vlm = FixedActionVLMController(args.smoke_fixed_action)
         controller_name = "fixed-action-cli"
+        reward_scorer = ConstantRewardScorer(task_text=args.task_prompt)
     else:
-        vlm = QwenPhase1Controller.from_config(
-            QwenPhase1Config(
-                model_name=args.vlm_model_name,
-                model_root=args.model_root,
-                manifest_path=args.vlm_manifest,
-                allow_downloads=bool(args.allow_model_downloads),
-            )
+        runtime_config = QwenRuntimeConfig(
+            model_name=args.vlm_model_name,
+            model_root=args.model_root,
+            manifest_path=args.vlm_manifest,
+            allow_downloads=bool(args.allow_model_downloads),
+        )
+        runtime = QwenRuntime.from_config(runtime_config)
+        phase1_config = QwenPhase1Config(
+            model_name=args.vlm_model_name,
+            model_root=args.model_root,
+            manifest_path=args.vlm_manifest,
+            allow_downloads=bool(args.allow_model_downloads),
+        )
+        vlm = QwenPhase1Controller(
+            model=runtime.model,
+            processor=runtime.processor,
+            config=phase1_config,
+            runtime=runtime,
         )
         controller_name = "qwen2.5-vl"
+        reward_scorer = (
+            FrozenVLMRewardScorer(
+                RewardConfig(
+                    prompt_id=args.reward_prompt_id,
+                    allow_downloads=bool(args.allow_model_downloads),
+                ),
+                runtime=runtime,
+            )
+            if args.reward
+            else ConstantRewardScorer(task_text=args.task_prompt)
+        )
 
     speech_config = SpeechConfig(
         model_dir=args.model_root,
@@ -93,12 +125,21 @@ def main() -> int:
                 data_root=args.data_root,
                 task_prompt=args.task_prompt,
                 max_steps=None if args.steps is None else max(1, int(args.steps)),
-                metadata={"controller": controller_name},
+                context=ContextConfig(
+                    history_window=int(args.history_window),
+                    prompt_token_window=int(args.prompt_token_window),
+                ),
+                metadata={
+                    "controller": controller_name,
+                    "reward_enabled": bool(args.reward and not args.smoke_fixed_action),
+                },
             ),
             robot=robot,
             vlm=vlm,
             speech_source=speech_source,
             speaker=speaker,
+            reward_scorer=reward_scorer,
+            prompt_tokenizer=runtime,
         )
     finally:
         if hasattr(speech_source, "stop"):

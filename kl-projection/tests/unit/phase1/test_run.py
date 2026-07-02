@@ -73,10 +73,15 @@ def test_run_phase1_writes_records_and_applies_vector(tmp_path):
     assert records[0].action.metadata["action_receipt"] == {"status": "ok", "index": 1}
     assert [event.name for event in records[0].latency_events] == [
         "capture_image",
+        "reward_scoring",
+        "context_render",
         "vlm_decision",
         "apply_action",
         "speaker",
     ]
+    assert records[0].reward == 0.0
+    assert records[0].metadata["reward_result"]["clipped_reward"] == 0.0
+    assert records[0].metadata["context"]["history_window"] == 180
     assert load_record_image(records[0]).shape == (4, 5, 3)
 
 
