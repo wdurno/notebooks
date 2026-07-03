@@ -59,6 +59,36 @@ Compact summaries are written to:
 experiments/runs/phase2/<RUN_ID>/summary.json
 ```
 
+
+Replay a fitted policy against cached Phase 1 encodings before running the robot:
+
+```bash
+PYTHONPATH=src ~/.venv/bin/python scripts/run_phase2_replay.py \
+  --fit-id <RUN_ID> \
+  --max-windows 4 \
+  --device auto
+```
+
+Omit `--fit-id` to replay the latest fit containing `policy.pt`.
+Use `--checkpoint-path` to load a checkpoint directly.
+
+Run the live Phase 2 robot loop:
+
+```bash
+PYTHONPATH=src ~/.venv/bin/python scripts/run_phase2_robot.py \
+  --picar-host 10.0.0.224:5000 \
+  --data-root artifacts/data/phase2-live \
+  --fit-id <RUN_ID> \
+  --x-resize 160 \
+  --y-resize 120
+```
+
+Omit `--fit-id` to run the latest fit.
+The live loop runs until `Ctrl-C` unless `--steps` is provided.
+Use `--steps 5` for a short smoke test.
+Speech input, speech output, and reward scoring are enabled by default.
+Pass `--no-speech-input`, `--no-speech-output`, or `--no-reward` to disable them.
+
 View metrics in:
 
 ```text

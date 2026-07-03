@@ -1099,6 +1099,31 @@ Tasks:
 - add unit tests for loader selection and replay output shape/probability validity.
 - add a script-level smoke command for replay.
 
+Implementation E.1:
+
+- added `picar_kl.phase2.runtime`.
+- added Phase 2 fit artifact selection by latest fit, `fit_id`, or direct checkpoint path.
+- added checkpoint loading onto `auto`, `cuda`, or `cpu`.
+- added CPU-safe checkpoint reconstruction for `Phase2KLModel`.
+- added offline replay over cached Phase 1 visual encodings.
+- replay emits valid `ActionRecord` distributions, selected action names, vectors, conditioning norms, and latency estimates.
+- added `scripts/run_phase2_replay.py`.
+- documented replay in `/docs/humans/run_phase2.md`.
+
+Verification E.1:
+
+- runtime unit tests passed with 3 tests.
+- Phase 2 unit tests passed with 19 tests.
+- full unit suite passed with 86 tests.
+- real-artifact replay smoke passed via API:
+  - fit id: `phase2-window-20260703T170537Z`.
+  - device: `cpu`.
+  - windows: 2.
+  - replayed steps: 8.
+  - first predicted action: `look-forward`.
+- direct script invocation could not be smoke-tested inside this sandbox because the command wrapper failed before Python started with `bwrap: loopback: Failed RTM_NEWADDR`; script compilation passed.
+
+
 Build Phase E.2: Live Phase 2 Runtime Loop
 
 Goal: run the live robot with VLM refreshes every `K` steps and LSTM actions every step.
@@ -1112,6 +1137,26 @@ Tasks:
 - enforce `K == prediction_steps`.
 - record raw wall-clock latency events separately for image capture, visual encoding, VLM/head refresh, LSTM action, robot request, speech input, and speech output.
 - continue writing data incrementally so `Ctrl-C` preserves completed steps.
+
+Implementation E.2:
+
+- added `picar_kl.phase2.live`.
+- added live Phase 2 execution with VLM bootstrap steps followed by LSTM actions.
+- enforce `K == prediction_steps` at runtime.
+- keep Phase 1 speech input, speech output, reward scoring, context rendering, and incremental observation logging.
+- share one Qwen runtime across VLM decisions, visual-token encoding, and frozen-VLM reward scoring in the script runner.
+- record separate latency events for image capture, visual encoding, reward scoring, context rendering, VLM bootstrap, VLM/head refresh, LSTM action, robot action, and speech output.
+- added `scripts/run_phase2_robot.py`.
+- documented live Phase 2 execution in `/docs/humans/run_phase2.md`.
+
+Verification E.2:
+
+- live runtime unit tests passed with 2 tests.
+- live/runtime Phase 2 tests passed with 5 tests.
+- Phase 2 unit tests passed with 21 tests.
+- full unit suite passed with 88 tests.
+- script compilation passed.
+- direct script invocation could not be smoke-tested inside this sandbox because the command wrapper failed before Python started with `bwrap: loopback: Failed RTM_NEWADDR`.
 
 Build Phase E.3: Integration Tests
 
