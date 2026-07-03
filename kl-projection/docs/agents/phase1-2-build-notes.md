@@ -703,6 +703,252 @@ Tests:
 Check-in D:
 Confirm the offline pipeline consumes copied old data plus new data, uses mandatory cached Qwen visual-token encodings, and decreases KL loss on a tiny dataset before adding robot execution.
 
+### Phase D.1 Encoding Cache Implementation Pass
+
+Implemented:
+
+- added `/src/picar_kl/models/visual.py`:
+  - `VisualTokenEncoding`
+  - `VisualTokenEncoder` protocol
+  - `QwenVisualTokenEncoder`
+- chose the Qwen tensor source:
+  - `Qwen2_5_VLModel.get_image_features(...).pooler_output`
+  - in Transformers 5.2 this returns one `[num_visual_tokens, hidden_dim]` tensor per image.
+  - despite the `pooler_output` name, this is not mean-pooled to one vector.
+  - these are the projected image embeddings Qwen scatters into the language sequence.
+- added `/src/picar_kl/phase2/cache.py`:
+  - cache config.
+  - cache entry schema.
+  - JSON manifest round trip.
+  - compressed `.npz` tensor storage.
+  - cache keys based on source image, source step, model, manifest, encoder id, and config hash.
+- added `/scripts/precompute_phase2_encodings.py`.
+
+Cache location:
+
+- default cache root is `/artifacts/data/phase2/encodings/`.
+- tensor files are stored under `tensors/`.
+- manifest is stored as `manifest.json`.
+
+Added tests:
+
+- visual-token encoding shape and dtype validation.
+- Qwen visual-token encoder preserves a token sequence in a fake Qwen-shaped unit test.
+- encoding cache stores tensors and manifests.
+- cache keys distinguish steps.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q tests/unit/models/test_visual.py tests/unit/phase2/test_cache.py` passed with 4 tests.
+- `~/.venv/bin/python -m py_compile scripts/precompute_phase2_encodings.py src/picar_kl/models/visual.py src/picar_kl/phase2/cache.py` passed.
+- `~/.venv/bin/python -m pytest -q` passed with 60 tests.
+- real Qwen precompute smoke passed:
+  - command: `PYTHONPATH=src ~/.venv/bin/python scripts/precompute_phase2_encodings.py --data-root artifacts/data/phase1 --cache-root artifacts/data/phase2/encodings --limit 1`
+  - source run: `04f639c9-478a-4cb2-ab4d-086813915793`, step `0`.
+  - image shape: `[120, 160, 3]`.
+  - encoding shape: `[24, 2048]`.
+  - dtype: `float16`.
+  - compressed tensor size: roughly `76K`.
+  - cache root size after one entry: roughly `88K`.
+
+Remaining check-in:
+
+- inspect whether `[24, 2048]` remains stable across newer phase 1 runs before broad precompute jobs.
+
+### Phase D.2 Dataset and Collation Implementation Pass
+
+Implemented:
+
+- added `/src/picar_kl/phase2/dataset.py`:
+  - `Phase2StepExample`
+  - `Phase2SequenceExample`
+  - `Phase2Batch`
+  - `load_phase2_sequences`
+  - `phase2_step_from_record`
+  - `collate_phase2_sequences`
+- dataset construction requires cached visual-token encodings.
+- old action-name records reconstruct one-hot targets through the canonical action space.
+- new explicit action distributions pass through the existing record loader.
+- previous action defaults to `look-forward` at run starts.
+- previous action then tracks the previous target action distribution within each run.
+- collation returns:
+  - visual tokens: `[batch, steps, visual_tokens, visual_dim]`
+  - previous actions: `[batch, steps, action_dim]`
+  - target distributions: `[batch, steps, action_dim]`
+  - readout mask: `[batch, steps]`
+  - step mask: `[batch, steps]`
+  - trace metadata per source step.
+- incompatible visual-token shapes fail loudly.
+- missing context/reward/latency fields remain explicit in metadata.
+
+Added tests:
+
+- old and new records load into phase 2 sequences.
+- old action names reconstruct one-hot target distributions.
+- previous-action inputs are correct across steps.
+- short final sequences pad with masks.
+- missing cached encodings fail loudly.
+- incompatible visual-token shapes fail loudly.
+
+Verification:
+
+- `~/.venv/bin/python -m pytest -q tests/unit/phase2` passed with 5 tests.
+- `~/.venv/bin/python -m pytest -q` passed with 63 tests.
+
+Remaining check-in:
+
+- run a small integration-style dataset build using real cached encodings from multiple newer phase 1 records before D.3 model work.
+
+Follow-up verification:
+
+- ran bounded real-Qwen precompute against newer run 375c751d-e0e3-4288-a247-d0d673596adf.
+- encoded 16 newer-run records.
+- combined cache now covers 16 imported-run records and 16 newer-run records.
+- all 32 usable cached steps share visual-token shape [24, 2048].
+- dataset collation produced:
+  - visual tokens: [8, 4, 24, 2048].
+  - previous actions: [8, 4, 8].
+  - target distributions: [8, 4, 8].
+  - readout mask: [8, 4].
+- target distribution row sums remained exactly 1.0.
+- note: loaders must use the same cache config as precompute; current precompute sets config_hash=output_dtype=float16.
+
+
+### Phase D.3 LSTM KL Model Implementation Pass
+
+Implemented:
+
+- added /src/picar_kl/models/vlm_head.py:
+  - VLMConditioningHeadConfig
+  - VLMConditioningHead
+- added /src/picar_kl/models/lstm_policy.py:
+  - LSTMPolicyConfig
+  - TokenStreamLSTMPolicy
+  - LSTMPolicyOutput
+- added /src/picar_kl/training/kl_projection.py:
+  - masked_action_kl_loss
+  - train_kl_projection_step
+  - KLProjectionStepResult
+- model preserves the visual-token sequence.
+- model projects visual-token width with a learned projection.
+- model appends:
+  - Dh conditioning.
+  - previous action distribution.
+  - learned token-type features.
+- model appends a learned action-readout token after each image visual-token sequence.
+- LSTM runs across the flattened token stream.
+- action logits are emitted only from per-step readout positions.
+- KL loss is masked over valid readout positions.
+
+Added tests:
+
+- LSTM forward pass shape checks.
+- readout and token mask shape checks.
+- zero-conditioning smoke path.
+- nonzero Dh changes logits.
+- synthetic VLM conditioning head gradients flow through the policy.
+- KL loss prefers a matching target distribution.
+- KL loss rejects an empty valid-step mask.
+- one training step updates both policy and conditioning-head parameters.
+
+Verification:
+
+- ~/.venv/bin/python -m pytest -q tests/unit/models/test_lstm_policy.py tests/unit/training/test_kl_projection.py passed with 7 tests.
+- ~/.venv/bin/python -m pytest -q tests/unit/phase2 tests/unit/models tests/unit/training passed with 17 tests.
+- ~/.venv/bin/python -m py_compile src/picar_kl/models/vlm_head.py src/picar_kl/models/lstm_policy.py src/picar_kl/training/kl_projection.py passed.
+- ~/.venv/bin/python -m pytest -q passed with 70 tests.
+
+
+### Phase D.4 Offline Training Script Implementation Pass
+
+Implemented:
+
+- added /src/picar_kl/phase2/train.py:
+  - Phase2TrainingConfig
+  - Phase2TrainingResult
+  - run_phase2_training
+  - phase2_batch_to_tensors
+- added /scripts/train_phase2_kl.py.
+- trainer loads phase 1 records through the phase 2 dataset path.
+- trainer resolves cached visual-token encodings using the full cache identity:
+  - cache root.
+  - model name.
+  - manifest path.
+  - encoder id.
+  - config hash.
+- trainer builds the token-stream LSTM policy from cached encoding shape.
+- trainer now produces Dh inside the trainable model from prefix windows.
+- trainer writes compact run summaries under experiments/runs/phase2 by default.
+- trainer writes model checkpoints under ignored artifacts/models/phase2 by default.
+- trainer supports explicit partial-cache mode for smoke/trial runs.
+- strict cache mode remains the default.
+
+Added tests:
+
+- batch-to-tensor conversion casts visual encodings to float32 for training.
+- window-to-tensor conversion separates prefix context from target KL segment.
+- tiny synthetic cached dataset trains for multiple epochs.
+- compact summary is written and stays below 1 MB.
+- checkpoint output is written under the configured checkpoint root.
+- checkpoint writing can be disabled.
+
+Verification before joint-Dh correction, superseded by the design-correction verification below:
+
+- ~/.venv/bin/python -m pytest -q tests/unit/phase2/test_train.py passed with 3 tests.
+- ~/.venv/bin/python -m pytest -q tests/unit/phase2/test_dataset.py tests/unit/phase2/test_train.py passed with 6 tests.
+- ~/.venv/bin/python -m pytest -q tests/unit/phase2 tests/unit/models tests/unit/training passed with 20 tests.
+- PYTHONPATH=src ~/.venv/bin/python scripts/train_phase2_kl.py --help passed.
+- tiny real-cache CLI smoke passed with explicit partial-cache mode:
+  - run id: d4-cli-smoke-2.
+  - final loss: 2.044505.
+  - sequences: 2.
+  - valid steps: 8.
+  - summary size: 1345 bytes.
+- ~/.venv/bin/python -m py_compile src/picar_kl/phase2/dataset.py src/picar_kl/phase2/train.py scripts/train_phase2_kl.py passed.
+- ~/.venv/bin/python -m pytest -q passed with 73 tests.
+
+
+### Phase D.4 Design Correction: Joint Dh Training
+
+Decision:
+
+- Do not persist Dh vectors as final training inputs.
+- Dh must be produced inside the trainable model.
+- The VLM/conditioning head and LSTM policy must be trained together under the KL objective.
+- Cache frozen Qwen visual-token encodings only; they are expensive reusable inputs, not trainable targets.
+
+Windowing rule:
+
+- Each phase 2 training example is split into a prefix segment and a target segment.
+- Default shape is K prefix actions followed by K target actions.
+- The prefix segment provides context to the trainable conditioning head.
+- The target segment receives the generated Dh vector.
+- KL divergence is computed only over target-segment action distributions.
+- This avoids leaking future actions into Dh while keeping Dh differentiable with the policy.
+
+Implementation update:
+
+- added Phase2WindowExample and Phase2WindowBatch.
+- added load_phase2_windows and collate_phase2_windows.
+- added PrefixConditioningHead.
+- added Phase2KLModel.
+- revised run_phase2_training to use prefix-target windows.
+- revised CLI options from sequence-length/max-sequences to context-steps/prediction-steps/max-windows.
+- current smoke path trains conditioning head plus LSTM jointly.
+
+Verification after correction:
+
+- focused joint-Dh tests passed with 16 tests.
+- phase2/model/training tests passed with 23 tests.
+- real-cache joint training smoke passed through run_phase2_training:
+  - run id: d4-joint-smoke.
+  - final loss: 2.0318193435668945.
+  - windows: 2.
+  - valid target steps: 4.
+  - summary size: 1495 bytes.
+- full unit suite passed with 76 tests.
+
+
 ## Build Phase E: Phase 2 Robot Execution
 
 Goal: run the robot with sparse VLM and fast LSTM action generation.
