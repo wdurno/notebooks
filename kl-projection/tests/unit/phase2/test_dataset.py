@@ -12,6 +12,7 @@ from picar_kl.phase2.dataset import (
     collate_phase2_windows,
     load_phase2_sequences,
     load_phase2_windows,
+    load_phase2_windows_with_stats,
 )
 
 
@@ -182,3 +183,40 @@ def test_phase2_windows_split_prefix_and_target_without_leakage(tmp_path):
     assert batch.target.target_distributions[0, 0].tolist() == list(action_name_to_distribution("drive-backward"))
     assert batch.target.target_distributions[0, 1].tolist() == list(action_name_to_distribution("look-right"))
     assert batch.target.previous_actions[0, 0].tolist() == list(action_name_to_distribution("look-left"))
+
+
+def test_phase2_windows_with_stats_counts_skipped_cache_gaps(tmp_path):
+    run_dir = _write_run(
+        tmp_path,
+        [
+            _new_row(0, "drive-forward"),
+            _new_row(1, "look-left"),
+            _new_row(2, "drive-backward"),
+            _new_row(3, "look-right"),
+        ],
+    )
+    from picar_kl.data.phase1 import load_phase1_run
+
+    records = load_phase1_run(run_dir)
+    cache = _cache_for(tmp_path)
+    cache.store(records[0], image_shape=(4, 5, 3), encoding=VisualTokenEncoding(np.ones((3, 4), dtype=np.float32)))
+    cache.store(records[2], image_shape=(4, 5, 3), encoding=VisualTokenEncoding(np.ones((3, 4), dtype=np.float32) * 3))
+    cache.store(records[3], image_shape=(4, 5, 3), encoding=VisualTokenEncoding(np.ones((3, 4), dtype=np.float32) * 4))
+
+    result = load_phase2_windows_with_stats(
+        [tmp_path],
+        cache=cache,
+        context_steps=1,
+        prediction_steps=1,
+        stride=1,
+        allow_missing_cached_encodings=True,
+    )
+
+    assert result.candidate_window_count == 3
+    assert len(result.windows) == 1
+    assert result.skipped_window_count == 2
+    assert result.skipped_record_count == 1
+    assert result.skipped_missing_cache_count == 1
+    assert result.skipped_no_action_count == 0
+    assert result.windows[0].prefix.steps[0].metadata["step_index"] == 2
+    assert result.windows[0].target.steps[0].metadata["step_index"] == 3

@@ -77,6 +77,18 @@ class Phase2WindowBatch:
     target: Phase2Batch
 
 
+@dataclass(frozen=True)
+class Phase2WindowLoadResult:
+    """Loaded phase 2 windows plus accounting for skipped source material."""
+
+    windows: tuple[Phase2WindowExample, ...]
+    candidate_window_count: int
+    skipped_window_count: int
+    skipped_record_count: int
+    skipped_missing_cache_count: int
+    skipped_no_action_count: int
+
+
 def load_phase2_sequences(
     roots: Sequence[Path],
     *,
@@ -127,6 +139,29 @@ def load_phase2_windows(
     initial_previous_action: Sequence[float] | None = None,
     allow_missing_cached_encodings: bool = False,
 ) -> list[Phase2WindowExample]:
+    return list(
+        load_phase2_windows_with_stats(
+            roots,
+            cache=cache,
+            context_steps=context_steps,
+            prediction_steps=prediction_steps,
+            stride=stride,
+            initial_previous_action=initial_previous_action,
+            allow_missing_cached_encodings=allow_missing_cached_encodings,
+        ).windows
+    )
+
+
+def load_phase2_windows_with_stats(
+    roots: Sequence[Path],
+    *,
+    cache: VisualEncodingCache,
+    context_steps: int,
+    prediction_steps: int,
+    stride: int | None = None,
+    initial_previous_action: Sequence[float] | None = None,
+    allow_missing_cached_encodings: bool = False,
+) -> Phase2WindowLoadResult:
     if int(context_steps) < 1:
         raise ValueError("context_steps must be >= 1")
     if int(prediction_steps) < 1:
@@ -136,39 +171,13 @@ def load_phase2_windows(
     if int(stride) < 1:
         raise ValueError("stride must be >= 1")
     windows: list[Phase2WindowExample] = []
+    candidate_window_count = 0
+    skipped_record_count = 0
+    skipped_missing_cache_count = 0
+    skipped_no_action_count = 0
     initial_action = _initial_previous_action(initial_previous_action)
-    for root in roots:
-        current_run: str | None = None
-        run_steps: list[Phase2StepExample] = []
-        previous_action = initial_action
-        for record in iter_phase1_records(Path(root)):
-            if record.run_uuid != current_run:
-                windows.extend(
-                    _window_steps(
-                        run_steps,
-                        context_steps=int(context_steps),
-                        prediction_steps=int(prediction_steps),
-                        stride=int(stride),
-                    )
-                )
-                run_steps = []
-                current_run = record.run_uuid
-                previous_action = initial_action
-            if record.action is None:
-                continue
-            try:
-                step = phase2_step_from_record(
-                    record,
-                    cache=cache,
-                    previous_action=previous_action,
-                )
-            except Phase2DatasetError as exc:
-                if allow_missing_cached_encodings and "missing cached visual encoding" in str(exc):
-                    previous_action = record.action.distribution
-                    continue
-                raise
-            run_steps.append(step)
-            previous_action = step.target_distribution
+
+    def flush_actual_segment(run_steps: list[Phase2StepExample]) -> None:
         windows.extend(
             _window_steps(
                 run_steps,
@@ -177,8 +186,64 @@ def load_phase2_windows(
                 stride=int(stride),
             )
         )
-    return windows
 
+    def count_candidate_run(candidate_step_count: int) -> None:
+        nonlocal candidate_window_count
+        candidate_window_count += _window_count_for_step_count(
+            candidate_step_count,
+            context_steps=int(context_steps),
+            prediction_steps=int(prediction_steps),
+            stride=int(stride),
+        )
+
+    for root in roots:
+        current_run: str | None = None
+        run_steps: list[Phase2StepExample] = []
+        candidate_step_count = 0
+        previous_action = initial_action
+        for record in iter_phase1_records(Path(root)):
+            if record.run_uuid != current_run:
+                flush_actual_segment(run_steps)
+                count_candidate_run(candidate_step_count)
+                run_steps = []
+                candidate_step_count = 0
+                current_run = record.run_uuid
+                previous_action = initial_action
+            if record.action is None:
+                skipped_record_count += 1
+                skipped_no_action_count += 1
+                flush_actual_segment(run_steps)
+                run_steps = []
+                continue
+            candidate_step_count += 1
+            try:
+                step = phase2_step_from_record(
+                    record,
+                    cache=cache,
+                    previous_action=previous_action,
+                )
+            except Phase2DatasetError as exc:
+                if allow_missing_cached_encodings and "missing cached visual encoding" in str(exc):
+                    skipped_record_count += 1
+                    skipped_missing_cache_count += 1
+                    previous_action = record.action.distribution
+                    flush_actual_segment(run_steps)
+                    run_steps = []
+                    continue
+                raise
+            run_steps.append(step)
+            previous_action = step.target_distribution
+        flush_actual_segment(run_steps)
+        count_candidate_run(candidate_step_count)
+    skipped_window_count = max(0, candidate_window_count - len(windows))
+    return Phase2WindowLoadResult(
+        windows=tuple(windows),
+        candidate_window_count=candidate_window_count,
+        skipped_window_count=skipped_window_count,
+        skipped_record_count=skipped_record_count,
+        skipped_missing_cache_count=skipped_missing_cache_count,
+        skipped_no_action_count=skipped_no_action_count,
+    )
 
 def phase2_step_from_record(
     record: Phase1ObservationRecord,
@@ -287,6 +352,19 @@ def _window_steps(
         target = Phase2SequenceExample(steps=tuple(steps[idx + int(context_steps) : idx + required]))
         windows.append(Phase2WindowExample(prefix=prefix, target=target))
     return windows
+
+
+def _window_count_for_step_count(
+    step_count: int,
+    *,
+    context_steps: int,
+    prediction_steps: int,
+    stride: int,
+) -> int:
+    required = int(context_steps) + int(prediction_steps)
+    if int(step_count) < required:
+        return 0
+    return ((int(step_count) - required) // int(stride)) + 1
 
 
 def _initial_previous_action(value: Sequence[float] | None) -> tuple[float, ...]:

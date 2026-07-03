@@ -949,6 +949,111 @@ Verification after correction:
 - full unit suite passed with 76 tests.
 
 
+## Build Phase D.5: Post-Review Training and Evaluation Changes
+
+Goal: make phase 2 fitting interpretable, repeatable, and useful for long-running experimentation.
+
+Fit modes:
+
+1. `window_sampling_fit`
+   - primary fit/evaluation mode.
+   - sample random `M*K` windows.
+   - use the first `(M-1)K` steps as prefix context.
+   - compute KL over the final `K` target steps.
+   - use this mode for hold-out metrics and stopping decisions.
+
+2. `full_sequence_fit`
+   - runtime-realistic mode.
+   - walk complete runs in order.
+   - update/use `Dh` as deployment would.
+   - use this mode for initialization, finishing, and runtime simulation.
+   - report its metrics as sequential/runtime metrics, not simple-random validation claims.
+
+Metrics:
+
+- KL / cross entropy.
+- top-1 action accuracy.
+- target-action probability.
+- entropy of predicted action distribution.
+- per-action confusion matrix.
+- run count, window count, target-step count, and skipped-window count.
+
+Hold-out and breakout metadata:
+
+- every metric artifact must include split/breakout metadata.
+- prefer a structured JSON field named `breakout`.
+- `breakout` must identify at least:
+  - fit mode.
+  - split name, like `train`, `validation`, `test`, or `runtime`.
+  - split strategy, like `random_window`, `run_id`, or `contiguous_block`.
+  - run ids included.
+  - context steps.
+  - prediction steps.
+  - window stride or sampling policy.
+  - random seed when sampling is random.
+- filenames may also include split names for readability, but JSON metadata is authoritative.
+
+Artifacts:
+
+- every model fit gets a separate ignored artifact directory under `/artifacts/models/phase2/<fit_id>/`.
+- each fit artifact should include:
+  - checkpoint.
+  - config.
+  - metric JSONL.
+  - final summary.
+  - split/breakout metadata.
+  - source cache identity.
+- compact distilled summaries go under `/experiments/runs/phase2/<fit_id>/`.
+- phase 3 starter checkpoints should reference phase 2 fit ids or checkpoint paths from these artifacts.
+
+Notebook/reporting:
+
+- training must run from scripts, suitable for `tmux`.
+- notebooks must consume emitted artifacts only.
+- add a fitting report notebook under `/experiments/reports/` after metric artifacts exist.
+
+Implementation D.5:
+
+- added `Phase2Breakout` and action metrics utilities.
+- added per-fit metric JSONL under `/artifacts/models/phase2/<fit_id>/metrics.jsonl`.
+- added per-fit `config.json`, artifact-local `summary.json`, and compact `/experiments/runs/phase2/<fit_id>/summary.json`.
+- added `window_sampling_fit` with random validation split metadata.
+- added `full_sequence_fit` with sequential/runtime split metadata.
+- added selected, loaded, candidate, and skipped window counts to fit summaries.
+- added skipped record counts, including missing-cache and no-action breakouts.
+- missing cached encodings now break contiguous training windows when partial cache loading is allowed.
+- added `--fit-mode` and `--validation-fraction` to `scripts/train_phase2_kl.py`.
+
+Verification D.5:
+
+- Phase 2 unit tests passed with 14 tests.
+- full test suite passed with 81 tests.
+- real-cache `window_sampling_fit` smoke passed:
+  - run id: `d5-window-smoke-1783097743`.
+  - selected windows: 4.
+  - loaded windows: 14.
+  - candidate windows: 300.
+  - skipped windows: 286.
+  - train windows: 3.
+  - validation windows: 1.
+  - valid target steps: 6.
+  - final loss: 1.9025554656982422.
+- real-cache `full_sequence_fit` smoke passed:
+  - run id: `d5-full-smoke-1783097754`.
+  - selected windows: 4.
+  - loaded windows: 14.
+  - candidate windows: 300.
+  - skipped windows: 286.
+  - train windows: 4.
+  - validation windows: 0.
+  - valid target steps: 8.
+  - final loss: 1.9024055004119873.
+
+
+Check-in D.5:
+Confirm window-sampling metrics are interpretable, fit artifacts are versioned, and reports can be generated without re-running training.
+
+
 ## Build Phase E: Phase 2 Robot Execution
 
 Goal: run the robot with sparse VLM and fast LSTM action generation.
