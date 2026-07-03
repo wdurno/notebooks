@@ -1058,39 +1058,89 @@ Confirm window-sampling metrics are interpretable, fit artifacts are versioned, 
 
 Goal: run the robot with sparse VLM and fast LSTM action generation.
 
+Core decisions:
+
+- default checkpoint selection loads the latest Phase 2 fit artifact.
+- allow explicit checkpoint selection by `--fit-id` or `--checkpoint-path`.
+- `K == prediction_steps`.
+- `prediction_steps` is the number of actions the LSTM predicts per VLM/head cycle.
+- keeping `K == prediction_steps` preserves the Phase 2 KL-projection interpretation and should simplify Phase 3 online KL-divergence.
+- runtime device defaults to `auto`, selecting CUDA when available.
+- keep Phase 1 speech input, speech output, and step logging behavior.
+- Phase 2 should add LSTM policy outputs between VLM refreshes, not remove the conversational robot UX.
+
 Runtime loop:
 
-1. Capture image each step.
-2. Encode image for LSTM each step.
-3. Every `K` steps, run VLM language/strategy path and conditioning head.
-4. Keep VLM head vector constant for the next `K` steps.
-5. Run LSTM each step.
-6. Convert LSTM distribution to robot vector.
-7. Apply vector.
-8. Log action latency and coherency-relevant data.
+1. Select Phase 2 fit artifact.
+2. Load fit summary, config, and checkpoint.
+3. Set `K = prediction_steps` from the fit summary unless explicitly provided with the same value.
+4. Capture image each step.
+5. Encode image each step using the same visual-token cache/runtime identity expected by the fit.
+6. Every `K` steps, run the VLM/head path over the current prefix context to produce a fresh `Dh`.
+7. Keep `Dh` constant for exactly the next `K` LSTM target steps.
+8. Run the LSTM each step.
+9. Convert the LSTM action distribution to a robot vector.
+10. Apply the vector.
+11. Log action probabilities, selected action, `Dh` metadata, latency, speech context, VLM text, and coherency-relevant records.
+
+Build Phase E.1: Offline Policy Loader and Replay Smoke
+
+Goal: prove the fitted Phase 2 policy can be loaded and used before touching live robot movement.
+
+Tasks:
+
+- add a Phase 2 fit artifact loader.
+- support latest-fit, `fit_id`, and direct checkpoint path selection.
+- reconstruct `Phase2KLModel` from checkpoint metadata.
+- load checkpoint weights onto `auto`, `cuda`, or `cpu`.
+- expose a replay API that consumes cached Phase 1 visual encodings.
+- replay a Phase 1 run/window sequence through the policy.
+- emit valid action distributions and timing records.
+- add unit tests for loader selection and replay output shape/probability validity.
+- add a script-level smoke command for replay.
+
+Build Phase E.2: Live Phase 2 Runtime Loop
+
+Goal: run the live robot with VLM refreshes every `K` steps and LSTM actions every step.
+
+Tasks:
+
+- add `scripts/run_phase2_robot.py`.
+- reuse Phase 1 robot client, speech listener, TTS, context history, and logging patterns.
+- run Qwen/head only at cycle boundaries.
+- run visual encoding and LSTM policy per step.
+- enforce `K == prediction_steps`.
+- record raw wall-clock latency events separately for image capture, visual encoding, VLM/head refresh, LSTM action, robot request, speech input, and speech output.
+- continue writing data incrementally so `Ctrl-C` preserves completed steps.
+
+Build Phase E.3: Integration Tests
+
+Goal: test live-execution wiring before a real robot trial.
+
+Tests:
+
+- fake robot/fake visual encoding/fake policy end-to-end loop.
+- offline replay smoke using a real Phase 2 checkpoint and cached Phase 1 encodings.
+- manual robot smoke adapted from old integration tests.
+- optional real VLM path marked `gpu`.
 
 Metrics:
 
 - raw wall-clock latency events.
 - coherency records for later VLM judging.
-- KL/training metrics when applicable.
+- action distributions from LSTM and cycle-level VLM/head metadata.
 - metric aggregation must tolerate old phase 1 data that lacks explicit latency events.
 - when latency events are missing, metric code may report unavailable values or derive rough timestamp intervals explicitly labeled as estimates.
 
 Scripts:
 
 ```text
+scripts/run_phase2_replay.py
 scripts/run_phase2_robot.py
 ```
 
-Integration tests:
-
-- Fake robot/fake VLM end-to-end loop.
-- Manual robot smoke test adapted from old integration tests.
-- Optional real VLM path marked `gpu`.
-
 Check-in E:
-Experimenter runs full integration test and then real robot phase 2 trial.
+Experimenter reviews replay smoke, then runs full integration test, then real robot phase 2 trial.
 
 ## Build Phase F: Documentation and Handoff
 
