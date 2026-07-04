@@ -104,7 +104,7 @@ def validate_action_distribution(
     probability_sum = sum(values)
     if abs(probability_sum - 1.0) > tolerance:
         raise ValueError("Action distribution must sum to 1")
-    return tuple(0.0 if abs(value) <= tolerance else value for value in values)
+    return tuple(0.0 if value < 0.0 and abs(value) <= tolerance else value for value in values)
 
 
 def action_vector_for_name(action_name: str) -> ActionVector:

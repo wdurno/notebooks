@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from picar_kl.actions import action_distribution_to_vector, distribution_to_action_name
+from picar_kl.actions import action_count, action_distribution_to_vector, distribution_to_action_name
 from picar_kl.context import ContextConfig, EpisodeContext
 from picar_kl.io.observation_store import Phase1ObservationStore
 from picar_kl.latency import LatencyEvent, LatencyTimer
@@ -139,6 +139,7 @@ def run_phase2_live(
     previous_action_distribution: tuple[float, ...] | None = None
     steps_completed = 0
     status = "completed"
+    error_message: str | None = None
     step_iter = range(int(config.max_steps)) if config.max_steps is not None else count()
 
     try:
@@ -170,6 +171,7 @@ def run_phase2_live(
             messages = context_render.messages
 
             mode = "bootstrap" if len(history) < context_steps else "lstm"
+            operator_override = bool(user_texts) and mode == "lstm"
             if mode == "bootstrap":
                 with LatencyTimer("vlm_bootstrap_decision", metadata={"step_index": step_index}) as timer:
                     current_vlm_decision = vlm.decide(image_rgb=image_rgb, messages=messages)
@@ -177,6 +179,13 @@ def run_phase2_live(
                 action_distribution = current_vlm_decision.action_distribution
                 action_source = "vlm-bootstrap"
                 cycle_step_index = 0
+            elif operator_override:
+                with LatencyTimer("vlm_operator_override", metadata={"step_index": step_index, "cycle_index": cycle_index}) as timer:
+                    current_vlm_decision = vlm.decide(image_rgb=image_rgb, messages=messages)
+                latency_events.append(_event(timer))
+                action_distribution = current_vlm_decision.action_distribution
+                action_source = "vlm-operator-override"
+                mode = "operator-override"
             else:
                 if cycle_step_index == 0:
                     cycle_index += 1
@@ -203,6 +212,8 @@ def run_phase2_live(
                 latency_events.append(_event(timer))
                 action_source = "phase2-lstm"
 
+            raw_action_distribution = tuple(float(value) for value in action_distribution)
+            action_distribution, distribution_metadata = _normalize_live_distribution(raw_action_distribution)
             action_name = distribution_to_action_name(action_distribution)
             action_vector = action_distribution_to_vector(action_distribution)
             with LatencyTimer("apply_action", metadata={"step_index": step_index, "source": action_source}) as timer:
@@ -210,7 +221,8 @@ def run_phase2_live(
             latency_events.append(_event(timer))
 
             generated_text = current_vlm_decision.generated_text if current_vlm_decision is not None else ""
-            if generated_text and generated_text != last_generated_text and config.speak_generated_text:
+            should_speak = bool(generated_text) and (generated_text != last_generated_text or bool(user_texts))
+            if should_speak and config.speak_generated_text:
                 with LatencyTimer("speaker", metadata={"step_index": step_index}) as timer:
                     speaker.speak(generated_text)
                 latency_events.append(_event(timer))
@@ -228,6 +240,7 @@ def run_phase2_live(
                     "k": k,
                     "prediction_steps": prediction_steps,
                     "context_steps": context_steps,
+                    "distribution_normalization": distribution_metadata,
                     "vlm_refresh": None
                     if current_vlm_decision is None
                     else {
@@ -285,9 +298,17 @@ def run_phase2_live(
             previous_action_distribution = tuple(float(value) for value in action_distribution)
             if mode == "lstm":
                 cycle_step_index = (cycle_step_index + 1) % k
+            elif mode == "operator-override":
+                cycle_step_index = 0
+                cycle_targets = []
+                cycle_previous_actions = []
             steps_completed = step_index + 1
     except KeyboardInterrupt:
         status = "interrupted"
+    except Exception as exc:
+        status = "failed"
+        error_message = f"{type(exc).__name__}: {exc}"
+        raise
     finally:
         final_metadata = dict(base_metadata)
         final_metadata.update(
@@ -295,6 +316,7 @@ def run_phase2_live(
                 "status": status,
                 "steps_completed": steps_completed,
                 "ended_at": datetime.now(timezone.utc).isoformat(),
+                "error_message": error_message,
             }
         )
         store.write_run_metadata(final_metadata)
@@ -306,6 +328,27 @@ def run_phase2_live(
         status=status,
         fit_id=loaded_policy.artifact.fit_id,
     )
+
+
+
+def _normalize_live_distribution(distribution: tuple[float, ...]) -> tuple[tuple[float, ...], dict[str, Any]]:
+    if len(distribution) != action_count():
+        raise ValueError(f"Expected {action_count()} action probabilities")
+    if any(not np.isfinite(value) for value in distribution):
+        raise ValueError("Action distribution contains non-finite values")
+    clipped = tuple(max(0.0, float(value)) for value in distribution)
+    raw_sum = float(sum(distribution))
+    clipped_sum = float(sum(clipped))
+    if clipped_sum <= 0.0:
+        raise ValueError("Action distribution has no positive probability mass")
+    normalized = tuple(float(value) / clipped_sum for value in clipped)
+    metadata = {
+        "raw_distribution": list(distribution),
+        "raw_sum": raw_sum,
+        "clipped_sum": clipped_sum,
+        "normalized": abs(raw_sum - 1.0) > 1e-6 or any(value < 0.0 for value in distribution),
+    }
+    return normalized, metadata
 
 
 def _predict_cycle_action(

@@ -52,6 +52,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--speech-amplitude-threshold", type=float, default=0.015)
     parser.add_argument("--speech-silence-seconds", type=float, default=0.8)
     parser.add_argument("--speech-min-seconds", type=float, default=0.25)
+    parser.add_argument("--speech-callback-queue-size", type=int, default=256)
+    parser.add_argument("--speech-utterance-queue-size", type=int, default=32)
     parser.add_argument("--x-resize", type=int, default=None)
     parser.add_argument("--y-resize", type=int, default=None)
     return parser
@@ -121,6 +123,8 @@ def main() -> int:
                 amplitude_threshold=float(args.speech_amplitude_threshold),
                 silence_seconds=float(args.speech_silence_seconds),
                 min_speech_seconds=float(args.speech_min_seconds),
+                callback_queue_size=max(1, int(args.speech_callback_queue_size)),
+                utterance_queue_size=max(1, int(args.speech_utterance_queue_size)),
             ),
         )
     speaker = SpeechServiceSpeaker(speech_service) if args.speech_output else NoSpeaker()

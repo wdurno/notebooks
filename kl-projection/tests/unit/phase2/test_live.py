@@ -11,7 +11,11 @@ from picar_kl.actions import action_name_to_distribution
 from picar_kl.data.phase1 import load_phase1_run
 from picar_kl.models.visual import VisualTokenEncoding
 from picar_kl.phase2.cache import EncodingCacheConfig, VisualEncodingCache
-from picar_kl.phase2.live import Phase2LiveRunConfig, run_phase2_live
+from picar_kl.phase2.live import (
+    Phase2LiveRunConfig,
+    _normalize_live_distribution,
+    run_phase2_live,
+)
 from picar_kl.phase2.runtime import load_phase2_policy
 from picar_kl.phase2.train import FIT_MODE_WINDOW_SAMPLING, Phase2TrainingConfig, run_phase2_training
 from picar_kl.records import Phase1ObservationRecord
@@ -68,6 +72,22 @@ class FakeSpeaker:
 
     def speak(self, text):
         self.texts.append(str(text))
+
+
+class FailingRobot(FakeRobot):
+    def capture_image(self):
+        raise RuntimeError("camera failed")
+
+
+class StepSpeechSource:
+    def __init__(self, by_step):
+        self.by_step = dict(by_step)
+        self.step = 0
+
+    def drain_texts(self):
+        texts = list(self.by_step.get(self.step, []))
+        self.step += 1
+        return texts
 
 
 def _row(step_index, action_name):
@@ -230,3 +250,69 @@ def test_phase2_live_rejects_k_that_differs_from_prediction_steps(tmp_path):
             visual_encoder=FakeEncoder(),
             loaded_policy=loaded,
         )
+
+
+def test_normalize_live_distribution_handles_float_drift():
+    normalized, metadata = _normalize_live_distribution((0.4, 0.3, 0.299998, 0.0, 0.0, 0.0, 0.0, 0.0))
+
+    assert sum(normalized) == pytest.approx(1.0)
+    assert metadata["normalized"] is True
+    assert metadata["raw_sum"] == pytest.approx(0.999998)
+
+
+def test_phase2_live_marks_unhandled_failures_in_metadata(tmp_path):
+    loaded = _train_tiny_policy(tmp_path)
+
+    with pytest.raises(RuntimeError, match="camera failed"):
+        run_phase2_live(
+            Phase2LiveRunConfig(
+                data_root=tmp_path / "phase2-live",
+                run_uuid="failed-run",
+                max_steps=1,
+                device="cpu",
+            ),
+            robot=FailingRobot(),
+            vlm=FakeVLM(),
+            visual_encoder=FakeEncoder(),
+            loaded_policy=loaded,
+        )
+
+    metadata = json.loads((tmp_path / "phase2-live" / "failed-run" / "run_meta.json").read_text())
+    assert metadata["status"] == "failed"
+    assert metadata["steps_completed"] == 0
+    assert "camera failed" in metadata["error_message"]
+
+
+def test_phase2_live_operator_speech_forces_vlm_override_during_lstm_cycle(tmp_path):
+    loaded = _train_tiny_policy(tmp_path)
+    speaker = FakeSpeaker()
+
+    summary = run_phase2_live(
+        Phase2LiveRunConfig(
+            data_root=tmp_path / "phase2-live",
+            run_uuid="operator-override-run",
+            max_steps=4,
+            device="cpu",
+        ),
+        robot=FakeRobot(),
+        vlm=FakeVLM(),
+        visual_encoder=FakeEncoder(),
+        loaded_policy=loaded,
+        speech_source=StepSpeechSource({2: ["please back up"]}),
+        speaker=speaker,
+    )
+
+    assert summary.status == "completed"
+    records = _records(summary.run_dir)
+    assert [record.action.source for record in records] == [
+        "vlm-bootstrap",
+        "vlm-bootstrap",
+        "vlm-operator-override",
+        "phase2-lstm",
+    ]
+    assert records[2].metadata["mode"] == "operator-override"
+    assert records[2].user_texts == ["please back up"]
+    latency_names = {event.name for event in records[2].latency_events}
+    assert "vlm_operator_override" in latency_names
+    assert records[3].action.metadata["cycle_step_index"] == 0
+    assert speaker.texts

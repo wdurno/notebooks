@@ -46,7 +46,7 @@ def test_episode_context_preserves_goal_and_bounds_history():
 
 
 def test_episode_context_applies_prompt_token_window_and_clips_latest():
-    context = EpisodeContext(config=ContextConfig(history_window=10, prompt_token_window=120))
+    context = EpisodeContext(config=ContextConfig(history_window=10, prompt_token_window=260))
     tokenizer = WordTokenizer()
 
     context.add_observation(
@@ -64,7 +64,7 @@ def test_episode_context_applies_prompt_token_window_and_clips_latest():
     )
 
     assert rendered.metadata["prompt_truncated"] is True
-    assert rendered.metadata["prompt_tokens"] <= 120
+    assert rendered.metadata["prompt_tokens"] <= 260
     rendered_text = "\n".join(
         str(item.get("text") or "")
         for message in rendered.messages

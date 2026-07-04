@@ -50,7 +50,7 @@ class STTConfig:
 @dataclass(frozen=True)
 class TTSConfig:
     voice_id: str = "en_US-lessac-medium"
-    prefer_gpu: bool = True
+    prefer_gpu: bool = False
     device: Optional[str] = None
     speaker: Optional[int] = None
     length_scale: float = 1.0
@@ -83,6 +83,7 @@ class SpeechStreamConfig:
     min_speech_seconds: float = 0.25
     max_event_queue_size: int = 128
     callback_queue_size: int = 256
+    utterance_queue_size: int = 32
     poll_interval_seconds: float = 0.05
 
 

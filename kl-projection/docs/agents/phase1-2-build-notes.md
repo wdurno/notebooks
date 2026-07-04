@@ -1158,6 +1158,18 @@ Verification E.2:
 - script compilation passed.
 - direct script invocation could not be smoke-tested inside this sandbox because the command wrapper failed before Python started with `bwrap: loopback: Failed RTM_NEWADDR`.
 
+Post-smoke E.2 note:
+
+- a 5-step run against the first window fit does not reach the LSTM path because `context_steps=8`; use at least `context_steps + prediction_steps` steps for a live LSTM smoke.
+- the continuous STT stream now drains microphone audio and transcribes completed utterances on separate background threads so slow transcription does not back up the audio callback queue as quickly.
+- `scripts/run_phase2_robot.py` exposes speech callback and utterance queue sizes for tuning.
+- robot camera index can change because UVC cameras may expose metadata and capture nodes separately; the robot server now defaults to auto-detecting the first readable OpenCV camera index while preserving explicit `--camera-index` for debugging.
+- live Phase 2 normalizes model action distributions before validation, preserving raw distribution metadata for debugging. The shared action validator preserves tiny positive probability mass so repeated validation does not break valid LSTM outputs.
+- live Phase 2 marks unhandled exceptions as `failed` in run metadata instead of leaving crashed runs labeled `completed`.
+- A narrow red-ball spoken-answer fallback was considered after Qwen ignored a question, then removed after a later smoke showed the strengthened prompt can produce natural direct answers. Avoid product-side micromanagement here; preserve organic Phase 3 learning pressure.
+- Longer live smoke showed speech arriving mid-LSTM-cycle was logged but did not affect the immediate action or speech because only cycle-boundary VLM refreshes could respond. Live Phase 2 now treats fresh operator speech during LSTM mode as an immediate VLM operator-override step, then resets the LSTM cycle. This preserves the experimenter correction UX without adding task-specific behavior.
+- The control prompt now states the authority hierarchy explicitly: operator speech/corrections, current image, persistent task, then prior robot messages/actions. Prior robot `say` messages are tentative reports, not facts; if the operator gives more instructions after completion claims, the task is not complete. This is prompt-level epistemic framing, not task-specific product logic.
+
 Build Phase E.3: Integration Tests
 
 Goal: test live-execution wiring before a real robot trial.

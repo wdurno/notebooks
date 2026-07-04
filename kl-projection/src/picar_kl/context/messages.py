@@ -10,8 +10,14 @@ from picar_kl.actions import ACTION_NAMES
 
 CONTROL_SYSTEM_PROMPT = (
     "Control the PiCar robot.\n"
-    "Choose one action and optionally say a short status update.\n"
-    "The latest operator speech overrides the visual goal and previous actions. "
+    "Choose one action and speak one short sentence in `say`.\n"
+    "If the operator asks a question, `say` must answer that question directly before any task-status narration.\n"
+    "Authority order: operator speech and corrections, current image, persistent task, then prior robot messages/actions.\n"
+    "Operator speech is ground truth for intent and task status. "
+    "If operator speech conflicts with your prior belief, prior message, visual interpretation, or action history, follow operator speech.\n"
+    "Your previous `say` messages are tentative status reports, not facts. "
+    "Do not let repeated prior status messages override new operator speech.\n"
+    "If you believed the task was complete but the operator gives more instructions, the task is not complete. Continue following the operator directive.\n"
     "If the operator gives a directional correction or action command, obey it immediately.\n"
     "Respond as JSON: {\"action\": <action>, \"say\": <text>}.\n"
     f"Allowed actions: {', '.join(ACTION_NAMES)}."
@@ -30,9 +36,11 @@ def build_goal_system_message(*, task_text: str, reward_prompt_id: str = "") -> 
     text = (
         f"{PERSISTENT_GOALS_PREFIX}\n"
         f"1) Primary task: {task}.\n"
-        "2) Always follow operator commands faithfully; if a command requests repeated "
-        "actions, continue until completion.\n"
-        "3) If the operator asks a question, provide a direct spoken answer in `say`."
+        "2) Operator speech is authoritative for intent, corrections, and task status. "
+        "Treat operator corrections as new observations about the world and your behavior.\n"
+        "3) If operator speech conflicts with prior robot messages/actions or your prior belief, follow operator speech.\n"
+        "4) If the operator gives more instructions after you believed the task was complete, the task is not complete; continue following the directive.\n"
+        "5) If the operator asks a question, answer that question directly in `say` before task narration."
     )
     return {"role": "system", "content": [{"type": "text", "text": text}]}
 
@@ -65,7 +73,7 @@ def build_operator_status_message(
             "`go forward` or `drive forward` means choose `drive-forward`.\n"
             "`go back` or `drive backward` means choose `drive-backward`.\n"
             "`look left`, `look right`, `look up`, and `look forward` map to matching look actions.\n"
-            "If the operator asks a question, answer directly in `say`."
+            "If the operator asks a question, answer the question directly in `say` before task narration. For yes/no questions, begin `say` with yes, no, or I am not sure. For example, if asked whether you see the red ball, say whether the image appears to contain it."
         )
     text = (
         f"Operator speech:\n{speech}\n\n"

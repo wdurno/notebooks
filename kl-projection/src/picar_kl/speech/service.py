@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from .audio_io import AudioIO, RecordedAudio
 from .config import SpeechConfig
+from .errors import SpeechError
 from .stt import FasterWhisperSTT, TranscriptionResult
 from .tts import PiperTTS, SynthesisResult
 
@@ -42,6 +43,8 @@ class SpeechService:
     def speak(self, text: str) -> SynthesisResult:
         """Synthesize text to speech and play it through the active output device."""
 
+        if not text.strip():
+            raise SpeechError("Speech synthesis requires non-empty text")
         synthesis = self.tts.synthesize_to_tempfile(text)
         self.audio.play_wav(synthesis.audio_path)
         return synthesis
@@ -51,6 +54,8 @@ class SpeechService:
 
         recording = self.audio.record_until_enter()
         transcription = self.stt.transcribe_file(recording.wav_path)
+        if not transcription.text.strip():
+            raise SpeechError("Speech round-trip produced an empty transcript")
         synthesis = self.tts.synthesize_to_tempfile(transcription.text)
         self.audio.play_wav(synthesis.audio_path)
         return SpeechRoundTrip(

@@ -27,6 +27,8 @@ class PiperTTS:
         self.store = ModelStore(config)
 
     def synthesize_to_file(self, text: str, output_path: Path) -> SynthesisResult:
+        if not text.strip():
+            raise SpeechError("Piper synthesis requires non-empty text")
         model_path, config_path = self.store.ensure_tts_voice(self.config.tts.voice_id)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         executable = self._resolve_executable()

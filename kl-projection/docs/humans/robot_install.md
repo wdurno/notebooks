@@ -30,8 +30,11 @@ pip install --force-reinstall --no-deps '/home/pi/picar_kl-0.1.0-py3-none-any.wh
 Run the robot Flask server:
 
 ```bash
-picar-kl-robot-server --host 0.0.0.0 --port 5000 --camera-index 0
+picar-kl-robot-server --host 0.0.0.0 --port 5000
 ```
+
+The server auto-detects the first readable camera index.
+For debugging, pass an explicit index like `--camera-index 1`.
 
 For a no-camera hardware check:
 

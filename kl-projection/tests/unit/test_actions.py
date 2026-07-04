@@ -66,3 +66,12 @@ def test_distribution_validation_rejects_bad_shape_and_sum():
 def test_action_vector_validation_rejects_out_of_range_value():
     with pytest.raises(ValueError, match="tilt"):
         validate_action_vector({"pan": 0.0, "tilt": -0.1, "turn": 0.0, "drive": 0.0})
+
+
+def test_distribution_validation_preserves_tiny_positive_mass():
+    distribution = (0.9999992, 0.0000002, 0.0000002, 0.0000002, 0.0000002, 0.0, 0.0, 0.0)
+
+    checked = validate_action_distribution(distribution)
+
+    assert checked == distribution
+    assert distribution_to_action_name(checked) == "drive-left"

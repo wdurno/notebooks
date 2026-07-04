@@ -93,9 +93,11 @@ class ContinuousSpeechStream:
             min_speech_seconds=config.min_speech_seconds,
         )
         self._audio_queue: queue.Queue[Any] = queue.Queue(maxsize=config.callback_queue_size)
+        self._utterance_queue: queue.Queue[Any] = queue.Queue(maxsize=config.utterance_queue_size)
         self._event_queue: queue.Queue[QueuedSpeechEvent] = queue.Queue(maxsize=config.max_event_queue_size)
         self._stop_event = threading.Event()
         self._worker_thread: threading.Thread | None = None
+        self._transcriber_thread: threading.Thread | None = None
         self._stream = None
 
     def start(self) -> None:
@@ -114,6 +116,7 @@ class ContinuousSpeechStream:
                 LOGGER.warning("[stt] dropped audio chunk because callback queue is full")
             return None
 
+        self._stop_event.clear()
         self._stream = sd.InputStream(
             samplerate=self.config.sample_rate,
             channels=self.config.channels,
@@ -121,21 +124,29 @@ class ContinuousSpeechStream:
             blocksize=self.config.blocksize,
             callback=callback,
         )
-        self._stream.start()
-        self._stop_event.clear()
-        self._worker_thread = threading.Thread(target=self._worker_loop, name="continuous-speech-stream", daemon=True)
+        self._worker_thread = threading.Thread(target=self._worker_loop, name="continuous-speech-segmenter", daemon=True)
+        self._transcriber_thread = threading.Thread(
+            target=self._transcription_loop,
+            name="continuous-speech-transcriber",
+            daemon=True,
+        )
         self._worker_thread.start()
+        self._transcriber_thread.start()
+        self._stream.start()
         return None
 
     def stop(self) -> None:
-        self._stop_event.set()
-        if self._worker_thread is not None:
-            self._worker_thread.join(timeout=2.0)
-        self._worker_thread = None
         if self._stream is not None:
             self._stream.stop()
             self._stream.close()
         self._stream = None
+        self._stop_event.set()
+        if self._worker_thread is not None:
+            self._worker_thread.join(timeout=2.0)
+        self._worker_thread = None
+        if self._transcriber_thread is not None:
+            self._transcriber_thread.join(timeout=2.0)
+        self._transcriber_thread = None
         return None
 
     def drain(self) -> list[QueuedSpeechEvent]:
@@ -158,8 +169,24 @@ class ContinuousSpeechStream:
             except queue.Empty:
                 continue
             for utterance in self._segmenter.ingest(samples):
-                self._transcribe_and_enqueue(utterance)
+                self._enqueue_utterance(utterance)
         for utterance in self._segmenter.flush():
+            self._enqueue_utterance(utterance)
+        return None
+
+    def _enqueue_utterance(self, utterance: Any) -> None:
+        try:
+            self._utterance_queue.put_nowait(utterance)
+        except queue.Full:
+            LOGGER.warning("[stt] dropped utterance because transcription queue is full")
+        return None
+
+    def _transcription_loop(self) -> None:
+        while not self._stop_event.is_set() or not self._utterance_queue.empty():
+            try:
+                utterance = self._utterance_queue.get(timeout=self.config.poll_interval_seconds)
+            except queue.Empty:
+                continue
             self._transcribe_and_enqueue(utterance)
         return None
 

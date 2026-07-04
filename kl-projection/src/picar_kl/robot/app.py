@@ -112,8 +112,9 @@ class LegacyPiCarController:
 class LegacyPiCarCamera:
     """Adapter around an OpenCV PiCar camera device."""
 
-    def __init__(self, *, camera_index: int = 0) -> None:
-        self.camera_index = int(camera_index)
+    def __init__(self, *, camera_index: int | str = "auto") -> None:
+        self.camera_index = camera_index
+        self._resolved_camera_index: int | None = None
         self._capture = None
 
     def capture_jpeg(
@@ -142,13 +143,16 @@ class LegacyPiCarCamera:
         except ImportError as exc:
             raise RuntimeError("opencv-python is required for PiCar camera capture") from exc
 
-        capture = cv2.VideoCapture(self.camera_index)
-        if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
-            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-        if not capture.isOpened():
-            raise RuntimeError(f"PiCar camera index {self.camera_index} did not open")
+        if self.camera_index == "auto":
+            capture, camera_index = _open_first_readable_camera(cv2)
+            self._resolved_camera_index = camera_index
+            print(f"PiCar camera auto-selected index {camera_index}", flush=True)
+        else:
+            camera_index = int(self.camera_index)
+            capture = _open_camera_index(cv2, camera_index)
+            if capture is None:
+                raise RuntimeError(f"PiCar camera index {camera_index} did not open")
+            self._resolved_camera_index = camera_index
         self._capture = capture
         return capture
 
@@ -174,7 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the PiCar robot Flask server.")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=5000)
-    parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument("--camera-index", type=_parse_camera_index, default="auto", help="Camera index or auto.")
     parser.add_argument("--no-camera", action="store_true", help="Start hardware controls without exposing /img.")
     parser.add_argument(
         "--dry-run",
@@ -191,11 +195,57 @@ def main() -> int:
         camera = None
     else:
         controller = LegacyPiCarController()
-        camera = None if args.no_camera else LegacyPiCarCamera(camera_index=int(args.camera_index))
+        camera = None if args.no_camera else LegacyPiCarCamera(camera_index=args.camera_index)
     app = create_app(controller=controller, camera=camera)
     app.run(host=args.host, port=int(args.port))
     return 0
 
+
+
+def _parse_camera_index(value: Any) -> int | str:
+    if str(value).strip().lower() == "auto":
+        return "auto"
+    try:
+        camera_index = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("--camera-index must be an integer or auto") from exc
+    if camera_index < 0:
+        raise ValueError("--camera-index must be non-negative or auto")
+    return camera_index
+
+
+def _open_first_readable_camera(cv2: Any, *, max_index: int = 8) -> tuple[Any, int]:
+    failures: list[str] = []
+    for camera_index in range(max_index):
+        capture = _open_camera_index(cv2, camera_index)
+        if capture is None:
+            failures.append(f"{camera_index}: open failed")
+            continue
+        frame = LegacyPiCarCamera._read_frame(capture)
+        if frame is not None:
+            return capture, camera_index
+        failures.append(f"{camera_index}: read failed")
+        _release_capture(capture)
+    raise RuntimeError("No readable PiCar camera found; tried " + ", ".join(failures))
+
+
+def _open_camera_index(cv2: Any, camera_index: int) -> Any | None:
+    capture = cv2.VideoCapture(int(camera_index))
+    if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+    if not capture.isOpened():
+        _release_capture(capture)
+        return None
+    return capture
+
+
+def _release_capture(capture: Any) -> None:
+    release = getattr(capture, "release", None)
+    if callable(release):
+        release()
+    return None
 
 def _map_linear(value: float, in_min: float, in_max: float, out_min: float, out_max: float) -> int:
     return int(round(out_min + (value - in_min) * (out_max - out_min) / (in_max - in_min)))

@@ -85,7 +85,8 @@ PYTHONPATH=src ~/.venv/bin/python scripts/run_phase2_robot.py \
 
 Omit `--fit-id` to run the latest fit.
 The live loop runs until `Ctrl-C` unless `--steps` is provided.
-Use `--steps 5` for a short smoke test.
+Use `--steps 5` for a short startup smoke test.
+Use at least `context_steps + prediction_steps` steps to exercise the LSTM path; for the first window fit, use `--steps 12`.
 Speech input, speech output, and reward scoring are enabled by default.
 Pass `--no-speech-input`, `--no-speech-output`, or `--no-reward` to disable them.
 

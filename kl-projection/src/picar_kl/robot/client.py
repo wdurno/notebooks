@@ -139,7 +139,11 @@ class PiCarClient:
 
         status_code = int(getattr(response, "status_code", 0))
         if status_code != 200:
-            raise PiCarClientError(f"PiCar request failed with status {status_code}: {url}")
+            body = str(getattr(response, "text", "") or "").strip().replace("\n", " ")
+            if len(body) > 300:
+                body = body[:300] + "..."
+            detail = f": {body}" if body else ""
+            raise PiCarClientError(f"PiCar request failed with status {status_code}: {url}{detail}")
         return response
 
     def _space_commands(self) -> None:
