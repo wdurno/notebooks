@@ -285,3 +285,14 @@ The manifests are not user-facing runtime configs, but they are safe-to-version 
 The old model-store code downloads into a cache directory, validates required files, then copies into finalized model directories.
 That pattern is worth preserving.
 In the new repo, model-store code should resolve paths from project config or environment variables rather than hard-coded old `demo/model` roots.
+
+## Phase 1/2 Build Findings
+
+The imported robot-demo assets are now starter material rather than live external dependencies.
+Phase 1 and Phase 2 runtime paths use `picar_kl` modules for robot client/server, speech, reward scoring, visual encoding, KL-projection fitting, replay, and live execution.
+
+Remaining legacy debt is acceptable for now where it preserves copied math or unused old experiments.
+Do not depend on old external codebases for Phase 1 or Phase 2 operation.
+
+Human handoff docs live under `/docs/humans/`.
+The main Phase 1/2 operational docs are `run_phase1.md`, `train_phase2.md`, and `run_phase2_robot.md`.

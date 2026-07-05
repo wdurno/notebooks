@@ -68,4 +68,18 @@ Fine tuning options:
 1. The VLM will be given trainable QLoRA parameters. Hyperparameter: QLoRA rank. Setting rank to 0 disables QLoRA. 
 2. All trainable parameters will share an EWC regularizer. EWC weights will be initialized from all prior data. Hyperparameters: EWC rank & regularizer weight $\lambda$. Setting $\lambda = 0$ disables EWC. 
 3. The model will be given an experience replay buffer of fixed maximum length. When the buffer gets full, adding new data will eject old data. Since EWC is approximately equivalent to the log likelihood of all prior data, all old data ejected from the replay buffer will be integrated into the EWC buffer in an online learning fashion. Hyperparameter: experiment replay buffer maximum length. 
-4. All trainable parameters will share a single RL loss. Hyperparameter: None. It is the baseline loss and cannot be disabled. 
+4. All trainable parameters will share a single RL loss. Hyperparameter: None. It is the baseline loss and cannot be disabled.
+
+## Running the Project
+
+Human-facing setup and run notes live in `/docs/humans/`.
+Start with:
+
+1. `docs/humans/setup.md`
+2. `docs/humans/robot_install.md`
+3. `docs/humans/run_phase1.md`
+4. `docs/humans/train_phase2.md`
+5. `docs/humans/run_phase2_robot.md`
+
+Raw data and model artifacts are ignored by git.
+See `docs/humans/data_layout.md` before moving large files.

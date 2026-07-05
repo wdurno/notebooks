@@ -1196,6 +1196,14 @@ scripts/run_phase2_replay.py
 scripts/run_phase2_robot.py
 ```
 
+Implementation E.3:
+
+- added `tests/integration/phase2/test_phase2_live_fake_runtime.py`.
+- fake runtime covers bootstrap, operator override, LSTM execution, artifact persistence, latency events, and live distribution normalization.
+- added `tests/integration/phase2/test_phase2_live_run_artifact.py`.
+- manual robot smoke now has a post-run artifact validator via `PICAR_PHASE2_RUN_DIR`.
+- documented both E.3 commands in `/docs/humans/run_phase2.md`.
+
 Check-in E:
 Experimenter reviews replay smoke, then runs full integration test, then real robot phase 2 trial.
 
@@ -1218,6 +1226,23 @@ Also update:
 - `/README.md` if the user wants top-level usage notes.
 - `/docs/agents/artifact-review-notes.md` with implementation findings.
 - this file with build notes and deviations.
+
+Implementation F:
+
+- added `/docs/humans/setup.md`.
+- added `/docs/humans/build.md`.
+- added `/docs/humans/data_layout.md`.
+- split Phase 2 operation into `/docs/humans/train_phase2.md` and `/docs/humans/run_phase2_robot.md`.
+- made `/docs/humans/run_phase2.md` a short Phase 2 index.
+- updated `/docs/humans/README.md` and `/README.md` navigation.
+
+UX debt discovered during F:
+
+- Phase 2 scripts should become package console commands so docs can stop using `PYTHONPATH=src ~/.venv/bin/python scripts/...`.
+- saved-run validation should become a normal script with `--run-dir` and `--latest`; current pytest usage needs `PICAR_PHASE2_RUN_DIR`.
+- robot host should have a machine-local config path so docs do not repeat `--picar-host 10.0.0.224:5000`.
+- manual speech and robot-demo integration tests should skip cleanly when stdin is noninteractive instead of failing with `EOFError`.
+- `RUN_ID=... | tee ...` works, but a training script option for tee/log path would be cleaner.
 
 Check-in F:
 Confirm phase 1 and phase 2 commands are clear enough for the experimenter to run.
