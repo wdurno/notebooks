@@ -323,7 +323,7 @@ $$
 \qquad d_i\geq0.
 $$
 
-Use the copied implementation in `src/lanczos.py` through a wrapper; preserve that copied module rather than modifying it during integration. It was copied from `/home/evan/Documents/notebooks/kl-projection/build/lib/picar_kl/legacy/robot_demo/src/core/lanczos.py` with behavior-preserving whitespace normalization. Do not modify the external original. The wrapper may provide deterministic seeds, matrix-vector products, device handling, validation, and artifact conversion.
+Use the copied implementation in `src/lanczos.py` through a wrapper; preserve that copied module rather than modifying it during integration. It was copied from another project with behavior-preserving whitespace normalization. The wrapper may provide deterministic seeds, matrix-vector products, device handling, validation, and artifact conversion.
 
 The updated Fisher must be available as a symmetric matrix-vector operator. Use Lanczos to retain positive Ritz components and calculate a clipped nonnegative residual diagonal. Compare multiple configured ranks, including a degenerate diagonal-only rank and enough ranks to expose the accuracy/compute curve.
 

@@ -1,0 +1,222 @@
+import dataclasses
+from pathlib import Path
+
+import pytest
+import torch
+from torch.utils.data import Dataset
+
+from src.config import EstimatorConfig, load_config
+from src.initialization import (
+    ReplicaBundleError,
+    fit_p0_initialization,
+    load_replica_bundle,
+    load_replica_bundle_for_config,
+    replica_bundle_id,
+    replica_design_hash,
+    save_replica_bundle,
+)
+from src.mnist_data import DatasetPartitions, generate_mixture_stream
+from src.mnist_model import build_canonical_model
+from src.seeding import derive_seed_map
+
+
+REPO_ROOT = Path(__file__).parents[2]
+SMOKE_CONFIG = REPO_ROOT / "mnist_experiment" / "configs" / "smoke.json"
+
+
+class SyntheticMnist(Dataset):
+    def __init__(self, targets: torch.Tensor) -> None:
+        self.targets = targets.clone()
+        self.images = torch.zeros(targets.numel(), 1, 28, 28)
+        for index, label in enumerate(targets.tolist()):
+            row = 2 * label
+            self.images[index, 0, row : row + 2, :] = 1.0
+
+    def __len__(self) -> int:
+        return self.targets.numel()
+
+    def __getitem__(self, index: int):
+        return self.images[index], self.targets[index]
+
+
+def _tiny_fixture():
+    config = load_config(SMOKE_CONFIG)
+    config = dataclasses.replace(
+        config,
+        data=dataclasses.replace(
+            config.data,
+            initialization_size=9,
+            online_pool_size=40,
+            reference_pool_size=40,
+            evaluation_size=20,
+            samples_per_step=4,
+        ),
+        initialization=dataclasses.replace(
+            config.initialization,
+            batch_size=9,
+            max_epochs=1,
+        ),
+        runtime=dataclasses.replace(
+            config.runtime,
+            training_dtype="float32",
+        ),
+    )
+    train_targets = torch.arange(100) % 10
+    test_targets = torch.arange(20) % 10
+    train_dataset = SyntheticMnist(train_targets)
+    test_dataset = SyntheticMnist(test_targets)
+    partitions = DatasetPartitions(
+        initialization=tuple(range(9)),
+        online=tuple(range(10, 50)),
+        reference=tuple(range(50, 90)),
+        evaluation=tuple(range(20)),
+        train_size=100,
+        test_size=20,
+        seed=1,
+        initialization_seed=2,
+        evaluation_seed=3,
+    )
+    seeds = derive_seed_map(config.replica_seed)
+    stream = generate_mixture_stream(
+        train_targets,
+        partitions,
+        config.data,
+        seed=seeds["online_stream"],
+    )
+    model, layout = build_canonical_model(
+        seeds["initialization"],
+        dtype=torch.float32,
+    )
+    return config, train_dataset, test_dataset, partitions, stream, model, layout
+
+
+def test_replica_design_identity_excludes_fisher_treatment() -> None:
+    config = load_config(SMOKE_CONFIG)
+    other_estimator = EstimatorConfig(
+        method="ema",
+        representation="dense",
+        ema_gain=config.estimator.ema_gain,
+        fresh_fisher_cadence=None,
+        low_rank=None,
+    )
+    paired = dataclasses.replace(config, estimator=other_estimator)
+
+    assert replica_design_hash(config) == replica_design_hash(paired)
+    assert replica_bundle_id(config) == replica_bundle_id(paired)
+    assert config.config_hash != paired.config_hash
+
+
+def test_tiny_initialization_bundle_round_trip_is_exact(tmp_path: Path) -> None:
+    (
+        config,
+        train_dataset,
+        test_dataset,
+        partitions,
+        stream,
+        model,
+        layout,
+    ) = _tiny_fixture()
+    seeds = derive_seed_map(config.replica_seed)
+    result = fit_p0_initialization(
+        model,
+        train_dataset,
+        test_dataset,
+        partitions,
+        config.initialization,
+        loader_seed=seeds["initialization_loader"],
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    expected_state = {
+        name: tensor.detach().clone()
+        for name, tensor in model.state_dict().items()
+    }
+
+    path = save_replica_bundle(
+        tmp_path,
+        config,
+        model,
+        layout,
+        partitions,
+        stream,
+        result,
+        device=torch.device("cpu"),
+        repo_root=REPO_ROOT,
+    )
+    loaded = load_replica_bundle(path)
+    paired_estimator = dataclasses.replace(
+        config,
+        estimator=EstimatorConfig(
+            method="ema",
+            representation="dense",
+            ema_gain=config.estimator.ema_gain,
+            fresh_fisher_cadence=None,
+            low_rank=None,
+        ),
+    )
+    paired_loaded = load_replica_bundle_for_config(
+        tmp_path,
+        paired_estimator,
+    )
+
+    assert (path / "COMPLETED").is_file()
+    assert loaded.layout.metadata() == layout.metadata()
+    assert loaded.partitions == partitions
+    assert loaded.stream_plan == stream
+    assert paired_loaded.stream_plan == stream
+    assert loaded.initialization.final_metrics == result.final_metrics
+    for name, tensor in loaded.model.state_dict().items():
+        assert torch.equal(tensor, expected_state[name])
+        assert torch.equal(
+            paired_loaded.model.state_dict()[name],
+            expected_state[name],
+        )
+
+    with pytest.raises(ReplicaBundleError, match="already exists"):
+        save_replica_bundle(
+            tmp_path,
+            config,
+            model,
+            layout,
+            partitions,
+            stream,
+            result,
+            device=torch.device("cpu"),
+            repo_root=REPO_ROOT,
+        )
+
+
+def test_tiny_initialization_is_deterministic() -> None:
+    fixtures = [_tiny_fixture(), _tiny_fixture()]
+    results = []
+    states = []
+    for (
+        config,
+        train_dataset,
+        test_dataset,
+        partitions,
+        _,
+        model,
+        _,
+    ) in fixtures:
+        seeds = derive_seed_map(config.replica_seed)
+        results.append(
+            fit_p0_initialization(
+                model,
+                train_dataset,
+                test_dataset,
+                partitions,
+                config.initialization,
+                loader_seed=seeds["initialization_loader"],
+                device=torch.device("cpu"),
+                dtype=torch.float32,
+            )
+        )
+        states.append(model.state_dict())
+
+    assert results[0].epochs_completed == results[1].epochs_completed
+    assert results[0].stopped_on_target == results[1].stopped_on_target
+    assert results[0].history == results[1].history
+    assert results[0].final_metrics == results[1].final_metrics
+    for name in states[0]:
+        assert torch.equal(states[0][name], states[1][name])
