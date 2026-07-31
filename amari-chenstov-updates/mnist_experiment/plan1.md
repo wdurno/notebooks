@@ -48,8 +48,8 @@ Completed phases should not be casually redesigned. If later evidence invalidate
 | 1 | Mathematical kernels | Complete |
 | 2 | Canonical model, data, and initialization | Complete |
 | 3 | Reference Fisher and stencil validation | Complete |
-| 4 | Dense fixed-trajectory experiment | Awaiting check-in |
-| 5 | Results notebook and factor pilot | Pending |
+| 4 | Dense fixed-trajectory experiment | Complete |
+| 5 | Results notebook and factor pilot | Awaiting check-in |
 | 6 | Dense EWC-coupled experiment | Pending |
 | 7 | Diagonal and low-rank-plus-diagonal representations | Pending |
 | 8 | Optimal-controller experiment | Pending |
@@ -460,6 +460,18 @@ Build the first complete experiment while keeping the parameter trajectory indep
    - retain GPU execution when this variation is scientifically negligible, and
      move only the sensitive operation or trajectory generation to CPU if it is
      material.
+10. Add amplitude-safe exponentially weighted directional ridge conditions:
+    - retain raw `ac_only` and `full_lfu` as controls;
+    - add `ridge_ac_only` and `ridge_full_lfu`;
+    - estimate the local directional derivatives with separate AC and residual
+      numerators and one shared amplitude denominator;
+    - cold-start from a zero-derivative prior whose amplitude-scaled
+      pseudoinformation decays over the configured half-life;
+    - apply zero correction for numerically negligible moves;
+    - reset the directional state when signed one-dimensional coherence falls
+      below the configured threshold;
+    - preserve signed amplitudes so reversal along the same local line does not
+      force a reset.
 
 ### Tests
 
@@ -474,16 +486,24 @@ Build the first complete experiment while keeping the parameter trajectory indep
 - the GPU repeatability audit uses identical materialized inputs across repeats;
 - the CPU/GPU audit reports numerical differences instead of requiring bitwise
   CUDA determinism;
+- ridge cold starts attenuate the first correction rather than bias-correcting
+  it back to full weight;
+- ridge updates remain finite and apply zero correction as $a_t\to0$;
+- signed direction reversals are retained while incoherent directions reset;
+- AC and residual ridge states remain separately observable;
 - the smoke run creates a valid immutable artifact and refuses overwrite.
 
 ### Verification gate
 
 - One complete smoke replica runs from $p=0$ to $p=1$.
-- All four methods produce aligned, loadable trajectories.
+- All six raw and ridge conditions produce aligned, loadable trajectories.
 - Reference comparisons use the same parameter checkpoints.
 - No estimator has unexplained NaNs, asymmetry, or unrecorded projection.
 - CUDA repeatability error is quantified and judged against explicit scientific
   tolerances before the GPU pilot is accepted.
+- Ridge conditions expose warm-up mass, amplitude, coherence, orthogonal
+  residual, reset events, denominator, and raw versus smoothed correction
+  norms at every step.
 - Runtime and storage estimates are available for a realistic pilot.
 
 ### Check-in decisions
@@ -492,6 +512,52 @@ Build the first complete experiment while keeping the parameter trajectory indep
 - Confirm the EMA parameterization and periodic-fresh cadence.
 - Decide whether dense PSD projection occurs every step or at a justified configured cadence based on measured cost.
 - Approve the pilot grid for `num_p_steps` and `samples_per_step`.
+
+### Corrective ridge extension
+
+Phase 4 was reopened on 2026-07-30 after the first tracking pilot showed that
+128-observation AC and residual corrections were too noisy to apply without
+temporal pooling. For a locally coherent direction
+
+$$
+u_{t-1}=a_tv^{\mathrm{ref}},
+$$
+
+the extension maintains
+
+$$
+S_{C,t}=\rho S_{C,t-1}+(1-\rho)a_t\widehat\Delta_{C,t},
+$$
+
+$$
+S_{R,t}=\rho S_{R,t-1}+(1-\rho)a_t\widehat\Delta_{R,t},
+$$
+
+$$
+q_t=\rho q_{t-1}+(1-\rho)a_t^2,
+$$
+
+and applies
+
+$$
+\overline\Delta_t
+=
+a_t\frac{S_{C,t}+S_{R,t}}{q_t+\varepsilon_a^2}.
+$$
+
+At the first eligible move in a segment, set $S_C=S_R=0$ and initialize the
+pre-update denominator to $q=a_t^2$. The first applied correction is therefore
+
+$$
+(1-\rho)
+\frac{a_t^2}{a_t^2+\varepsilon_a^2}
+\widehat\Delta_t,
+$$
+
+not the full single-observation correction. Do not divide by the nominal
+warm-up mass $1-\rho^k$: the conservative zero-derivative prior is deliberate.
+If $\|u_{t-1}\|\leq\varepsilon_a$, apply zero correction without rotating the
+reference direction. On a coherence reset, begin a new cold-start segment.
 
 ### Implementation record
 
@@ -502,6 +568,10 @@ Phase 4 reached its check-in on 2026-07-28. The implementation provides:
   proposal metric before estimator replay;
 - one shared score/HVP calculation per step, replayed through EMA, AC-only,
   full LFU, and periodic-fresh conditions;
+- amplitude-safe directional ridge replay through `ridge_ac_only` and
+  `ridge_full_lfu`, with a deliberate zero-derivative cold-start prior,
+  separate AC and residual numerators, one shared amplitude denominator,
+  signed reversal support, no-motion handling, and coherence resets;
 - exact lagged indexing with zero correction at $t=0$;
 - dense projection after every complete update, with all raw diagnostics
   retained;
@@ -539,6 +609,32 @@ took 7.59 seconds, dense replay took 4.15 seconds, and peak allocated CUDA
 memory was about 435 MiB. Selected dense matrix checkpoints make each
 realistic run approximately 194 MiB before its content-addressed reference
 cache entries.
+
+The corrective ridge CPU smoke completed all six aligned conditions on the
+same trajectory hash as the original smoke, persisted the directional state at
+selected checkpoints, and refused overwrite after completion. The realistic
+ridge pilot likewise reproduced the exact small-step trajectory hash. With an
+8-step half-life, amplitude floor $10^{-6}$, and coherence threshold 0.75,
+there was one early reset followed by a 19-update segment; median observed
+coherence was 0.870 and the final warm-up mass was 0.807.
+
+Directional pooling improved the noisy LFU conditions but did not make them
+competitive with EMA on this trajectory. Mean relative tracking error fell
+from 1.762 to 1.241 for AC-only and from 1.733 to 1.220 for full LFU. The
+periodic-fresh and EMA controls remained at 0.167 and 0.274. Mean applied
+full-LFU correction norm fell from 567 to 410. Thus the ridge state is working
+in the intended direction, while this single half-life still admits corrections
+that are too large for accurate tracking; half-life and online sample size
+remain experimental variables rather than settled constants.
+
+The ridge pilot's CUDA audit passed with bitwise-equal repeated GPU
+derivatives and a maximum matched CPU/GPU relative discrepancy of
+$4.21\times10^{-15}$, below the $6.04\times10^{-4}$ tolerance. Dense replay
+took 6.34 seconds, peak allocated CUDA memory was approximately 447 MiB, and
+selected checkpoints occupied approximately 269 MiB including the added ridge
+state. Phase 4 is awaiting check-in with the recommendation to retain both raw
+and ridge conditions and defer any half-life sweep to the paired experimental
+grid.
 
 ---
 
@@ -580,23 +676,51 @@ Make the experiment legible before spending substantial compute, then use a smal
      repeatability-audit result.
    The notebook must select the final compatible Phase 3 runs explicitly and
    must not silently combine them with provisional or exploratory runs.
-5. Run a small paired dense pilot over selected values of:
+5. Treat artifact compatibility explicitly through strict, read-only loaders:
+   - load Phase 3 artifacts only through their expected assumption-check
+     schemas;
+   - recognize Phase 4 metric schema v1 as a legacy four-condition run;
+   - require Phase 4 metric schema v2 for ridge comparisons and the principal
+     Phase 5 pilot;
+   - normalize legacy scalar rows only in memory, marking unavailable ridge
+     fields and conditions explicitly;
+   - reject unknown schemas and incompatible parameter layouts or experimental
+     designs with a clear error;
+   - never rewrite, migrate, repair, or otherwise mutate a completed run.
+6. Prevent duplicated evidence when immutable runs overlap. If schema-v1 and
+   schema-v2 runs share the same replica, trajectory hash, and experimental
+   design, schema v2 supersedes schema v1 in aggregate analysis. Retain the
+   schema-v1 run in provenance displays as a reproducibility check, but never
+   count the pair as independent replicas.
+7. Run a small paired dense pilot over selected values of:
    - `num_p_steps`;
    - `samples_per_step`;
-   - EMA gain or forgetting factor.
-6. Include both factorial and approximately compute-matched comparisons.
-7. Estimate the compute and storage cost of adding one replica under each candidate configuration.
+   - EMA gain or forgetting factor;
+   - directional-ridge half-life.
+   Hold the ridge amplitude floor and coherence threshold fixed for this pilot.
+   Evaluate a small axial half-life set rather than crossing it with the full
+   factor grid.
+8. Include both factorial and approximately compute-matched comparisons.
+9. Treat the replica as the statistical unit. Trajectory points are repeated
+   measurements within a replica, not independent samples. Single-replica
+   cells may be visualized and used to validate the pipeline, but must not
+   report inferential uncertainty as though it were replicated evidence.
+10. Estimate the compute and storage cost of adding one replica under each candidate configuration.
 
 ### Verification gate
 
 - The notebook executes quickly from completed smoke/pilot artifacts.
 - Incomplete or incompatible runs fail clearly.
+- Legacy and ridge-capable runs are visibly distinguished, and an overlapping
+  schema-v1/v2 pair contributes at most one replica to an aggregate.
 - Every plotted average reports contributing replica count.
 - Paired differences are calculated by replica, not by treating trajectory points as independent replicas.
 - Assumption-check figures reproduce the stored Phase 3 metrics and make the
   numerical validity and CUDA limitation visible without running model
   computations.
 - The pilot reveals whether the chosen step/sample ranges produce distinguishable tracking regimes.
+- Ridge half-life sensitivity is measured without launching a large Cartesian
+  sweep.
 
 ### Check-in decisions
 
@@ -604,6 +728,102 @@ Make the experiment legible before spending substantial compute, then use a smal
 - Select EMA gains and reference checkpoint cadence.
 - Decide how many initial replicas justify proceeding to EWC coupling.
 - Lock the EWC proposal optimizer, inner-step count, and regularization convention for Phase 6.
+
+### Pilot design
+
+Use one replica in each cell to validate the analysis pipeline and identify
+tracking regimes. The accepted Phase 4 ridge pilot is the center cell
+$(K,m,\alpha,h)=(21,128,0.25,8)$.
+
+- Run a $2\times2$ step/sample factorial with
+  $K\in\{9,21\}$ and $m\in\{64,128\}$ at $\alpha=0.25$ and $h=8$.
+- Treat $(K,m)=(9,128)$ and $(21,64)$ as the approximately compute-matched
+  comparison. Their online observation budgets are 1,152 and 1,344.
+- Use an axial EMA-gain set $\alpha\in\{0.10,0.25,0.50\}$ at
+  $(K,m,h)=(21,128,8)$.
+- Use an axial ridge half-life set $h\in\{4,8,16\}$ at
+  $(K,m,\alpha)=(21,128,0.25)$.
+- Hold $\varepsilon_a=10^{-6}$ and the coherence threshold at 0.75.
+- Preserve approximately quarter-trajectory oracle refreshes: cadence 2 for
+  $K=9$ and cadence 5 for $K=21$.
+
+This is eight cells total, including the completed center cell, and requires
+seven new immutable runs. It is intentionally descriptive: no cell-level
+uncertainty interval is reported until additional complete replica trajectories
+are accumulated.
+
+### Implementation record
+
+Phase 5 reached its check-in on 2026-07-30. The implementation provides:
+
+- strict read-only Phase 3 and Phase 4 artifact loaders;
+- structural parameter-layout, manifest, configuration-hash, trajectory-hash,
+  schema, method-set, and grid validation;
+- condition-level schema precedence, so legacy schema-v1 runs and repeated raw
+  controls from half-life replays cannot inflate replica counts;
+- an explicit accepted-run selector that includes the Phase 4 ridge baseline
+  and `mnist_lfu_phase5_` experiments while leaving failed-regime and smoke
+  runs visible only in provenance;
+- an artifact-only notebook with reference convergence, stencil, importance
+  weight, PSD, timing, CUDA, trajectory, paired-difference, factor, uncertainty,
+  and cost views;
+- a source validator that rejects training, data-download, derivative, Fisher,
+  and direct tensor-loading operations from notebook cells.
+
+The notebook loads the two explicitly accepted Phase 3 runs covering
+$p\in\{0.25,0.5,0.75\}$ and eight principal tracking runs in approximately
+3.1 seconds. It never loads the large Fisher checkpoint files. Every current
+factor cell contains one replica, so its 95% interval fields are deliberately
+unavailable rather than treating trajectory points as replicates.
+
+All seven new immutable GPU runs completed and passed the CUDA audit. The
+factorial pilot produced these interior mean relative errors:
+
+| $K$ | $m$ | EMA | full LFU | ridge full, $h=8$ | periodic fresh |
+|---:|---:|---:|---:|---:|---:|
+| 9 | 64 | 0.528 | 0.793 | 0.470 | 0.183 |
+| 9 | 128 | 0.466 | 0.896 | 0.375 | 0.154 |
+| 21 | 64 | 0.297 | 1.770 | 1.227 | 0.185 |
+| 21 | 128 | 0.283 | 1.661 | 1.163 | 0.176 |
+
+On the approximately compute-matched cells, ridge-full error was 0.375 for
+$(K,m)=(9,128)$ and 1.227 for $(21,64)$. Thus repeated correction accumulation,
+not merely online observation budget, is a material factor in this replica.
+At $K=9$, ridge smoothing modestly outperformed EMA; at $K=21$, it remained
+substantially worse. Raw AC and full LFU were worse than EMA in every cell,
+while the residual term consistently gave a small improvement over AC-only.
+
+At $(K,m,h)=(21,128,8)$, increasing the direct-Fisher gain from 0.10 to 0.25
+to 0.50 reduced EMA error from 0.547 to 0.283 to 0.145 and ridge-full error
+from 1.920 to 1.163 to 0.548. At $(K,m,\alpha)=(21,128,0.25)$, increasing ridge
+half-life from 4 to 8 to 16 reduced ridge-full error from 1.325 to 1.163 to
+0.971 and mean correction norm from 425 to 381 to 327. Both factors improved
+through the upper tested boundary, so the pilot identifies a direction but
+does not establish an interior optimum.
+
+The accepted center and treatment-axis runs shared an exact trajectory hash.
+The $K/m$ cells used fresh deterministic CPU initializations and distinct stream
+bundles; all fitted models had the exact same model-state hash as the center.
+Directional coherence remained high, no no-motion cases occurred, and each
+cell had only one or two resets. Maximum relative PSD-projection distances were
+below $10^{-5}$.
+
+Observed trajectory-plus-replay time was approximately 8.8--13.8 seconds per
+run after reference caching. Peak allocated GPU memory was approximately
+298 MiB for $K=9$ and 447 MiB for $K=21$. Current dense checkpoint policy uses
+approximately 268--269 MiB per run; the eight principal runs occupy about
+2.10 GiB before shared reference-cache storage.
+
+Phase 5 is awaiting check-in. Before locking Phase 6, decide whether to:
+
+- replicate the four $K/m$ cells or concentrate replicas on the promising
+  $(9,128)$ cell and the $(21,64)$ compute-matched comparator;
+- extend the gain and half-life axes once because their best values occurred at
+  the tested boundaries;
+- include substantially smaller `samples_per_step` values to represent the
+  intended one-to-few-observation deployment regime;
+- retain the validated learning proposal settings: SGD learning rate 0.001,
+  three inner steps, EWC strength 1, and a start-of-step anchor.
 
 ---
 

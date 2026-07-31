@@ -10,7 +10,8 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 4
+CONFIG_SCHEMA_VERSION = 5
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, CONFIG_SCHEMA_VERSION)
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
 
@@ -34,13 +35,30 @@ def _is_finite_number(value: Any) -> bool:
     )
 
 
-def _construct_dataclass(cls: type[_T], value: Any, context: str) -> _T:
+def _construct_dataclass(
+    cls: type[_T],
+    value: Any,
+    context: str,
+    *,
+    allow_missing_defaults: bool = False,
+) -> _T:
     if not isinstance(value, Mapping):
         raise ConfigError(f"{context} must be an object")
 
     expected = {field.name for field in dataclasses.fields(cls)}
     supplied = set(value)
-    missing = sorted(expected - supplied)
+    missing_names = expected - supplied
+    if allow_missing_defaults:
+        fields_with_defaults = {
+            field.name
+            for field in dataclasses.fields(cls)
+            if (
+                field.default is not dataclasses.MISSING
+                or field.default_factory is not dataclasses.MISSING
+            )
+        }
+        missing_names -= fields_with_defaults
+    missing = sorted(missing_names)
     unknown = sorted(supplied - expected)
     if missing or unknown:
         details = []
@@ -120,6 +138,9 @@ class EstimatorConfig:
     ema_gain: float
     fresh_fisher_cadence: int | None
     low_rank: int | None
+    ridge_half_life_steps: float | None = None
+    ridge_amplitude_epsilon: float | None = None
+    ridge_coherence_threshold: float | None = None
 
     def validate(self) -> None:
         if self.method not in {"ema", "ac_only", "full_lfu", "periodic_fresh"}:
@@ -155,6 +176,38 @@ class EstimatorConfig:
             raise ConfigError(
                 "estimator.low_rank must be null unless representation is "
                 "low_rank_diagonal"
+            )
+        ridge_values = (
+            self.ridge_half_life_steps,
+            self.ridge_amplitude_epsilon,
+            self.ridge_coherence_threshold,
+        )
+        if any(value is not None for value in ridge_values) and any(
+            value is None for value in ridge_values
+        ):
+            raise ConfigError(
+                "estimator ridge settings must be either all null or all supplied"
+            )
+        if self.ridge_half_life_steps is not None and (
+            not _is_finite_number(self.ridge_half_life_steps)
+            or float(self.ridge_half_life_steps) <= 0.0
+        ):
+            raise ConfigError(
+                "estimator.ridge_half_life_steps must be positive"
+            )
+        if self.ridge_amplitude_epsilon is not None and (
+            not _is_finite_number(self.ridge_amplitude_epsilon)
+            or float(self.ridge_amplitude_epsilon) <= 0.0
+        ):
+            raise ConfigError(
+                "estimator.ridge_amplitude_epsilon must be positive"
+            )
+        if self.ridge_coherence_threshold is not None and (
+            not _is_finite_number(self.ridge_coherence_threshold)
+            or not 0.0 < float(self.ridge_coherence_threshold) <= 1.0
+        ):
+            raise ConfigError(
+                "estimator.ridge_coherence_threshold must be in (0, 1]"
             )
 
 
@@ -370,8 +423,9 @@ class ExperimentConfig:
                 details.append(f"unknown={unknown}")
             raise ConfigError(f"invalid configuration root: {', '.join(details)}")
 
+        schema_version = value["schema_version"]
         config = cls(
-            schema_version=value["schema_version"],
+            schema_version=schema_version,
             artifact_schema_version=value["artifact_schema_version"],
             metric_schema_version=value["metric_schema_version"],
             experiment=value["experiment"],
@@ -381,7 +435,10 @@ class ExperimentConfig:
             data=_construct_dataclass(DataConfig, value["data"], "data"),
             runtime=_construct_dataclass(RuntimeConfig, value["runtime"], "runtime"),
             estimator=_construct_dataclass(
-                EstimatorConfig, value["estimator"], "estimator"
+                EstimatorConfig,
+                value["estimator"],
+                "estimator",
+                allow_missing_defaults=schema_version == 4,
             ),
             reference=_construct_dataclass(
                 ReferenceConfig, value["reference"], "reference"
@@ -402,9 +459,10 @@ class ExperimentConfig:
         return config
 
     def validate(self) -> None:
-        if self.schema_version != CONFIG_SCHEMA_VERSION:
+        if self.schema_version not in SUPPORTED_CONFIG_SCHEMA_VERSIONS:
             raise ConfigError(
-                f"schema_version must be {CONFIG_SCHEMA_VERSION}, "
+                "schema_version must be one of "
+                f"{SUPPORTED_CONFIG_SCHEMA_VERSIONS}, "
                 f"got {self.schema_version}"
             )
         if self.artifact_schema_version != ARTIFACT_SCHEMA_VERSION:
@@ -435,7 +493,15 @@ class ExperimentConfig:
         self.controller.validate()
 
     def to_mapping(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
+        mapping = dataclasses.asdict(self)
+        if self.schema_version == 4:
+            for name in (
+                "ridge_half_life_steps",
+                "ridge_amplitude_epsilon",
+                "ridge_coherence_threshold",
+            ):
+                mapping["estimator"].pop(name)
+        return mapping
 
     def canonical_json(self) -> str:
         return json.dumps(

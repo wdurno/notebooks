@@ -20,7 +20,6 @@ from src.config import ExperimentConfig, load_config
 from src.derivatives import per_sample_derivatives
 from src.fisher import LFUBatchEstimate, dense_lfu_estimate, empirical_fisher
 from src.fixed_trajectory import (
-    DENSE_METHODS,
     DenseConditionResult,
     FixedTrajectory,
     OnlineStepStatistics,
@@ -53,8 +52,8 @@ from src.reference import (
 from src.representations import project_psd_frobenius
 from src.seeding import derive_component_seed
 
-PHASE4_METRIC_SCHEMA_VERSION = 1
-PHASE4_MATRIX_SCHEMA_VERSION = 1
+PHASE4_METRIC_SCHEMA_VERSION = 2
+PHASE4_MATRIX_SCHEMA_VERSION = 2
 PHASE4_REFERENCE_PLAN_SCHEMA_VERSION = 1
 
 
@@ -524,6 +523,11 @@ def _cuda_audit(
         trajectory.p_values,
         ema_gain=config.estimator.ema_gain,
         fresh_fisher_cadence=config.estimator.fresh_fisher_cadence,
+        ridge_half_life_steps=config.estimator.ridge_half_life_steps,
+        ridge_amplitude_epsilon=config.estimator.ridge_amplitude_epsilon,
+        ridge_coherence_threshold=(
+            config.estimator.ridge_coherence_threshold
+        ),
     )
     original_ranking = _condition_ranking(conditions)
     repeated_ranking = _condition_ranking(replay_repeated)
@@ -585,6 +589,8 @@ def _checkpoint_artifact(
             *range(cadence, len(references), cadence),
         }
     )
+    ridge_result = conditions.get("ridge_full_lfu")
+    ridge_states = None if ridge_result is None else ridge_result.ridge_states
     return {
         "schema_version": PHASE4_MATRIX_SCHEMA_VERSION,
         "checkpoint_indices": indices,
@@ -594,6 +600,11 @@ def _checkpoint_artifact(
                 "online_fisher": statistics[step].estimate.fisher,
                 "amari_chentsov": statistics[step].estimate.amari_chentsov,
                 "residual": statistics[step].estimate.residual,
+                "directional_ridge_state": (
+                    None
+                    if ridge_states is None
+                    else ridge_states[step]
+                ),
                 "conditions": {
                     method: {
                         "estimate": result.estimates[step],
@@ -732,6 +743,11 @@ def main() -> None:
         trajectory.p_values,
         ema_gain=config.estimator.ema_gain,
         fresh_fisher_cadence=config.estimator.fresh_fisher_cadence,
+        ridge_half_life_steps=config.estimator.ridge_half_life_steps,
+        ridge_amplitude_epsilon=config.estimator.ridge_amplitude_epsilon,
+        ridge_coherence_threshold=(
+            config.estimator.ridge_coherence_threshold
+        ),
     )
     _synchronize(device)
     replay_elapsed = time.perf_counter() - replay_started
@@ -754,6 +770,7 @@ def main() -> None:
         derivative_dtype=derivative_dtype,
         matrix_dtype=matrix_dtype,
     )
+    methods = tuple(conditions)
 
     metrics = {
         "phase4_metric_schema_version": PHASE4_METRIC_SCHEMA_VERSION,
@@ -763,9 +780,19 @@ def main() -> None:
         "training_dtype": str(training_dtype),
         "derivative_dtype": str(derivative_dtype),
         "matrix_dtype": str(matrix_dtype),
-        "methods": list(DENSE_METHODS),
+        "methods": list(methods),
         "ema_gain": config.estimator.ema_gain,
         "fresh_fisher_cadence": config.estimator.fresh_fisher_cadence,
+        "directional_ridge": {
+            "enabled": config.estimator.ridge_half_life_steps is not None,
+            "half_life_steps": config.estimator.ridge_half_life_steps,
+            "amplitude_epsilon": (
+                config.estimator.ridge_amplitude_epsilon
+            ),
+            "coherence_threshold": (
+                config.estimator.ridge_coherence_threshold
+            ),
+        },
         "driver": {
             "kind": "oracle_assisted_fixed_trajectory",
             "treatment_independent": True,
@@ -785,7 +812,7 @@ def main() -> None:
         "common_steps": common_rows,
         "condition_steps": [
             row
-            for method in DENSE_METHODS
+            for method in methods
             for row in conditions[method].metrics
         ],
         "condition_ranking": _condition_ranking(conditions),
@@ -867,7 +894,7 @@ def main() -> None:
                 "path": str(destination),
                 "trajectory_hash": trajectory.content_hash,
                 "steps": len(trajectory.p_values),
-                "methods": list(DENSE_METHODS),
+                "methods": list(methods),
                 "cuda_audit_accepted": (
                     None if cuda_audit is None else cuda_audit["accepted"]
                 ),

@@ -105,6 +105,17 @@ def test_replica_design_identity_excludes_fisher_treatment() -> None:
     assert replica_bundle_id(config) == replica_bundle_id(paired)
     assert config.config_hash != paired.config_hash
 
+    cpu = dataclasses.replace(
+        config,
+        runtime=dataclasses.replace(config.runtime, device="cpu"),
+    )
+    cuda = dataclasses.replace(
+        config,
+        runtime=dataclasses.replace(config.runtime, device="cuda"),
+    )
+    assert replica_design_hash(cpu) == replica_design_hash(cuda)
+    assert replica_bundle_id(cpu) == replica_bundle_id(cuda)
+
 
 def test_tiny_initialization_bundle_round_trip_is_exact(tmp_path: Path) -> None:
     (

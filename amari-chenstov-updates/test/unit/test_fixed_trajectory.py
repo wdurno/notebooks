@@ -4,6 +4,7 @@ import torch
 from src.fisher import LFUBatchEstimate
 from src.fixed_trajectory import (
     DENSE_METHODS,
+    RIDGE_DENSE_METHODS,
     FixedTrajectory,
     OnlineStepStatistics,
     common_step_metrics,
@@ -159,6 +160,70 @@ def test_periodic_fresh_uses_ema_between_exact_replacements() -> None:
         results["periodic_fresh"].estimates[2],
         references[2],
     )
+
+
+def test_dense_replay_adds_ridge_conditions_without_changing_raw_controls() -> None:
+    initial, references, statistics, trajectory, directions, raw = (
+        _replay_fixture()
+    )
+
+    results = replay_dense_conditions(
+        initial,
+        references,
+        statistics,
+        directions,
+        trajectory.p_values,
+        ema_gain=0.25,
+        fresh_fisher_cadence=2,
+        ridge_half_life_steps=1.0,
+        ridge_amplitude_epsilon=1e-9,
+        ridge_coherence_threshold=0.75,
+    )
+
+    assert tuple(results) == DENSE_METHODS + RIDGE_DENSE_METHODS
+    for method in DENSE_METHODS:
+        for actual, expected in zip(
+            results[method].estimates,
+            raw[method].estimates,
+            strict=True,
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    first = results["ridge_full_lfu"].metrics[1]["ridge"]
+    assert first["cold_started"]
+    assert first["warmup_mass"] == pytest.approx(0.5)
+    assert results["ridge_ac_only"].ridge_states is None
+    assert results["ridge_full_lfu"].ridge_states[0] is None
+    assert results["ridge_full_lfu"].ridge_states[1] is not None
+
+    expected_ac = 0.5 * statistics[1].estimate.amari_chentsov
+    expected_full = 0.5 * statistics[1].estimate.full
+    torch.testing.assert_close(
+        results["ridge_ac_only"].predictions[1],
+        initial + expected_ac,
+    )
+    torch.testing.assert_close(
+        results["ridge_full_lfu"].predictions[1],
+        initial + expected_full,
+    )
+
+
+def test_dense_replay_rejects_partial_ridge_settings() -> None:
+    initial, references, statistics, trajectory, directions, _ = (
+        _replay_fixture()
+    )
+
+    with pytest.raises(ValueError, match="all omitted or all supplied"):
+        replay_dense_conditions(
+            initial,
+            references,
+            statistics,
+            directions,
+            trajectory.p_values,
+            ema_gain=0.25,
+            fresh_fisher_cadence=2,
+            ridge_half_life_steps=2.0,
+        )
 
 
 def test_common_metrics_record_ac_and_residual_independently() -> None:

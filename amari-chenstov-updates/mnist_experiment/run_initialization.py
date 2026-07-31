@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 from pathlib import Path
 
@@ -32,6 +33,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--device", choices=("cpu", "cuda", "auto"))
     parser.add_argument("--download", action="store_true")
     return parser.parse_args()
 
@@ -39,6 +41,14 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> None:
     arguments = parse_arguments()
     config = load_config(arguments.config)
+    if arguments.device is not None:
+        config = dataclasses.replace(
+            config,
+            runtime=dataclasses.replace(
+                config.runtime,
+                device=arguments.device,
+            ),
+        )
     configure_torch_runtime(
         deterministic_algorithms=config.runtime.deterministic_algorithms,
         warn_only=False,

@@ -14,6 +14,7 @@ from torch import Tensor, nn
 from torch.utils.data import Dataset
 
 from .config import OptimizerConfig
+from .directional_ridge import DirectionalRidgeLFUState
 from .ewc import build_optimizer, take_ewc_proposal
 from .fisher import LFUBatchEstimate
 from .mnist_data import MixtureStreamPlan
@@ -23,6 +24,7 @@ from .representations import PSDProjectionDiagnostics, project_psd_frobenius
 FIXED_TRAJECTORY_SCHEMA_VERSION = 1
 DENSE_TRACKING_SCHEMA_VERSION = 1
 DENSE_METHODS = ("ema", "ac_only", "full_lfu", "periodic_fresh")
+RIDGE_DENSE_METHODS = ("ridge_ac_only", "ridge_full_lfu")
 
 
 def _tensor_hash(tensor: Tensor) -> str:
@@ -304,6 +306,7 @@ class DenseConditionResult:
     predictions: tuple[Tensor, ...]
     candidates: tuple[Tensor, ...]
     metrics: tuple[dict[str, Any], ...]
+    ridge_states: tuple[dict[str, Any] | None, ...] | None = None
 
 
 def _relative_frobenius(estimate: Tensor, target: Tensor) -> float:
@@ -337,6 +340,7 @@ def _matrix_metrics(
     p_value: float,
     refreshed: bool,
     correction: Tensor,
+    ridge: dict[str, Any] | None,
 ) -> dict[str, Any]:
     error = estimate - reference
     reference_eigenvalues, reference_eigenvectors = torch.linalg.eigh(reference)
@@ -372,6 +376,7 @@ def _matrix_metrics(
         "applied_correction_fro": float(
             torch.linalg.matrix_norm(correction, ord="fro")
         ),
+        "ridge": ridge,
         "projection": _projection_mapping(projection),
     }
 
@@ -465,6 +470,9 @@ def replay_dense_conditions(
     *,
     ema_gain: float,
     fresh_fisher_cadence: int,
+    ridge_half_life_steps: float | None = None,
+    ridge_amplitude_epsilon: float | None = None,
+    ridge_coherence_threshold: float | None = None,
 ) -> dict[str, DenseConditionResult]:
     """Replay all dense estimators without allowing them to mutate the path."""
 
@@ -484,14 +492,47 @@ def replay_dense_conditions(
     for statistic in statistics:
         statistic.validate(parameter_count)
 
+    ridge_settings = (
+        ridge_half_life_steps,
+        ridge_amplitude_epsilon,
+        ridge_coherence_threshold,
+    )
+    if any(value is not None for value in ridge_settings) and any(
+        value is None for value in ridge_settings
+    ):
+        raise ValueError("ridge settings must be either all omitted or all supplied")
+    ridge_enabled = all(value is not None for value in ridge_settings)
+    methods = DENSE_METHODS + (RIDGE_DENSE_METHODS if ridge_enabled else ())
+
     results = {}
-    for method in DENSE_METHODS:
+    for method in methods:
+        ridge_state = (
+            DirectionalRidgeLFUState(
+                half_life_steps=float(ridge_half_life_steps),
+                amplitude_epsilon=float(ridge_amplitude_epsilon),
+                coherence_threshold=float(ridge_coherence_threshold),
+            )
+            if method in RIDGE_DENSE_METHODS
+            else None
+        )
         previous = project_psd_frobenius(initial_fisher).projected
         estimates = []
         predictions = []
         candidates = []
         metrics = []
+        ridge_states = [] if method == "ridge_full_lfu" else None
         for step in range(step_count):
+            ridge_update = (
+                None
+                if ridge_state is None
+                else ridge_state.update(
+                    directions[step],
+                    statistics[step].estimate.amari_chentsov,
+                    statistics[step].estimate.residual,
+                )
+            )
+            if ridge_states is not None:
+                ridge_states.append(ridge_update.state_artifact())
             if step == 0:
                 correction = torch.zeros_like(previous)
                 prediction = previous
@@ -504,8 +545,12 @@ def replay_dense_conditions(
                     correction = torch.zeros_like(previous)
                 elif method == "ac_only":
                     correction = statistics[step].estimate.amari_chentsov
-                else:
+                elif method == "full_lfu":
                     correction = statistics[step].estimate.full
+                elif method == "ridge_ac_only":
+                    correction = ridge_update.amari_chentsov
+                else:
+                    correction = ridge_update.full
                 prediction = previous + correction
                 candidate = (
                     (1.0 - ema_gain) * prediction
@@ -532,6 +577,11 @@ def replay_dense_conditions(
                     p_value=float(p_values[step]),
                     refreshed=refreshed,
                     correction=correction,
+                    ridge=(
+                        None
+                        if ridge_update is None
+                        else ridge_update.metrics_mapping()
+                    ),
                 )
             )
             estimates.append(current.detach().cpu())
@@ -545,6 +595,9 @@ def replay_dense_conditions(
             predictions=tuple(predictions),
             candidates=tuple(candidates),
             metrics=tuple(metrics),
+            ridge_states=(
+                None if ridge_states is None else tuple(ridge_states)
+            ),
         )
     return results
 

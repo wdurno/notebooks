@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "center": {
+    "config": "configs/phase4_ridge_pilot.json",
+    "run_id": "mnist_lfu_phase4_ridge_pilot__replica-0000__8294cf954c52cb00"
+  },
+  "new_cells": [
+    {
+      "config": "configs/phase5_k9_m64.json",
+      "roles": [
+        "factorial"
+      ]
+    },
+    {
+      "config": "configs/phase5_k9_m128.json",
+      "roles": [
+        "factorial",
+        "compute_matched"
+      ]
+    },
+    {
+      "config": "configs/phase5_k21_m64.json",
+      "roles": [
+        "factorial",
+        "compute_matched"
+      ]
+    },
+    {
+      "config": "configs/phase5_alpha010.json",
+      "roles": [
+        "ema_gain_axis"
+      ]
+    },
+    {
+      "config": "configs/phase5_alpha050.json",
+      "roles": [
+        "ema_gain_axis"
+      ]
+    },
+    {
+      "config": "configs/phase5_ridge_h4.json",
+      "roles": [
+        "ridge_half_life_axis"
+      ]
+    },
+    {
+      "config": "configs/phase5_ridge_h16.json",
+      "roles": [
+        "ridge_half_life_axis"
+      ]
+    }
+  ]
+}
