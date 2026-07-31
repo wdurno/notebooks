@@ -1,9 +1,16 @@
 import torch
+import pytest
 from torch import nn
 
 from src.config import OptimizerConfig
-from src.ewc import build_optimizer, ewc_penalty, take_ewc_proposal
+from src.ewc import (
+    build_optimizer,
+    ewc_penalty,
+    mixture_ewc_strength,
+    take_ewc_proposal,
+)
 from src.parameters import ParameterLayout
+from src.representations import LowRankDiagonalFisher
 
 
 def test_ewc_penalty_matches_quadratic_form() -> None:
@@ -16,6 +23,36 @@ def test_ewc_penalty_matches_quadratic_form() -> None:
     displacement = theta - anchor
     expected = 2.0 * displacement @ fisher @ displacement
     torch.testing.assert_close(penalty, expected)
+
+
+def test_structured_ewc_penalty_matches_explicit_dense_form() -> None:
+    theta = torch.tensor([2.0, -1.0, 0.5], dtype=torch.float64)
+    anchor = torch.tensor([1.0, 1.0, -0.5], dtype=torch.float64)
+    factor = torch.tensor(
+        [[1.0, 0.0], [0.5, 0.25], [-0.5, 1.0]],
+        dtype=torch.float64,
+    )
+    residual = torch.tensor([0.2, 0.4, 0.6], dtype=torch.float64)
+    structured = LowRankDiagonalFisher(factor, residual)
+
+    penalty = ewc_penalty(theta, anchor, structured, strength=4.0)
+    expected = ewc_penalty(
+        theta,
+        anchor,
+        structured.to_dense(),
+        strength=4.0,
+    )
+
+    torch.testing.assert_close(penalty, expected)
+
+
+def test_mixture_ewc_strength_is_old_to_new_evidence_odds() -> None:
+    assert mixture_ewc_strength(0.5) == pytest.approx(1.0)
+    assert mixture_ewc_strength(0.8, multiplier=2.0) == pytest.approx(0.5)
+    assert mixture_ewc_strength(1.0) == pytest.approx(0.0)
+
+    with pytest.raises(ValueError, match="in \\(0, 1\\]"):
+        mixture_ewc_strength(0.0)
 
 
 def test_ewc_proposal_records_the_realized_full_network_move() -> None:
@@ -51,3 +88,40 @@ def test_ewc_proposal_records_the_realized_full_network_move() -> None:
     assert result.displacement_norm > 0
     assert result.fisher_weighted_displacement_norm == result.displacement_norm
     assert result.ewc_penalty_after > 0
+
+
+def test_mixture_ewc_proposal_records_odds_without_post_scaling() -> None:
+    model = nn.Linear(2, 2, bias=False, dtype=torch.float64)
+    layout = ParameterLayout.from_module(model)
+    inputs = torch.tensor([[1.0, -1.0], [0.5, 0.25]], dtype=torch.float64)
+    targets = torch.tensor([0, 1])
+    fisher = torch.eye(layout.total_numel, dtype=torch.float64)
+    config = OptimizerConfig(
+        name="sgd",
+        learning_rate=0.1,
+        inner_steps=2,
+        ewc_strength=1.5,
+    )
+    before = layout.flatten_module(model, detach=True)
+
+    result = take_ewc_proposal(
+        model,
+        layout,
+        inputs,
+        targets,
+        fisher,
+        config,
+        build_optimizer(model, config),
+        adaptation_weight=0.75,
+    )
+
+    assert result.adaptation_weight == pytest.approx(0.75)
+    assert result.effective_ewc_strength == pytest.approx(0.5)
+    assert (
+        result.objective_normalization
+        == "mean_new_loss_plus_old_to_new_odds"
+    )
+    torch.testing.assert_close(
+        result.displacement,
+        layout.flatten_module(model, detach=True) - before,
+    )

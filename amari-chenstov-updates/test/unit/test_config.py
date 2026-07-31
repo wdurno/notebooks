@@ -89,3 +89,39 @@ def test_boolean_is_not_accepted_as_an_integer() -> None:
 
     with pytest.raises(ConfigError, match="samples_per_step"):
         ExperimentConfig.from_mapping(raw)
+
+
+def test_version_six_requires_a_rank_grid_field() -> None:
+    raw = json.loads(RIDGE_CONFIG.read_text(encoding="utf-8"))
+    raw["schema_version"] = 6
+
+    with pytest.raises(ConfigError, match="low_rank_grid"):
+        ExperimentConfig.from_mapping(raw)
+
+    raw["estimator"]["low_rank_grid"] = None
+    config = ExperimentConfig.from_mapping(raw)
+    assert config.estimator.low_rank_grid is None
+    assert config.to_mapping() == raw
+
+
+def test_low_rank_grid_contract_is_validated() -> None:
+    raw = json.loads(RIDGE_CONFIG.read_text(encoding="utf-8"))
+    raw["schema_version"] = 6
+    raw["estimator"].update(
+        {
+            "representation": "low_rank_diagonal",
+            "low_rank": 8,
+            "low_rank_grid": [0, 4, 8],
+        }
+    )
+
+    config = ExperimentConfig.from_mapping(raw)
+    assert config.estimator.low_rank_grid == [0, 4, 8]
+
+    raw["estimator"]["low_rank_grid"] = [0, 8, 4]
+    with pytest.raises(ConfigError, match="unique increasing"):
+        ExperimentConfig.from_mapping(raw)
+
+    raw["estimator"]["low_rank_grid"] = [0, 4]
+    with pytest.raises(ConfigError, match="largest rank"):
+        ExperimentConfig.from_mapping(raw)

@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 5
-SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, CONFIG_SCHEMA_VERSION)
+CONFIG_SCHEMA_VERSION = 6
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, 5, CONFIG_SCHEMA_VERSION)
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
 
@@ -138,6 +138,7 @@ class EstimatorConfig:
     ema_gain: float
     fresh_fisher_cadence: int | None
     low_rank: int | None
+    low_rank_grid: list[int] | None = None
     ridge_half_life_steps: float | None = None
     ridge_amplitude_epsilon: float | None = None
     ridge_coherence_threshold: float | None = None
@@ -176,6 +177,37 @@ class EstimatorConfig:
             raise ConfigError(
                 "estimator.low_rank must be null unless representation is "
                 "low_rank_diagonal"
+            )
+        if self.low_rank_grid is not None and (
+            not isinstance(self.low_rank_grid, list)
+            or not self.low_rank_grid
+            or any(
+                not _is_integer(value) or value < 0
+                for value in self.low_rank_grid
+            )
+            or self.low_rank_grid != sorted(set(self.low_rank_grid))
+        ):
+            raise ConfigError(
+                "estimator.low_rank_grid must be null or unique increasing "
+                "nonnegative integers"
+            )
+        if self.representation == "low_rank_diagonal":
+            if self.low_rank_grid is not None and self.low_rank_grid[0] != 0:
+                raise ConfigError(
+                    "estimator.low_rank_grid must include rank zero"
+                )
+            if (
+                self.low_rank_grid is not None
+                and self.low_rank_grid[-1] != self.low_rank
+            ):
+                raise ConfigError(
+                    "estimator.low_rank must equal the largest rank in "
+                    "low_rank_grid"
+                )
+        elif self.low_rank_grid is not None:
+            raise ConfigError(
+                "estimator.low_rank_grid must be null unless representation "
+                "is low_rank_diagonal"
             )
         ridge_values = (
             self.ridge_half_life_steps,
@@ -424,6 +456,10 @@ class ExperimentConfig:
             raise ConfigError(f"invalid configuration root: {', '.join(details)}")
 
         schema_version = value["schema_version"]
+        estimator_mapping = value["estimator"]
+        if isinstance(estimator_mapping, Mapping) and schema_version < 6:
+            estimator_mapping = dict(estimator_mapping)
+            estimator_mapping.setdefault("low_rank_grid", None)
         config = cls(
             schema_version=schema_version,
             artifact_schema_version=value["artifact_schema_version"],
@@ -436,9 +472,9 @@ class ExperimentConfig:
             runtime=_construct_dataclass(RuntimeConfig, value["runtime"], "runtime"),
             estimator=_construct_dataclass(
                 EstimatorConfig,
-                value["estimator"],
+                estimator_mapping,
                 "estimator",
-                allow_missing_defaults=schema_version == 4,
+                allow_missing_defaults=schema_version < 5,
             ),
             reference=_construct_dataclass(
                 ReferenceConfig, value["reference"], "reference"
@@ -494,6 +530,8 @@ class ExperimentConfig:
 
     def to_mapping(self) -> dict[str, Any]:
         mapping = dataclasses.asdict(self)
+        if self.schema_version < 6:
+            mapping["estimator"].pop("low_rank_grid")
         if self.schema_version == 4:
             for name in (
                 "ridge_half_life_steps",

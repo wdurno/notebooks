@@ -20,11 +20,25 @@ $$
 
 moves from $p=0$ to $p=1$.
 
-The implementation must support immutable paired replicas, dense reference calculations, diagonal and low-rank-plus-diagonal approximations, and a final controller experiment using
+The implementation must support immutable paired replicas, dense reference calculations, diagonal and low-rank-plus-diagonal approximations, and a final controller experiment using the mixture-derived EWC objective
 
 $$
-u_t=\pi_t\widetilde u_t.
+\widehat\theta_{t+1}
+=
+\arg\min_\vartheta
+\left\{
+\overline L_{\mathrm{new},t}(\vartheta)
++
+\frac{1-\pi_t}{2\pi_t}
+(\vartheta-\widehat\theta_t)^T
+\widehat{\mathcal I}_t
+(\vartheta-\widehat\theta_t)
+\right\}.
 $$
+
+The realized displacement is
+$u_t=\widehat\theta_{t+1}-\widehat\theta_t$; it is not multiplied by
+$\pi_t$ after optimization.
 
 ## Phase-gate protocol
 
@@ -49,9 +63,9 @@ Completed phases should not be casually redesigned. If later evidence invalidate
 | 2 | Canonical model, data, and initialization | Complete |
 | 3 | Reference Fisher and stencil validation | Complete |
 | 4 | Dense fixed-trajectory experiment | Complete |
-| 5 | Results notebook and factor pilot | Awaiting check-in |
-| 6 | Dense EWC-coupled experiment | Pending |
-| 7 | Diagonal and low-rank-plus-diagonal representations | Pending |
+| 5 | Results notebook and factor pilot | Complete |
+| 6 | Dense EWC-coupled experiment | Complete |
+| 7 | Diagonal and low-rank-plus-diagonal representations | Complete |
 | 8 | Optimal-controller experiment | Pending |
 | 9 | Replication, hardening, and handoff | Pending |
 
@@ -68,6 +82,55 @@ Completed phases should not be casually redesigned. If later evidence invalidate
 - The copied `src/lanczos.py` remains behaviorally unchanged; integration occurs through a wrapper.
 - The implementation must not silently launch a full Cartesian sweep.
 
+### Environmental mixture and adaptation weight
+
+Keep the environmental path and the algorithmic evidence weight distinct:
+
+- $p_t$ controls the digit mixture that generates the observations and hence
+  the moving target $\theta^\star(p_t)$;
+- $\pi_t$ is the effective new-data weight used by the EWC optimization.
+
+For a Bernoulli old/new observation label with
+$\pi_t\approx n_{\mathrm{new},t}/n_t$, division of the pooled approximate
+negative log likelihood by $n_t$ gives
+
+$$
+\pi_t\overline L_{\mathrm{new},t}(\vartheta)
++
+\frac{1-\pi_t}{2}
+(\vartheta-\widehat\theta_t)^T
+\widehat{\mathcal I}_t
+(\vartheta-\widehat\theta_t).
+$$
+
+For $\pi_t>0$, multiplying this objective by $1/\pi_t$ gives the numerically
+convenient odds form used in code,
+
+$$
+\overline L_{\mathrm{new},t}(\vartheta)
++
+\frac{\lambda_t}{2}
+(\vartheta-\widehat\theta_t)^T
+\widehat{\mathcal I}_t
+(\vartheta-\widehat\theta_t),
+\qquad
+\lambda_t=\frac{1-\pi_t}{\pi_t}.
+$$
+
+The two forms have the same exact optimizer. Because every practical estimate
+is early stopped, the implementation records the chosen normalization,
+learning rate, and inner-step count. It uses the odds form so the configured
+learning rate continues to scale the mean new-data loss directly.
+
+Choosing or capping $\pi_t$ independently of literal sample proportions changes
+the effective old-to-new evidence ratio. This can bias the estimate relative to
+the instantaneous MLE $\theta^\star(p_t)$ and produce lag under a moving
+environment. The intended trade is lower variance, retained old-task
+performance, and protection against movements that invalidate the compressed
+quadratic or first-order LFU. Evaluate this choice through tracking,
+retention, adaptation, and paired trajectory outcomes rather than claiming
+ordinary stationary-model consistency.
+
 ---
 
 ## Phase 0: Foundations and run contracts
@@ -77,6 +140,13 @@ Completed phases should not be casually redesigned. If later evidence invalidate
 Create the smallest stable software and artifact foundation needed by every later phase.
 
 ### Scope
+
+Phase 6 selected EMA as the primary low-compute control, periodic fresh as the
+expensive reference-like condition, ridge full LFU as the principal LFU
+treatment, and raw full LFU as an instability ablation. Phase 7 evaluates
+representation loss first on a fixed ridge-full trajectory. A structured
+representation may enter a coupled run only after it improves materially over
+the diagonal boundary without unacceptable instability.
 
 1. Audit the local Python, PyTorch, torchvision, CUDA, NumPy, plotting, and notebook environment. Record available versions; do not install or upgrade dependencies without approval.
 2. Establish a minimal importable package layout under `src/`. Prefer a small number of cohesive modules:
@@ -835,33 +905,66 @@ Determine whether Fisher-tracking differences change continual-learning behavior
 
 ### Scope
 
-1. Implement the EWC-regularized proposal $\widetilde u_t$ using the active dense Fisher estimate.
-2. Begin with the uncontrolled policy $\pi_t=1$, so
+1. Implement the EWC-regularized estimate using the active dense Fisher and
+   the odds-form coefficient
 
    $$
-   u_t=\widetilde u_t.
+   \lambda_t=\frac{1-\pi_t}{\pi_t}.
    $$
 
-3. Clone the shared initialization and paired observation stream into each estimator condition.
-4. Allow each condition's Fisher estimate to alter its proposal and future parameter path.
-5. Preserve shared non-treatment settings while explicitly recording path divergence.
-6. Estimate the high-sample reference Fisher at each condition's own configured checkpoints.
-7. Record:
+   Accept the optimizer's realized displacement directly; do not multiply it
+   by $\pi_t$ afterward.
+2. Begin with a fixed interior adaptation weight
+   $\pi_t=\pi_0\in(0,\pi_{\max}]$, common to every estimator condition. This
+   keeps the EWC penalty active while isolating Fisher tracking from the
+   adaptive controller studied in Phase 8.
+3. Treat `optimizer.ewc_strength` as an optional dimensionless sensitivity
+   multiplier on the mixture-derived odds:
+
+   $$
+   \lambda_t
+   =
+   \texttt{ewc\_strength}\frac{1-\pi_t}{\pi_t}.
+   $$
+
+   Principal Phase 6 runs use `ewc_strength = 1`.
+4. Clone the shared initialization and paired observation stream into each estimator condition.
+5. Allow each condition's Fisher estimate to alter its optimization result and future parameter path.
+6. Preserve shared non-treatment settings while explicitly recording path divergence.
+7. Estimate the high-sample reference Fisher at each condition's own configured checkpoints.
+8. Record:
+   - $p_t$, $\pi_t$, $\lambda_t$, and the objective normalization;
    - data loss and EWC penalty;
-   - proposal and accepted update norms;
+   - optimizer displacement norm, with proposal and accepted update defined as
+     the same realized displacement in this phase;
    - Fisher-weighted drift;
    - old-digit, digit-9, and balanced metrics;
    - Fisher tracking and projection diagnostics;
    - runtime and memory.
-8. Add a smoke run covering all dense estimator conditions.
+9. Add a smoke run covering all dense estimator conditions.
+10. Create `mnist_experiment/coupled_results.ipynb` for Phase 6 review:
+   - show each condition's divergent parameter path;
+   - compare retention, adaptation, and balanced performance;
+   - show data-loss and EWC-penalty trajectories;
+   - compare Fisher tracking only against references evaluated at that
+     condition's own parameter checkpoint;
+   - show proposal norms, accepted displacement norms, and Fisher-weighted
+     drift;
+   - report paired per-replica learning outcomes without treating checkpoints
+     as independent samples.
+   The notebook must use the shared strict artifact loaders and remain
+   visualization and lightweight statistical analysis only.
 
 ### Tests
 
 - identical Fisher inputs yield identical EWC proposals;
+- $\pi_t\in(0,\pi_{\max}]$ and
+  $\lambda_t=\texttt{ewc\_strength}(1-\pi_t)/\pi_t$;
 - changing only the Fisher condition can change the path but not the paired data stream;
 - each reference Fisher is keyed to the correct condition checkpoint;
 - EWC penalties are nonnegative after projection;
 - proposal and realized displacement artifacts agree;
+- no post-optimization $\pi_t$ scaling is applied;
 - the following LFU uses the realized displacement.
 
 ### Verification gate
@@ -870,12 +973,91 @@ Determine whether Fisher-tracking differences change continual-learning behavior
 - Divergent paths are evaluated against references at their own parameters.
 - Retention and adaptation metrics are reproducible under paired seeds.
 - No conclusion depends solely on projected matrices without raw instability diagnostics.
+- `coupled_results.ipynb` executes quickly from completed artifacts, makes path
+  divergence explicit, and performs no training, derivative, or reference
+  computation.
 
 ### Check-in decisions
 
 - Decide whether full LFU provides enough tracking or learning signal to justify structured scaling.
 - Select the dense conditions and factor settings carried into Phase 7.
 - Revise the EWC proposal only if the coupled pilot exposes a documented defect.
+
+### Implementation and pilot record
+
+Phase 6 implemented:
+
+- `src.ewc.mixture_ewc_strength`, which calculates and records
+  $\gamma(1-\pi_t)/\pi_t$;
+- mixture-weighted EWC proposals that accept the optimizer solution directly
+  and record that no post-optimization scaling occurred;
+- `src.coupled_trajectory.DenseFisherTracker`, which preserves the validated
+  Phase 4 update mathematics while giving each condition its own Fisher state;
+- `mnist_experiment/run_coupled.py`, with six paired dense conditions,
+  own-path reference Fishers, lagged realized directions, classifier metrics,
+  path-divergence diagnostics, immutable trajectories, and matrix checkpoints;
+- strict Phase 6 artifact loaders and summaries in `src.results_analysis`;
+- `mnist_experiment/coupled_results.ipynb`, which selects the accepted pilot,
+  performs no training or derivative work, and fails on incompatible artifacts;
+- `phase6_smoke.json`, `phase6_pilot.json`, and
+  `phase6_convergent_pilot.json`.
+
+All Phase 6 runs use fixed $\pi_0=0.5$, $\pi_{\max}=0.95$, and
+`ewc_strength = 1`, hence an effective odds coefficient of one. The smoke run
+completed all six conditions over three steps and verified shared
+initialization, shared observation identities, own-path references, exact
+lagged-displacement scheduling, and the absence of post-optimization
+actuation. Its final maximum pairwise parameter distance was
+$1.13\times10^{-7}$; this tiny run is a software check, not scientific
+evidence.
+
+The first $K=9,m=128$ GPU pilot retained the Phase 5 proposal settings of three
+SGD steps at learning rate $10^{-3}$. It completed, but every condition had
+zero digit-9 accuracy and weak likelihood adaptation. This documented
+under-actuation justified revising the original-process inner solve. Increasing
+the learning rate was not safe: exploratory settings
+$(10,10^{-2})$, $(5,5\times10^{-3})$, and $(5,3\times10^{-3})$ produced
+nonfinite derivatives in at least one condition. The two contextualized
+failures occurred for ridge AC-only at $p=1$ and raw AC-only at $p=1$.
+These failed attempts did not produce completed artifacts.
+
+The accepted convergent pilot instead used 20 small SGD steps at learning rate
+$10^{-3}$. All six conditions completed with high-sample
+$N_{\mathrm{ref}}=32{,}768$ references at their own checkpoints. Observed
+interior mean Fisher errors were:
+
+| Condition | Mean relative Fisher error | Final digit-9 NLL | Digit-9 NLL reduction | Final non-nine accuracy |
+|---|---:|---:|---:|---:|
+| EMA | 0.462 | 16.729 | 13.447 | 0.885 |
+| AC only | 0.898 | 24.627 | 5.548 | 0.886 |
+| Full LFU | 0.879 | 24.607 | 5.568 | 0.886 |
+| Periodic fresh | 0.155 | 21.134 | 9.041 | 0.885 |
+| Ridge AC only | 0.271 | 19.911 | 10.264 | 0.888 |
+| Ridge full LFU | 0.271 | 19.906 | 10.269 | 0.888 |
+
+The final maximum pairwise parameter distance was 0.252, so the coupled paths
+were materially distinct. Runtime was 110.4 seconds and peak allocated GPU
+memory was approximately 636 MiB. Maximum relative PSD-projection distance was
+$6.88\times10^{-5}$ for raw full LFU, $1.43\times10^{-5}$ for AC-only,
+$6.78\times10^{-9}$ for ridge full LFU, and at numerical noise level for EMA,
+periodic fresh, and ridge AC-only.
+
+Digit-9 accuracy remained zero because fitting at $p=0$ drives the unseen class
+toward a softmax boundary; nevertheless, digit-9 NLL decreased substantially
+and provides a continuous adaptation metric. This endpoint behavior must remain
+visible in the notebook and should not be mistaken for absence of movement.
+The accepted pilot has one replica and the CUDA adaptive-average-pooling
+backward remains nondeterministic, so all method comparisons are descriptive.
+
+Verification completed with 88 unit tests and an artifact-only notebook
+execution time of approximately 1.7 seconds. Phase 6 is awaiting check-in.
+Before Phase 7, decide whether to carry:
+
+- EMA as the primary low-compute control;
+- periodic fresh as the expensive reference-like learning condition;
+- ridge full LFU as the principal LFU treatment;
+- raw full LFU only as an instability/ablation condition, given its poor
+  tracking and weak adaptation in this replica.
 
 ---
 
@@ -914,12 +1096,26 @@ Measure how much Fisher and LFU information survives practical representation co
 
 5. Apply Lanczos to the complete updated operator, retaining positive Ritz components and a clipped residual diagonal.
 6. Evaluate a targeted rank grid selected from dense results. Include rank zero as the diagonal-only boundary.
+   The initial grid is $r\in\{0,4,8,16,32,64\}$ for the 512-parameter
+   canonical network. One immutable validation run evaluates the complete grid
+   on one paired fixed trajectory so randomized CUDA trajectory differences
+   cannot masquerade as rank effects.
 7. Compare against dense projected checkpoints using:
    - relative Frobenius error;
    - fixed-probe matrix-vector error;
    - EWC quadratic-form error;
    - leading eigenspace error;
    - memory and runtime.
+8. Create `mnist_experiment/representation_results.ipynb` for Phase 7 review:
+   - show diagonal and low-rank-plus-diagonal accuracy by retained rank;
+   - compare fixed-probe matrix-vector and EWC quadratic-form errors;
+   - show leading-eigenspace accuracy;
+   - display memory, runtime, and artifact-size frontiers;
+   - distinguish fixed-trajectory validation from any surviving coupled runs;
+   - identify Pareto-efficient representation/rank choices without hiding
+     failed or numerically unstable settings.
+   The notebook must use precomputed scalar metrics and shared artifact
+   validation; it must never reconstruct large matrices merely for plotting.
 
 ### Tests
 
@@ -930,6 +1126,8 @@ Measure how much Fisher and LFU information survives practical representation co
 - invalid rank and breakdown cases fail clearly;
 - the external Lanczos source remains unchanged;
 - serialization preserves factors and parameter ordering.
+- the copied `src/lanczos.py` has SHA-256
+  `643bb7562ad7ad2d087229414d7adf114f575b342f462be619f90be920691634`.
 
 ### Verification gate
 
@@ -937,12 +1135,83 @@ Measure how much Fisher and LFU information survives practical representation co
 - At least one low-rank setting improves materially over diagonal on a dense-reference metric, or evidence clearly shows that it does not.
 - Approximation quality, compute, and storage form an interpretable rank curve.
 - Coupled runs are attempted only for ranks that survive fixed-trajectory validation.
+- `representation_results.ipynb` executes quickly from stored metrics and
+  exposes the rank/accuracy/compute frontier without model computation.
 
 ### Check-in decisions
 
 - Select ranks for coupled and controller experiments.
 - Decide whether the copied Lanczos implementation needs a corrective wrapper behavior or whether a separately versioned replacement is warranted.
 - Decide which representation offers the best accuracy/compute frontier.
+
+### Implementation record
+
+Phase 7 reached its check-in on 2026-07-30. The implementation provides:
+
+- dense, diagonal, and low-rank-plus-diagonal Fisher objects with matrix-vector
+  products, quadratic forms, damped solves, inverse traces, serialization, and
+  explicit persistent-storage accounting;
+- schema-v6 rank grids and immutable fixed/coupled runners;
+- a deterministic wrapper around the unchanged copied Lanczos source, pinned
+  to SHA-256
+  `643bb7562ad7ad2d087229414d7adf114f575b342f462be619f90be920691634`;
+- recursive diagonal and low-rank-plus-diagonal ridge-full LFU trackers;
+- structured EWC penalties that use the factorization directly rather than
+  reconstructing a dense matrix during optimization;
+- strict read-only Phase 7 loaders that distinguish artifact completion from
+  numerical acceptability; and
+- `representation_results.ipynb`, which loads only scalar artifacts and
+  displays fixed-path and coupled-path evidence separately.
+
+The immutable fixed-path pilot
+`mnist_lfu_phase7_rank_pilot__replica-0000__14916102ebf92cc3`
+completed the requested ranks $\{0,4,8,16,32,64\}$ on one shared nine-step
+trajectory. Mean dense ridge-full target errors, excluding the initial step,
+were 0.978 for diagonal, 0.198 for rank 4, and 0.104 for rank 8. Rank 8 also
+had mean fixed-probe matrix-vector error 0.131, mean EWC quadratic error 0.098,
+and mean leading-eigenvector alignment 0.9999. Its persistent factor and
+diagonal occupied 36 KiB, versus 2,048 KiB for one dense float64 Fisher.
+
+Higher requested ranks were not monotone improvements. Mean dense-target error
+rose to 5.07, 105, and 87,686 for ranks 16, 32, and 64. Their clipped
+residual-diagonal mismatch and exploding retained Ritz values show numerical
+loss of control in the copied unreorthogonalized recurrence. The analysis
+therefore labels these finite artifacts `numerically_unstable`. It does not
+rewrite or discard them. The copied implementation remains unchanged and
+usable through the guarded wrapper at rank 8, but any future higher-rank study
+should use a separately versioned reorthogonalized implementation rather than
+quietly changing the provenance-pinned source.
+
+Only rank 8 survived into the immutable coupled run
+`mnist_lfu_phase7_coupled_rank8__replica-0000__b0f9fdc792134eb9`.
+Its mean path-specific Fisher error was 0.255, close to dense ridge-full at
+0.246, and its final Fisher error was 0.0738 versus 0.0722. The final rank-8
+parameter vector was only 0.00490 from the dense vector. Their final NLL,
+digit-9 NLL, non-nine NLL, balanced accuracy, and distance from initialization
+were likewise nearly equal. Rank 8 therefore preserved both the auxiliary
+Fisher process and the original learning process in this replica.
+
+The diagonal condition behaved qualitatively differently. Its mean Fisher
+error was 2.07, final error was 7.49, and its final parameter vector was 0.792
+from dense. It adapted much more aggressively to digit 9 while forgetting
+non-nine performance, reducing balanced accuracy to 0.624 versus approximately
+0.798 for dense and rank 8. Diagonal remains a useful low-memory boundary and
+ablation, not the recommended controller representation.
+
+The fixed sweep took 9.06 seconds and produced 22.5 MiB of validation
+artifacts. The three-condition coupled run took 49.7 seconds and produced
+103.8 MiB, primarily because scientific validation retains selected dense
+references and checkpoints; those artifact sizes are not the persistent
+runtime state sizes. Mean Fisher-update times were 0.0566 seconds for dense
+and 0.0507 seconds for rank 8 in the coupled pilot.
+
+Verification completed with 105 unit tests. The CPU fixed and coupled smoke
+runs completed all selected conditions and immutable reruns were refused. The
+artifact-only notebook executes in approximately one second. Phase 7 is
+awaiting check-in with the recommendation to carry dense ridge-full as the
+validation comparator, rank-8 low-rank-plus-diagonal ridge-full as the
+practical representation, and diagonal ridge-full as a boundary ablation into
+the controller design discussion.
 
 ---
 
@@ -991,6 +1260,17 @@ Evaluate the adaptation controller after the principal Fisher estimators and rep
 6. Implement the oracle diagnostic using high-sample reference quantities without presenting it as a deployable condition.
 7. Record every term needed to reconstruct the controller decision.
 8. Run controller experiments only on the small set of Fisher conditions and representations selected at previous gates.
+9. Create `mnist_experiment/controller_results.ipynb` for Phase 8 review:
+   - show proposed and accepted update trajectories;
+   - show $\widehat\pi_t^\star$, applied $\pi_t$, and cap activation;
+   - compare uncontrolled, fixed, plug-in, capped, and oracle-diagnostic
+     conditions;
+   - separate controller quality from plug-in Fisher error;
+   - show retention, adaptation, and tracking consequences conditional on
+     controller intervention;
+   - include damping and inverse-trace sensitivity summaries.
+   The notebook must reconstruct controller decisions only from stored scalar
+   terms and must use the shared strict loaders and compatibility policy.
 
 ### Tests
 
@@ -1009,6 +1289,8 @@ Evaluate the adaptation controller after the principal Fisher estimators and rep
 - The oracle condition separates policy quality from plug-in Fisher error.
 - Cap activation and its consequences are visible in stored metrics.
 - The selected `pi_max` range contains both inactive and meaningfully active regimes.
+- `controller_results.ipynb` executes quickly from immutable artifacts and
+  reproduces recorded controller decisions without numerical model work.
 
 ### Check-in decisions
 
@@ -1042,6 +1324,12 @@ Make it safe and straightforward for the user to add compute over time and deter
    - rank/compute frontiers;
    - controller summaries;
    - completed-replica and uncertainty diagnostics.
+   Keep `results.ipynb` as the master cross-phase synthesis and replication
+   dashboard. It should summarize and link the accepted conclusions from:
+   - `coupled_results.ipynb`;
+   - `representation_results.ipynb`;
+   - `controller_results.ipynb`.
+   Do not duplicate their detailed diagnostic views in the master notebook.
 6. Add documented commands for:
    - one smoke replica;
    - one selected GPU replica bundle;
@@ -1054,6 +1342,8 @@ Make it safe and straightforward for the user to add compute over time and deter
 - Interrupted and duplicate-run scenarios preserve completed artifacts.
 - Adding a replica changes aggregate uncertainty without changing earlier results.
 - The notebook performs no expensive model computation.
+- All four notebooks use shared loaders, explicit accepted-run selectors, and
+  the common artifact-only notebook validator.
 - Every reported aggregate links back to contributing immutable runs.
 - A fresh process can reproduce a smoke run and load its results using only documented commands.
 - Remaining scientific limitations are documented without being hidden by implementation details.

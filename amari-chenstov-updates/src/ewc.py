@@ -10,6 +10,9 @@ from torch import Tensor, nn
 
 from .config import OptimizerConfig
 from .parameters import ParameterLayout
+from .representations import FisherRepresentation
+
+FisherLike = Tensor | FisherRepresentation
 
 
 @dataclasses.dataclass(frozen=True)
@@ -22,6 +25,9 @@ class EWCProposalResult:
     displacement_norm: float
     fisher_weighted_displacement_norm: float
     inner_steps: int
+    adaptation_weight: float | None
+    effective_ewc_strength: float
+    objective_normalization: str
 
     def metrics_mapping(self) -> dict[str, Any]:
         return {
@@ -34,13 +40,40 @@ class EWCProposalResult:
                 self.fisher_weighted_displacement_norm
             ),
             "inner_steps": self.inner_steps,
+            "adaptation_weight": self.adaptation_weight,
+            "effective_ewc_strength": self.effective_ewc_strength,
+            "objective_normalization": self.objective_normalization,
         }
+
+
+def mixture_ewc_strength(
+    adaptation_weight: float,
+    *,
+    multiplier: float = 1.0,
+) -> float:
+    """Return the old-to-new evidence odds ``multiplier * (1-pi) / pi``."""
+
+    if not isinstance(adaptation_weight, (int, float)) or not torch.isfinite(
+        torch.tensor(adaptation_weight, dtype=torch.float64)
+    ):
+        raise ValueError("adaptation weight must be finite")
+    if not 0.0 < float(adaptation_weight) <= 1.0:
+        raise ValueError("adaptation weight must be in (0, 1]")
+    if not isinstance(multiplier, (int, float)) or not torch.isfinite(
+        torch.tensor(multiplier, dtype=torch.float64)
+    ):
+        raise ValueError("EWC multiplier must be finite")
+    if float(multiplier) < 0.0:
+        raise ValueError("EWC multiplier must be nonnegative")
+    return float(multiplier) * (
+        (1.0 - float(adaptation_weight)) / float(adaptation_weight)
+    )
 
 
 def ewc_penalty(
     parameter_vector: Tensor,
     anchor: Tensor,
-    fisher: Tensor,
+    fisher: FisherLike,
     strength: float,
 ) -> Tensor:
     """Return ``strength / 2 * (theta-anchor)^T I (theta-anchor)``."""
@@ -64,7 +97,12 @@ def ewc_penalty(
         raise ValueError("EWC strength must be nonnegative")
 
     displacement = parameter_vector - anchor
-    return 0.5 * float(strength) * (displacement @ (fisher @ displacement))
+    quadratic = (
+        displacement @ (fisher @ displacement)
+        if isinstance(fisher, Tensor)
+        else fisher.quadratic(displacement)
+    )
+    return 0.5 * float(strength) * quadratic
 
 
 def build_optimizer(
@@ -84,11 +122,20 @@ def take_ewc_proposal(
     layout: ParameterLayout,
     inputs: Tensor,
     targets: Tensor,
-    fisher: Tensor,
+    fisher: FisherLike,
     config: OptimizerConfig,
     optimizer: torch.optim.Optimizer,
+    *,
+    adaptation_weight: float | None = None,
 ) -> EWCProposalResult:
-    """Optimize one batch around the current anchor and return its realized move."""
+    """Optimize one batch around the current anchor and return its realized move.
+
+    When ``adaptation_weight`` is supplied, the mean new-data loss is used with
+    the equivalent old-to-new odds coefficient
+    ``config.ewc_strength * (1 - pi) / pi``. The optimizer's displacement is
+    accepted directly; this function never applies a post-optimization
+    multiplication by ``pi``.
+    """
 
     config.validate()
     layout.validate_module(model)
@@ -99,6 +146,19 @@ def take_ewc_proposal(
         raise ValueError("Fisher shape does not match the model")
     if fisher.device != anchor.device or fisher.dtype != anchor.dtype:
         raise ValueError("Fisher must share the model dtype and device")
+    effective_strength = (
+        float(config.ewc_strength)
+        if adaptation_weight is None
+        else mixture_ewc_strength(
+            adaptation_weight,
+            multiplier=config.ewc_strength,
+        )
+    )
+    objective_normalization = (
+        "mean_new_loss_plus_direct_quadratic"
+        if adaptation_weight is None
+        else "mean_new_loss_plus_old_to_new_odds"
+    )
 
     model.train()
     with torch.no_grad():
@@ -112,7 +172,7 @@ def take_ewc_proposal(
             parameter_vector,
             anchor,
             fisher,
-            config.ewc_strength,
+            effective_strength,
         )
         (data_loss + penalty).backward()
         optimizer.step()
@@ -125,9 +185,13 @@ def take_ewc_proposal(
             final_vector,
             anchor,
             fisher,
-            config.ewc_strength,
+            effective_strength,
         )
-        quadratic = displacement @ (fisher @ displacement)
+        quadratic = (
+            displacement @ (fisher @ displacement)
+            if isinstance(fisher, Tensor)
+            else fisher.quadratic(displacement)
+        )
         numerical_floor = -100 * torch.finfo(quadratic.dtype).eps
         if float(quadratic) < numerical_floor:
             raise RuntimeError("PSD Fisher produced a materially negative quadratic")
@@ -142,4 +206,9 @@ def take_ewc_proposal(
         displacement_norm=float(torch.linalg.vector_norm(displacement)),
         fisher_weighted_displacement_norm=float(fisher_weighted_norm),
         inner_steps=config.inner_steps,
+        adaptation_weight=(
+            None if adaptation_weight is None else float(adaptation_weight)
+        ),
+        effective_ewc_strength=effective_strength,
+        objective_normalization=objective_normalization,
     )

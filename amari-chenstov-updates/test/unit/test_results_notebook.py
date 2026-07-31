@@ -11,6 +11,10 @@ from mnist_experiment.validate_results_notebook import (
 
 REPO_ROOT = Path(__file__).parents[2]
 NOTEBOOK = REPO_ROOT / "mnist_experiment" / "results.ipynb"
+COUPLED_NOTEBOOK = REPO_ROOT / "mnist_experiment" / "coupled_results.ipynb"
+REPRESENTATION_NOTEBOOK = (
+    REPO_ROOT / "mnist_experiment" / "representation_results.ipynb"
+)
 
 
 def test_results_notebook_is_valid_and_artifact_only() -> None:
@@ -21,6 +25,30 @@ def test_results_notebook_is_valid_and_artifact_only() -> None:
     assert notebook["nbformat"] == 4
     assert any(
         "Assumption checks" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+
+def test_coupled_results_notebook_is_valid_and_artifact_only() -> None:
+    notebook = load_notebook(COUPLED_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    assert notebook["nbformat"] == 4
+    assert any(
+        "Divergent paths" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+
+def test_representation_results_notebook_is_valid_and_artifact_only() -> None:
+    notebook = load_notebook(REPRESENTATION_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    assert notebook["nbformat"] == 4
+    assert any(
+        "Fixed-trajectory rank frontier" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )
 

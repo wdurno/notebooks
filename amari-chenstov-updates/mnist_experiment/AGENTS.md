@@ -226,7 +226,7 @@ This stage answers:
 
 ## EWC-coupled learning
 
-After fixed-trajectory tracking passes its validation criteria, run the **EWC-coupled learning experiment**. Each condition uses its own Fisher estimate in the EWC penalty, so it affects $\widetilde u_t$ and all future parameters.
+After fixed-trajectory tracking passes its validation criteria, run the **EWC-coupled learning experiment**. Each condition uses its own Fisher estimate in the EWC penalty, so it affects the next estimate and all future parameters.
 
 Conditions still share initialization, $p$ schedule, observation identities, and non-treatment optimizer settings, but their parameter paths may diverge. Do not compare Fisher matrices from divergent paths as though they were estimates at the same point. Evaluate each estimate against a high-sample reference Fisher calculated at that condition's own checkpoint.
 
@@ -340,17 +340,40 @@ Do not run every rank against every earlier experimental factor. First identify 
 
 ## EWC proposal
 
-At each step, calculate an ordinary EWC-regularized proposal $\widetilde u_t$ from the current data and the active Fisher representation. The exact optimizer and inner-step count must be configuration-controlled and identical across paired conditions unless they are the treatment.
+At each step, calculate the EWC-regularized estimate from the current data and
+the active Fisher representation. Let $\pi_t\in(0,1]$ denote the effective
+new-data weight. With a mean-reduced new-data loss, optimize the equivalent
+old-to-new odds form
+
+$$
+\overline L_{\mathrm{new},t}(\vartheta)
++
+\frac{\lambda_t}{2}
+(\vartheta-\theta_t)^T
+\widehat{\mathcal I}_t
+(\vartheta-\theta_t),
+\qquad
+\lambda_t
+=
+\gamma\frac{1-\pi_t}{\pi_t},
+$$
+
+where $\gamma$ is a separately recorded dimensionless EWC sensitivity
+multiplier and is one in principal runs. Accept the optimizer's estimate
+directly. Do not multiply its displacement by $\pi_t$ after optimization.
+The exact optimizer and inner-step count must be configuration-controlled and
+identical across paired conditions unless they are the treatment.
 
 Record:
 
 - unregularized data loss;
 - EWC penalty;
-- proposal norm $\|\widetilde u_t\|$;
-- accepted norm $\|u_t\|$;
-- Fisher-weighted proposal and accepted norms.
+- $\pi_t$, $\lambda_t$, and objective normalization;
+- optimizer displacement norm $\|u_t\|$;
+- Fisher-weighted displacement norm.
 
-The LFU on the following iteration uses the accepted displacement $u_t$, never the unscaled proposal.
+The LFU on the following iteration uses the realized optimizer displacement
+$u_t=\theta_{t+1}-\theta_t$.
 
 ## Optimal-controller experiment
 
@@ -363,7 +386,7 @@ Keep these quantities distinct:
 - $\alpha_t$: Fisher EMA gain;
 - $\rho_t$: effective-precision forgetting factor.
 
-Given the ordinary EWC proposal $\widetilde u_t$, define the plug-in policy
+Define the plug-in adaptation weight
 
 $$
 \widehat\pi_t^\star
@@ -382,15 +405,16 @@ $$
 \right),
 $$
 
-where $\lambda>0$ and $\varepsilon>0$ are recorded numerical safeguards. Apply the controller as
-
-$$
-u_t=\pi_t\widetilde u_t.
-$$
+where $\lambda>0$ and $\varepsilon>0$ are recorded numerical safeguards and
+$\widetilde u_t$ is an explicitly defined diagnostic displacement used only
+to estimate the adaptation weight. Apply the selected $\pi_t$ through the
+mixture-derived EWC odds $(1-\pi_t)/\pi_t$, then accept the resulting optimizer
+solution without further displacement scaling.
 
 Implement these controller policies:
 
-- `uncontrolled`: $\pi_t=1$;
+- `uncontrolled`: $\pi_t=1$, a diagnostic new-data-only boundary with no EWC
+  penalty;
 - `fixed`: $\pi_t=\pi_0$;
 - `optimal_plugin`: $\pi_t=\widehat\pi_t^\star$;
 - `optimal_capped`: $\pi_t=\min(\widehat\pi_t^\star,\pi_{\max})$;
@@ -398,7 +422,12 @@ Implement these controller policies:
 
 Expose `fixed_pi`, `pi_max`, controller damping, and controller epsilon as configuration values. Test a targeted $\pi_{\max}$ grid after selecting the principal Fisher conditions.
 
-Record the uncapped value, applied value, cap activation, inverse-trace term, effective count, proposal norm, and intervention outcome at every step.
+Record the uncapped value, applied value, EWC odds, cap activation,
+inverse-trace term, effective count, diagnostic displacement norm, and
+intervention outcome at every step. Choosing $\pi_t$ independently of literal
+old/new sample proportions generally targets a tempered objective and may bias
+the estimate relative to the instantaneous MLE. Treat that bias as an explicit
+variance-retention-tracking trade-off.
 
 ## Experimental factors
 
@@ -455,8 +484,9 @@ Compute expensive metrics in the execution script and store tidy per-step scalar
 
 ### Controller
 
-- proposed and accepted update norms;
+- diagnostic and realized optimizer update norms;
 - $\widehat\pi_t^\star$ and applied $\pi_t$;
+- effective EWC odds $(1-\pi_t)/\pi_t$;
 - cap activation frequency;
 - tracking/retention outcomes conditional on controller intervention.
 

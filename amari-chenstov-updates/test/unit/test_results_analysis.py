@@ -10,9 +10,13 @@ from src.config import load_config
 from src.results_analysis import (
     AnalysisArtifactError,
     PHASE4_METHODS_BY_SCHEMA,
+    PHASE6_METHODS_BY_SCHEMA,
     discover_phase4_runs,
+    discover_phase6_runs,
     load_selected_phase3_runs,
     phase4_replica_summaries,
+    phase6_condition_rows,
+    phase6_replica_summaries,
     select_phase4_condition_evidence,
     select_principal_phase4_runs,
 )
@@ -20,6 +24,9 @@ from src.results_analysis import (
 
 REPO_ROOT = Path(__file__).parents[2]
 SMOKE_CONFIG = REPO_ROOT / "mnist_experiment" / "configs" / "smoke.json"
+PHASE6_SMOKE_CONFIG = (
+    REPO_ROOT / "mnist_experiment" / "configs" / "phase6_smoke.json"
+)
 
 
 def _phase4_config(
@@ -104,6 +111,158 @@ def _write_phase4_run(
         },
     )
     return session.complete(["phase4_trajectory.pt", "phase4_metrics.json"])
+
+
+def _write_phase6_run(root: Path) -> Path:
+    config = load_config(PHASE6_SMOKE_CONFIG)
+    methods = PHASE6_METHODS_BY_SCHEMA[1]
+    p_values = (0.0, 0.5, 1.0)
+    parameters = torch.tensor(
+        [[0.0, 0.0], [0.1, -0.1], [0.2, -0.05]],
+        dtype=torch.float64,
+    )
+    path_hashes = {method: f"path-{method}" for method in methods}
+    session = RunStore(root).begin(config, REPO_ROOT)
+    session.write_torch(
+        "phase6_trajectories.pt",
+        {
+            "schema_version": 1,
+            "stream_plan_hash": "stream",
+            "p_values": p_values,
+            "observation_indices": ((1, 2), (3, 4), (5, 6)),
+            "parameter_layout": {
+                "total_numel": 2,
+                "parameters": [
+                    {
+                        "name": "weight",
+                        "shape": [2],
+                        "start": 0,
+                        "stop": 2,
+                    }
+                ],
+            },
+            "conditions": {
+                method: {
+                    "content_hash": path_hashes[method],
+                    "parameters": parameters,
+                    "displacements": parameters[1:] - parameters[:-1],
+                    "optimizer_state": {},
+                }
+                for method in methods
+            },
+        },
+    )
+    condition_rows = []
+    reference_rows = []
+    for method in methods:
+        for step, p_value in enumerate(p_values):
+            parameter_hash = f"{method}-{step}"
+            proposal = (
+                None
+                if step == 2
+                else {
+                    "data_loss_before": 1.0,
+                    "data_loss_after": 0.9,
+                    "ewc_penalty_after": 0.1,
+                    "displacement_norm": 0.2,
+                    "accepted_displacement_norm": 0.2,
+                    "fisher_weighted_displacement_norm": 0.3,
+                    "effective_ewc_strength": 1.0,
+                    "post_optimization_scaling_applied": False,
+                }
+            )
+            condition_rows.append(
+                {
+                    "method": method,
+                    "step": step,
+                    "p": p_value,
+                    "parameter_hash": parameter_hash,
+                    "reference_parameter_hash": parameter_hash,
+                    "proposal": proposal,
+                    "adaptation_weight": 0.5,
+                    "effective_ewc_strength": 1.0,
+                    "relative_frobenius_error": 0.1,
+                    "distance_from_initial": float(step),
+                    "before_non_nine_accuracy": 0.8 - 0.1 * step,
+                    "before_nine_accuracy": 0.1 * step,
+                    "before_balanced_accuracy": 0.5,
+                    "before_non_nine_nll": 0.2 + 0.1 * step,
+                    "before_nine_nll": 3.0 - 0.5 * step,
+                }
+            )
+            reference_rows.append(
+                {
+                    "method": method,
+                    "step": step,
+                    "p": p_value,
+                    "parameter_hash": parameter_hash,
+                }
+            )
+    session.write_json(
+        "phase6_metrics.json",
+        {
+            "phase6_metric_schema_version": 1,
+            "replica_bundle_id": "bundle",
+            "stream_plan_hash": "stream",
+            "methods": list(methods),
+            "adaptation": {
+                "adaptation_weight": 0.5,
+                "pi_max": 0.95,
+                "ewc_multiplier": 1.0,
+                "effective_ewc_strength": 1.0,
+                "objective_normalization": (
+                    "mean_new_loss_plus_old_to_new_odds"
+                ),
+                "post_optimization_scaling": False,
+            },
+            "pairing": {
+                "shared_initialization": True,
+                "shared_observation_stream": True,
+                "path_diverged": True,
+            },
+            "path_hashes": path_hashes,
+            "path_divergence": [
+                {
+                    "step": step,
+                    "p": p_value,
+                    "maximum_pairwise_parameter_distance": float(step),
+                }
+                for step, p_value in enumerate(p_values)
+            ],
+            "condition_steps": condition_rows,
+            "references": reference_rows,
+        },
+    )
+    return session.complete(
+        ["phase6_trajectories.pt", "phase6_metrics.json"]
+    )
+
+
+def test_phase6_loader_enforces_coupled_path_contract(tmp_path: Path) -> None:
+    path = _write_phase6_run(tmp_path / "phase6")
+
+    runs = discover_phase6_runs(path.parent)
+    rows = phase6_condition_rows(runs)
+    summaries = phase6_replica_summaries(rows)
+
+    assert len(runs) == 1
+    assert len(rows) == 6 * 3
+    assert len(summaries) == 6
+    assert {row["effective_ewc_strength"] for row in rows} == {1.0}
+    assert {row["final_nine_accuracy"] for row in summaries} == {0.2}
+
+
+def test_phase6_loader_rejects_reference_from_another_path(
+    tmp_path: Path,
+) -> None:
+    path = _write_phase6_run(tmp_path / "phase6")
+    metrics_path = path / "phase6_metrics.json"
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    metrics["references"][0]["parameter_hash"] = "wrong-path"
+    metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+
+    with pytest.raises(AnalysisArtifactError, match="reference is not keyed"):
+        discover_phase6_runs(path.parent)
 
 
 def test_schema_two_supersedes_legacy_without_duplicating_controls(
