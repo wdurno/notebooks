@@ -1221,82 +1221,313 @@ the controller design discussion.
 
 Evaluate the adaptation controller after the principal Fisher estimators and representations have been selected.
 
-### Scope
+### Post-Phase-7 paradigm clarification
 
-1. Implement controller policies:
-   - `uncontrolled`;
-   - `fixed`;
-   - `optimal_plugin`;
-   - `optimal_capped`;
-   - `optimal_oracle`.
-2. For the plug-in policy, calculate
+The accepted Phase 6 and Phase 7 coupled pilots used `fixed_pi = 0.5` in the
+mixture-weighted EWC objective and an independent `ema_gain = 0.25` in the
+auxiliary Fisher recursion. Their immutable artifacts remain valid
+measurements of those explicitly decoupled conditions, but the conditions are
+theoretical aberrations under the subsequently accepted $\pi_t$-centric
+paradigm. Treat them as historical decoupled baselines only. Do not use their
+coupling behavior as evidence for or against the unified controller, and do
+not rewrite or discard their artifacts.
+
+Phase 8 must introduce new configuration, metric, and trajectory schema
+versions. Each step records one applied $\pi_t$, and that same value must be
+consumed by both:
+
+$$
+\widehat{\mathcal I}_t
+=
+(1-\pi_t)
+\left(\widehat{\mathcal I}_{t-1}+\widehat\Delta_t^{\mathrm{lag}}\right)
++\pi_t Z_t,
+$$
+
+and the mixture-weighted EWC objective with odds
+$(1-\pi_t)/\pi_t$. No independent Fisher gain or precision-forgetting
+hyperparameter belongs to a principal Phase 8 condition. A small paired
+compatibility run should compare the unified fixed-$\pi=0.5$ condition with
+the historical decoupled baseline before adaptive-controller conclusions are
+drawn.
+
+### Resolved open questions
+
+1. **Asymptotic experiment.** The principal controller uses the fixed-batch
+   stratified EWC model with new-batch covariance proportional to
+   $\pi_t^2/m_t$. The fixed-total Bernoulli-composition model, whose covariance
+   is proportional to $\pi_t/N$, remains a theoretically convenient oracle
+   diagnostic and is not substituted for the applied risk.
+2. **Limits and noise laws.** The Bernoulli small-noise model has coefficient
+   $\sqrt{\varepsilon\pi_t}\,\mathcal I^{-1/2}$. The oracle-recentered
+   fixed-batch interpolation has coefficient
+   $\sqrt\varepsilon\,\pi_t\mathcal I^{-1/2}$. The finite applied
+   tracking-error recursion is primary because it retains random anchor error.
+3. **Meaning of $\pi_t$.** In the applied model, $\pi_t$ is the normalized
+   new-data weight, adaptation rate, EWC forgetting rate, and direct-Fisher
+   blend weight. It is not a claim that the fixed observed batch was generated
+   by Bernoulli thinning.
+4. **Signal.** The target signal is
+   $d\theta_t=\theta_{t+1}^\star-\theta_t^\star$. The plug-in estimates its
+   local trend from accepted EWC displacements; the oracle obtains it from a
+   high-sample reference-optimum path.
+5. **Trend estimator.** A single accepted update is policy dependent, but
+   $u_t=d\theta_t+(e_{t+1}-e_t)$. Therefore a vector EMA of accepted updates
+   estimates the local trend when tracking error is locally stationary. No
+   disposable unregularized small-batch MLE belongs to a principal run.
+6. **Effective information size.** Assume covariance calibration and use
 
    $$
-   \widehat\pi_t^\star
-   =
-   \operatorname{clip}_{[0,1]}
-   \left(
-   1-
-   \frac{
-   \operatorname{tr}
-   [(\widehat{\mathcal I}_t+\lambda I)^{-1}]
-   }{
-   2n_{\mathrm{eff},t}\|\widetilde u_t\|^2+\varepsilon
-   }
-   \right).
+   q_t=(1-\pi_t)^2q_{t-1}+\frac{\pi_t^2}{m_t},
+   \qquad N_{\mathrm{eff},t}=q_t^{-1}.
    $$
 
-3. Apply
+   Fisher Monte Carlo sample size remains a separate recorded quantity.
+7. **Trace estimation.** Estimate
+   $T_t=\operatorname{tr}\mathcal I(\theta_t)^{-1}$ without inversion from
+   predictable accepted-update residuals. With
 
    $$
-   u_t=\pi_t\widetilde u_t.
+   r_t=u_t-\widehat d_{t\mid t-1},
+   \qquad
+   a_t=\pi_t^2
+   \left(N_{\mathrm{eff},t-1}^{-1}+m_t^{-1}\right),
    $$
 
-4. Implement damped inverse traces:
-   - direct eigenspectrum for dense;
-   - elementwise inverse for diagonal;
-   - a verified low-rank identity or equivalent stable solve for low-rank-plus-diagonal.
-5. Implement a targeted `pi_max` grid for `optimal_capped`.
-6. Implement the oracle diagnostic using high-sample reference quantities without presenting it as a deployable condition.
-7. Record every term needed to reconstruct the controller decision.
-8. Run controller experiments only on the small set of Fisher conditions and representations selected at previous gates.
-9. Create `mnist_experiment/controller_results.ipynb` for Phase 8 review:
-   - show proposed and accepted update trajectories;
-   - show $\widehat\pi_t^\star$, applied $\pi_t$, and cap activation;
-   - compare uncontrolled, fixed, plug-in, capped, and oracle-diagnostic
-     conditions;
-   - separate controller quality from plug-in Fisher error;
-   - show retention, adaptation, and tracking consequences conditional on
-     controller intervention;
-   - include damping and inverse-trace sensitivity summaries.
-   The notebook must reconstruct controller decisions only from stored scalar
-   terms and must use the shared strict loaders and compatibility policy.
+   use exponentially weighted moments $V_t\approx\mathbb E\|r_t\|^2$ and
+   $A_t\approx\mathbb E a_t$, then set
+   $\widehat T_t=V_t/(A_t+\varepsilon)$. This requires local covariance and
+   trend stability and is tested rather than assumed silently.
+8. **Loss.** Local optimality uses coordinate-local Euclidean parameter MSE.
+   The coordinate dependence is accepted and recorded; do not replace it with
+   a Fisher-metric controller without a new derivation.
+9. **Boundaries.** Principal policies use
+
+   $$
+   \pi_{\mathrm{used},t}
+   =\min(\pi_{\max},\max(\pi_{\min},\widehat\pi_t^\star)),
+   $$
+
+   with $\pi_{\min}>0$. The lower bound maintains excitation, finite EWC
+   odds, and recovery after quiet periods. A hard freeze is a separate
+   explicit action, and `uncontrolled` is an explicit $\pi=1$ boundary.
+10. **Oracle knowledge.** `optimal_oracle` uses a high-sample, warm-started
+    reference-optimum path for $d\theta_t$ and a high-sample reference Fisher
+    for covariance terms. The Bernoulli oracle formula is also recorded as a
+    theory diagnostic, but it is not presented as the deployable controller.
+11. **Predictability.** Calculate $\pi_t$ only from summaries available
+    through step $t-1$. Apply it to batch $t$, then update trend and trace
+    states after accepting $u_t$. Same-batch controller estimation is excluded
+    from principal policies.
+12. **Information horizon.** The same $\pi_t$ controls adaptation, direct
+    Fisher blending, and EWC forgetting. Track the realized products of
+    $1-\pi_t$ and the $q_t$ recursion; do not introduce an independent Fisher
+    gain or precision-forgetting factor.
+13. **Actuation.** Optimize the mixture-weighted EWC objective with odds
+    $(1-\pi_t)/\pi_t$ and accept its optimizer displacement directly. Never
+    assign $u_t\leftarrow\pi_t\widetilde u_t$ after optimization.
+
+### Applied controller
+
+Let $T_t:=\operatorname{tr}\mathcal I(\theta_t)^{-1}$ and define
+
+$$
+\tau_{\mathrm{old},t}=\frac{T_t}{N_{\mathrm{eff},t}},
+\qquad
+\tau_{\mathrm{new},t}=\frac{T_t}{m_{t+1}}.
+$$
+
+The fixed-batch risk and oracle minimizer are
+
+$$
+R_{B,t}(\pi)
+=
+(1-\pi)^2
+\left(\|d\theta_t\|^2+\tau_{\mathrm{old},t}\right)
++\pi^2\tau_{\mathrm{new},t},
+$$
+
+$$
+\pi_{B,t}^\star
+=
+\frac{
+\|d\theta_t\|^2+\tau_{\mathrm{old},t}
+}{
+\|d\theta_t\|^2+\tau_{\mathrm{old},t}+\tau_{\mathrm{new},t}
+}.
+$$
+
+The plug-in substitutes the predictable vector trend and scalar trace
+estimates, then applies `pi_min` and `pi_max`. The default values are
+`pi_min = 0.05`, `pi_max = 0.95`, and `trend_half_life_p = 0.20`. Use targeted
+sensitivity sets `pi_min` in `{0.01, 0.05, 0.10}` and
+`pi_max` in `{0.80, 0.95, 1.00}`, and `trend_half_life_p` in
+`{0.10, 0.20, 0.40}` only after the principal smoke run.
+
+For an environmental increment $\Delta p_t$, use
+
+$$
+\gamma_t=1-2^{-\Delta p_t/H_p}.
+$$
+
+Initialize $\widehat d_{0\mid-1}=0$, $q_0=N_{\mathrm{init}}^{-1}$, and the
+trace moment accumulators at zero. Until one trend half-life of environmental
+distance has accumulated, use the bounded zero-trend composition
+
+$$
+\pi_{\mathrm{cold},t}
+=
+\operatorname{clip}_{[\pi_{\min},\pi_{\max}]}
+\left(\frac{m_t}{N_{\mathrm{eff},t-1}+m_t}\right).
+$$
+
+After accepting $u_t$, update
+
+$$
+\widehat d_{t+1\mid t}
+=(1-\gamma_t)\widehat d_{t\mid t-1}+\gamma_tu_t,
+$$
+
+$$
+V_t=(1-\gamma_t)V_{t-1}+\gamma_t\|r_t\|^2,
+\qquad
+A_t=(1-\gamma_t)A_{t-1}+\gamma_ta_t,
+$$
+
+and then $q_t$. Store all pre-update and post-update states so the notebook can
+reconstruct every decision without loading a model.
+
+### Implementation scope
+
+1. Before controller code, update `mnist_experiment/AGENTS.md` to replace the
+   obsolete independent Fisher-gain/controller contract with this resolved
+   design.
+2. Introduce configuration schema version 7 and new Phase 8 metric,
+   trajectory, controller-state, and oracle-path artifact schema versions.
+   Legacy schema versions remain readable only through their existing strict
+   loaders and are never upgraded in place.
+3. Add controller configuration fields for policy, `fixed_pi`, `pi_min`,
+   `pi_max`, `trend_half_life_p`, trace numerical epsilon, and oracle mode.
+   Unified policies must not accept `ema_gain` or a precision-forgetting
+   factor. Preserve those fields only in legacy decoupled schemas.
+4. Implement a small typed controller state containing:
+   - the predictable vector trend;
+   - $q_t$ and $N_{\mathrm{eff},t}$;
+   - $V_t$, $A_t$, and $\widehat T_t$;
+   - estimated old and new covariance traces;
+   - accumulated environmental distance and warm-up status;
+   - previous applied $\pi_t$ and all numerical-guard flags.
+5. At each step, enforce this ordering:
+   - calculate raw and bounded $\pi_t$ from state through $t-1$;
+   - use that exact value in both the Fisher blend and EWC odds;
+   - optimize the EWC objective and accept its displacement without scaling;
+   - use the accepted displacement in the next LFU and to update controller
+     state for step $t+1$.
+6. Implement policies:
+   - `uncontrolled`, an explicit $\pi=1$ boundary;
+   - `fixed_unified`, including the $\pi=0.5$ compatibility run;
+   - `optimal_plugin`, the bounded applied controller;
+   - `optimal_oracle`, the bounded fixed-batch controller using reference
+     displacement and covariance quantities;
+   - `freeze`, an explicit no-update action outside the ordinary bounds.
+   Record the Bernoulli-theory oracle value at each step as a diagnostic, not
+   as the principal applied policy.
+7. Build one immutable high-sample reference-optimum path per replica and
+   $p$ grid. Warm-start each point from the preceding reference optimum to
+   select a continuous branch, record convergence diagnostics, and share the
+   path across paired controller conditions. Calculate oracle displacements
+   from adjacent reference points and reference Fishers at those points.
+8. Do not run a disposable unregularized optimization in principal plug-in
+   trajectories. Optional paired or high-sample probes may run only at
+   configured assumption-check checkpoints and must be stored as separate
+   diagnostic artifacts.
+9. Add `mnist_experiment/run_controller.py` for immutable Phase 8 runs and
+   `mnist_experiment/controller_results.ipynb` for artifact-only analysis.
+   Carry only dense ridge-full, rank-8 low-rank-plus-diagonal ridge-full, and
+   the minimum boundary ablations selected by Phase 7.
+10. Run a small paired compatibility experiment comparing unified fixed
+    $\pi=0.5$ with the historical decoupled $\pi=0.5$, `ema_gain=0.25`
+    baseline before adaptive-policy pilots. Never merge their schema or
+    interpretation.
+
+### Assumption checks
+
+- Compare the plug-in trend with oracle $d\theta_t$ using norm error, cosine
+  similarity, turning angle, and one-step prediction error.
+- Show path curvature through adjacent oracle-displacement turning angles and
+  second differences; compare the three configured trend half-lives.
+- Compare $\widehat T_t/N_{\mathrm{eff},t}$ with empirical squared parameter
+  error around the reference path across replicas.
+- Compare the inversion-free trace estimate with a high-sample reference
+  Fisher spectral trace and with optional paired-probe covariance at selected
+  checkpoints. These are diagnostics only; principal control performs no
+  Fisher inversion.
+- Report residual autocorrelation and the stability of
+  $\|r_t\|^2/a_t$ over each local half-life. Material autocorrelation or drift
+  invalidates the simple moment interpretation.
+- Check projected error distributions for approximate centering and LAN-scale
+  behavior without claiming exact multivariate Gaussianity.
+- Record the local-quadratic diagnostic, PSD projection distance, LFU
+  truncation indicators, and whether either $\pi$ bound was active.
+
+### Required artifacts
+
+Every trajectory row must record raw, cold-start, oracle, theory-oracle, and
+applied $\pi$ values; applied bounds and activation flags; EWC odds; policy;
+warm-up status; $\gamma_t$; $q_t$; $N_{\mathrm{eff},t}$; trend norm; residual
+norm; $a_t$; $V_t$; $A_t$; $\widehat T_t$; both covariance-trace estimates;
+accepted update norms; Fisher-update diagnostics; and objective metrics.
+Store controller vectors and reference-optimum vectors in separate checkpoint
+artifacts rather than scalar tables.
 
 ### Tests
 
-- all policies remain in $[0,1]$;
-- zero or tiny proposal norms are numerically safe;
-- `optimal_capped` never exceeds `pi_max`;
-- `uncontrolled` returns the original proposal;
-- accepted updates equal `pi * proposal`;
-- LFU consumes the accepted update on the next step;
-- dense, diagonal, and low-rank inverse traces agree on matrices representable by all three;
-- controller artifacts reproduce decisions exactly.
+- all ordinary policies remain in `[pi_min, pi_max]`, while explicit
+  `uncontrolled` and `freeze` boundaries return one and zero respectively;
+- invalid bounds, half-lives, batch sizes, and initial effective sizes fail
+  validation;
+- the same recorded $\pi_t$ is consumed by the Fisher blend and EWC odds;
+- accepted optimizer displacements are never multiplied by $\pi_t$;
+- LFU consumes the realized accepted displacement on the next step;
+- the $q_t$, half-life gain, cold-start, trend, residual, and trace-moment
+  recursions match hand-computed examples;
+- synthetic locally linear calibrated trajectories recover trend and trace
+  within statistical tolerance, including variable $\pi_t$;
+- near-`pi_min` decisions remain finite and retain prior trace information;
+- plugin decisions use only prior controller state and pass a predictability
+  audit;
+- oracle displacements equal adjacent reference-optimum differences;
+- unified schema-7 runs reject `ema_gain` and immutable collisions;
+- legacy decoupled artifacts remain loadable and cannot be mislabeled as
+  unified conditions;
+- controller artifacts reproduce every decision exactly.
 
 ### Verification gate
 
-- All selected controller policies complete paired smoke and pilot trajectories.
-- The oracle condition separates policy quality from plug-in Fisher error.
-- Cap activation and its consequences are visible in stored metrics.
-- The selected `pi_max` range contains both inactive and meaningfully active regimes.
+- The reference-optimum path converges sufficiently at every selected stencil
+  and remains on a continuous warm-started branch.
+- Unified fixed-$\pi=0.5$ and historical decoupled compatibility results are
+  visible and separately labeled.
+- All selected policies complete paired CPU smoke and GPU pilot trajectories.
+- Assumption-check plots expose trend lag, covariance calibration, trace
+  error, residual dependence, path curvature, and bound activation.
+- The default half-life and bounds are not selected from a single favorable
+  replica, and targeted sensitivity includes both active and inactive bounds.
+- The oracle condition separates controller quality from plug-in estimation
+  error.
 - `controller_results.ipynb` executes quickly from immutable artifacts and
-  reproduces recorded controller decisions without numerical model work.
+  performs no training, HVP, Fisher construction, or model loading.
 
 ### Check-in decisions
 
-- Decide whether $\widehat\pi_t^\star$ is useful as a controller, a diagnostic, or neither.
-- Select any controller conditions worthy of replication.
-- Confirm that controller conclusions are not artifacts of damping or inverse-trace estimation.
+- Decide whether the applied plug-in controller improves tracking and
+  retention enough to justify its state and estimation assumptions.
+- Decide whether trend or trace estimation is the dominant gap from
+  `optimal_oracle`.
+- Select any `pi_min`, `pi_max`, and trend-half-life settings worthy of
+  replication.
+- Confirm that conclusions survive the fixed-$\pi$ compatibility comparison
+  and are not artifacts of PSD projection, warm-up, or oracle-path quality.
 
 ---
 
