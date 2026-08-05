@@ -43,6 +43,10 @@ PHASE7_LEGACY_LANCZOS_SHA256 = (
 )
 PHASE7_DIAGONAL_ERROR_INSTABILITY_THRESHOLD = 0.1
 PHASE7_DENSE_ERROR_INSTABILITY_THRESHOLD = 1.0
+PHASE8_METRIC_SCHEMA_VERSIONS = (2, 3, 4)
+PHASE8_TRAJECTORY_SCHEMA_BY_METRIC = {2: 2, 3: 2, 4: 3}
+PHASE8_CONTROLLER_STATE_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3}
+PHASE8_ORACLE_PATH_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3}
 RIDGE_METHODS = frozenset({"ridge_ac_only", "ridge_full_lfu"})
 DEFAULT_PHASE3_RUN_IDS = (
     "mnist_lfu_phase3_final__replica-0000__e216d98c2f668d87",
@@ -1679,3 +1683,297 @@ def phase7_coupled_summaries(
             }
         )
     return sorted(summaries, key=lambda row: (row["run_id"], row["method"]))
+
+
+@dataclasses.dataclass(frozen=True)
+class Phase8ControllerRun:
+    path: Path
+    run_id: str
+    config: ExperimentConfig
+    manifest: Mapping[str, Any]
+    metrics: Mapping[str, Any]
+    p_values: tuple[float, ...]
+    methods: tuple[str, ...]
+
+
+def _read_torch_mapping(path: Path) -> Mapping[str, Any]:
+    try:
+        import torch
+
+        value = torch.load(path, map_location="cpu", weights_only=False)
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        raise AnalysisArtifactError(f"could not read {path}: {exc}") from exc
+    return _require_mapping(value, str(path))
+
+
+def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
+    """Strictly load notebook-sized Phase 8 artifacts without checkpoints."""
+
+    envelope = _load_envelope(path)
+    if envelope.config.schema_version not in {7, 8}:
+        raise AnalysisArtifactError(
+            f"Phase 8 requires config schema 7 or 8: {envelope.path}"
+        )
+    metrics_path = envelope.path / "phase8_metrics.json"
+    metrics = _require_mapping(_read_json(metrics_path), str(metrics_path))
+    _require_keys(
+        metrics,
+        {
+            "phase8_metric_schema_version",
+            "run_kind",
+            "methods",
+            "policy",
+            "unified_pi_contract",
+            "post_optimization_scaling",
+            "oracle_path_hash",
+            "condition_steps",
+            "path_hashes",
+        },
+        str(metrics_path),
+    )
+    metric_schema = metrics["phase8_metric_schema_version"]
+    if metric_schema not in PHASE8_METRIC_SCHEMA_VERSIONS:
+        raise AnalysisArtifactError(
+            f"unsupported Phase 8 metric schema in {metrics_path}: "
+            f"{metrics['phase8_metric_schema_version']}"
+        )
+    if metrics["run_kind"] != "unified_controller":
+        raise AnalysisArtifactError(f"invalid Phase 8 run kind in {metrics_path}")
+    if metrics["unified_pi_contract"] is not True:
+        raise AnalysisArtifactError(f"Phase 8 run is not unified: {metrics_path}")
+    if metrics["post_optimization_scaling"] is not False:
+        raise AnalysisArtifactError(
+            f"Phase 8 run applied forbidden post-scaling: {metrics_path}"
+        )
+    if metric_schema >= 3:
+        _require_keys(
+            metrics,
+            {"fisher_inverse_used", "trace_estimator"},
+            str(metrics_path),
+        )
+        if metrics["fisher_inverse_used"] is not False:
+            raise AnalysisArtifactError(
+                f"Phase 8 run used a forbidden Fisher inverse: {metrics_path}"
+            )
+        if metrics["trace_estimator"] != (
+            "accepted_displacement_residual_moments"
+        ):
+            raise AnalysisArtifactError(
+                f"unsupported Phase 8 trace estimator in {metrics_path}"
+            )
+    if metric_schema >= 4:
+        _require_keys(
+            metrics,
+            {
+                "oracle_convergence_contract",
+                "residual_dependence",
+                "references",
+            },
+            str(metrics_path),
+        )
+
+    trajectory_path = envelope.path / "phase8_trajectories.pt"
+    controller_path = envelope.path / "phase8_controller_states.pt"
+    oracle_path = envelope.path / "phase8_reference_optimum.pt"
+    checkpoint_path = envelope.path / "phase8_checkpoints.pt"
+    for required_path in (
+        trajectory_path,
+        controller_path,
+        oracle_path,
+        checkpoint_path,
+    ):
+        if not required_path.is_file():
+            raise AnalysisArtifactError(
+                f"Phase 8 run is missing required artifact: {required_path}"
+            )
+
+    trajectory = _read_torch_mapping(trajectory_path)
+    controller = _read_torch_mapping(controller_path)
+    oracle = _read_torch_mapping(oracle_path)
+    if trajectory.get("schema_version") != (
+        PHASE8_TRAJECTORY_SCHEMA_BY_METRIC[metric_schema]
+    ):
+        raise AnalysisArtifactError(
+            f"unsupported Phase 8 trajectory schema in {trajectory_path}"
+        )
+    if controller.get("schema_version") != (
+        PHASE8_CONTROLLER_STATE_SCHEMA_BY_METRIC[metric_schema]
+    ):
+        raise AnalysisArtifactError(
+            f"unsupported Phase 8 controller-state schema in {controller_path}"
+        )
+    if oracle.get("schema_version") != (
+        PHASE8_ORACLE_PATH_SCHEMA_BY_METRIC[metric_schema]
+    ):
+        raise AnalysisArtifactError(
+            f"unsupported Phase 8 oracle-path schema in {oracle_path}"
+        )
+    methods = tuple(str(method) for method in metrics["methods"])
+    if set(trajectory.get("conditions", {})) != set(methods):
+        raise AnalysisArtifactError("Phase 8 trajectory methods do not match metrics")
+    if set(controller.get("conditions", {})) != set(methods):
+        raise AnalysisArtifactError(
+            "Phase 8 controller-state methods do not match metrics"
+        )
+    oracle_body = _require_mapping(oracle.get("path"), f"{oracle_path}:path")
+    if oracle_body.get("content_hash") != metrics["oracle_path_hash"]:
+        raise AnalysisArtifactError("Phase 8 oracle path hash does not match metrics")
+    p_values = tuple(float(value) for value in trajectory.get("p_values", ()))
+    if not p_values:
+        raise AnalysisArtifactError("Phase 8 trajectory has no p values")
+    expected_rows = len(p_values) * len(methods)
+    if len(metrics["condition_steps"]) != expected_rows:
+        raise AnalysisArtifactError("Phase 8 scalar row count is incomplete")
+    if any(row.get("same_pi_consumed") is not True for row in metrics["condition_steps"]):
+        raise AnalysisArtifactError("Phase 8 run violated the unified pi contract")
+    return Phase8ControllerRun(
+        path=envelope.path,
+        run_id=envelope.run_id,
+        config=envelope.config,
+        manifest=envelope.manifest,
+        metrics=metrics,
+        p_values=p_values,
+        methods=methods,
+    )
+
+
+def discover_phase8_controller_runs(
+    root: str | Path,
+) -> tuple[Phase8ControllerRun, ...]:
+    run_root = Path(root)
+    if not run_root.is_dir():
+        raise AnalysisArtifactError(f"Phase 8 run root does not exist: {run_root}")
+    runs = []
+    for path in sorted(run_root.iterdir()):
+        if (
+            path.is_dir()
+            and not path.name.startswith(".")
+            and (path / "phase8_metrics.json").is_file()
+        ):
+            runs.append(load_phase8_controller_run(path))
+    if not runs:
+        raise AnalysisArtifactError(
+            f"no completed Phase 8 controller runs were found in {run_root}"
+        )
+    return tuple(runs)
+
+
+def phase8_controller_rows(
+    runs: Sequence[Phase8ControllerRun],
+) -> list[dict[str, Any]]:
+    rows = []
+    for run in runs:
+        for source in run.metrics["condition_steps"]:
+            rows.append(
+                {
+                    **source,
+                    "run_id": run.run_id,
+                    "run_path": str(run.path),
+                    "experiment": run.config.experiment,
+                    "replica_id": run.config.replica_id,
+                    "policy": run.metrics["policy"],
+                    "metric_schema": run.metrics[
+                        "phase8_metric_schema_version"
+                    ],
+                    "trajectory_hash": run.metrics["path_hashes"][
+                        source["method"]
+                    ],
+                    "theoretical_status": (
+                        "legacy_spectral_trace_smoke"
+                        if run.metrics["phase8_metric_schema_version"] == 2
+                        else "inversion_free_phase8"
+                    ),
+                }
+            )
+    return rows
+
+
+def phase8_controller_summaries(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[(row["run_id"], row["method"])].append(row)
+    summaries = []
+    for condition_rows in grouped.values():
+        ordered = sorted(condition_rows, key=lambda row: row["step"])
+        first = ordered[0]
+        final = ordered[-1]
+        controller_rows = [row["controller"] for row in ordered]
+        trace_error_name = (
+            "trace_relative_error_to_oracle_residual"
+            if "trace_relative_error_to_oracle_residual" in first
+            else "trace_relative_error_to_oracle"
+        )
+        trace_errors = [
+            row[trace_error_name]
+            for row in ordered
+            if row.get(trace_error_name) is not None
+        ]
+        proposal_rows = [
+            row["proposal"]
+            for row in ordered
+            if isinstance(row.get("proposal"), Mapping)
+            and row["proposal"].get("optimization_guard")
+            == "monotone_objective_backtracking"
+        ]
+        summaries.append(
+            {
+                "run_id": first["run_id"],
+                "policy": first["policy"],
+                "method": first["method"],
+                "mean_pi": sum(float(row["applied_pi"]) for row in controller_rows)
+                / len(controller_rows),
+                "lower_bound_frequency": sum(
+                    bool(row["lower_bound_active"]) for row in controller_rows
+                )
+                / len(controller_rows),
+                "upper_bound_frequency": sum(
+                    bool(row["upper_bound_active"]) for row in controller_rows
+                )
+                / len(controller_rows),
+                "mean_fisher_error": sum(
+                    float(row["relative_frobenius_error"])
+                    for row in ordered[1:] or ordered
+                )
+                / len(ordered[1:] or ordered),
+                "mean_trace_relative_error": (
+                    None
+                    if not trace_errors
+                    else sum(float(value) for value in trace_errors)
+                    / len(trace_errors)
+                ),
+                "backtracking_rejections": (
+                    None
+                    if not proposal_rows
+                    else sum(
+                        int(row["backtracking_rejections"])
+                        for row in proposal_rows
+                    )
+                ),
+                "maximum_backtracks": (
+                    None
+                    if not proposal_rows
+                    else max(
+                        int(row["maximum_backtracks"])
+                        for row in proposal_rows
+                    )
+                ),
+                "minimum_learning_rate": (
+                    None
+                    if not proposal_rows
+                    else min(
+                        float(row["minimum_learning_rate"])
+                        for row in proposal_rows
+                    )
+                ),
+                "final_balanced_accuracy": float(final["before_balanced_accuracy"]),
+                "final_parameter_squared_error_to_oracle": float(
+                    final["parameter_squared_error_to_oracle"]
+                ),
+            }
+        )
+    return sorted(
+        summaries,
+        key=lambda row: (row["run_id"], row["method"]),
+    )

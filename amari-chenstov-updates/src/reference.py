@@ -6,6 +6,7 @@ import copy
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -18,6 +19,7 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Subset
 
+from .convergence import HilbertMean
 from .derivatives import LossFunction, per_sample_derivatives
 from .fisher import LFUBatchEstimate
 from .initialization import state_dict_hash
@@ -46,6 +48,8 @@ class ReferenceFisherEstimate:
     weight_max: float
     effective_sample_size: float
     importance_weighted: bool
+    convergence: dict[str, Any] | None = None
+    dependence: dict[str, Any] | None = None
 
     def diagnostics_mapping(self) -> dict[str, Any]:
         return {
@@ -58,6 +62,8 @@ class ReferenceFisherEstimate:
             "weight_max": self.weight_max,
             "effective_sample_size": self.effective_sample_size,
             "importance_weighted": self.importance_weighted,
+            "convergence": self.convergence,
+            "dependence": self.dependence,
         }
 
 
@@ -233,6 +239,140 @@ def chunked_reference_fisher(
         weight_max=float(weight_max),
         effective_sample_size=float(effective_sample_size),
         importance_weighted=sampling_model is not None,
+    )
+
+
+def adaptive_reference_fisher(
+    model: nn.Module,
+    dataset: Dataset,
+    plan: ReferenceSamplePlan,
+    loss_function: LossFunction,
+    layout: ParameterLayout,
+    *,
+    chunk_size: int,
+    minimum_chunks: int,
+    sigma: float,
+    relative_epsilon: float,
+    absolute_epsilon: float,
+    device: torch.device,
+    derivative_dtype: torch.dtype,
+    matrix_dtype: torch.dtype = torch.float64,
+    strategy: str = "vmap",
+    num_workers: int = 0,
+) -> ReferenceFisherEstimate:
+    """Estimate a Fisher until its Frobenius confidence radius is small.
+
+    Each independently sampled chunk contributes one matrix-valued observation.
+    Welford's scalar Hilbert-space moment therefore estimates the sum of all
+    entry-wise variances without materializing a covariance of Fisher entries.
+    """
+
+    _validate_reference_inputs(model, layout, plan, chunk_size)
+    if not isinstance(minimum_chunks, int) or minimum_chunks < 2:
+        raise ValueError("minimum_chunks must be an integer >= 2")
+    if plan.sample_size % chunk_size:
+        raise ValueError("adaptive Fisher plans must contain full equal chunks")
+    maximum_chunks = plan.sample_size // chunk_size
+    if minimum_chunks > maximum_chunks:
+        raise ValueError("minimum_chunks exceeds the Fisher sample budget")
+    for name, value in {
+        "sigma": sigma,
+        "relative_epsilon": relative_epsilon,
+        "absolute_epsilon": absolute_epsilon,
+    }.items():
+        if not math.isfinite(float(value)) or float(value) <= 0.0:
+            raise ValueError(f"{name} must be positive and finite")
+
+    model.eval()
+    moments = HilbertMean()
+    chunk_index_sets: list[set[int]] = []
+    sample_count = 0
+    loader = _reference_loader(
+        dataset,
+        plan,
+        chunk_size=chunk_size,
+        num_workers=num_workers,
+    )
+
+    _synchronize(device)
+    start = time.perf_counter()
+    for chunk_index, (inputs, targets) in enumerate(loader):
+        inputs = inputs.to(device=device, dtype=derivative_dtype)
+        targets = targets.to(device=device)
+        derivatives = per_sample_derivatives(
+            model,
+            inputs,
+            targets,
+            loss_function,
+            layout,
+            strategy=strategy,
+        )
+        gradients = derivatives.gradients.to(dtype=matrix_dtype)
+        chunk_fisher = gradients.mT @ gradients / gradients.shape[0]
+        moments.update(chunk_fisher)
+        start_index = chunk_index * chunk_size
+        chunk_index_sets.append(
+            set(plan.observation_indices[start_index : start_index + chunk_size])
+        )
+        sample_count += gradients.shape[0]
+        diagnostics = moments.diagnostics(
+            sigma=sigma,
+            relative_epsilon=relative_epsilon,
+            absolute_epsilon=absolute_epsilon,
+            minimum_count=minimum_chunks,
+            maximum_count=maximum_chunks,
+        )
+        if diagnostics["converged"]:
+            break
+
+    _synchronize(device)
+    elapsed = time.perf_counter() - start
+    diagnostics = moments.diagnostics(
+        sigma=sigma,
+        relative_epsilon=relative_epsilon,
+        absolute_epsilon=absolute_epsilon,
+        minimum_count=minimum_chunks,
+        maximum_count=maximum_chunks,
+    )
+    diagnostics["stopping_reason"] = (
+        "confidence_radius" if diagnostics["converged"] else "maximum_budget"
+    )
+    diagnostics["geometry"] = "frobenius"
+    diagnostics["sample_count"] = sample_count
+
+    used_indices = plan.observation_indices[:sample_count]
+    adjacent_overlaps = [
+        len(left & right) / max(min(len(left), len(right)), 1)
+        for left, right in zip(
+            chunk_index_sets[:-1], chunk_index_sets[1:], strict=True
+        )
+    ]
+    dependence = {
+        "draw_duplicate_fraction": 1.0 - len(set(used_indices)) / sample_count,
+        "mean_adjacent_chunk_index_overlap": (
+            None
+            if not adjacent_overlaps
+            else sum(adjacent_overlaps) / len(adjacent_overlaps)
+        ),
+        "lag_one_frobenius_correlation": diagnostics[
+            "lag_one_hilbert_correlation"
+        ],
+    }
+    if moments.mean is None:
+        raise ReferenceError("adaptive Fisher received no chunks")
+    return ReferenceFisherEstimate(
+        matrix=moments.mean.detach().cpu(),
+        sample_count=sample_count,
+        chunk_size=chunk_size,
+        elapsed_seconds=elapsed,
+        score_gradient_count=sample_count,
+        weight_mean=1.0,
+        weight_min=1.0,
+        weight_max=1.0,
+        effective_sample_size=float(sample_count),
+        importance_weighted=False,
+        convergence=diagnostics,
+        dependence=dependence,
     )
 
 
@@ -638,4 +778,6 @@ class ReferenceFisherStore:
             weight_max=diagnostics["weight_max"],
             effective_sample_size=diagnostics["effective_sample_size"],
             importance_weighted=diagnostics["importance_weighted"],
+            convergence=diagnostics.get("convergence"),
+            dependence=diagnostics.get("dependence"),
         )

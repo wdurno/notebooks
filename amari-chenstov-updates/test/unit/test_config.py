@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from src.config import ConfigError, ExperimentConfig, load_config
+from src.initialization import replica_bundle_id
 
 
 SMOKE_CONFIG = (
@@ -14,6 +15,24 @@ RIDGE_CONFIG = (
     / "mnist_experiment"
     / "configs"
     / "phase4_ridge_smoke.json"
+)
+CONTROLLER_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_controller_smoke.json"
+)
+CONVERGENCE_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_convergence.json"
+)
+ORACLE_CONVERGENCE_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_oracle_convergence.json"
 )
 
 
@@ -125,3 +144,71 @@ def test_low_rank_grid_contract_is_validated() -> None:
     raw["estimator"]["low_rank_grid"] = [0, 4]
     with pytest.raises(ConfigError, match="largest rank"):
         ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_seven_unified_controller_round_trips_without_ema_gain() -> None:
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    config = ExperimentConfig.from_mapping(raw)
+
+    assert config.schema_version == 7
+    assert config.estimator.ema_gain is None
+    assert config.controller.pi_min == 0.05
+    assert config.controller.trend_half_life_p == 0.2
+    assert config.to_mapping() == raw
+
+
+def test_schema_seven_rejects_decoupled_and_legacy_controller_fields() -> None:
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    raw["estimator"]["ema_gain"] = 0.25
+    with pytest.raises(ConfigError, match="must not specify ema_gain"):
+        ExperimentConfig.from_mapping(raw)
+
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    raw["controller"]["damping"] = 1e-6
+    with pytest.raises(ConfigError, match="must not specify damping"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_seven_requires_new_artifact_versions_and_unified_policy() -> None:
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    raw["artifact_schema_version"] = 1
+    with pytest.raises(ConfigError, match="artifact_schema_version must be 2"):
+        ExperimentConfig.from_mapping(raw)
+
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    raw["controller"]["policy"] = "fixed"
+    with pytest.raises(ConfigError, match="unified policy"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_eight_requires_and_round_trips_convergence_contract() -> None:
+    raw = json.loads(CONVERGENCE_CONFIG.read_text(encoding="utf-8"))
+    config = ExperimentConfig.from_mapping(raw)
+
+    assert config.schema_version == 8
+    assert config.reference.convergence_min_chunks == 8
+    assert config.reference.calibration_min_fits == 8
+    assert config.reference.calibration_max_fits == 32
+    assert config.to_mapping() == raw
+
+    raw["reference"].pop("convergence_sigma")
+    with pytest.raises(ConfigError, match="missing"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_eight_rejects_an_insufficient_fisher_budget() -> None:
+    raw = json.loads(CONVERGENCE_CONFIG.read_text(encoding="utf-8"))
+    raw["reference"]["sample_size"] = 2048
+    raw["reference"]["convergence_sample_sizes"] = [2048]
+
+    with pytest.raises(ConfigError, match="at least"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_eight_plugin_and_oracle_configs_are_replica_paired() -> None:
+    plugin = load_config(CONVERGENCE_CONFIG)
+    oracle = load_config(ORACLE_CONVERGENCE_CONFIG)
+
+    assert plugin.controller.policy == "optimal_plugin"
+    assert oracle.controller.policy == "optimal_oracle"
+    assert replica_bundle_id(plugin) == replica_bundle_id(oracle)

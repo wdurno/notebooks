@@ -43,6 +43,7 @@ from src.mnist_model import (
 )
 from src.parameters import ParameterLayout
 from src.reference import (
+    adaptive_reference_fisher,
     ReferenceFisherEstimate,
     ReferenceFisherStore,
     chunked_reference_fisher,
@@ -206,29 +207,36 @@ class _ReferenceOracle:
             device=self.device,
             dtype=self.derivative_dtype,
         )
-        key = reference_cache_key(
+        maximum_key = reference_cache_key(
             model,
             layout,
             plan,
             derivative_dtype=self.derivative_dtype,
             matrix_dtype=self.matrix_dtype,
         )
-        record_key = (step, key.target_checkpoint_hash, plan.sample_size)
+        record_key = (
+            step,
+            maximum_key.target_checkpoint_hash,
+            plan.sample_size,
+        )
         existing = self._records.get(record_key)
         if existing is not None:
             return existing
-        if self.store.exists(key):
-            estimate = self.store.load(key, layout)
-        else:
-            estimate = chunked_reference_fisher(
+        if self.config.schema_version >= 8:
+            estimate = adaptive_reference_fisher(
                 model,
                 self.dataset,
                 plan,
                 mnist_nll,
                 layout,
-                chunk_size=min(
-                    self.config.reference.chunk_size,
-                    plan.sample_size,
+                chunk_size=self.config.reference.chunk_size,
+                minimum_chunks=self.config.reference.convergence_min_chunks,
+                sigma=self.config.reference.convergence_sigma,
+                relative_epsilon=(
+                    self.config.reference.convergence_relative_epsilon
+                ),
+                absolute_epsilon=(
+                    self.config.reference.convergence_absolute_epsilon
                 ),
                 device=self.device,
                 derivative_dtype=self.derivative_dtype,
@@ -236,7 +244,42 @@ class _ReferenceOracle:
                 strategy="vmap",
                 num_workers=self.config.initialization.num_workers,
             )
-            self.store.save(key, estimate)
+            plan = plan.prefix(estimate.sample_count)
+            key = reference_cache_key(
+                model,
+                layout,
+                plan,
+                derivative_dtype=self.derivative_dtype,
+                matrix_dtype=self.matrix_dtype,
+            )
+            if self.store.exists(key):
+                cached = self.store.load(key, layout)
+                if cached.convergence == estimate.convergence:
+                    estimate = cached
+            else:
+                self.store.save(key, estimate)
+        else:
+            key = maximum_key
+            if self.store.exists(key):
+                estimate = self.store.load(key, layout)
+            else:
+                estimate = chunked_reference_fisher(
+                    model,
+                    self.dataset,
+                    plan,
+                    mnist_nll,
+                    layout,
+                    chunk_size=min(
+                        self.config.reference.chunk_size,
+                        plan.sample_size,
+                    ),
+                    device=self.device,
+                    derivative_dtype=self.derivative_dtype,
+                    matrix_dtype=self.matrix_dtype,
+                    strategy="vmap",
+                    num_workers=self.config.initialization.num_workers,
+                )
+                self.store.save(key, estimate)
         record = _ReferenceRecord(
             matrix=estimate.matrix,
             estimate=estimate,

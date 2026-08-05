@@ -35,6 +35,7 @@ class DenseFisherUpdate:
     projection: PSDProjectionDiagnostics
     ridge_metrics: dict[str, Any] | None
     ridge_state: dict[str, Any] | None
+    blend_gain: float
 
 
 class DenseFisherTracker:
@@ -45,7 +46,7 @@ class DenseFisherTracker:
         method: str,
         initial_fisher: Tensor,
         *,
-        ema_gain: float,
+        ema_gain: float | None,
         fresh_fisher_cadence: int,
         ridge_half_life_steps: float | None = None,
         ridge_amplitude_epsilon: float | None = None,
@@ -53,7 +54,7 @@ class DenseFisherTracker:
     ) -> None:
         if method not in COUPLED_DENSE_METHODS:
             raise ValueError(f"unsupported dense Fisher method: {method}")
-        if not 0.0 < ema_gain <= 1.0:
+        if ema_gain is not None and not 0.0 < ema_gain <= 1.0:
             raise ValueError("ema_gain must be in (0, 1]")
         if fresh_fisher_cadence < 1:
             raise ValueError("fresh_fisher_cadence must be positive")
@@ -68,7 +69,7 @@ class DenseFisherTracker:
             raise ValueError("ridge methods require all ridge settings")
 
         self.method = method
-        self.ema_gain = float(ema_gain)
+        self.ema_gain = None if ema_gain is None else float(ema_gain)
         self.fresh_fisher_cadence = int(fresh_fisher_cadence)
         self.previous = project_psd_frobenius(initial_fisher).projected
         self.next_step = 0
@@ -88,6 +89,8 @@ class DenseFisherTracker:
         statistics: OnlineStepStatistics,
         direction: Tensor,
         fresh_reference: Tensor,
+        *,
+        blend_gain: float | None = None,
     ) -> DenseFisherUpdate:
         if step != self.next_step:
             raise ValueError(
@@ -106,6 +109,11 @@ class DenseFisherTracker:
             or fresh_reference.dtype != self.previous.dtype
         ):
             raise ValueError("tracker inputs must share dtype and device")
+        gain = self.ema_gain if blend_gain is None else float(blend_gain)
+        if gain is None or not 0.0 <= gain <= 1.0:
+            raise ValueError(
+                "a fixed ema_gain or per-step blend_gain in [0, 1] is required"
+            )
 
         ridge_update = (
             None
@@ -134,8 +142,8 @@ class DenseFisherTracker:
                 correction = ridge_update.full
             prediction = self.previous + correction
             candidate = (
-                (1.0 - self.ema_gain) * prediction
-                + self.ema_gain * statistics.estimate.fisher
+                (1.0 - gain) * prediction
+                + gain * statistics.estimate.fisher
             )
             refreshed = (
                 self.method == "periodic_fresh"
@@ -162,6 +170,7 @@ class DenseFisherTracker:
             ridge_state=(
                 None if ridge_update is None else ridge_update.state_artifact()
             ),
+            blend_gain=gain,
         )
 
 

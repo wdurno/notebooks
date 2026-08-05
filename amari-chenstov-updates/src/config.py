@@ -10,10 +10,13 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 6
-SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, 5, CONFIG_SCHEMA_VERSION)
+CONFIG_SCHEMA_VERSION = 8
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, 5, 6, 7, CONFIG_SCHEMA_VERSION)
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
+CONTROLLER_ARTIFACT_SCHEMA_VERSION = 3
+CONTROLLER_METRIC_SCHEMA_VERSION = 4
+SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4)
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _T = TypeVar("_T")
@@ -135,7 +138,7 @@ class RuntimeConfig:
 class EstimatorConfig:
     method: str
     representation: str
-    ema_gain: float
+    ema_gain: float | None
     fresh_fisher_cadence: int | None
     low_rank: int | None
     low_rank_grid: list[int] | None = None
@@ -154,8 +157,9 @@ class EstimatorConfig:
             raise ConfigError(
                 f"unsupported estimator.representation: {self.representation}"
             )
-        if not _is_finite_number(self.ema_gain) or not (
-            0.0 < float(self.ema_gain) <= 1.0
+        if self.ema_gain is not None and (
+            not _is_finite_number(self.ema_gain)
+            or not 0.0 < float(self.ema_gain) <= 1.0
         ):
             raise ConfigError("estimator.ema_gain must be in (0, 1]")
         if self.fresh_fisher_cadence is not None and (
@@ -255,6 +259,13 @@ class ReferenceConfig:
     calibration_steps: int
     calibration_batch_size: int
     calibration_learning_rate: float
+    convergence_min_chunks: int = 8
+    convergence_sigma: float = 6.0
+    convergence_relative_epsilon: float = 0.01
+    convergence_absolute_epsilon: float = 1e-8
+    calibration_min_fits: int = 8
+    calibration_max_fits: int = 32
+    calibration_validation_chunks: int = 8
 
     def validate(self) -> None:
         if not _is_integer(self.sample_size) or self.sample_size < 1:
@@ -324,6 +335,35 @@ class ReferenceConfig:
             raise ConfigError(
                 "reference.calibration_learning_rate must be positive"
             )
+        for name, value in {
+            "convergence_min_chunks": self.convergence_min_chunks,
+            "calibration_min_fits": self.calibration_min_fits,
+            "calibration_max_fits": self.calibration_max_fits,
+            "calibration_validation_chunks": self.calibration_validation_chunks,
+        }.items():
+            if not _is_integer(value) or value < 2:
+                raise ConfigError(f"reference.{name} must be an integer >= 2")
+        if self.calibration_max_fits < self.calibration_min_fits:
+            raise ConfigError(
+                "reference.calibration_max_fits cannot be smaller than "
+                "calibration_min_fits"
+            )
+        if not _is_finite_number(self.convergence_sigma) or not (
+            float(self.convergence_sigma) > 0.0
+        ):
+            raise ConfigError("reference.convergence_sigma must be positive")
+        if not _is_finite_number(self.convergence_relative_epsilon) or not (
+            float(self.convergence_relative_epsilon) > 0.0
+        ):
+            raise ConfigError(
+                "reference.convergence_relative_epsilon must be positive"
+            )
+        if not _is_finite_number(self.convergence_absolute_epsilon) or not (
+            float(self.convergence_absolute_epsilon) > 0.0
+        ):
+            raise ConfigError(
+                "reference.convergence_absolute_epsilon must be positive"
+            )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -391,8 +431,12 @@ class ControllerConfig:
     policy: str
     fixed_pi: float
     pi_max: float
-    damping: float
-    epsilon: float
+    damping: float | None
+    epsilon: float | None
+    pi_min: float | None = None
+    trend_half_life_p: float | None = None
+    trace_epsilon: float | None = None
+    oracle_mode: str | None = None
 
     def validate(self) -> None:
         if self.policy not in {
@@ -401,6 +445,8 @@ class ControllerConfig:
             "optimal_plugin",
             "optimal_capped",
             "optimal_oracle",
+            "fixed_unified",
+            "freeze",
         }:
             raise ConfigError(f"unsupported controller.policy: {self.policy}")
         for name, value in {
@@ -411,14 +457,40 @@ class ControllerConfig:
                 0.0 <= float(value) <= 1.0
             ):
                 raise ConfigError(f"controller.{name} must be in [0, 1]")
-        if not _is_finite_number(self.damping) or not (
-            float(self.damping) > 0.0
+        if self.pi_min is not None and (
+            not _is_finite_number(self.pi_min)
+            or not 0.0 <= float(self.pi_min) <= 1.0
+        ):
+            raise ConfigError("controller.pi_min must be in [0, 1]")
+        if self.pi_min is not None and float(self.pi_min) > float(self.pi_max):
+            raise ConfigError("controller.pi_min cannot exceed controller.pi_max")
+        if self.damping is not None and (
+            not _is_finite_number(self.damping) or float(self.damping) <= 0.0
         ):
             raise ConfigError("controller.damping must be positive")
-        if not _is_finite_number(self.epsilon) or not (
-            float(self.epsilon) > 0.0
+        if self.epsilon is not None and (
+            not _is_finite_number(self.epsilon) or float(self.epsilon) <= 0.0
         ):
             raise ConfigError("controller.epsilon must be positive")
+        if self.trend_half_life_p is not None and (
+            not _is_finite_number(self.trend_half_life_p)
+            or float(self.trend_half_life_p) <= 0.0
+        ):
+            raise ConfigError("controller.trend_half_life_p must be positive")
+        if self.trace_epsilon is not None and (
+            not _is_finite_number(self.trace_epsilon)
+            or float(self.trace_epsilon) <= 0.0
+        ):
+            raise ConfigError("controller.trace_epsilon must be positive")
+        if self.oracle_mode is not None and self.oracle_mode not in {
+            "none",
+            "reference_path",
+            "diagnostic",
+        }:
+            raise ConfigError(
+                "controller.oracle_mode must be 'none', 'reference_path', or "
+                "'diagnostic'"
+            )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -460,6 +532,29 @@ class ExperimentConfig:
         if isinstance(estimator_mapping, Mapping) and schema_version < 6:
             estimator_mapping = dict(estimator_mapping)
             estimator_mapping.setdefault("low_rank_grid", None)
+        if isinstance(estimator_mapping, Mapping) and schema_version >= 7:
+            if "ema_gain" in estimator_mapping:
+                raise ConfigError(
+                    "schema-v7 unified estimators must not specify ema_gain"
+                )
+            estimator_mapping = dict(estimator_mapping)
+            estimator_mapping["ema_gain"] = None
+
+        controller_mapping = value["controller"]
+        if isinstance(controller_mapping, Mapping):
+            controller_mapping = dict(controller_mapping)
+            if schema_version < 7:
+                controller_mapping.setdefault("pi_min", None)
+                controller_mapping.setdefault("trend_half_life_p", None)
+                controller_mapping.setdefault("trace_epsilon", None)
+                controller_mapping.setdefault("oracle_mode", None)
+            else:
+                for obsolete in ("damping", "epsilon"):
+                    if obsolete in controller_mapping:
+                        raise ConfigError(
+                            f"schema-v7 controller must not specify {obsolete}"
+                        )
+                    controller_mapping[obsolete] = None
         config = cls(
             schema_version=schema_version,
             artifact_schema_version=value["artifact_schema_version"],
@@ -477,7 +572,10 @@ class ExperimentConfig:
                 allow_missing_defaults=schema_version < 5,
             ),
             reference=_construct_dataclass(
-                ReferenceConfig, value["reference"], "reference"
+                ReferenceConfig,
+                value["reference"],
+                "reference",
+                allow_missing_defaults=schema_version < 8,
             ),
             initialization=_construct_dataclass(
                 InitializationConfig,
@@ -488,7 +586,7 @@ class ExperimentConfig:
                 OptimizerConfig, value["optimizer"], "optimizer"
             ),
             controller=_construct_dataclass(
-                ControllerConfig, value["controller"], "controller"
+                ControllerConfig, controller_mapping, "controller"
             ),
         )
         config.validate()
@@ -501,14 +599,32 @@ class ExperimentConfig:
                 f"{SUPPORTED_CONFIG_SCHEMA_VERSIONS}, "
                 f"got {self.schema_version}"
             )
-        if self.artifact_schema_version != ARTIFACT_SCHEMA_VERSION:
+        expected_artifact_schema = (
+            CONTROLLER_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version >= 8
+            else 2 if self.schema_version == 7
+            else ARTIFACT_SCHEMA_VERSION
+        )
+        if self.artifact_schema_version != expected_artifact_schema:
             raise ConfigError(
-                f"artifact_schema_version must be {ARTIFACT_SCHEMA_VERSION}, "
+                f"artifact_schema_version must be {expected_artifact_schema}, "
                 f"got {self.artifact_schema_version}"
             )
-        if self.metric_schema_version != METRIC_SCHEMA_VERSION:
+        expected_metric_schema = (
+            CONTROLLER_METRIC_SCHEMA_VERSION
+            if self.schema_version >= 8
+            else 3 if self.schema_version == 7
+            else METRIC_SCHEMA_VERSION
+        )
+        valid_metric_schemas = (
+            (CONTROLLER_METRIC_SCHEMA_VERSION,)
+            if self.schema_version >= 8
+            else (2, 3) if self.schema_version == 7
+            else (expected_metric_schema,)
+        )
+        if self.metric_schema_version not in valid_metric_schemas:
             raise ConfigError(
-                f"metric_schema_version must be {METRIC_SCHEMA_VERSION}, "
+                f"metric_schema_version must be one of {valid_metric_schemas}, "
                 f"got {self.metric_schema_version}"
             )
         _validate_identifier(self.experiment, "experiment")
@@ -528,10 +644,76 @@ class ExperimentConfig:
         self.optimizer.validate()
         self.controller.validate()
 
+        if self.schema_version < 7:
+            if self.estimator.ema_gain is None:
+                raise ConfigError("legacy estimator.ema_gain is required")
+            return
+
+        if self.schema_version >= 8 and (
+            self.reference.sample_size
+            < self.reference.chunk_size * self.reference.convergence_min_chunks
+        ):
+            raise ConfigError(
+                "schema-v8 reference.sample_size must contain at least "
+                "reference.convergence_min_chunks full chunks"
+            )
+
+        if self.estimator.ema_gain is not None:
+            raise ConfigError("schema-v7 estimator.ema_gain must be absent")
+        if self.controller.policy not in {
+            "uncontrolled",
+            "fixed_unified",
+            "optimal_plugin",
+            "optimal_oracle",
+            "freeze",
+        }:
+            raise ConfigError(
+                "schema-v7 controller.policy must be a unified policy"
+            )
+        if self.controller.pi_min is None:
+            raise ConfigError("schema-v7 controller.pi_min is required")
+        if self.controller.trend_half_life_p is None:
+            raise ConfigError(
+                "schema-v7 controller.trend_half_life_p is required"
+            )
+        if self.controller.trace_epsilon is None:
+            raise ConfigError("schema-v7 controller.trace_epsilon is required")
+        if self.controller.oracle_mode is None:
+            raise ConfigError("schema-v7 controller.oracle_mode is required")
+        if self.controller.policy == "optimal_oracle" and (
+            self.controller.oracle_mode != "reference_path"
+        ):
+            raise ConfigError(
+                "optimal_oracle requires controller.oracle_mode='reference_path'"
+            )
+
     def to_mapping(self) -> dict[str, Any]:
         mapping = dataclasses.asdict(self)
+        if self.schema_version >= 7:
+            mapping["estimator"].pop("ema_gain")
+            mapping["controller"].pop("damping")
+            mapping["controller"].pop("epsilon")
         if self.schema_version < 6:
             mapping["estimator"].pop("low_rank_grid")
+        if self.schema_version < 7:
+            for name in (
+                "pi_min",
+                "trend_half_life_p",
+                "trace_epsilon",
+                "oracle_mode",
+            ):
+                mapping["controller"].pop(name)
+        if self.schema_version < 8:
+            for name in (
+                "convergence_min_chunks",
+                "convergence_sigma",
+                "convergence_relative_epsilon",
+                "convergence_absolute_epsilon",
+                "calibration_min_fits",
+                "calibration_max_fits",
+                "calibration_validation_chunks",
+            ):
+                mapping["reference"].pop(name)
         if self.schema_version == 4:
             for name in (
                 "ridge_half_life_steps",

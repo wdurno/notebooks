@@ -51,7 +51,10 @@ def main() -> None:
         )
     configure_torch_runtime(
         deterministic_algorithms=config.runtime.deterministic_algorithms,
-        warn_only=False,
+        warn_only=(
+            config.runtime.deterministic_algorithms
+            and config.runtime.device in {"cuda", "auto"}
+        ),
     )
     cache_parent = Path(config.cache_root).parent
     data_root = arguments.data_root or cache_parent / "datasets"

@@ -66,7 +66,7 @@ Completed phases should not be casually redesigned. If later evidence invalidate
 | 5 | Results notebook and factor pilot | Complete |
 | 6 | Dense EWC-coupled experiment | Complete |
 | 7 | Diagonal and low-rank-plus-diagonal representations | Complete |
-| 8 | Optimal-controller experiment | Pending |
+| 8 | Optimal-controller experiment | In progress |
 | 9 | Replication, hardening, and handoff | Pending |
 
 ## Cross-cutting constraints
@@ -369,11 +369,14 @@ early-stopped $p=0$ estimate from its named seeds. MNIST observations may
 overlap across replicas. Only paired treatment conditions within the same
 replica reuse an exact initialization and stream bundle.
 
-Initialization and temporary validation trajectories execute on CPU with
-deterministic PyTorch algorithms. GPU score and HVP measurements use
-deterministic warning mode because PyTorch does not provide a deterministic
-CUDA backward implementation for adaptive average pooling; their completed
-matrix artifacts are content-addressed and immutable.
+CPU initialization and temporary validation trajectories use deterministic
+PyTorch algorithms. When initialization, score, or HVP work is explicitly
+configured for CUDA, use deterministic warning mode because PyTorch does not
+provide a deterministic CUDA backward implementation for adaptive average
+pooling. The exception is emitted visibly and recorded in run metadata. Each
+replica's resulting initialization checkpoint is still generated once from its
+named seeds and reused exactly across paired conditions; completed matrix and
+trajectory artifacts remain content-addressed and immutable.
 
 ---
 
@@ -1428,7 +1431,7 @@ reconstruct every decision without loading a model.
    - `fixed_unified`, including the $\pi=0.5$ compatibility run;
    - `optimal_plugin`, the bounded applied controller;
    - `optimal_oracle`, the bounded fixed-batch controller using reference
-     displacement and covariance quantities;
+     displacement and an oracle-trend residual covariance moment;
    - `freeze`, an explicit no-update action outside the ordinary bounds.
    Record the Bernoulli-theory oracle value at each step as a diagnostic, not
    as the principal applied policy.
@@ -1436,7 +1439,8 @@ reconstruct every decision without loading a model.
    $p$ grid. Warm-start each point from the preceding reference optimum to
    select a continuous branch, record convergence diagnostics, and share the
    path across paired controller conditions. Calculate oracle displacements
-   from adjacent reference points and reference Fishers at those points.
+   from adjacent reference points. Never invert or pseudoinvert a reference
+   Fisher for controller covariance.
 8. Do not run a disposable unregularized optimization in principal plug-in
    trajectories. Optional paired or high-sample probes may run only at
    configured assumption-check checkpoints and must be stored as separate
@@ -1458,10 +1462,11 @@ reconstruct every decision without loading a model.
   second differences; compare the three configured trend half-lives.
 - Compare $\widehat T_t/N_{\mathrm{eff},t}$ with empirical squared parameter
   error around the reference path across replicas.
-- Compare the inversion-free trace estimate with a high-sample reference
-  Fisher spectral trace and with optional paired-probe covariance at selected
-  checkpoints. These are diagnostics only; principal control performs no
-  Fisher inversion.
+- Compare the deployable trace moment based on
+  $u_t-\\widehat d_{t\\mid t-1}$ with the oracle-trend moment based on
+  $u_t-d\\theta_t$. Their difference measures variance contamination from
+  trend estimation. Neither controller estimate may invert or pseudoinvert a
+  Fisher matrix.
 - Report residual autocorrelation and the stability of
   $\|r_t\|^2/a_t$ over each local half-life. Material autocorrelation or drift
   invalidates the simple moment interpretation.
@@ -1528,6 +1533,151 @@ artifacts rather than scalar tables.
   replication.
 - Confirm that conclusions survive the fixed-$\pi$ compatibility comparison
   and are not artifacts of PSD projection, warm-up, or oracle-path quality.
+
+### Implementation record: pre-GPU check-in
+
+Phase 8 reached its implementation and CPU-smoke check-in on 2026-08-01. The
+implementation now provides:
+
+- strict configuration schema v7, which rejects `ema_gain`, controller
+  damping, and legacy policy names while preserving schema-v4 through
+  schema-v6 hashes and loaders;
+- a predictable controller state with vector trend, effective-size recursion,
+  scalar residual and scale moments, cold start, both ordinary bounds, and
+  explicit uncontrolled and freeze boundaries;
+- fixed-batch plug-in and reference-oracle policies plus the fixed-total
+  Bernoulli oracle as a recorded theory diagnostic;
+- dynamic dense, diagonal, and low-rank-plus-diagonal Fisher blending using
+  the exact same recorded $\pi_t$ as the EWC objective;
+- a warm-started high-sample reference-optimum path with adjacent oracle
+  displacements and optimization diagnostics;
+- immutable controller trajectory, controller-state, checkpoint, and oracle
+  artifacts through `mnist_experiment/run_controller.py`;
+- strict read-only Phase 8 loaders and
+  `mnist_experiment/controller_results.ipynb`, which executes without loading
+  matrix checkpoints or invoking training code.
+
+Two three-point CPU smoke runs completed: `optimal_plugin` and unified fixed
+$\pi=0.5`. Both used the same existing treatment-independent replica bundle,
+the same observations, and the same oracle path hash. Every stored row passed
+the exact shared-$\pi$ assertion, accepted EWC optimizer displacements without
+post-scaling, and a repeated invocation was refused after `COMPLETED`. The
+notebook also displays the historical schema-v6 $\pi=0.5$, `ema_gain=0.25`
+condition under an explicit decoupled label.
+
+These tiny runs are software checks only. Their reference-optimum fits used
+eight observations and retained final minibatch gradient norms from 0.44 to
+1.02, so the oracle convergence gate failed visibly. The plug-in policy stayed
+at `pi_min=0.05`, and its inversion-free trace estimates differed almost
+completely from the now-retired pseudoinverse diagnostic. A calibrated synthetic
+variable-$\pi$ process recovered the trace within 20%. Its oracle-trend
+comparator showed that most of the approximately 16% upward error in that
+single realization was finite-window moment variability rather than trend
+error. This is consistent with the planned trend-timescale and residual-
+dependence assumption checks; it is not evidence for selecting a controller
+setting.
+
+Do not mark Phase 8 complete or launch the substantive GPU pilot before the
+check-in. The next run must use a converged reference-optimum path and then
+exercise `optimal_oracle` alongside the plug-in policy. Uncontrolled and freeze
+remain boundary diagnostics rather than principal candidates. Metric schema v3
+removes the pseudoinverse diagnostic and instead maintains a second
+inversion-free residual moment using the oracle trend.
+
+The substantive run uses `num_p_steps = 100` and must expose progress through
+terminal-safe `tqdm` bars and step-level completion logs. Before launch, add
+adaptive oracle convergence with a minimum independent chunk count, a hard
+maximum sample or optimization budget, and a configurable six-sigma relative
+radius. For Fisher means, estimate variance in Frobenius geometry rather than
+using only the scalar variance of matrix norms. Apply the analogous Hilbert-
+space confidence-radius construction to oracle score means and reference-path
+fit diagnostics. The stopping tolerances remain a pre-run scientific decision.
+
+The pre-run decision is now fixed. Configuration schema v8 and metric schema
+v4 use `convergence_sigma = 6`, `convergence_relative_epsilon = 0.01`, an
+explicit `convergence_absolute_epsilon = 1e-8`, at least eight independent
+chunks or fits, and hard ceilings of 32,768 Fisher scores and 32 independent
+reference fits. For tensor observations $Y_b$, maintain the Hilbert-space
+Welford moment
+
+$$
+S_B=\sum_{b=1}^B\|Y_b-\overline Y_B\|_H^2
+$$
+
+and stop when
+
+$$
+6\sqrt{S_B/[B(B-1)]}
+\leq
+10^{-8}+0.01\|\overline Y_B\|_H.
+$$
+
+Use Frobenius geometry for independent Fisher chunk means and Euclidean
+geometry for independent reference-fit endpoints and adjacent displacement
+vectors. The initial reference point is checked using endpoint dispersion;
+subsequent points are checked using the displacement radius directly. Warm
+start every fit trajectory along its own previous endpoint, average the final
+independent trajectories to form the oracle path, and preserve every fit's
+validation-score confidence ball. A maximum-budget result remains a valid
+artifact but fails the scientific convergence gate visibly.
+
+Repeated MNIST indices do not by themselves make independently generated draw
+positions statistically coupled; they are expected when sampling with
+replacement from a finite empirical distribution. Nevertheless, metric schema
+v4 records within-plan duplicate fractions, adjacent Fisher-chunk index
+overlap, training/validation unique-index overlap, and lag-one Hilbert
+correlations so finite-dataset dependence is inspectable rather than assumed
+away. Controller residual checks subtract the predictable trend before
+reporting vector and squared-norm lag-one correlations and the coefficient of
+variation of $\|r_t\|^2/a_t$ over each information half-life.
+
+No Phase 8 covariance diagnostic may invert or pseudoinvert a Fisher. The
+deployable and oracle-trend covariance traces continue to come from accepted-
+displacement residual moments. The paired substantive configurations are
+`mnist_experiment/configs/phase8_gpu_convergence.json` for `optimal_plugin` and
+`mnist_experiment/configs/phase8_gpu_oracle_convergence.json` for
+`optimal_oracle`. They share one replica-design hash and use 100 $p$ points,
+batch size 128, rank eight, and terminal-safe progress displays. They are ready
+for the user-managed `tmux` run but have not been launched by the implementation
+phase.
+
+The schema-v8 CPU smoke
+`mnist_lfu_phase8_convergence_smoke__replica-0000__e4199af979c92b67`
+completed all three representations. As intended, its two independent fits and
+16-score Fisher ceiling reached their hard budgets and failed the scientific
+confidence gates visibly. The artifact records no Fisher inverse, all
+Frobenius and displacement radii, overlap diagnostics, and trend-removed
+residual dependence summaries. The artifact-only controller notebook loads
+the mixed schema-v2 through schema-v4 run directory and executes in about two
+seconds. The complete fast unit suite contains 134 passing tests. This smoke
+validates software and artifact behavior only; it does not alter the pending
+substantive-run gate.
+
+The first substantive plugin launch exposed a separate optimizer-stability
+guard requirement. At step 29, the dense projected Fisher remained finite and
+PSD but its leading eigenvalue reached approximately 1,139. With
+`pi_min = 0.05`, the EWC odds were 19, so fixed-step SGD at 0.001 had quadratic
+stability product approximately 21.6, far beyond the explicit-Euler bound of
+two. The penalty diverged before the controller's finite-displacement guard
+stopped the run. EWC proposals must therefore use transactional monotone
+objective backtracking, record rejected steps, maximum reductions, and the
+minimum accepted learning rate, and restore the anchor and optimizer state if
+no finite descent step exists. This changes only the numerical solution of the
+already specified mixture-weighted objective; it does not change `pi`, the EWC
+estimand, or post-proposal actuation. A completed adaptive reference-optimum
+path must also be checkpointed immediately in the incomplete run and reloaded
+under `--resume`, so a later controller failure cannot discard that expensive
+stage.
+
+The schema-v3 CPU smoke suite subsequently completed all five runner policies:
+`optimal_plugin`, `optimal_oracle`, `fixed_unified`, `uncontrolled`, and
+`freeze`. Every condition used the same oracle-path hash. The freeze run first
+failed safely because infinite EWC odds are not strict JSON; resumption then
+completed after the explicit freeze action was changed to record null odds and
+`hard_freeze = true`. All schema-v3 metrics record `fisher_inverse_used` as
+false, and the full unit suite passes. The remaining pre-compute gate is the
+adaptive oracle convergence contract and its configured tolerances, not a
+pending controller branch.
 
 ---
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 from typing import Any
 
@@ -13,6 +14,9 @@ from .parameters import ParameterLayout
 from .representations import FisherRepresentation
 
 FisherLike = Tensor | FisherRepresentation
+
+EWC_BACKTRACKING_FACTOR = 0.5
+EWC_MAX_BACKTRACKS = 24
 
 
 @dataclasses.dataclass(frozen=True)
@@ -28,6 +32,10 @@ class EWCProposalResult:
     adaptation_weight: float | None
     effective_ewc_strength: float
     objective_normalization: str
+    backtracking_rejections: int
+    maximum_backtracks: int
+    minimum_learning_rate: float
+    optimization_guard: str
 
     def metrics_mapping(self) -> dict[str, Any]:
         return {
@@ -43,6 +51,10 @@ class EWCProposalResult:
             "adaptation_weight": self.adaptation_weight,
             "effective_ewc_strength": self.effective_ewc_strength,
             "objective_normalization": self.objective_normalization,
+            "backtracking_rejections": self.backtracking_rejections,
+            "maximum_backtracks": self.maximum_backtracks,
+            "minimum_learning_rate": self.minimum_learning_rate,
+            "optimization_guard": self.optimization_guard,
         }
 
 
@@ -164,18 +176,113 @@ def take_ewc_proposal(
     with torch.no_grad():
         data_loss_before = nn.functional.cross_entropy(model(inputs), targets)
 
-    for _ in range(config.inner_steps):
-        optimizer.zero_grad(set_to_none=True)
-        data_loss = nn.functional.cross_entropy(model(inputs), targets)
-        parameter_vector = layout.flatten_module(model)
-        penalty = ewc_penalty(
-            parameter_vector,
-            anchor,
-            fisher,
-            effective_strength,
-        )
-        (data_loss + penalty).backward()
-        optimizer.step()
+    original_optimizer_state = copy.deepcopy(optimizer.state_dict())
+    original_learning_rates = [
+        float(group["lr"]) for group in optimizer.param_groups
+    ]
+    if not original_learning_rates or any(
+        not torch.isfinite(anchor.new_tensor(value)) or value <= 0.0
+        for value in original_learning_rates
+    ):
+        raise ValueError("optimizer learning rates must be finite and positive")
+    backtracking_rejections = 0
+    maximum_backtracks = 0
+    minimum_learning_rate = min(original_learning_rates)
+
+    try:
+        for _ in range(config.inner_steps):
+            for group, learning_rate in zip(
+                optimizer.param_groups, original_learning_rates, strict=True
+            ):
+                group["lr"] = learning_rate
+            optimizer.zero_grad(set_to_none=True)
+            data_loss = nn.functional.cross_entropy(model(inputs), targets)
+            parameter_vector = layout.flatten_module(model)
+            penalty = ewc_penalty(
+                parameter_vector,
+                anchor,
+                fisher,
+                effective_strength,
+            )
+            objective = data_loss + penalty
+            if not torch.isfinite(objective):
+                raise RuntimeError("EWC objective became non-finite before a step")
+            objective.backward()
+            if any(
+                parameter.grad is not None
+                and not torch.isfinite(parameter.grad).all()
+                for parameter in model.parameters()
+            ):
+                raise RuntimeError("EWC objective produced non-finite gradients")
+
+            step_anchor = layout.flatten_module(model, detach=True)
+            step_optimizer_state = copy.deepcopy(optimizer.state_dict())
+            objective_before = float(objective.detach())
+            tolerance = (
+                64.0
+                * torch.finfo(step_anchor.dtype).eps
+                * max(abs(objective_before), 1.0)
+            )
+            accepted = False
+            for backtracks in range(EWC_MAX_BACKTRACKS + 1):
+                if backtracks:
+                    layout.copy_vector_to_module(model, step_anchor)
+                    optimizer.load_state_dict(step_optimizer_state)
+                scale = EWC_BACKTRACKING_FACTOR**backtracks
+                trial_learning_rates = [
+                    value * scale for value in original_learning_rates
+                ]
+                for group, learning_rate in zip(
+                    optimizer.param_groups,
+                    trial_learning_rates,
+                    strict=True,
+                ):
+                    group["lr"] = learning_rate
+                optimizer.step()
+
+                candidate_vector = layout.flatten_module(model, detach=True)
+                if torch.isfinite(candidate_vector).all():
+                    with torch.no_grad():
+                        candidate_data_loss = nn.functional.cross_entropy(
+                            model(inputs), targets
+                        )
+                        candidate_penalty = ewc_penalty(
+                            candidate_vector,
+                            anchor,
+                            fisher,
+                            effective_strength,
+                        )
+                        candidate_objective = (
+                            candidate_data_loss + candidate_penalty
+                        )
+                    accepted = bool(
+                        torch.isfinite(candidate_objective)
+                        and float(candidate_objective)
+                        <= objective_before + tolerance
+                    )
+                if accepted:
+                    backtracking_rejections += backtracks
+                    maximum_backtracks = max(maximum_backtracks, backtracks)
+                    minimum_learning_rate = min(
+                        minimum_learning_rate,
+                        min(trial_learning_rates),
+                    )
+                    break
+
+            if not accepted:
+                raise RuntimeError(
+                    "EWC objective backtracking failed to find a finite "
+                    f"descent step after {EWC_MAX_BACKTRACKS} reductions"
+                )
+    except BaseException:
+        layout.copy_vector_to_module(model, anchor)
+        optimizer.load_state_dict(original_optimizer_state)
+        raise
+    finally:
+        for group, learning_rate in zip(
+            optimizer.param_groups, original_learning_rates, strict=True
+        ):
+            group["lr"] = learning_rate
 
     final_vector = layout.flatten_module(model, detach=True)
     displacement = final_vector - anchor
@@ -211,4 +318,8 @@ def take_ewc_proposal(
         ),
         effective_ewc_strength=effective_strength,
         objective_normalization=objective_normalization,
+        backtracking_rejections=backtracking_rejections,
+        maximum_backtracks=maximum_backtracks,
+        minimum_learning_rate=minimum_learning_rate,
+        optimization_guard="monotone_objective_backtracking",
     )

@@ -180,17 +180,23 @@ B_{t,b}
 \end{bmatrix}.
 $$
 
-Apply the configured estimator's correction, blend it with the direct observation, and only then project or compress:
+Apply the configured estimator's correction, blend it with the direct observation, and only then project or compress. In schema-v7 controller runs, the same predictable adaptation weight used by EWC controls this blend:
 
 $$
 A_t
 =
-(1-\alpha_t)
+(1-\pi_t)
 \left(
 \widehat{\mathcal I}_{t-1}+\widehat\Delta_t
 \right)
-+\alpha_tZ_t.
++\pi_tZ_t.
 $$
+
+The independently configured gain $\alpha_t$ belongs only to historical
+schema-v4 through schema-v6 baselines. Do not use it in a principal Phase 8
+run. Such a run must choose $\pi_t$ from information available before the
+step-$t$ batch, then use that one value for both the Fisher update and EWC
+objective.
 
 After updating the auxiliary process, use the current observations to calculate the original process's proposed move $\widetilde u_t$, apply any configured controller, and move to $\theta_{t+1}$. The LFU at step $t$ must use the realized prior displacement $u_{t-1}$, not the new proposal.
 
@@ -246,7 +252,9 @@ $$
 
 from an independent holdout sampled at the checkpoint's configured $p$. Make `reference_sample_size` configurable. Calculate reference estimates in chunks so peak memory does not scale with $N_{\mathrm{ref}}$.
 
-Use convergence checks rather than assuming one sample size is adequate. At selected checkpoints, compare nested or paired reference estimates at increasing $N_{\mathrm{ref}}$ and record their relative disagreement.
+Use convergence checks rather than assuming one sample size is adequate. At selected checkpoints, compare nested or paired reference estimates at increasing $N_{\mathrm{ref}}$ and record their relative disagreement. Schema-v8 controller runs additionally treat each independently sampled chunk mean as a matrix-valued observation, maintain its Welford variance in Frobenius geometry, and stop only when the configured six-sigma radius is below its absolute-plus-relative tolerance or the hard sample ceiling is reached. Record the radius, threshold, stopping reason, duplicate fraction, adjacent-chunk index overlap, and lag-one Frobenius correlation.
+
+Reference-optimum paths in schema v8 use at least eight independently sampled warm-started fit trajectories. Measure the Euclidean confidence radius of every adjacent displacement directly, add fit trajectories until it meets the same configured tolerance or reaches the fit cap, and average the completed fit trajectories to define the oracle path. Store independent validation-score confidence balls and training/validation overlap diagnostics for every fit. A path that reaches a hard ceiling is a valid immutable artifact but fails the scientific oracle gate.
 
 Cache reference matrices using keys that include the model checkpoint hash, holdout-sampler identity, sample count, parameter ordering, and dtype.
 
@@ -302,7 +310,7 @@ Projection must not hide instability. Before projection, record:
 - Frobenius projection distance;
 - correction norm relative to the pre-projection estimate.
 
-PSD is sufficient for an EWC quadratic but not for inversion. Add a separately configured positive damping value before inverse-based metrics or controllers, and record it.
+PSD is sufficient for an EWC quadratic but not for inversion. Legacy representation diagnostics may use explicitly damped solves, but Phase 8 controllers must not invert or pseudoinvert an observed Fisher matrix.
 
 For diagonal representations, projection is elementwise clipping at zero. Low-rank-plus-diagonal projection is described below.
 
@@ -382,52 +390,96 @@ Run controller experiments only after the main dense and representation experime
 Keep these quantities distinct:
 
 - $p_t$: environmental digit-mixture proportion;
-- $\pi_t$: adaptation controller;
-- $\alpha_t$: Fisher EMA gain;
-- $\rho_t$: effective-precision forgetting factor.
+- $\pi_t$: the new-observation composition weight, which jointly controls
+  adaptation and summary forgetting;
+- $m_t$: the fixed number of new observations available at step $t$;
+- $N_{\mathrm{eff},t}=q_t^{-1}$: the effective size implied by the accepted
+  sequence of controller weights.
 
-Define the plug-in adaptation weight
+For the applied fixed-batch model, use the local risk
+
+$$
+R_t(\pi)
+=
+(1-\pi)^2
+\left(\|d\theta_t\|^2+\tau_{\mathrm{old},t}\right)
++\pi^2\tau_{\mathrm{new},t},
+$$
+
+with
+
+$$
+\tau_{\mathrm{old},t}=\frac{T_t}{N_{\mathrm{eff},t-1}},
+\qquad
+\tau_{\mathrm{new},t}=\frac{T_t}{m_t},
+\qquad
+T_t=\operatorname{tr}\mathcal I(\theta_t)^{-1}.
+$$
+
+Its locally optimal fixed-batch controller is
 
 $$
 \widehat\pi_t^\star
 =
-\operatorname{clip}_{[0,1]}
-\left(
-1-
 \frac{
-\operatorname{tr}
-\left[
-(\widehat{\mathcal I}_t+\lambda I)^{-1}
-\right]
+\|\widehat d\theta_t\|^2+\widehat\tau_{\mathrm{old},t}
 }{
-2n_{\mathrm{eff},t}\|\widetilde u_t\|^2+\varepsilon
-}
-\right),
+\|\widehat d\theta_t\|^2+\widehat\tau_{\mathrm{old},t}
++\widehat\tau_{\mathrm{new},t}
+}.
 $$
 
-where $\lambda>0$ and $\varepsilon>0$ are recorded numerical safeguards and
-$\widetilde u_t$ is an explicitly defined diagnostic displacement used only
-to estimate the adaptation weight. Apply the selected $\pi_t$ through the
-mixture-derived EWC odds $(1-\pi_t)/\pi_t$, then accept the resulting optimizer
-solution without further displacement scaling.
+Estimate the local trend with a vector EMA of accepted displacements and
+estimate $T_t$ with the scalar residual moment described in
+`mathematical_overview.ipynb`. The principal defaults are a trend half-life of
+$0.20$ in environmental $p$-distance, $\pi_{\min}=0.05$, and
+$\pi_{\max}=0.95$. During the first trend half-life, use the bounded cold-start
+composition $m_t/(N_{\mathrm{eff},t-1}+m_t)$. Never use the current batch to
+choose its own $\pi_t$.
+
+After accepting the step, update
+
+$$
+q_t=(1-\pi_t)^2q_{t-1}+\frac{\pi_t^2}{m_t},
+\qquad N_{\mathrm{eff},t}=q_t^{-1}.
+$$
+
+The trace moment uses
+
+$$
+r_t=u_t-\widehat d\theta_{t|t-1},
+\qquad
+a_t=\pi_t^2\left(q_{t-1}+m_t^{-1}\right),
+\qquad
+\widehat T_t=\frac{\operatorname{EMA}(\|r_t\|^2)}
+{\operatorname{EMA}(a_t)+\varepsilon}.
+$$
 
 Implement these controller policies:
 
 - `uncontrolled`: $\pi_t=1$, a diagnostic new-data-only boundary with no EWC
   penalty;
-- `fixed`: $\pi_t=\pi_0$;
+- `fixed`: $\pi_t=\pi_0$, used for unified fixed-weight baselines;
 - `optimal_plugin`: $\pi_t=\widehat\pi_t^\star$;
-- `optimal_capped`: $\pi_t=\min(\widehat\pi_t^\star,\pi_{\max})$;
-- `optimal_oracle`: use high-sample reference quantities to diagnose the policy independently of plug-in Fisher error.
+- `optimal_oracle`: substitute high-sample reference-path displacements and
+  an oracle-trend residual moment from the accepted parameter series to
+  diagnose trend error without inverting a Fisher matrix;
+- `freeze`: $\pi_t=0$, an explicit diagnostic boundary that bypasses ordinary
+  controller clipping.
 
-Expose `fixed_pi`, `pi_max`, controller damping, and controller epsilon as configuration values. Test a targeted $\pi_{\max}$ grid after selecting the principal Fisher conditions.
+Expose `fixed_pi`, `pi_min`, `pi_max`, `trend_half_life_p`, and controller
+epsilon as configuration values. Clamp ordinary plug-in and oracle policies to
+$[\pi_{\min},\pi_{\max}]$. Test targeted bound and trend-half-life grids only
+after selecting the principal Fisher conditions.
 
-Record the uncapped value, applied value, EWC odds, cap activation,
-inverse-trace term, effective count, diagnostic displacement norm, and
-intervention outcome at every step. Choosing $\pi_t$ independently of literal
-old/new sample proportions generally targets a tempered objective and may bias
-the estimate relative to the instantaneous MLE. Treat that bias as an explicit
-variance-retention-tracking trade-off.
+Record the raw and applied value, both bound activations, EWC odds, trend and
+oracle displacement norms, plug-in and oracle-residual trace estimates, $q_t$, effective size, cold-start
+status, and intervention outcome at every step. Choosing $\pi_t$ adaptively
+generally targets a tempered objective and may bias the estimate relative to
+the instantaneous MLE. Treat that bias as an explicit
+variance-retention-tracking trade-off. Also report the old fixed-$N$ Bernoulli
+oracle from the theoretical model as a diagnostic only; it is not the applied
+controller.
 
 ## Experimental factors
 
@@ -437,12 +489,12 @@ All conditions must be configuration-driven. Principal factors include:
 - representation and low-rank budget;
 - `num_p_steps`;
 - `samples_per_step`;
-- EMA gain or effective forgetting factor;
+- controller composition weight, bounds, and trend half-life;
 - fresh-Fisher cadence;
 - reference sample size;
 - stencil epsilon;
 - optimizer settings;
-- controller policy and $\pi_{\max}$;
+- controller policy, $\pi_{\min}$, and $\pi_{\max}$;
 - replica seed.
 
 Do not launch the complete Cartesian product. Use the staged sequence below and document why each reduced grid was selected.
@@ -484,10 +536,15 @@ Compute expensive metrics in the execution script and store tidy per-step scalar
 
 ### Controller
 
-- diagnostic and realized optimizer update norms;
+- predicted trend, realized optimizer update, and oracle step norms;
 - $\widehat\pi_t^\star$ and applied $\pi_t$;
 - effective EWC odds $(1-\pi_t)/\pi_t$;
-- cap activation frequency;
+- lower- and upper-bound activation frequency;
+- residual and scale EMA moments, $\widehat T_t$, $q_t$, and
+  $N_{\mathrm{eff},t}$;
+- fixed-batch oracle and theoretical fixed-$N$ Bernoulli-oracle disagreement;
+- trend centering, covariance-shape, scalar moment, and local-stationarity
+  assumption checks;
 - tracking/retention outcomes conditional on controller intervention.
 
 ## Replica analysis
@@ -541,8 +598,14 @@ The execution script must accept a complete configuration file and CLI overrides
    - Evaluate a targeted rank grid on settings selected from dense results.
 
 5. **Optimal-controller study**
-   - Compare uncontrolled, fixed, plug-in optimal, capped optimal, and oracle-diagnostic policies.
-   - Evaluate a targeted $\pi_{\max}$ grid only on selected Fisher representations.
+   - Introduce schema v7 so one predictable $\pi_t$ drives both EWC and the
+     Fisher-summary recursion.
+   - Compare uncontrolled, unified fixed, plug-in optimal, freeze-diagnostic,
+     and oracle-diagnostic policies.
+   - Evaluate targeted $\pi_{\min}$, $\pi_{\max}$, and trend-half-life grids
+     only on selected Fisher representations.
+   - Preserve schema-v6 decoupled fixed-weight runs as historical diagnostics,
+     never as principal controller baselines.
 
 6. **Replication**
    - Accumulate immutable paired replicas.
@@ -567,6 +630,11 @@ Before long runs, add and pass tests for:
 - representation matrix-vector products;
 - Lanczos wrapper determinism and rank handling;
 - paired data-stream generation;
-- controller clipping and $u_t=\pi_t\widetilde u_t$;
+- fixed-batch controller risk minimization and clipping;
+- cold-start composition and effective-size recursion;
+- trend and trace-moment EMA indexing;
+- controller predictability with respect to the current batch;
+- one shared $\pi_t$ in the Fisher and EWC updates, with no post-proposal
+  displacement scaling;
 - immutable run creation, collision refusal, and completion;
 - one tiny CPU trajectory from $p=0$ to $p=1$.

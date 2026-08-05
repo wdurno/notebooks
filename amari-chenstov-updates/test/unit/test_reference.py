@@ -11,6 +11,7 @@ from src.parameters import ParameterLayout
 from src.reference import (
     ReferenceError,
     ReferenceFisherStore,
+    adaptive_reference_fisher,
     central_fisher_stencil,
     chunked_lfu_estimate,
     chunked_reference_fisher,
@@ -108,6 +109,35 @@ def test_chunked_and_unchunked_reference_fishers_agree() -> None:
     torch.testing.assert_close(many_chunks.matrix, one_chunk.matrix)
     assert many_chunks.score_gradient_count == 4
     assert many_chunks.effective_sample_size == pytest.approx(4.0)
+
+
+def test_adaptive_fisher_stops_on_frobenius_radius() -> None:
+    model = BernoulliLogit()
+    layout = ParameterLayout.from_module(model)
+
+    estimate = adaptive_reference_fisher(
+        model,
+        BernoulliDataset(),
+        _plan(16),
+        bernoulli_nll,
+        layout,
+        chunk_size=4,
+        minimum_chunks=2,
+        sigma=6.0,
+        relative_epsilon=0.01,
+        absolute_epsilon=1e-8,
+        device=torch.device("cpu"),
+        derivative_dtype=torch.float64,
+    )
+
+    assert estimate.sample_count == 8
+    assert estimate.convergence["converged"] is True
+    assert estimate.convergence["geometry"] == "frobenius"
+    assert estimate.convergence["confidence_radius"] == 0.0
+    torch.testing.assert_close(
+        estimate.matrix,
+        torch.tensor([[0.1875]], dtype=torch.float64),
+    )
 
 
 def test_importance_weighted_stencil_recovers_ac_measure_term() -> None:

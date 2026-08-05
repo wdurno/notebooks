@@ -6,6 +6,7 @@ from src.mnist_model import (
     CANONICAL_PARAMETER_COUNT,
     CanonicalMnistCNN,
     build_canonical_model,
+    configure_torch_runtime,
 )
 
 
@@ -63,6 +64,19 @@ def test_canonical_initialization_is_deterministic_by_seed() -> None:
             strict=True,
         )
     )
+
+
+def test_runtime_can_warn_for_unsupported_deterministic_operations() -> None:
+    try:
+        configure_torch_runtime(
+            deterministic_algorithms=True,
+            warn_only=True,
+        )
+
+        assert torch.are_deterministic_algorithms_enabled()
+        assert torch.is_deterministic_algorithms_warn_only_enabled()
+    finally:
+        configure_torch_runtime(deterministic_algorithms=False)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")

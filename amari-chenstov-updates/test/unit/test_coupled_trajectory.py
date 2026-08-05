@@ -106,3 +106,31 @@ def test_coupled_tracker_requires_sequential_realized_directions() -> None:
             torch.zeros(2, dtype=torch.float64),
             torch.eye(2, dtype=torch.float64),
         )
+
+
+def test_coupled_tracker_accepts_a_dynamic_unified_blend() -> None:
+    tracker = DenseFisherTracker(
+        "ema",
+        torch.eye(2, dtype=torch.float64),
+        ema_gain=None,
+        fresh_fisher_cadence=2,
+    )
+    first, second = _statistics()[:2]
+    tracker.update(
+        0,
+        first,
+        torch.zeros(2, dtype=torch.float64),
+        torch.eye(2, dtype=torch.float64),
+        blend_gain=0.2,
+    )
+    update = tracker.update(
+        1,
+        second,
+        torch.zeros(2, dtype=torch.float64),
+        torch.eye(2, dtype=torch.float64),
+        blend_gain=0.6,
+    )
+
+    expected = 0.4 * torch.eye(2, dtype=torch.float64) + 0.6 * second.estimate.fisher
+    torch.testing.assert_close(update.estimate, expected)
+    assert update.blend_gain == 0.6

@@ -53,6 +53,7 @@ class DiagonalFisherUpdate:
     projection: DiagonalProjectionDiagnostics
     ridge_metrics: dict[str, Any]
     ridge_state: dict[str, Any]
+    blend_gain: float
 
 
 class DiagonalFisherTracker:
@@ -60,12 +61,12 @@ class DiagonalFisherTracker:
         self,
         initial_fisher: Tensor,
         *,
-        ema_gain: float,
+        ema_gain: float | None,
         ridge_half_life_steps: float,
         ridge_amplitude_epsilon: float,
         ridge_coherence_threshold: float,
     ) -> None:
-        if not 0.0 < ema_gain <= 1.0:
+        if ema_gain is not None and not 0.0 < ema_gain <= 1.0:
             raise ValueError("ema_gain must be in (0, 1]")
         if (
             initial_fisher.ndim != 2
@@ -76,7 +77,7 @@ class DiagonalFisherTracker:
             raise ValueError("initial_fisher must be a finite floating square matrix")
         initial, _ = _project_diagonal(torch.diagonal(initial_fisher))
         self.previous = DiagonalFisher(initial)
-        self.ema_gain = float(ema_gain)
+        self.ema_gain = None if ema_gain is None else float(ema_gain)
         self.next_step = 0
         self.ridge = DirectionalRidgeLFUState(
             half_life_steps=ridge_half_life_steps,
@@ -89,12 +90,19 @@ class DiagonalFisherTracker:
         step: int,
         statistics: OnlineStepStatistics,
         direction: Tensor,
+        *,
+        blend_gain: float | None = None,
     ) -> DiagonalFisherUpdate:
         if step != self.next_step:
             raise ValueError(
                 f"expected structured step {self.next_step}, received {step}"
             )
         statistics.validate(self.previous.shape[0])
+        gain = self.ema_gain if blend_gain is None else float(blend_gain)
+        if gain is None or not 0.0 <= gain <= 1.0:
+            raise ValueError(
+                "a fixed ema_gain or per-step blend_gain in [0, 1] is required"
+            )
         ridge = self.ridge.update(
             direction,
             statistics.estimate.amari_chentsov,
@@ -108,8 +116,8 @@ class DiagonalFisherTracker:
             correction = torch.diagonal(ridge.full)
             prediction = self.previous.values + correction
             candidate = (
-                (1.0 - self.ema_gain) * prediction
-                + self.ema_gain
+                (1.0 - gain) * prediction
+                + gain
                 * torch.diagonal(statistics.estimate.fisher)
             )
         projected, diagnostics = _project_diagonal(candidate)
@@ -124,6 +132,7 @@ class DiagonalFisherTracker:
             projection=diagnostics,
             ridge_metrics=ridge.metrics_mapping(),
             ridge_state=ridge.state_artifact(),
+            blend_gain=gain,
         )
 
 
@@ -138,6 +147,7 @@ class LowRankDiagonalUpdate:
     lanczos: LanczosDiagnostics
     ridge_metrics: dict[str, Any]
     ridge_state: dict[str, Any]
+    blend_gain: float
 
 
 class LowRankDiagonalFisherTracker:
@@ -146,12 +156,12 @@ class LowRankDiagonalFisherTracker:
         initial_fisher: Tensor,
         *,
         rank: int,
-        ema_gain: float,
+        ema_gain: float | None,
         ridge_half_life_steps: float,
         ridge_amplitude_epsilon: float,
         ridge_coherence_threshold: float,
     ) -> None:
-        if not 0.0 < ema_gain <= 1.0:
+        if ema_gain is not None and not 0.0 < ema_gain <= 1.0:
             raise ValueError("ema_gain must be in (0, 1]")
         if not isinstance(rank, int) or isinstance(rank, bool) or rank < 0:
             raise ValueError("rank must be a nonnegative integer")
@@ -168,7 +178,7 @@ class LowRankDiagonalFisherTracker:
         self.initial_fisher = initial_fisher
         self.previous: LowRankDiagonalFisher | None = None
         self.rank = rank
-        self.ema_gain = float(ema_gain)
+        self.ema_gain = None if ema_gain is None else float(ema_gain)
         self.next_step = 0
         self.ridge = DirectionalRidgeLFUState(
             half_life_steps=ridge_half_life_steps,
@@ -183,6 +193,7 @@ class LowRankDiagonalFisherTracker:
         direction: Tensor,
         *,
         lanczos_seed: int,
+        blend_gain: float | None = None,
     ) -> LowRankDiagonalUpdate:
         if step != self.next_step:
             raise ValueError(
@@ -190,6 +201,11 @@ class LowRankDiagonalFisherTracker:
             )
         parameter_count = self.initial_fisher.shape[0]
         statistics.validate(parameter_count)
+        gain = self.ema_gain if blend_gain is None else float(blend_gain)
+        if gain is None or not 0.0 <= gain <= 1.0:
+            raise ValueError(
+                "a fixed ema_gain or per-step blend_gain in [0, 1] is required"
+            )
         ridge = self.ridge.update(
             direction,
             statistics.estimate.amari_chentsov,
@@ -202,8 +218,8 @@ class LowRankDiagonalFisherTracker:
             correction = ridge.full
             prediction = self.previous.to_dense() + correction
             candidate = (
-                (1.0 - self.ema_gain) * prediction
-                + self.ema_gain * statistics.estimate.fisher
+                (1.0 - gain) * prediction
+                + gain * statistics.estimate.fisher
             )
         candidate = (candidate + candidate.mT) / 2
         eigenvalues = torch.linalg.eigvalsh(candidate)
@@ -225,6 +241,7 @@ class LowRankDiagonalFisherTracker:
             lanczos=approximation.diagnostics,
             ridge_metrics=ridge.metrics_mapping(),
             ridge_state=ridge.state_artifact(),
+            blend_gain=gain,
         )
 
 

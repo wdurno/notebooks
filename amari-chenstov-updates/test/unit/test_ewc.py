@@ -125,3 +125,36 @@ def test_mixture_ewc_proposal_records_odds_without_post_scaling() -> None:
         result.displacement,
         layout.flatten_module(model, detach=True) - before,
     )
+
+
+def test_ewc_proposal_backtracks_through_high_quadratic_curvature() -> None:
+    model = nn.Linear(1, 2, bias=False, dtype=torch.float64)
+    layout = ParameterLayout.from_module(model)
+    inputs = torch.tensor([[1.0], [-1.0]], dtype=torch.float64)
+    targets = torch.tensor([1, 0])
+    fisher = 100.0 * torch.eye(layout.total_numel, dtype=torch.float64)
+    config = OptimizerConfig(
+        name="sgd",
+        learning_rate=0.1,
+        inner_steps=3,
+        ewc_strength=1.0,
+    )
+    optimizer = build_optimizer(model, config)
+
+    result = take_ewc_proposal(
+        model,
+        layout,
+        inputs,
+        targets,
+        fisher,
+        config,
+        optimizer,
+        adaptation_weight=0.05,
+    )
+
+    assert torch.isfinite(layout.flatten_module(model)).all()
+    assert result.backtracking_rejections > 0
+    assert result.maximum_backtracks > 0
+    assert result.minimum_learning_rate < config.learning_rate
+    assert result.optimization_guard == "monotone_objective_backtracking"
+    assert optimizer.param_groups[0]["lr"] == config.learning_rate
