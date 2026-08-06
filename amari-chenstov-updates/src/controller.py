@@ -195,6 +195,8 @@ class ControllerAcceptance:
     residual: Tensor
     residual_squared: float
     scale_observation: float
+    normalized_displacement: Tensor | None
+    oracle_residual: Tensor | None
 
 
 def _bounded(value: float, lower: float, upper: float) -> tuple[float, bool, bool]:
@@ -329,27 +331,46 @@ def accept_controller_step(
             "oracle_displacement must be finite and share trend shape/dtype/device"
         )
     gain = half_life_gain(delta_p, half_life_p)
-    residual = displacement - state.trend
-    residual_squared = float(residual @ residual)
-    scale = decision.applied_pi**2 * (state.q + 1.0 / batch_size)
-    residual_moment = (
-        (1.0 - gain) * state.residual_moment + gain * residual_squared
-    )
-    scale_moment = (1.0 - gain) * state.scale_moment + gain * scale
-    if oracle_displacement is None:
+    pi = decision.applied_pi
+    if pi == 0.0:
+        residual = torch.zeros_like(displacement)
+        residual_squared = 0.0
+        scale = 0.0
+        normalized_displacement = None
+        oracle_residual = None
+        residual_moment = state.residual_moment
+        scale_moment = state.scale_moment
         oracle_residual_moment = state.oracle_residual_moment
         oracle_scale_moment = state.oracle_scale_moment
+        trend = state.trend
     else:
-        oracle_residual = displacement - oracle_displacement
-        oracle_residual_squared = float(oracle_residual @ oracle_residual)
-        oracle_residual_moment = (
-            (1.0 - gain) * state.oracle_residual_moment
-            + gain * oracle_residual_squared
+        # Locally, the EWC minimizer moves by pi times the unregularized drift.
+        normalized_displacement = displacement / pi
+        residual = displacement - pi * state.trend
+        residual_squared = float(residual @ residual)
+        scale = pi**2 * (state.q + 1.0 / batch_size)
+        residual_moment = (
+            (1.0 - gain) * state.residual_moment + gain * residual_squared
         )
-        oracle_scale_moment = (
-            (1.0 - gain) * state.oracle_scale_moment + gain * scale
+        scale_moment = (1.0 - gain) * state.scale_moment + gain * scale
+        if oracle_displacement is None:
+            oracle_residual = None
+            oracle_residual_moment = state.oracle_residual_moment
+            oracle_scale_moment = state.oracle_scale_moment
+        else:
+            oracle_residual = displacement - pi * oracle_displacement
+            oracle_residual_squared = float(oracle_residual @ oracle_residual)
+            oracle_residual_moment = (
+                (1.0 - gain) * state.oracle_residual_moment
+                + gain * oracle_residual_squared
+            )
+            oracle_scale_moment = (
+                (1.0 - gain) * state.oracle_scale_moment + gain * scale
+            )
+        trend = (
+            (1.0 - gain) * state.trend
+            + gain * normalized_displacement
         )
-    trend = (1.0 - gain) * state.trend + gain * displacement
     q = effective_size_update(state.q, decision.applied_pi, batch_size)
     next_state = ControllerState(
         trend=trend,
@@ -368,4 +389,6 @@ def accept_controller_step(
         residual=residual,
         residual_squared=residual_squared,
         scale_observation=scale,
+        normalized_displacement=normalized_displacement,
+        oracle_residual=oracle_residual,
     )

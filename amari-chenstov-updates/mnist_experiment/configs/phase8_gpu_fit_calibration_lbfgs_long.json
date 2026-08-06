@@ -1,0 +1,29 @@
+{
+  "artifact_schema_version": 1,
+  "cache_root": "cache/mnist_experiment/phase8_calibrations",
+  "checkpoint_steps": [0, 50, 99],
+  "experiment": "mnist_lfu_phase8_gpu_fit_calibration_lbfgs_long",
+  "inner_step_budgets": [200, 500, 1000, 2000],
+  "metric_schema_version": 2,
+  "optimizer": {
+    "ewc_strength": 1.0,
+    "inner_steps": 2000,
+    "lbfgs_history_size": 20,
+    "lbfgs_line_search_fn": "strong_wolfe",
+    "lbfgs_max_eval_factor": 1.5,
+    "lbfgs_tolerance_change": 1e-9,
+    "lbfgs_tolerance_grad": 1e-5,
+    "learning_rate": 1.0,
+    "name": "lbfgs"
+  },
+  "replica_id": "replica-0000",
+  "replica_seed": 1729,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cuda",
+    "matrix_dtype": "float64",
+    "training_dtype": "float32"
+  },
+  "schema_version": 2,
+  "source_run": "cache/mnist_experiment/phase8_runs/mnist_lfu_phase8_gpu_corrected_plugin__replica-0000__d4a2a8b15e1df152"
+}

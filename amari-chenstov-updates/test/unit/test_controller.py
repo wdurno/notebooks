@@ -107,7 +107,11 @@ def test_acceptance_uses_predictable_trend_and_updates_all_moments() -> None:
     assert accepted.scale_observation == pytest.approx(scale)
     torch.testing.assert_close(
         accepted.state.trend,
-        torch.tensor([0.5, -0.5], dtype=torch.float64),
+        torch.tensor([2.0, -2.0], dtype=torch.float64),
+    )
+    torch.testing.assert_close(
+        accepted.normalized_displacement,
+        torch.tensor([4.0, -4.0], dtype=torch.float64),
     )
     assert accepted.state.residual_moment == pytest.approx(1.0)
     assert accepted.state.scale_moment == pytest.approx(0.5 * scale)
@@ -179,7 +183,7 @@ def test_variable_pi_calibrated_process_recovers_trend_and_trace() -> None:
         accepted = accept_controller_step(
             state,
             decision,
-            true_trend + noise,
+            pi * true_trend + noise,
             batch_size=8,
             delta_p=0.002,
             half_life_p=0.2,
@@ -198,6 +202,62 @@ def test_variable_pi_calibrated_process_recovers_trend_and_trace() -> None:
         state.trace_estimate(1e-12) - true_trace
     )
     torch.testing.assert_close(state.trend, true_trend, rtol=0.0, atol=0.08)
+
+
+def test_variable_pi_residuals_remove_attenuated_drift() -> None:
+    true_trend = torch.tensor([0.4, -0.2], dtype=torch.float64)
+    state = dataclasses.replace(
+        ControllerState.initialize(2, initial_effective_size=20.0),
+        trend=true_trend.clone(),
+        environment_distance=1.0,
+    )
+    decision = decide_controller(
+        state,
+        _config("fixed_unified", fixed_pi=0.25),
+        batch_size=8,
+    )
+    noise = torch.tensor([0.03, 0.01], dtype=torch.float64)
+    displacement = 0.25 * true_trend + noise
+
+    accepted = accept_controller_step(
+        state,
+        decision,
+        displacement,
+        batch_size=8,
+        delta_p=0.02,
+        half_life_p=0.2,
+        oracle_displacement=true_trend,
+    )
+
+    torch.testing.assert_close(accepted.residual, noise)
+    torch.testing.assert_close(accepted.oracle_residual, noise)
+    torch.testing.assert_close(
+        accepted.normalized_displacement,
+        true_trend + noise / 0.25,
+    )
+
+
+def test_freeze_does_not_pollute_trend_or_residual_moments() -> None:
+    state = dataclasses.replace(
+        ControllerState.initialize(2, initial_effective_size=20.0),
+        trend=torch.tensor([0.2, -0.1], dtype=torch.float64),
+        residual_moment=3.0,
+        scale_moment=2.0,
+    )
+    decision = decide_controller(state, _config("freeze"), batch_size=8)
+    accepted = accept_controller_step(
+        state,
+        decision,
+        torch.zeros(2, dtype=torch.float64),
+        batch_size=8,
+        delta_p=0.02,
+        half_life_p=0.2,
+    )
+
+    torch.testing.assert_close(accepted.state.trend, state.trend)
+    assert accepted.state.residual_moment == state.residual_moment
+    assert accepted.state.scale_moment == state.scale_moment
+    assert accepted.normalized_displacement is None
 
 
 def test_near_pi_min_state_remains_finite_and_retains_prior_information() -> None:
@@ -240,3 +300,24 @@ def test_invalid_unified_settings_fail(overrides: dict[str, object], match: str)
             _config(**overrides),
             batch_size=1,
         )
+
+
+def test_single_condition_path_divergence_is_zero() -> None:
+    from types import SimpleNamespace
+
+    from mnist_experiment.run_coupled import _path_divergence_rows
+
+    condition = SimpleNamespace(
+        parameters=torch.tensor([[1.0, 2.0], [2.0, 3.0]])
+    )
+
+    rows = _path_divergence_rows([condition], [0.0, 1.0])
+
+    assert [row["maximum_pairwise_parameter_distance"] for row in rows] == [
+        0.0,
+        0.0,
+    ]
+    assert [row["mean_pairwise_parameter_distance"] for row in rows] == [
+        0.0,
+        0.0,
+    ]

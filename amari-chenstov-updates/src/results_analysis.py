@@ -13,6 +13,7 @@ from typing import Any
 
 from .artifacts import MANIFEST_SCHEMA_VERSION
 from .config import ExperimentConfig
+from .phase9 import Phase9Bundle, phase9_status_rows
 
 PHASE3_REFERENCE_SCHEMA_VERSION = 1
 PHASE4_METHODS_BY_SCHEMA = {
@@ -43,10 +44,10 @@ PHASE7_LEGACY_LANCZOS_SHA256 = (
 )
 PHASE7_DIAGONAL_ERROR_INSTABILITY_THRESHOLD = 0.1
 PHASE7_DENSE_ERROR_INSTABILITY_THRESHOLD = 1.0
-PHASE8_METRIC_SCHEMA_VERSIONS = (2, 3, 4)
-PHASE8_TRAJECTORY_SCHEMA_BY_METRIC = {2: 2, 3: 2, 4: 3}
-PHASE8_CONTROLLER_STATE_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3}
-PHASE8_ORACLE_PATH_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3}
+PHASE8_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6)
+PHASE8_TRAJECTORY_SCHEMA_BY_METRIC = {2: 2, 3: 2, 4: 3, 5: 4, 6: 4}
+PHASE8_CONTROLLER_STATE_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4}
+PHASE8_ORACLE_PATH_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4}
 RIDGE_METHODS = frozenset({"ridge_ac_only", "ridge_full_lfu"})
 DEFAULT_PHASE3_RUN_IDS = (
     "mnist_lfu_phase3_final__replica-0000__e216d98c2f668d87",
@@ -1710,9 +1711,9 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
     """Strictly load notebook-sized Phase 8 artifacts without checkpoints."""
 
     envelope = _load_envelope(path)
-    if envelope.config.schema_version not in {7, 8}:
+    if envelope.config.schema_version not in {7, 8, 9, 10}:
         raise AnalysisArtifactError(
-            f"Phase 8 requires config schema 7 or 8: {envelope.path}"
+            f"Phase 8 requires config schema 7, 8, 9, or 10: {envelope.path}"
         )
     metrics_path = envelope.path / "phase8_metrics.json"
     metrics = _require_mapping(_read_json(metrics_path), str(metrics_path))
@@ -1771,6 +1772,47 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
             },
             str(metrics_path),
         )
+    if metric_schema >= 5:
+        semantic_contract = {
+            "controller_displacement_law": "u_approx_pi_times_drift_plus_noise",
+            "trend_estimand": "environmental_parameter_displacement",
+            "trend_observation": "accepted_displacement_divided_by_pi",
+            "covariance_residual": "u_minus_pi_times_predictable_drift",
+            "oracle_covariance_residual": "u_minus_pi_times_oracle_drift",
+            "ewc_optimality_diagnostic": "final_objective_gradient",
+        }
+        _require_keys(metrics, semantic_contract, str(metrics_path))
+        mismatched = {
+            name: metrics[name]
+            for name, expected in semantic_contract.items()
+            if metrics[name] != expected
+        }
+        if mismatched:
+            raise AnalysisArtifactError(
+                f"Phase 8 corrected estimator contract is invalid: {mismatched}"
+            )
+        _require_keys(
+            metrics,
+            {"oracle_path_provenance"},
+            str(metrics_path),
+        )
+    if metric_schema >= 6:
+        optimizer_contract = {
+            "optimizer_budget_role": "fixed_compute_budget_not_convergence_claim",
+            "optimizer_accounting": (
+                "structured_iterations_and_function_evaluations"
+            ),
+        }
+        _require_keys(metrics, optimizer_contract, str(metrics_path))
+        mismatched = {
+            name: metrics[name]
+            for name, expected in optimizer_contract.items()
+            if metrics[name] != expected
+        }
+        if mismatched:
+            raise AnalysisArtifactError(
+                f"Phase 8 optimizer-budget contract is invalid: {mismatched}"
+            )
 
     trajectory_path = envelope.path / "phase8_trajectories.pt"
     controller_path = envelope.path / "phase8_controller_states.pt"
@@ -1826,6 +1868,34 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
         raise AnalysisArtifactError("Phase 8 scalar row count is incomplete")
     if any(row.get("same_pi_consumed") is not True for row in metrics["condition_steps"]):
         raise AnalysisArtifactError("Phase 8 run violated the unified pi contract")
+    if metric_schema >= 6:
+        for row in metrics["condition_steps"]:
+            proposal = row.get("proposal")
+            if proposal is None:
+                continue
+            proposal = _require_mapping(
+                proposal, f"{metrics_path}:proposal step {row.get('step')}"
+            )
+            _require_keys(
+                proposal,
+                {
+                    "inner_steps",
+                    "optimizer_iterations",
+                    "optimizer_function_evaluations",
+                    "stopping_reason",
+                },
+                f"{metrics_path}:proposal step {row.get('step')}",
+            )
+            for name in (
+                "inner_steps",
+                "optimizer_iterations",
+                "optimizer_function_evaluations",
+            ):
+                value = proposal[name]
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise AnalysisArtifactError(
+                        f"invalid Phase 8 optimizer accounting {name}={value}"
+                    )
     return Phase8ControllerRun(
         path=envelope.path,
         run_id=envelope.run_id,
@@ -1858,6 +1928,20 @@ def discover_phase8_controller_runs(
     return tuple(runs)
 
 
+def _environment_metric(
+    source: Mapping[str, Any],
+    metric: str,
+) -> float | None:
+    nine_key = f"before_nine_{metric}"
+    non_nine_key = f"before_non_nine_{metric}"
+    if nine_key not in source or non_nine_key not in source:
+        return None
+    p = float(source["p"])
+    return (1.0 - p) * float(source[non_nine_key]) + p * float(
+        source[nine_key]
+    )
+
+
 def phase8_controller_rows(
     runs: Sequence[Phase8ControllerRun],
 ) -> list[dict[str, Any]]:
@@ -1878,14 +1962,46 @@ def phase8_controller_rows(
                     "trajectory_hash": run.metrics["path_hashes"][
                         source["method"]
                     ],
+                    "environment_accuracy": _environment_metric(
+                        source, "accuracy"
+                    ),
+                    "environment_nll": _environment_metric(source, "nll"),
                     "theoretical_status": (
                         "legacy_spectral_trace_smoke"
                         if run.metrics["phase8_metric_schema_version"] == 2
-                        else "inversion_free_phase8"
+                        else "corrected_normalized_drift_phase8"
+                        if run.metrics["phase8_metric_schema_version"] >= 5
+                        else "legacy_attenuated_trend_phase8"
                     ),
                 }
             )
     return rows
+
+
+def _normalized_trapezoid_auc(
+    rows: Sequence[Mapping[str, Any]],
+    key: str,
+) -> float | None:
+    points = sorted(
+        (
+            (float(row["p"]), float(row[key]))
+            for row in rows
+            if row.get(key) is not None
+        ),
+        key=lambda point: point[0],
+    )
+    if not points:
+        return None
+    if len(points) == 1:
+        return points[0][1]
+    span = points[-1][0] - points[0][0]
+    if span <= 0.0:
+        return None
+    area = sum(
+        0.5 * (left[1] + right[1]) * (right[0] - left[0])
+        for left, right in zip(points, points[1:])
+    )
+    return area / span
 
 
 def phase8_controller_summaries(
@@ -1914,8 +2030,27 @@ def phase8_controller_summaries(
             row["proposal"]
             for row in ordered
             if isinstance(row.get("proposal"), Mapping)
-            and row["proposal"].get("optimization_guard")
-            == "monotone_objective_backtracking"
+            and row["proposal"].get("optimization_guard") is not None
+        ]
+        relative_gradient_norms = [
+            float(row["relative_final_gradient_norm"])
+            for row in proposal_rows
+            if row.get("relative_final_gradient_norm") is not None
+        ]
+        final_gradient_rms = [
+            float(row["final_gradient_rms"])
+            for row in proposal_rows
+            if row.get("final_gradient_rms") is not None
+        ]
+        optimizer_iterations = [
+            int(row["optimizer_iterations"])
+            for row in proposal_rows
+            if row.get("optimizer_iterations") is not None
+        ]
+        optimizer_evaluations = [
+            int(row["optimizer_function_evaluations"])
+            for row in proposal_rows
+            if row.get("optimizer_function_evaluations") is not None
         ]
         summaries.append(
             {
@@ -1967,6 +2102,66 @@ def phase8_controller_summaries(
                         for row in proposal_rows
                     )
                 ),
+                "mean_optimizer_iterations": (
+                    None
+                    if not optimizer_iterations
+                    else sum(optimizer_iterations) / len(optimizer_iterations)
+                ),
+                "maximum_optimizer_iterations": (
+                    None if not optimizer_iterations else max(optimizer_iterations)
+                ),
+                "mean_optimizer_function_evaluations": (
+                    None
+                    if not optimizer_evaluations
+                    else sum(optimizer_evaluations) / len(optimizer_evaluations)
+                ),
+                "maximum_optimizer_function_evaluations": (
+                    None if not optimizer_evaluations else max(optimizer_evaluations)
+                ),
+                "mean_relative_final_gradient_norm": (
+                    None
+                    if not relative_gradient_norms
+                    else sum(relative_gradient_norms)
+                    / len(relative_gradient_norms)
+                ),
+                "maximum_relative_final_gradient_norm": (
+                    None
+                    if not relative_gradient_norms
+                    else max(relative_gradient_norms)
+                ),
+                "mean_final_gradient_rms": (
+                    None
+                    if not final_gradient_rms
+                    else sum(final_gradient_rms) / len(final_gradient_rms)
+                ),
+                "environment_accuracy_auc": _normalized_trapezoid_auc(
+                    ordered, "environment_accuracy"
+                ),
+                "environment_nll_auc": _normalized_trapezoid_auc(
+                    ordered, "environment_nll"
+                ),
+                "nine_accuracy_auc": _normalized_trapezoid_auc(
+                    ordered, "before_nine_accuracy"
+                ),
+                "nine_nll_auc": _normalized_trapezoid_auc(
+                    ordered, "before_nine_nll"
+                ),
+                "non_nine_accuracy_auc": _normalized_trapezoid_auc(
+                    ordered, "before_non_nine_accuracy"
+                ),
+                "non_nine_nll_auc": _normalized_trapezoid_auc(
+                    ordered, "before_non_nine_nll"
+                ),
+                "final_environment_accuracy": final.get(
+                    "environment_accuracy"
+                ),
+                "final_environment_nll": final.get("environment_nll"),
+                "final_nine_accuracy": final.get("before_nine_accuracy"),
+                "final_nine_nll": final.get("before_nine_nll"),
+                "final_non_nine_accuracy": final.get(
+                    "before_non_nine_accuracy"
+                ),
+                "final_non_nine_nll": final.get("before_non_nine_nll"),
                 "final_balanced_accuracy": float(final["before_balanced_accuracy"]),
                 "final_parameter_squared_error_to_oracle": float(
                     final["parameter_squared_error_to_oracle"]
@@ -1977,3 +2172,312 @@ def phase8_controller_summaries(
         summaries,
         key=lambda row: (row["run_id"], row["method"]),
     )
+
+
+PHASE9_PAIRED_METRICS = (
+    "environment_accuracy_auc",
+    "environment_nll_auc",
+    "nine_accuracy_auc",
+    "nine_nll_auc",
+    "non_nine_accuracy_auc",
+    "non_nine_nll_auc",
+    "final_nine_accuracy",
+    "final_nine_nll",
+    "final_non_nine_accuracy",
+    "final_non_nine_nll",
+    "final_balanced_accuracy",
+    "mean_fisher_error",
+)
+PHASE9_LOWER_IS_BETTER = frozenset(
+    metric
+    for metric in PHASE9_PAIRED_METRICS
+    if "nll" in metric or "error" in metric
+)
+_T_CRITICAL_975 = {
+    1: 12.706,
+    2: 4.303,
+    3: 3.182,
+    4: 2.776,
+    5: 2.571,
+    6: 2.447,
+    7: 2.365,
+    8: 2.306,
+    9: 2.262,
+    10: 2.228,
+    11: 2.201,
+    12: 2.179,
+    13: 2.160,
+    14: 2.145,
+    15: 2.131,
+    16: 2.120,
+    17: 2.110,
+    18: 2.101,
+    19: 2.093,
+    20: 2.086,
+    21: 2.080,
+    22: 2.074,
+    23: 2.069,
+    24: 2.064,
+    25: 2.060,
+    26: 2.056,
+    27: 2.052,
+    28: 2.048,
+    29: 2.045,
+    30: 2.042,
+}
+
+
+def _deduplicated_phase9_entries(
+    bundles: Sequence[Phase9Bundle],
+) -> list[dict[str, Any]]:
+    by_run_id: dict[str, dict[str, Any]] = {}
+    for bundle in bundles:
+        for source in bundle.entries:
+            entry = dict(source)
+            run_id = str(entry["run_id"])
+            existing = by_run_id.get(run_id)
+            if existing is None:
+                entry["bundle_ids"] = [bundle.bundle_id]
+                by_run_id[run_id] = entry
+                continue
+            comparable = {
+                key: value
+                for key, value in existing.items()
+                if key != "bundle_ids"
+            }
+            if comparable != entry:
+                raise AnalysisArtifactError(
+                    f"Phase 9 run {run_id} has conflicting bundle metadata"
+                )
+            existing["bundle_ids"].append(bundle.bundle_id)
+    return sorted(
+        by_run_id.values(),
+        key=lambda row: (
+            row["replica_index"],
+            row["profile"],
+            row["kind"],
+            row["cell"],
+        ),
+    )
+
+
+def phase9_inventory_rows(
+    bundles: Sequence[Phase9Bundle],
+    repo_root: str | Path,
+) -> list[dict[str, Any]]:
+    status_by_run: dict[str, dict[str, Any]] = {}
+    for bundle in bundles:
+        for status in phase9_status_rows(bundle, repo_root):
+            run_id = status["run_id"]
+            existing = status_by_run.get(run_id)
+            if existing is not None and (
+                existing["run_state"] != status["run_state"]
+                or existing["initialization_state"]
+                != status["initialization_state"]
+            ):
+                raise AnalysisArtifactError(
+                    f"Phase 9 run {run_id} has conflicting artifact states"
+                )
+            status_by_run[run_id] = status
+    rows = []
+    for entry in _deduplicated_phase9_entries(bundles):
+        status = status_by_run[entry["run_id"]]
+        rows.append(
+            {
+                **entry,
+                "bundle_count": len(entry["bundle_ids"]),
+                "run_state": status["run_state"],
+                "initialization_state": status["initialization_state"],
+                "run_path": status["run_path"],
+                "config_path": status["config_path"],
+            }
+        )
+    return rows
+
+
+def phase9_replica_rows(
+    bundles: Sequence[Phase9Bundle],
+    repo_root: str | Path,
+) -> list[dict[str, Any]]:
+    root = Path(repo_root)
+    rows = []
+    for entry in phase9_inventory_rows(bundles, root):
+        if entry["run_state"] != "completed":
+            continue
+        run = load_phase8_controller_run(entry["run_path"])
+        summaries = phase8_controller_summaries(phase8_controller_rows([run]))
+        for summary in summaries:
+            rows.append(
+                {
+                    **summary,
+                    "profile": entry["profile"],
+                    "cell": entry["cell"],
+                    "kind": entry["kind"],
+                    "replica_index": entry["replica_index"],
+                    "replica_id": entry["replica_id"],
+                    "replica_seed": entry["replica_seed"],
+                    "replica_bundle_id": entry["replica_bundle_id"],
+                    "control_run_id": entry["control_run_id"],
+                    "factors": entry["factors"],
+                    "bundle_ids": entry["bundle_ids"],
+                    "run_path": entry["run_path"],
+                    "total_elapsed_seconds": float(
+                        run.metrics["total_elapsed_seconds"]
+                    ),
+                }
+            )
+    return sorted(
+        rows,
+        key=lambda row: (
+            row["replica_index"],
+            row["profile"],
+            row["kind"],
+            row["cell"],
+            row["method"],
+        ),
+    )
+
+
+def phase9_paired_rows(
+    replica_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    by_run_method = {
+        (row["run_id"], row["method"]): row for row in replica_rows
+    }
+    pairs = []
+    for treatment in replica_rows:
+        control_run_id = treatment.get("control_run_id")
+        if treatment.get("kind") != "treatment" or control_run_id is None:
+            continue
+        control = by_run_method.get((control_run_id, treatment["method"]))
+        if control is None:
+            continue
+        row = {
+            "profile": treatment["profile"],
+            "cell": treatment["cell"],
+            "method": treatment["method"],
+            "replica_index": treatment["replica_index"],
+            "replica_id": treatment["replica_id"],
+            "replica_seed": treatment["replica_seed"],
+            "replica_bundle_id": treatment["replica_bundle_id"],
+            "treatment_run_id": treatment["run_id"],
+            "control_run_id": control["run_id"],
+            "treatment_run_path": treatment.get("run_path"),
+            "control_run_path": control.get("run_path"),
+            "factors": treatment["factors"],
+        }
+        for metric in PHASE9_PAIRED_METRICS:
+            treatment_value = treatment.get(metric)
+            control_value = control.get(metric)
+            row[f"treatment_{metric}"] = treatment_value
+            row[f"control_{metric}"] = control_value
+            row[f"delta_{metric}"] = (
+                None
+                if treatment_value is None or control_value is None
+                else float(treatment_value) - float(control_value)
+            )
+        pairs.append(row)
+    return sorted(
+        pairs,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["replica_index"],
+        ),
+    )
+
+
+def phase9_paired_aggregates(
+    paired_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in paired_rows:
+        grouped[(row["profile"], row["cell"], row["method"])].append(row)
+    aggregates = []
+    for (profile, cell, method), group in grouped.items():
+        for metric in PHASE9_PAIRED_METRICS:
+            values = [
+                float(row[f"delta_{metric}"])
+                for row in group
+                if row.get(f"delta_{metric}") is not None
+            ]
+            if not values:
+                continue
+            count = len(values)
+            mean = sum(values) / count
+            if count < 2:
+                standard_error = ci_low = ci_high = None
+            else:
+                variance = sum((value - mean) ** 2 for value in values) / (
+                    count - 1
+                )
+                standard_error = math.sqrt(variance / count)
+                critical = _T_CRITICAL_975.get(count - 1, 1.96)
+                half_width = critical * standard_error
+                ci_low = mean - half_width
+                ci_high = mean + half_width
+            aggregates.append(
+                {
+                    "profile": profile,
+                    "cell": cell,
+                    "method": method,
+                    "metric": metric,
+                    "lower_is_better": metric in PHASE9_LOWER_IS_BETTER,
+                    "replica_count": count,
+                    "mean_paired_effect": mean,
+                    "standard_error": standard_error,
+                    "ci95_low": ci_low,
+                    "ci95_high": ci_high,
+                    "initial_replica_target_met": count >= 5,
+                    "treatment_run_ids": [
+                        row["treatment_run_id"] for row in group
+                    ],
+                    "control_run_ids": [row["control_run_id"] for row in group],
+                }
+            )
+    return sorted(
+        aggregates,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["metric"],
+        ),
+    )
+
+
+def phase9_progress_rows(
+    inventory_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    control_states = {
+        row["run_id"]: row["run_state"]
+        for row in inventory_rows
+        if row["kind"] == "control"
+    }
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in inventory_rows:
+        if row["kind"] == "treatment":
+            grouped[(row["profile"], row["cell"])].append(row)
+    rows = []
+    for (profile, cell), entries in grouped.items():
+        completed_treatments = sum(
+            entry["run_state"] == "completed" for entry in entries
+        )
+        completed_pairs = sum(
+            entry["run_state"] == "completed"
+            and control_states.get(entry["control_run_id"]) == "completed"
+            for entry in entries
+        )
+        rows.append(
+            {
+                "profile": profile,
+                "cell": cell,
+                "expected_replicas": len(entries),
+                "completed_treatments": completed_treatments,
+                "completed_pairs": completed_pairs,
+                "initial_target": 5,
+                "initial_target_met": completed_pairs >= 5,
+            }
+        )
+    return sorted(rows, key=lambda row: (row["profile"], row["cell"]))

@@ -34,6 +34,48 @@ ORACLE_CONVERGENCE_CONFIG = (
     / "configs"
     / "phase8_gpu_oracle_convergence.json"
 )
+CORRECTED_PLUGIN_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_corrected_plugin.json"
+)
+CORRECTED_ORACLE_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_corrected_oracle.json"
+)
+K100_PLUGIN_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_k100_plugin.json"
+)
+K100_FIXED_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_k100_fixed.json"
+)
+K100_ORACLE_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_k100_oracle.json"
+)
+K50_PLUGIN_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_k50_plugin_rank8.json"
+)
+K50_FIXED_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "phase8_gpu_k50_fixed_rank8.json"
+)
 
 
 def test_smoke_config_loads_and_has_stable_hash() -> None:
@@ -212,3 +254,102 @@ def test_schema_eight_plugin_and_oracle_configs_are_replica_paired() -> None:
     assert plugin.controller.policy == "optimal_plugin"
     assert oracle.controller.policy == "optimal_oracle"
     assert replica_bundle_id(plugin) == replica_bundle_id(oracle)
+
+
+def test_schema_nine_corrected_configs_share_the_exact_reference_path() -> None:
+    plugin = load_config(CORRECTED_PLUGIN_CONFIG)
+    oracle = load_config(CORRECTED_ORACLE_CONFIG)
+
+    assert plugin.schema_version == 9
+    assert plugin.artifact_schema_version == 4
+    assert plugin.metric_schema_version == 5
+    assert plugin.controller.reference_optimum_artifact is not None
+    assert (
+        plugin.controller.reference_optimum_artifact
+        == oracle.controller.reference_optimum_artifact
+    )
+    assert replica_bundle_id(plugin) == replica_bundle_id(oracle)
+
+
+def test_schema_nine_oracle_requires_an_external_reference_path() -> None:
+    raw = json.loads(CORRECTED_ORACLE_CONFIG.read_text(encoding="utf-8"))
+    raw["controller"]["reference_optimum_artifact"] = None
+
+    with pytest.raises(ConfigError, match="reference_optimum_artifact"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_ten_round_trips_explicit_lbfgs_controls() -> None:
+    raw = json.loads(K100_PLUGIN_CONFIG.read_text(encoding="utf-8"))
+    config = ExperimentConfig.from_mapping(raw)
+
+    assert config.schema_version == 10
+    assert config.metric_schema_version == 6
+    assert config.optimizer.name == "lbfgs"
+    assert config.optimizer.inner_steps == 100
+    assert config.optimizer.lbfgs_history_size == 20
+    assert config.optimizer.lbfgs_line_search_fn == "strong_wolfe"
+    assert config.estimator.controller_methods == [
+        "dense",
+        "diagonal",
+        "low_rank_diagonal",
+    ]
+    assert config.to_mapping() == raw
+
+
+def test_schema_ten_principal_configs_are_replica_paired() -> None:
+    configs = [
+        load_config(path)
+        for path in (K100_PLUGIN_CONFIG, K100_FIXED_CONFIG, K100_ORACLE_CONFIG)
+    ]
+
+    assert {config.controller.policy for config in configs} == {
+        "optimal_plugin",
+        "fixed_unified",
+        "optimal_oracle",
+    }
+    assert len({replica_bundle_id(config) for config in configs}) == 1
+    assert len(
+        {config.controller.reference_optimum_artifact for config in configs}
+    ) == 1
+
+
+def test_schema_ten_rejects_duplicate_controller_methods() -> None:
+    raw = json.loads(K100_PLUGIN_CONFIG.read_text(encoding="utf-8"))
+    raw["estimator"]["controller_methods"] = ["dense", "dense"]
+
+    with pytest.raises(ConfigError, match="controller_methods"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_schema_ten_rank_sensitivity_selects_only_rank_eight() -> None:
+    from mnist_experiment.run_controller import _phase8_methods, _validate_config
+
+    path = (
+        Path(__file__).parents[2]
+        / "mnist_experiment"
+        / "configs"
+        / "phase8_gpu_k50_plugin_rank8.json"
+    )
+    config = load_config(path)
+    selected_rank = _validate_config(config)
+
+    assert _phase8_methods(config, selected_rank) == (
+        "low_rank_diagonal_r8",
+    )
+
+
+def test_schema_ten_k50_plugin_and_fixed_configs_are_replica_paired() -> None:
+    plugin = load_config(K50_PLUGIN_CONFIG)
+    fixed = load_config(K50_FIXED_CONFIG)
+
+    assert plugin.controller.policy == "optimal_plugin"
+    assert fixed.controller.policy == "fixed_unified"
+    assert fixed.controller.fixed_pi == 0.05
+    assert plugin.estimator.controller_methods == ["low_rank_diagonal"]
+    assert fixed.estimator.controller_methods == ["low_rank_diagonal"]
+    assert replica_bundle_id(plugin) == replica_bundle_id(fixed)
+    assert (
+        plugin.controller.reference_optimum_artifact
+        == fixed.controller.reference_optimum_artifact
+    )

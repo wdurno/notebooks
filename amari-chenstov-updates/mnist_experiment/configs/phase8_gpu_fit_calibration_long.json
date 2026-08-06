@@ -1,0 +1,18 @@
+{
+  "artifact_schema_version": 1,
+  "cache_root": "cache/mnist_experiment/phase8_calibrations",
+  "checkpoint_steps": [0, 50, 99],
+  "experiment": "mnist_lfu_phase8_gpu_fit_calibration_long",
+  "inner_step_budgets": [20, 2000, 5000, 10000],
+  "metric_schema_version": 1,
+  "replica_id": "replica-0000",
+  "replica_seed": 1729,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cuda",
+    "matrix_dtype": "float64",
+    "training_dtype": "float32"
+  },
+  "schema_version": 1,
+  "source_run": "cache/mnist_experiment/phase8_runs/mnist_lfu_phase8_gpu_corrected_plugin__replica-0000__d4a2a8b15e1df152"
+}

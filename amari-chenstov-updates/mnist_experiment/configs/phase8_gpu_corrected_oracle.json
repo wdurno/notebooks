@@ -1,0 +1,78 @@
+{
+  "artifact_schema_version": 4,
+  "cache_root": "cache/mnist_experiment/phase8_runs",
+  "controller": {
+    "fixed_pi": 0.5,
+    "oracle_mode": "reference_path",
+    "pi_max": 0.95,
+    "pi_min": 0.05,
+    "policy": "optimal_oracle",
+    "reference_optimum_artifact": "cache/mnist_experiment/phase8_runs/mnist_lfu_phase8_gpu_convergence__replica-0000__3f71f0441d864ca3/phase8_reference_optimum.pt",
+    "trace_epsilon": 1e-12,
+    "trend_half_life_p": 0.2
+  },
+  "data": {
+    "evaluation_size": 10000,
+    "initialization_size": 30000,
+    "non_nine_sampling": "empirical",
+    "num_p_steps": 100,
+    "online_pool_size": 12000,
+    "reference_pool_size": 12000,
+    "samples_per_step": 128
+  },
+  "estimator": {
+    "fresh_fisher_cadence": 2,
+    "low_rank": 8,
+    "low_rank_grid": [0, 8],
+    "method": "full_lfu",
+    "representation": "low_rank_diagonal",
+    "ridge_amplitude_epsilon": 1e-06,
+    "ridge_coherence_threshold": 0.75,
+    "ridge_half_life_steps": 8.0
+  },
+  "experiment": "mnist_lfu_phase8_gpu_corrected_oracle",
+  "initialization": {
+    "batch_size": 256,
+    "learning_rate": 0.01,
+    "max_epochs": 15,
+    "num_workers": 2,
+    "optimizer": "adam",
+    "target_non_nine_accuracy": 0.8,
+    "weight_decay": 0.0
+  },
+  "metric_schema_version": 5,
+  "optimizer": {
+    "ewc_strength": 1.0,
+    "inner_steps": 20,
+    "learning_rate": 0.001,
+    "name": "sgd"
+  },
+  "reference": {
+    "calibration_batch_size": 128,
+    "calibration_learning_rate": 0.01,
+    "calibration_max_fits": 32,
+    "calibration_min_fits": 8,
+    "calibration_steps": 100,
+    "calibration_validation_chunks": 8,
+    "chunk_size": 512,
+    "convergence_absolute_epsilon": 1e-08,
+    "convergence_min_chunks": 8,
+    "convergence_relative_epsilon": 0.01,
+    "convergence_sample_sizes": [8192, 16384, 32768],
+    "convergence_sigma": 6.0,
+    "derivative_dtype": "float64",
+    "sample_size": 32768,
+    "stencil_direction_count": 1,
+    "stencil_epsilons": [0.0001, 0.0003, 0.001],
+    "stencil_p_values": [0.25, 0.5, 0.75]
+  },
+  "replica_id": "replica-0000",
+  "replica_seed": 1729,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cuda",
+    "matrix_dtype": "float64",
+    "training_dtype": "float32"
+  },
+  "schema_version": 9
+}

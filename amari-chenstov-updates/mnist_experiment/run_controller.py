@@ -61,11 +61,8 @@ from src.structured_trajectory import (
     LowRankDiagonalFisherTracker,
 )
 
-PHASE8_METRIC_SCHEMA_VERSION = 4
-PHASE8_TRAJECTORY_SCHEMA_VERSION = 3
-PHASE8_CONTROLLER_STATE_SCHEMA_VERSION = 3
-PHASE8_CHECKPOINT_SCHEMA_VERSION = 3
-PHASE8_ORACLE_PATH_SCHEMA_VERSION = 3
+PHASE8_METRIC_SCHEMA_VERSION = 6
+PHASE8_ARTIFACT_SCHEMA_VERSION = 4
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -80,8 +77,18 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def _validate_config(config: ExperimentConfig) -> int:
-    if config.schema_version not in {7, 8}:
-        raise ValueError("Phase 8 controller runs require schema version 7 or 8")
+    if config.schema_version not in {9, 10}:
+        raise ValueError(
+            "corrected Phase 8 controller runs require schema version 9 or 10"
+        )
+    expected_metric_schema = 6 if config.schema_version >= 10 else 5
+    if config.metric_schema_version != expected_metric_schema:
+        raise ValueError(
+            "corrected Phase 8 metric schema must be version "
+            f"{expected_metric_schema}"
+        )
+    if config.artifact_schema_version != PHASE8_ARTIFACT_SCHEMA_VERSION:
+        raise ValueError("corrected Phase 8 artifact schema must be version 4")
     if config.estimator.ema_gain is not None:
         raise ValueError("Phase 8 forbids an independent estimator.ema_gain")
     if config.estimator.representation != "low_rank_diagonal":
@@ -95,6 +102,10 @@ def _validate_config(config: ExperimentConfig) -> int:
         raise ValueError("Phase 8 low_rank_grid must contain zero and one rank")
     if config.estimator.fresh_fisher_cadence is None:
         raise ValueError("Phase 8 requires fresh_fisher_cadence")
+    if config.schema_version >= 10 and config.estimator.controller_methods is None:
+        raise ValueError(
+            "schema-v10 Phase 8 requires explicit estimator.controller_methods"
+        )
     if config.estimator.ridge_half_life_steps is None:
         raise ValueError("Phase 8 requires directional-ridge settings")
     if config.controller.oracle_mode not in {"reference_path", "diagnostic"}:
@@ -128,6 +139,22 @@ class _ConditionRun:
     optimizer_state: dict[str, Any]
     dependence: dict[str, Any]
     elapsed_seconds: float
+
+
+def _phase8_methods(
+    config: ExperimentConfig, selected_rank: int
+) -> tuple[str, ...]:
+    requested = config.estimator.controller_methods or [
+        "dense",
+        "diagonal",
+        "low_rank_diagonal",
+    ]
+    names = {
+        "dense": "dense_ridge_full",
+        "diagonal": "diagonal_ridge_full",
+        "low_rank_diagonal": f"low_rank_diagonal_r{selected_rank}",
+    }
+    return tuple(names[method] for method in requested)
 
 
 def _make_tracker(
@@ -367,6 +394,10 @@ def _run_condition(
             if decision.applied_pi == 0.0:
                 accepted_displacement = torch.zeros_like(parameter_before).cpu()
                 proposal_mapping = {
+                    "inner_steps": config.optimizer.inner_steps,
+                    "optimizer_iterations": 0,
+                    "optimizer_function_evaluations": 0,
+                    "stopping_reason": "hard_freeze",
                     "adaptation_weight": 0.0,
                     "effective_ewc_strength": None,
                     "post_optimization_scaling_applied": False,
@@ -403,7 +434,9 @@ def _run_condition(
                     float(torch.linalg.vector_norm(accepted_displacement)), 1.0
                 )
                 if agreement_error > tolerance:
-                    raise RuntimeError("proposal displacement was altered after optimization")
+                    raise RuntimeError(
+                        "proposal displacement was altered after optimization"
+                    )
                 expected_strength = mixture_ewc_strength(
                     decision.applied_pi,
                     multiplier=config.optimizer.ewc_strength,
@@ -442,21 +475,25 @@ def _run_condition(
                     if acceptance.scale_observation > 0.0
                     else None
                 ),
-                "oracle_residual_norm": float(
-                    torch.linalg.vector_norm(
-                        accepted_displacement.to(dtype=matrix_dtype)
-                        - oracle_inputs[step].displacement
+                "normalized_displacement_norm": (
+                    None
+                    if acceptance.normalized_displacement is None
+                    else float(
+                        torch.linalg.vector_norm(
+                            acceptance.normalized_displacement
+                        )
                     )
                 ),
+                "oracle_residual_norm": (
+                    None
+                    if acceptance.oracle_residual is None
+                    else float(torch.linalg.vector_norm(acceptance.oracle_residual))
+                ),
                 "oracle_residual_to_scale_ratio": (
-                    float(
-                        (
-                            accepted_displacement.to(dtype=matrix_dtype)
-                            - oracle_inputs[step].displacement
-                        ).square().sum()
-                    )
+                    float(acceptance.oracle_residual.square().sum())
                     / acceptance.scale_observation
                     if acceptance.scale_observation > 0.0
+                    and acceptance.oracle_residual is not None
                     else None
                 ),
             }
@@ -486,6 +523,19 @@ def _run_condition(
                 "trend": state_after.trend,
             },
             "accepted_displacement": accepted_displacement,
+            "normalized_displacement": (
+                None
+                if acceptance_mapping is None
+                else acceptance.normalized_displacement
+            ),
+            "plugin_residual": (
+                None if acceptance_mapping is None else acceptance.residual
+            ),
+            "oracle_residual": (
+                None
+                if acceptance_mapping is None
+                else acceptance.oracle_residual
+            ),
             "oracle_displacement": oracle_displacement,
             "parameter_error_to_oracle": parameter_error,
         }
@@ -689,8 +739,11 @@ def _residual_dependence_diagnostics(
         accepted = state["accepted_displacement"]
         if accepted is None:
             continue
-        plugin_residuals.append(accepted - state["pre"]["trend"])
-        oracle_residuals.append(accepted - state["oracle_displacement"])
+        pi = float(state["decision"]["applied_pi"])
+        if pi == 0.0:
+            continue
+        plugin_residuals.append(accepted - pi * state["pre"]["trend"])
+        oracle_residuals.append(accepted - pi * state["oracle_displacement"])
         acceptance = row["acceptance"]
         if acceptance["residual_to_scale_ratio"] is not None:
             plugin_ratios.append(acceptance["residual_to_scale_ratio"])
@@ -719,6 +772,7 @@ def _residual_dependence_diagnostics(
 
     return {
         "trend_removed": True,
+        "residual_semantics": "u_minus_pi_times_predictable_drift",
         "residual_count": len(plugin_residuals),
         "half_life_window_steps": window_steps,
         "plugin_vector_lag_one_correlation": _vector_lag_one_correlation(
@@ -767,11 +821,7 @@ def main() -> None:
     session = RunStore(output_root).begin(
         config, Path(__file__).parents[1], resume=arguments.resume
     )
-    artifact_version = (
-        config.artifact_schema_version
-        if config.schema_version >= 8
-        else 2
-    )
+    artifact_version = config.artifact_schema_version
     train_dataset, test_dataset = load_mnist_datasets(data_root, download=False)
     train_targets = dataset_targets(train_dataset)
     loaded = load_replica_bundle_for_config(replica_root, config, device=device)
@@ -789,6 +839,7 @@ def main() -> None:
         matrix_dtype=matrix_dtype,
     )
     oracle_path_file = session.path / "phase8_reference_optimum.pt"
+    oracle_path_provenance: dict[str, Any]
     if oracle_path_file.is_file():
         stored_oracle = torch.load(
             oracle_path_file,
@@ -802,10 +853,61 @@ def main() -> None:
         )
         if oracle_path.p_values != loaded.stream_plan.p_values:
             raise RuntimeError("checkpointed oracle path uses a different p grid")
+        oracle_path_provenance = dict(stored_oracle["provenance"])
         oracle_inputs, oracle_reference_rows = _oracle_inputs(
             oracle_path, matrix_dtype=matrix_dtype
         )
         print("phase8 reference-optimum path resumed from checkpoint", flush=True)
+    elif config.controller.reference_optimum_artifact is not None:
+        source_path = Path(config.controller.reference_optimum_artifact)
+        if not source_path.is_file():
+            raise FileNotFoundError(
+                f"reference-optimum artifact does not exist: {source_path}"
+            )
+        stored_source = torch.load(
+            source_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+        if not isinstance(stored_source, dict) or "path" not in stored_source:
+            raise RuntimeError("reference-optimum source has an invalid envelope")
+        oracle_path = ReferenceOptimumPath.from_artifact_mapping(
+            stored_source["path"]
+        )
+        if oracle_path.p_values != loaded.stream_plan.p_values:
+            raise RuntimeError("external oracle path uses a different p grid")
+        if oracle_path.parameters.shape[1] != loaded.layout.total_numel:
+            raise RuntimeError("external oracle path uses a different model layout")
+        expected_partition_hash = loaded.partitions.content_hash
+        if any(
+            plan.partition_hash != expected_partition_hash
+            for plan in oracle_path.sample_plans
+        ):
+            raise RuntimeError("external oracle path uses different data partitions")
+        oracle_inputs, oracle_reference_rows = _oracle_inputs(
+            oracle_path, matrix_dtype=matrix_dtype
+        )
+        oracle_path_provenance = {
+            "mode": "external_artifact",
+            "source_path": str(source_path),
+            "source_envelope_schema_version": stored_source.get("schema_version"),
+            "content_hash": oracle_path.content_hash,
+        }
+        session.write_torch(
+            "phase8_reference_optimum.pt",
+            _cpu_tree(
+                {
+                    "schema_version": artifact_version,
+                    "path": oracle_path.artifact_mapping(),
+                    "path_displacements": oracle_reference_rows,
+                    "provenance": oracle_path_provenance,
+                }
+            ),
+        )
+        print(
+            "phase8 reference-optimum path copied from validated artifact",
+            flush=True,
+        )
     else:
         print("phase8 reference-optimum path started", flush=True)
         oracle_path = build_reference_optimum_path(
@@ -821,6 +923,12 @@ def main() -> None:
         oracle_inputs, oracle_reference_rows = _oracle_inputs(
             oracle_path, matrix_dtype=matrix_dtype
         )
+        oracle_path_provenance = {
+            "mode": "built_in_run",
+            "source_path": None,
+            "source_envelope_schema_version": None,
+            "content_hash": oracle_path.content_hash,
+        }
         session.write_torch(
             "phase8_reference_optimum.pt",
             _cpu_tree(
@@ -828,6 +936,7 @@ def main() -> None:
                     "schema_version": artifact_version,
                     "path": oracle_path.artifact_mapping(),
                     "path_displacements": oracle_reference_rows,
+                    "provenance": oracle_path_provenance,
                 }
             ),
         )
@@ -844,11 +953,7 @@ def main() -> None:
         device=device,
         dtype=matrix_dtype,
     )
-    methods = (
-        "dense_ridge_full",
-        "diagonal_ridge_full",
-        f"low_rank_diagonal_r{selected_rank}",
-    )
+    methods = _phase8_methods(config, selected_rank)
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
@@ -929,7 +1034,16 @@ def main() -> None:
         "post_optimization_scaling": False,
         "fisher_inverse_used": False,
         "trace_estimator": "accepted_displacement_residual_moments",
+        "controller_displacement_law": "u_approx_pi_times_drift_plus_noise",
+        "trend_estimand": "environmental_parameter_displacement",
+        "trend_observation": "accepted_displacement_divided_by_pi",
+        "covariance_residual": "u_minus_pi_times_predictable_drift",
+        "oracle_covariance_residual": "u_minus_pi_times_oracle_drift",
+        "ewc_optimality_diagnostic": "final_objective_gradient",
+        "optimizer_budget_role": "fixed_compute_budget_not_convergence_claim",
+        "optimizer_accounting": "structured_iterations_and_function_evaluations",
         "oracle_path_hash": oracle_path.content_hash,
+        "oracle_path_provenance": oracle_path_provenance,
         "condition_steps": [
             item for row in conditions for item in row.rows
         ],

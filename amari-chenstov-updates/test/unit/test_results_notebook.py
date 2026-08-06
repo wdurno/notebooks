@@ -30,6 +30,14 @@ def test_results_notebook_is_valid_and_artifact_only() -> None:
         "Assumption checks" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )
+    assert any(
+        "Phase 9 command center" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+    assert any(
+        "Paired controller evidence" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
 
 
 def test_coupled_results_notebook_is_valid_and_artifact_only() -> None:

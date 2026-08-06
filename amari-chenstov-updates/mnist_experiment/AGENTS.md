@@ -4,6 +4,10 @@ This experiment tests whether linearized Fisher updates (LFUs) improve Fisher tr
 
 Do not implement a large Cartesian experiment immediately. Build and validate the experiment in the stages specified below, using immutable replica artifacts so later compute extends rather than replaces earlier evidence.
 
+Phase 9 orchestration invariants are recorded in
+[AGENTS_PHASE9.md](AGENTS_PHASE9.md). That file is agent-only maintenance
+context; keep user commands concise in [COMMAND_CENTER.md](COMMAND_CENTER.md).
+
 ## Scientific model
 
 The per-observation loss is a negative log likelihood up to an additive constant:
@@ -378,7 +382,22 @@ Record:
 - EWC penalty;
 - $\pi_t$, $\lambda_t$, and objective normalization;
 - optimizer displacement norm $\|u_t\|$;
-- Fisher-weighted displacement norm.
+- Fisher-weighted displacement norm;
+- initial and final objective-gradient norms, their ratio, gradient RMS, and
+  objective decrease.
+
+Monotone backtracking is a numerical safety guard, not an optimality test. The
+configured inner-step budget is scientifically adequate only when the recorded
+final-gradient diagnostics show that the local EWC objective was solved closely
+enough for the weighted-quadratic approximation used by the controller.
+
+Calibrate an uncertain inner-step budget with paired local restarts from saved
+immutable controller checkpoints. Every candidate budget must use the same
+anchor, observation batch, $\pi_t$, and Fisher representation. Compare total
+gradient reduction, objective gaps, displacement angles, and relative
+displacement changes. Treat the largest budget as a numerical reference only,
+not as an assumed optimum, and keep this diagnostic separate from a full
+trajectory comparison in which different budgets alter future states.
 
 The LFU on the following iteration uses the realized optimizer displacement
 $u_t=\theta_{t+1}-\theta_t$.
@@ -429,7 +448,14 @@ $$
 }.
 $$
 
-Estimate the local trend with a vector EMA of accepted displacements and
+Under locally matched quadratic curvature, the accepted EWC displacement obeys
+
+$$
+u_t\approx\pi_t(d\theta_t+\xi_t-e_t).
+$$
+
+Estimate the local trend with a vector EMA of normalized accepted
+displacements $z_t=u_t/\pi_t$ for $\pi_t>0$, and
 estimate $T_t$ with the scalar residual moment described in
 `mathematical_overview.ipynb`. The principal defaults are a trend half-life of
 $0.20$ in environmental $p$-distance, $\pi_{\min}=0.05$, and
@@ -447,7 +473,7 @@ $$
 The trace moment uses
 
 $$
-r_t=u_t-\widehat d\theta_{t|t-1},
+r_t=u_t-\pi_t\widehat d\theta_{t|t-1},
 \qquad
 a_t=\pi_t^2\left(q_{t-1}+m_t^{-1}\right),
 \qquad
@@ -462,7 +488,8 @@ Implement these controller policies:
 - `fixed`: $\pi_t=\pi_0$, used for unified fixed-weight baselines;
 - `optimal_plugin`: $\pi_t=\widehat\pi_t^\star$;
 - `optimal_oracle`: substitute high-sample reference-path displacements and
-  an oracle-trend residual moment from the accepted parameter series to
+  an oracle-trend residual moment based on
+  $u_t-\pi_td\theta_t$ from the accepted parameter series to
   diagnose trend error without inverting a Fisher matrix;
 - `freeze`: $\pi_t=0$, an explicit diagnostic boundary that bypasses ordinary
   controller clipping.
@@ -472,8 +499,9 @@ epsilon as configuration values. Clamp ordinary plug-in and oracle policies to
 $[\pi_{\min},\pi_{\max}]$. Test targeted bound and trend-half-life grids only
 after selecting the principal Fisher conditions.
 
-Record the raw and applied value, both bound activations, EWC odds, trend and
-oracle displacement norms, plug-in and oracle-residual trace estimates, $q_t$, effective size, cold-start
+Record the raw and applied value, both bound activations, EWC odds, normalized
+displacement, trend and oracle displacement norms, plug-in and oracle-residual
+trace estimates, $q_t$, effective size, cold-start
 status, and intervention outcome at every step. Choosing $\pi_t$ adaptively
 generally targets a tempered objective and may bias the estimate relative to
 the instantaneous MLE. Treat that bias as an explicit

@@ -1,0 +1,162 @@
+{
+  "base_replica_seed": 1729,
+  "bundle_root": "cache/mnist_experiment/phase9/bundles",
+  "cost_model": {
+    "initialization_seconds": 90.0,
+    "reference_seconds_per_p": 32.0
+  },
+  "default_profiles": [
+    "controller-screen"
+  ],
+  "default_replica_count": 5,
+  "default_replica_start": 1,
+  "fixed_pi": 0.05,
+  "name": "phase9-initial",
+  "profiles": [
+    {
+      "cells": [
+        {
+          "name": "center",
+          "overrides": {}
+        },
+        {
+          "name": "pi-min-001",
+          "overrides": {
+            "controller": {
+              "pi_min": 0.01
+            }
+          }
+        },
+        {
+          "name": "pi-min-010",
+          "overrides": {
+            "controller": {
+              "pi_min": 0.1
+            }
+          }
+        },
+        {
+          "name": "pi-max-080",
+          "overrides": {
+            "controller": {
+              "pi_max": 0.8
+            }
+          }
+        },
+        {
+          "name": "pi-max-100",
+          "overrides": {
+            "controller": {
+              "pi_max": 1.0
+            }
+          }
+        },
+        {
+          "name": "trend-h-010",
+          "overrides": {
+            "controller": {
+              "trend_half_life_p": 0.1
+            }
+          }
+        },
+        {
+          "name": "trend-h-040",
+          "overrides": {
+            "controller": {
+              "trend_half_life_p": 0.4
+            }
+          }
+        }
+      ],
+      "control_scope": "profile",
+      "estimated_run_bytes": 60000000,
+      "estimated_trajectory_seconds": 290.0,
+      "name": "controller-screen",
+      "overrides": {},
+      "template": "mnist_experiment/configs/phase8_gpu_k50_plugin_rank8.json"
+    },
+    {
+      "cells": [
+        {
+          "name": "m-008",
+          "overrides": {
+            "data": {
+              "samples_per_step": 8
+            }
+          }
+        },
+        {
+          "name": "m-032",
+          "overrides": {
+            "data": {
+              "samples_per_step": 32
+            }
+          }
+        },
+        {
+          "name": "p-steps-050",
+          "overrides": {
+            "data": {
+              "num_p_steps": 50
+            }
+          }
+        },
+        {
+          "name": "p-steps-200",
+          "overrides": {
+            "data": {
+              "num_p_steps": 200
+            }
+          }
+        }
+      ],
+      "control_scope": "cell",
+      "estimated_run_bytes": 60000000,
+      "estimated_trajectory_seconds": 290.0,
+      "name": "data-screen",
+      "overrides": {},
+      "template": "mnist_experiment/configs/phase8_gpu_k50_plugin_rank8.json"
+    },
+    {
+      "cells": [
+        {
+          "name": "center",
+          "overrides": {}
+        }
+      ],
+      "control_scope": "profile",
+      "estimated_run_bytes": 65000000,
+      "estimated_trajectory_seconds": 310.0,
+      "name": "dense-confirm",
+      "overrides": {
+        "estimator": {
+          "controller_methods": [
+            "dense"
+          ]
+        }
+      },
+      "template": "mnist_experiment/configs/phase8_gpu_k100_plugin.json"
+    },
+    {
+      "cells": [
+        {
+          "name": "center",
+          "overrides": {}
+        }
+      ],
+      "control_scope": "profile",
+      "estimated_run_bytes": 5000000,
+      "estimated_trajectory_seconds": 3.0,
+      "name": "smoke",
+      "overrides": {
+        "estimator": {
+          "controller_methods": [
+            "low_rank_diagonal"
+          ]
+        }
+      },
+      "template": "mnist_experiment/configs/phase8_lbfgs_smoke.json"
+    }
+  ],
+  "schema_version": 1
+}

@@ -479,9 +479,11 @@ def _path_divergence_rows(
             {
                 "step": step,
                 "p": p_value,
-                "maximum_pairwise_parameter_distance": max(distances),
+                "maximum_pairwise_parameter_distance": (
+                    max(distances) if distances else 0.0
+                ),
                 "mean_pairwise_parameter_distance": (
-                    sum(distances) / len(distances)
+                    sum(distances) / len(distances) if distances else 0.0
                 ),
             }
         )

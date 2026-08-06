@@ -85,9 +85,18 @@ def test_ewc_proposal_records_the_realized_full_network_move() -> None:
     after = layout.flatten_module(model, detach=True)
     torch.testing.assert_close(result.displacement, after - before)
     assert result.inner_steps == 2
+    assert result.optimizer_iterations == 2
+    assert result.optimizer_function_evaluations >= 4
     assert result.displacement_norm > 0
     assert result.fisher_weighted_displacement_norm == result.displacement_norm
     assert result.ewc_penalty_after > 0
+    assert result.initial_gradient_norm > 0
+    assert result.final_gradient_norm >= 0
+    assert result.final_gradient_max_abs >= 0
+    assert result.relative_final_gradient_norm >= 0
+    assert result.final_gradient_rms >= 0
+    assert result.objective_decrease >= 0
+    assert result.stopping_reason == "fixed_inner_step_budget"
 
 
 def test_mixture_ewc_proposal_records_odds_without_post_scaling() -> None:
@@ -158,3 +167,50 @@ def test_ewc_proposal_backtracks_through_high_quadratic_curvature() -> None:
     assert result.minimum_learning_rate < config.learning_rate
     assert result.optimization_guard == "monotone_objective_backtracking"
     assert optimizer.param_groups[0]["lr"] == config.learning_rate
+
+
+def test_lbfgs_ewc_proposal_converges_with_strong_wolfe_line_search() -> None:
+    model = nn.Linear(2, 2, bias=False, dtype=torch.float64)
+    with torch.no_grad():
+        model.weight.copy_(
+            torch.tensor([[0.2, -0.1], [-0.3, 0.4]], dtype=torch.float64)
+        )
+    layout = ParameterLayout.from_module(model)
+    inputs = torch.tensor(
+        [[1.0, -1.0], [0.5, 0.25], [-0.75, 0.5]],
+        dtype=torch.float64,
+    )
+    targets = torch.tensor([0, 1, 0])
+    fisher = torch.eye(layout.total_numel, dtype=torch.float64)
+    config = OptimizerConfig(
+        name="lbfgs",
+        learning_rate=1.0,
+        inner_steps=100,
+        ewc_strength=1.0,
+        lbfgs_history_size=10,
+        lbfgs_max_eval_factor=1.5,
+        lbfgs_tolerance_grad=1e-9,
+        lbfgs_tolerance_change=1e-12,
+        lbfgs_line_search_fn="strong_wolfe",
+    )
+
+    result = take_ewc_proposal(
+        model,
+        layout,
+        inputs,
+        targets,
+        fisher,
+        config,
+        build_optimizer(model, config),
+        adaptation_weight=0.5,
+    )
+
+    assert result.objective_decrease > 0.0
+    assert result.relative_final_gradient_norm < 1e-6
+    assert result.optimization_guard == "strong_wolfe_line_search_transaction"
+    assert result.stopping_reason == "lbfgs_convergence_tolerance"
+    assert 0 < result.optimizer_iterations < config.inner_steps
+    assert result.optimizer_function_evaluations >= result.optimizer_iterations
+    assert result.metrics_mapping()["optimizer_iterations"] == (
+        result.optimizer_iterations
+    )

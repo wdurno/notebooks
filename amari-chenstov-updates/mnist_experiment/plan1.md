@@ -66,8 +66,8 @@ Completed phases should not be casually redesigned. If later evidence invalidate
 | 5 | Results notebook and factor pilot | Complete |
 | 6 | Dense EWC-coupled experiment | Complete |
 | 7 | Diagonal and low-rank-plus-diagonal representations | Complete |
-| 8 | Optimal-controller experiment | In progress |
-| 9 | Replication, hardening, and handoff | Pending |
+| 8 | Optimal-controller experiment | Complete |
+| 9 | Replication, hardening, and handoff | Complete |
 
 ## Cross-cutting constraints
 
@@ -1272,12 +1272,15 @@ drawn.
    by Bernoulli thinning.
 4. **Signal.** The target signal is
    $d\theta_t=\theta_{t+1}^\star-\theta_t^\star$. The plug-in estimates its
-   local trend from accepted EWC displacements; the oracle obtains it from a
-   high-sample reference-optimum path.
+   local trend from normalized accepted EWC displacements $u_t/\pi_t$; the
+   oracle obtains it from a high-sample reference-optimum path. The raw
+   accepted displacement $u_t$ remains the direction used by the next LFU.
 5. **Trend estimator.** A single accepted update is policy dependent, but
-   $u_t=d\theta_t+(e_{t+1}-e_t)$. Therefore a vector EMA of accepted updates
-   estimates the local trend when tracking error is locally stationary. No
-   disposable unregularized small-batch MLE belongs to a principal run.
+   under locally matched quadratic curvature it obeys
+   $u_t\approx\pi_t(d\theta_t+\xi_t-e_t)$. Therefore a vector EMA of
+   $u_t/\pi_t$ estimates the local trend when tracking error is locally
+   stationary. No disposable unregularized small-batch MLE belongs to a
+   principal run. A deliberate $\pi_t=0$ freeze supplies no trend observation.
 6. **Effective information size.** Assume covariance calibration and use
 
    $$
@@ -1291,7 +1294,7 @@ drawn.
    predictable accepted-update residuals. With
 
    $$
-   r_t=u_t-\widehat d_{t\mid t-1},
+   r_t=u_t-\pi_t\widehat d_{t\mid t-1},
    \qquad
    a_t=\pi_t^2
    \left(N_{\mathrm{eff},t-1}^{-1}+m_t^{-1}\right),
@@ -1388,7 +1391,8 @@ After accepting $u_t$, update
 
 $$
 \widehat d_{t+1\mid t}
-=(1-\gamma_t)\widehat d_{t\mid t-1}+\gamma_tu_t,
+=(1-\gamma_t)\widehat d_{t\mid t-1}
++\gamma_t\frac{u_t}{\pi_t},
 $$
 
 $$
@@ -1440,7 +1444,9 @@ reconstruct every decision without loading a model.
    select a continuous branch, record convergence diagnostics, and share the
    path across paired controller conditions. Calculate oracle displacements
    from adjacent reference points. Never invert or pseudoinvert a reference
-   Fisher for controller covariance.
+   Fisher for controller covariance. A new run may copy an already completed
+   path only after validating its content hash, $p$ grid, parameter layout,
+   and data-partition hash; record the source artifact as provenance.
 8. Do not run a disposable unregularized optimization in principal plug-in
    trajectories. Optional paired or high-sample probes may run only at
    configured assumption-check checkpoints and must be stored as separate
@@ -1463,8 +1469,8 @@ reconstruct every decision without loading a model.
 - Compare $\widehat T_t/N_{\mathrm{eff},t}$ with empirical squared parameter
   error around the reference path across replicas.
 - Compare the deployable trace moment based on
-  $u_t-\\widehat d_{t\\mid t-1}$ with the oracle-trend moment based on
-  $u_t-d\\theta_t$. Their difference measures variance contamination from
+  $u_t-\\pi_t\\widehat d_{t\\mid t-1}$ with the oracle-trend moment based on
+  $u_t-\\pi_td\\theta_t$. Their difference measures variance contamination from
   trend estimation. Neither controller estimate may invert or pseudoinvert a
   Fisher matrix.
 - Report residual autocorrelation and the stability of
@@ -1481,7 +1487,8 @@ Every trajectory row must record raw, cold-start, oracle, theory-oracle, and
 applied $\pi$ values; applied bounds and activation flags; EWC odds; policy;
 warm-up status; $\gamma_t$; $q_t$; $N_{\mathrm{eff},t}$; trend norm; residual
 norm; $a_t$; $V_t$; $A_t$; $\widehat T_t$; both covariance-trace estimates;
-accepted update norms; Fisher-update diagnostics; and objective metrics.
+accepted and normalized update norms; Fisher-update diagnostics; objective
+metrics; and initial/final objective-gradient stationarity diagnostics.
 Store controller vectors and reference-optimum vectors in separate checkpoint
 artifacts rather than scalar tables.
 
@@ -1498,6 +1505,8 @@ artifacts rather than scalar tables.
   recursions match hand-computed examples;
 - synthetic locally linear calibrated trajectories recover trend and trace
   within statistical tolerance, including variable $\pi_t$;
+- variable-$\pi_t$ residuals subtract the attenuated drift and hard freezes do
+  not update trend or residual moments;
 - near-`pi_min` decisions remain finite and retain prior trace information;
 - plugin decisions use only prior controller state and pass a predictability
   audit;
@@ -1679,6 +1688,229 @@ false, and the full unit suite passes. The remaining pre-compute gate is the
 adaptive oracle convergence contract and its configured tolerances, not a
 pending controller branch.
 
+### Schema-v9 estimator correction after the substantive plug-in run
+
+The completed schema-v8 100-point plug-in run exposed a controller-estimator
+error rather than merely an unfavorable trace estimate. Its EWC objective uses
+old-to-new odds $(1-\pi_t)/\pi_t$, so under the local matched-curvature model
+the optimizer displacement follows
+
+$$
+u_t\approx\pi_t(d\theta_t+\xi_t-e_t).
+$$
+
+Schema v8 instead averaged $u_t$ as though it directly observed $d\theta_t$
+and formed oracle residuals as $u_t-d\theta_t$. At small $\pi_t$, that oracle
+residual retains the large deterministic term $-(1-\pi_t)d\theta_t$ and cannot
+estimate covariance. Consequently, schema-v8 controller conclusions are
+historical diagnostics only; in particular, its reported trace errors do not
+measure the corrected estimator.
+
+Configuration schema v9, metric schema v5, and artifact schema v4 use
+$z_t=u_t/\pi_t$ for the vector trend, $u_t-\pi_t\widehat d_{t\mid t-1}$ for
+the deployable covariance residual, and $u_t-\pi_td\theta_t$ for the oracle
+residual. A hard freeze does not update these moments. The exact raw $u_t$
+still drives the lagged LFU because it is the model's realized manifold
+displacement.
+
+The first corrected plug-in and `optimal_oracle` configurations both point to
+the completed schema-v8 reference-path artifact. The runner validates its
+internal hash, $p$ grid, parameter dimension, and partition hash, then copies
+it into the new immutable run with explicit provenance. This preserves exact
+pairing and avoids repeating the expensive 100-point oracle calculation.
+
+The substantive configurations retain `samples_per_step = 128` and currently
+perform one EWC optimization per trajectory step with 20 full-batch SGD
+updates on that same batch. Monotone backtracking proves descent, not local
+optimality. Schema v5 therefore records initial and final objective-gradient
+norms, their ratio, gradient RMS, objective decrease, backtracking activity,
+and the fixed-budget stopping reason. The corrected GPU run must inspect these
+metrics before treating the local weighted-minimizer law or covariance
+calibration as credible. Increasing the inner-step budget remains a documented
+experimental adjustment if the stationarity diagnostics fail.
+
+The first corrected plug-in run showed that 20 steps reduced the median
+final-to-initial objective-gradient ratio to about 0.35 for dense and rank-8
+conditions but only 0.61 for diagonal, with worst ratios from 0.72 to 0.83.
+Before launching `optimal_oracle`, run the immutable local fit-budget
+calibration in `mnist_experiment/run_fit_calibration.py`. It restarts the EWC
+proposal from the corrected run's saved steps 0, 50, and 99 for every Fisher
+representation and compares budgets 20, 50, 100, and 200 using the same anchor,
+batch, $\pi_t$, and Fisher. Record gradient metrics, objective gaps, and
+displacement convergence to the 200-step numerical reference. This isolates
+optimizer truncation; it is not a replacement for a later full-trajectory
+comparison if the selected budget changes.
+
+The calibration replayed every source 20-step displacement exactly, validating
+the restart contract. Two immutable extensions then tested budgets through
+2,000 and 10,000 steps. The 10,000-step fits still exhausted their fixed
+budgets. Their final-to-initial gradient-norm ratios at steps 0, 50, and 99
+were approximately $(0.026,0.091,0.024)$ for dense,
+$(0.008,0.035,0.015)$ for diagonal, and $(0.017,0.082,0.028)$ for rank-8 plus
+diagonal. Despite these smaller gradients, the displacements changed by
+roughly 35% to 87% from 5,000 to 10,000 steps and the objectives continued to
+decrease materially. This does not make the fits invalid; it shows that fixed-
+step SGD spends compute inefficiently in this regime. Ten-thousand-step SGD
+took approximately 20 to 24 seconds per local fit.
+
+Treat local optimization as an explicit part of the original learning process.
+For optimizer budget $K$, define
+
+$$
+u_t^{(K)}
+=
+\operatorname{LBFGS}_K(J_t,\theta_t)-\theta_t.
+$$
+
+Here $K$ is a controlled compute budget, not a claim that the deep-net MLE or
+the EWC objective has converged. Budget exhaustion is a normal stopping reason.
+Gradient norms, objective decreases, and displacement changes remain useful
+diagnostics but are not scientific acceptance gates.
+
+The paired strong-Wolfe L-BFGS calibration completed 54 fits through 200
+iterations in 16 seconds and a second 36-fit calibration through 2,000
+iterations in 111 seconds. The diagonal representation stabilized exactly
+across larger budgets after 243 to 635 iterations at the three checkpoints.
+Dense stabilized at steps 50 and 99 after 977 and 175 iterations, respectively,
+but its step-0 fit exhausted 2,000 iterations with displacement norm 22.1.
+Rank-8 plus diagonal exhausted 2,000 iterations at every checkpoint with
+displacement norms from 17.1 to 27.2. Those objectives were still decreasing;
+L-BFGS did not fail numerically. At $K=100$, its median local-fit time was about
+0.46 seconds. Relative to the finite $K=200$ comparison, it captured a median
+96.5% of the observed objective improvement, and it reached a lower objective
+than 10,000-step SGD at all nine calibration points while running roughly 50
+times faster. The $K=200$ fit is only a finite-budget comparison, not an
+assumed optimum.
+
+Direct eigenvalue diagnostics, without inversion, explain the representation
+difference. Dense checkpoints contain 29 to 50 eigenvalues below
+$10^{-12}$ of their leading eigenvalue and hundreds below $10^{-6}$. The
+rank-8-plus-diagonal checkpoints are also singular or extremely ill-conditioned,
+whereas the diagonal approximation is full rank at steps 50 and 99. On a
+separable 128-observation batch, cross-entropy can therefore continue decreasing
+along directions that the empirical Fisher barely penalizes. This heavy skew is
+an expected property of deep-net Fisher matrices, not a numerical defect that
+the experiment should remove with an isotropic ridge or trust region. Use the
+same L-BFGS budget and settings across paired representations; equal compute is
+the controlled comparison, while differing objective progress is part of the
+representation treatment.
+
+Use the following staged compute policy:
+
+1. Broad hyperparameter screening uses $K=50$, one replica, and the rank-8-plus-
+   diagonal representation. A calibrated local fit takes about 0.22 seconds.
+2. Principal runs use $K=100$ for every selected representation and paired
+   condition.
+3. Budget sensitivity reruns only shortlisted configurations at
+   $K\in\{50,100,200\}$.
+4. Add paired replicas only after weak hyperparameter regions have been removed.
+
+Keep the strong-Wolfe line search, history size, numerical tolerances, and $K$
+configuration-controlled. Tolerance-based termination is an opportunistic
+early exit only. Before launching `optimal_oracle`, rerun the full corrected
+plug-in trajectory at $K=100$ because changing the optimizer changes every
+subsequent state; the historical 20-step SGD trajectory remains a diagnostic
+artifact rather than the principal result.
+
+### Schema-v10 principal run package
+
+Configuration schema v10 and Phase 8 metric schema v6 implement the fixed-
+compute-budget contract. Every nonterminal proposal records the configured
+`inner_steps`, actual `optimizer_iterations`, actual
+`optimizer_function_evaluations`, and a categorical `stopping_reason`. The
+metric envelope states explicitly that the budget is not a convergence claim.
+Schema-v9 artifacts remain readable without changing their hashes.
+
+The schema-v10 estimator configuration also records an ordered
+`controller_methods` subset. This permits a rank-8-only budget sensitivity run
+without silently executing the dense and diagonal conditions. The frozen
+configurations are:
+
+- `phase8_gpu_k100_plugin.json`, `phase8_gpu_k100_fixed.json`, and
+  `phase8_gpu_k100_oracle.json` for the paired principal conditions across
+  dense, diagonal, and rank-8-plus-diagonal representations;
+- `phase8_gpu_k50_plugin_rank8.json` and
+  `phase8_gpu_k200_plugin_rank8.json` for the focused budget sensitivity, with
+  the rank-8 condition from the principal plugin run supplying $K=100$;
+- `phase8_lbfgs_smoke.json` for the tiny CPU integration check.
+
+All five substantive configurations share replica seed 1729, the existing
+replica bundle, the same 100-point observation design, and the same validated
+external reference-optimum artifact. The controller notebook inventories $K$
+and selected representations and reports actual L-BFGS iteration/evaluation
+usage with stationarity diagnostics. At that package check-in, Phase 8 remained
+in progress pending the substantive runs and scientific assumption review.
+
+### Phase 8 completion record
+
+Phase 8 completed its single-replica model-selection check-in on 2026-08-05.
+The immutable schema-v10 run package now includes the full $K=100$ plugin,
+fixed, and oracle conditions, the rank-8-plus-diagonal $K\in\{50,200\}$
+budget sensitivity runs, and the paired rank-8 $K=50$ fixed
+$\pi=0.05$ control. Every substantive run uses the same initialization,
+observation stream, reference path, and replica-design hash. The new fixed
+control completed 100 steps in 281 seconds and reused the validated reference
+artifact rather than recomputing it.
+
+The operational ranking uses class-conditional holdout metrics and the actual
+environment mixture. At each $p$, define
+
+$$
+A_{\mathrm{env}}(p)=(1-p)A_{\mathrm{non9}}(p)+pA_9(p),
+\qquad
+L_{\mathrm{env}}(p)=(1-p)L_{\mathrm{non9}}(p)+pL_9(p).
+$$
+
+Normalized trapezoidal AUCs over $p$ summarize each trajectory. Digit-9
+accuracy and NLL remain explicit primary adaptation metrics; environment
+weighting does not hide them. Non-9 metrics measure retained old-task
+performance even though their environmental weight vanishes at $p=1$.
+
+The matched rank-8 $K=50$ comparison was:
+
+| Metric | adaptive plug-in | fixed $\pi=0.05$ | plug-in minus fixed |
+|---|---:|---:|---:|
+| Mean applied $\pi$ | 0.06068 | 0.05000 | 0.01068 |
+| Environment accuracy AUC | 0.91138 | 0.91024 | 0.00115 |
+| Environment NLL AUC | 0.29180 | 0.29505 | -0.00324 |
+| Digit-9 accuracy AUC | 0.85314 | 0.85219 | 0.00096 |
+| Digit-9 NLL AUC | 0.89369 | 0.89955 | -0.00586 |
+| Non-9 accuracy AUC | 0.85374 | 0.85060 | 0.00314 |
+| Final digit-9 accuracy | 0.99405 | 0.99306 | 0.00099 |
+| Final non-9 accuracy | 0.73006 | 0.71127 | 0.01880 |
+| Final balanced accuracy | 0.75359 | 0.73592 | 0.01767 |
+| Mean Fisher error | 0.59418 | 0.59830 | -0.00412 |
+| Final Euclidean oracle error | 16.72804 | 15.95969 | 0.76835 |
+
+The plug-in was directionally better on every agreed predictive trajectory
+metric and on mean Fisher tracking, while the fixed policy was slightly closer
+to the Euclidean reference endpoint. This is descriptive evidence from one
+paired replica, not an uncertainty claim. The plug-in sat at `pi_min` for 44%
+of steps and never reached `pi_max`, so sensitivity near the lower bound
+remains scientifically relevant.
+
+The high-sample Euclidean reference path did not satisfy its strict practical
+convergence gate: flat deep-net directions permit materially different
+parameter vectors with similar predictive behavior. Preserve its displacement,
+Fisher, dependence, and confidence-radius artifacts as assumption diagnostics,
+but do not use Euclidean parameter MSE as the principal model-ranking outcome.
+This is a recorded revision of the original verification gate, not a claim that
+the reference calculation converged.
+
+For Phase 9, retain rank-8 plus diagonal with $K=50$ for broad paired
+adaptive-versus-fixed screening and dense $K=100$ as the higher-fidelity
+confirmatory representation. Retire diagonal $K=100$, rank-8 $K=100$, and
+rank-8 $K=200$ from the principal grid while preserving all immutable
+artifacts. The $K=200$ result is especially unsuitable for continuation because
+extra optimization exploited weakly Fisher-penalized directions and degraded
+predictive performance. Exact Phase 9 replica counts and the minimal
+confirmatory condition bundle remain its first check-in decision.
+
+`controller_results.ipynb` now computes the environment-weighted, digit-9, and
+non-9 summaries from scalar artifacts and renders the paired K=50 comparison
+without loading models or running training. The notebook source executed in
+about eight seconds. The complete unit suite passed 157 tests.
+
 ---
 
 ## Phase 9: Replication, hardening, and handoff
@@ -1735,6 +1967,32 @@ Make it safe and straightforward for the user to add compute over time and deter
 - Decide the initial replica count and compute budget.
 - Decide what uncertainty or effect-size evidence will trigger additional replicas.
 - Identify which findings, if any, are strong enough to motivate the robotics demonstration.
+
+### Completion record
+
+Phase 9 is complete as an experiment command center and handoff. The
+five-replica production screen is prepared but intentionally has not been run.
+
+- `command_center.py` previews cost, prepares immutable bundles, reports
+  status, initializes missing replicas, resumes only when requested, skips
+  completed runs, checks disk headroom, and executes shared oracle anchors first.
+- The default screen contains seven rank-8, $K=50$ adaptive axial cells and one
+  shared fixed-$\pi=0.05$ control for each of five paired replicas. Data-budget
+  axes and dense $K=100$ confirmation remain explicit opt-in profiles.
+- Dense confirmation always includes the canonical controller-center anchor,
+  so its run identity is stable whether prepared alone or with the main screen.
+- `results.ipynb` is the artifact-only command center for completion, paired
+  effects, 95% intervals, provenance, and links to detailed diagnostic notebooks.
+- The CPU smoke bundle completed one adaptive/control pair, and rerunning it
+  skipped both completed artifacts. The prepared production bundle strictly
+  loads with 40 pending runs and five independent initializations.
+- Verification passed 163 tests. The master notebook validated in 2.67 seconds
+  without training, model loading, data download, or Fisher computation.
+
+The initial evidence target is five replicas per cell, with replicas as the
+statistical unit. Add paired replicas when interval width still prevents a
+practical decision; do not use smoke output as scientific evidence. No Phase 9
+finding yet warrants a robotics claim because production replication is next.
 
 ## Explicitly deferred work
 

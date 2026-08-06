@@ -10,13 +10,13 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 8
-SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, 5, 6, 7, CONFIG_SCHEMA_VERSION)
+CONFIG_SCHEMA_VERSION = 10
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, 5, 6, 7, 8, 9, CONFIG_SCHEMA_VERSION)
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
-CONTROLLER_ARTIFACT_SCHEMA_VERSION = 3
-CONTROLLER_METRIC_SCHEMA_VERSION = 4
-SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4)
+CONTROLLER_ARTIFACT_SCHEMA_VERSION = 4
+CONTROLLER_METRIC_SCHEMA_VERSION = 6
+SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6)
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _T = TypeVar("_T")
@@ -145,6 +145,7 @@ class EstimatorConfig:
     ridge_half_life_steps: float | None = None
     ridge_amplitude_epsilon: float | None = None
     ridge_coherence_threshold: float | None = None
+    controller_methods: list[str] | None = None
 
     def validate(self) -> None:
         if self.method not in {"ema", "ac_only", "full_lfu", "periodic_fresh"}:
@@ -244,6 +245,25 @@ class EstimatorConfig:
         ):
             raise ConfigError(
                 "estimator.ridge_coherence_threshold must be in (0, 1]"
+            )
+        allowed_controller_methods = {
+            "dense",
+            "diagonal",
+            "low_rank_diagonal",
+        }
+        if self.controller_methods is not None and (
+            not isinstance(self.controller_methods, list)
+            or not self.controller_methods
+            or any(
+                not isinstance(method, str)
+                or method not in allowed_controller_methods
+                for method in self.controller_methods
+            )
+            or len(self.controller_methods) != len(set(self.controller_methods))
+        ):
+            raise ConfigError(
+                "estimator.controller_methods must be null or a nonempty list "
+                "of unique dense, diagonal, and low_rank_diagonal methods"
             )
 
 
@@ -410,10 +430,15 @@ class OptimizerConfig:
     learning_rate: float
     inner_steps: int
     ewc_strength: float
+    lbfgs_history_size: int | None = None
+    lbfgs_max_eval_factor: float | None = None
+    lbfgs_tolerance_grad: float | None = None
+    lbfgs_tolerance_change: float | None = None
+    lbfgs_line_search_fn: str | None = None
 
     def validate(self) -> None:
-        if self.name not in {"sgd", "adam"}:
-            raise ConfigError("optimizer.name must be 'sgd' or 'adam'")
+        if self.name not in {"sgd", "adam", "lbfgs"}:
+            raise ConfigError("optimizer.name must be 'sgd', 'adam', or 'lbfgs'")
         if not _is_finite_number(self.learning_rate) or not (
             float(self.learning_rate) > 0.0
         ):
@@ -424,6 +449,47 @@ class OptimizerConfig:
             float(self.ewc_strength) < 0.0
         ):
             raise ConfigError("optimizer.ewc_strength must be nonnegative")
+        lbfgs_values = (
+            self.lbfgs_history_size,
+            self.lbfgs_max_eval_factor,
+            self.lbfgs_tolerance_grad,
+            self.lbfgs_tolerance_change,
+            self.lbfgs_line_search_fn,
+        )
+        if self.name != "lbfgs":
+            if any(value is not None for value in lbfgs_values):
+                raise ConfigError(
+                    "optimizer L-BFGS settings must be null unless name is 'lbfgs'"
+                )
+            return
+        if any(value is None for value in lbfgs_values):
+            raise ConfigError(
+                "optimizer L-BFGS settings are all required when name is 'lbfgs'"
+            )
+        if (
+            not _is_integer(self.lbfgs_history_size)
+            or self.lbfgs_history_size < 1
+        ):
+            raise ConfigError(
+                "optimizer.lbfgs_history_size must be an integer >= 1"
+            )
+        if (
+            not _is_finite_number(self.lbfgs_max_eval_factor)
+            or float(self.lbfgs_max_eval_factor) < 1.0
+        ):
+            raise ConfigError(
+                "optimizer.lbfgs_max_eval_factor must be at least one"
+            )
+        for name, value in {
+            "lbfgs_tolerance_grad": self.lbfgs_tolerance_grad,
+            "lbfgs_tolerance_change": self.lbfgs_tolerance_change,
+        }.items():
+            if not _is_finite_number(value) or float(value) <= 0.0:
+                raise ConfigError(f"optimizer.{name} must be positive")
+        if self.lbfgs_line_search_fn != "strong_wolfe":
+            raise ConfigError(
+                "optimizer.lbfgs_line_search_fn must be 'strong_wolfe'"
+            )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -437,6 +503,7 @@ class ControllerConfig:
     trend_half_life_p: float | None = None
     trace_epsilon: float | None = None
     oracle_mode: str | None = None
+    reference_optimum_artifact: str | None = None
 
     def validate(self) -> None:
         if self.policy not in {
@@ -491,6 +558,14 @@ class ControllerConfig:
                 "controller.oracle_mode must be 'none', 'reference_path', or "
                 "'diagnostic'"
             )
+        if self.reference_optimum_artifact is not None and (
+            not isinstance(self.reference_optimum_artifact, str)
+            or not self.reference_optimum_artifact.strip()
+        ):
+            raise ConfigError(
+                "controller.reference_optimum_artifact must be null or a "
+                "nonempty path"
+            )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -539,6 +614,9 @@ class ExperimentConfig:
                 )
             estimator_mapping = dict(estimator_mapping)
             estimator_mapping["ema_gain"] = None
+        if isinstance(estimator_mapping, Mapping) and schema_version < 10:
+            estimator_mapping = dict(estimator_mapping)
+            estimator_mapping["controller_methods"] = None
 
         controller_mapping = value["controller"]
         if isinstance(controller_mapping, Mapping):
@@ -555,6 +633,20 @@ class ExperimentConfig:
                             f"schema-v7 controller must not specify {obsolete}"
                         )
                     controller_mapping[obsolete] = None
+            if schema_version < 9:
+                controller_mapping["reference_optimum_artifact"] = None
+
+        optimizer_mapping = value["optimizer"]
+        if isinstance(optimizer_mapping, Mapping) and schema_version < 10:
+            optimizer_mapping = dict(optimizer_mapping)
+            for name in (
+                "lbfgs_history_size",
+                "lbfgs_max_eval_factor",
+                "lbfgs_tolerance_grad",
+                "lbfgs_tolerance_change",
+                "lbfgs_line_search_fn",
+            ):
+                optimizer_mapping[name] = None
         config = cls(
             schema_version=schema_version,
             artifact_schema_version=value["artifact_schema_version"],
@@ -583,7 +675,10 @@ class ExperimentConfig:
                 "initialization",
             ),
             optimizer=_construct_dataclass(
-                OptimizerConfig, value["optimizer"], "optimizer"
+                OptimizerConfig,
+                optimizer_mapping,
+                "optimizer",
+                allow_missing_defaults=schema_version < 10,
             ),
             controller=_construct_dataclass(
                 ControllerConfig, controller_mapping, "controller"
@@ -601,7 +696,8 @@ class ExperimentConfig:
             )
         expected_artifact_schema = (
             CONTROLLER_ARTIFACT_SCHEMA_VERSION
-            if self.schema_version >= 8
+            if self.schema_version >= 9
+            else 3 if self.schema_version == 8
             else 2 if self.schema_version == 7
             else ARTIFACT_SCHEMA_VERSION
         )
@@ -612,13 +708,17 @@ class ExperimentConfig:
             )
         expected_metric_schema = (
             CONTROLLER_METRIC_SCHEMA_VERSION
-            if self.schema_version >= 8
+            if self.schema_version >= 10
+            else 5 if self.schema_version == 9
+            else 4 if self.schema_version == 8
             else 3 if self.schema_version == 7
             else METRIC_SCHEMA_VERSION
         )
         valid_metric_schemas = (
             (CONTROLLER_METRIC_SCHEMA_VERSION,)
-            if self.schema_version >= 8
+            if self.schema_version >= 10
+            else (5,) if self.schema_version == 9
+            else (4,) if self.schema_version == 8
             else (2, 3) if self.schema_version == 7
             else (expected_metric_schema,)
         )
@@ -686,9 +786,26 @@ class ExperimentConfig:
             raise ConfigError(
                 "optimal_oracle requires controller.oracle_mode='reference_path'"
             )
+        if self.schema_version >= 9 and self.controller.policy == "optimal_oracle" and (
+            self.controller.reference_optimum_artifact is None
+        ):
+            raise ConfigError(
+                "schema-v9 optimal_oracle requires "
+                "controller.reference_optimum_artifact"
+            )
 
     def to_mapping(self) -> dict[str, Any]:
         mapping = dataclasses.asdict(self)
+        if self.schema_version < 10:
+            mapping["estimator"].pop("controller_methods")
+            for name in (
+                "lbfgs_history_size",
+                "lbfgs_max_eval_factor",
+                "lbfgs_tolerance_grad",
+                "lbfgs_tolerance_change",
+                "lbfgs_line_search_fn",
+            ):
+                mapping["optimizer"].pop(name)
         if self.schema_version >= 7:
             mapping["estimator"].pop("ema_gain")
             mapping["controller"].pop("damping")
@@ -703,6 +820,8 @@ class ExperimentConfig:
                 "oracle_mode",
             ):
                 mapping["controller"].pop(name)
+        if self.schema_version < 9:
+            mapping["controller"].pop("reference_optimum_artifact")
         if self.schema_version < 8:
             for name in (
                 "convergence_min_chunks",
