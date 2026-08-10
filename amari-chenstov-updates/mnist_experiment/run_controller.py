@@ -108,6 +108,10 @@ def _validate_config(config: ExperimentConfig) -> int:
         )
     if config.estimator.ridge_half_life_steps is None:
         raise ValueError("Phase 8 requires directional-ridge settings")
+    if config.estimator.method not in {"ema", "ac_only", "full_lfu"}:
+        raise ValueError(
+            "Phase 8 controller runs require ema, ac_only, or full_lfu"
+        )
     if config.controller.oracle_mode not in {"reference_path", "diagnostic"}:
         raise ValueError("Phase 8 requires reference-path oracle diagnostics")
     return config.estimator.low_rank
@@ -171,15 +175,27 @@ def _make_tracker(
         "ridge_coherence_threshold": config.estimator.ridge_coherence_threshold,
     }
     if method == "dense_ridge_full":
+        dense_method = {
+            "ema": "ema",
+            "ac_only": "ridge_ac_only",
+            "full_lfu": "ridge_full_lfu",
+        }[config.estimator.method]
         return DenseFisherTracker(
-            "ridge_full_lfu",
+            dense_method,
             fresh_fisher_cadence=config.estimator.fresh_fisher_cadence,
             **arguments,
         )
     if method == "diagonal_ridge_full":
-        return DiagonalFisherTracker(**arguments)
+        return DiagonalFisherTracker(
+            **arguments,
+            correction_method=config.estimator.method,
+        )
     if method == f"low_rank_diagonal_r{selected_rank}":
-        return LowRankDiagonalFisherTracker(rank=selected_rank, **arguments)
+        return LowRankDiagonalFisherTracker(
+            rank=selected_rank,
+            **arguments,
+            correction_method=config.estimator.method,
+        )
     raise ValueError(f"unsupported Phase 8 method: {method}")
 
 
@@ -1028,6 +1044,7 @@ def main() -> None:
         "stream_plan_hash": loaded.stream_plan.content_hash,
         "parameter_count": loaded.layout.total_numel,
         "methods": list(methods),
+        "fisher_update_method": config.estimator.method,
         "policy": config.controller.policy,
         "controller_config": dataclasses.asdict(config.controller),
         "unified_pi_contract": True,

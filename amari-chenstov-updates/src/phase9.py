@@ -19,7 +19,7 @@ from .config import ExperimentConfig
 from .initialization import replica_bundle_id
 from .seeding import derive_component_seed
 
-PHASE9_SPEC_SCHEMA_VERSION = 1
+PHASE9_SPEC_SCHEMA_VERSION = 2
 PHASE9_BUNDLE_SCHEMA_VERSION = 1
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -106,6 +106,9 @@ def _deep_override(
 class Phase9Cell:
     name: str
     overrides: Mapping[str, Any]
+    policy: str | None = None
+    kind: str = "treatment"
+    control_ref: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -253,8 +256,14 @@ def load_phase9_spec(path: str | Path) -> Phase9Spec:
         if profile_name in profile_names:
             raise Phase9Error(f"duplicate profile name: {profile_name}")
         profile_names.add(profile_name)
-        if profile_raw["control_scope"] not in {"profile", "cell"}:
-            raise Phase9Error(f"{context}.control_scope must be profile or cell")
+        if profile_raw["control_scope"] not in {
+            "profile",
+            "cell",
+            "explicit",
+        }:
+            raise Phase9Error(
+                f"{context}.control_scope must be profile, cell, or explicit"
+            )
         if not isinstance(profile_raw["template"], str):
             raise Phase9Error(f"{context}.template must be a path string")
         if not isinstance(profile_raw["overrides"], Mapping):
@@ -268,7 +277,16 @@ def load_phase9_spec(path: str | Path) -> Phase9Spec:
             cell_context = f"{context}.cells[{cell_index}]"
             if not isinstance(cell_raw, Mapping):
                 raise Phase9Error(f"{cell_context} must be an object")
-            _require_exact_keys(cell_raw, {"name", "overrides"}, cell_context)
+            explicit = profile_raw["control_scope"] == "explicit"
+            _require_exact_keys(
+                cell_raw,
+                (
+                    {"name", "overrides", "policy", "kind", "control_ref"}
+                    if explicit
+                    else {"name", "overrides"}
+                ),
+                cell_context,
+            )
             cell_name = _validate_name(cell_raw["name"], f"{cell_context}.name")
             if cell_name in cell_names:
                 raise Phase9Error(
@@ -277,7 +295,44 @@ def load_phase9_spec(path: str | Path) -> Phase9Spec:
             cell_names.add(cell_name)
             if not isinstance(cell_raw["overrides"], Mapping):
                 raise Phase9Error(f"{cell_context}.overrides must be an object")
-            cells.append(Phase9Cell(cell_name, dict(cell_raw["overrides"])))
+            if explicit:
+                policy = cell_raw["policy"]
+                kind = cell_raw["kind"]
+                control_ref = cell_raw["control_ref"]
+                if policy not in {"fixed_unified", "optimal_plugin"}:
+                    raise Phase9Error(
+                        f"{cell_context}.policy must be fixed_unified or "
+                        "optimal_plugin"
+                    )
+                if kind not in {"control", "treatment"}:
+                    raise Phase9Error(
+                        f"{cell_context}.kind must be control or treatment"
+                    )
+                if control_ref is not None:
+                    if not isinstance(control_ref, str) or control_ref.count(":") != 1:
+                        raise Phase9Error(
+                            f"{cell_context}.control_ref must be null or profile:cell"
+                        )
+                    ref_profile, ref_cell = control_ref.split(":", 1)
+                    _validate_name(ref_profile, f"{cell_context}.control_ref profile")
+                    _validate_name(ref_cell, f"{cell_context}.control_ref cell")
+                if kind == "control" and control_ref is not None:
+                    raise Phase9Error(
+                        f"{cell_context} control cells cannot name a control_ref"
+                    )
+            else:
+                policy = None
+                kind = "treatment"
+                control_ref = None
+            cells.append(
+                Phase9Cell(
+                    cell_name,
+                    dict(cell_raw["overrides"]),
+                    policy=policy,
+                    kind=kind,
+                    control_ref=control_ref,
+                )
+            )
         for cost_name in (
             "estimated_trajectory_seconds",
             "estimated_run_bytes",
@@ -441,21 +496,23 @@ def build_phase9_bundle(
     generation_profiles = [
         (profile, profile.cells) for profile in selected_profiles
     ]
-    if (
-        "dense-confirm" in selected_names
-        and "controller-screen" not in selected_names
-    ):
+    dependency_cell_names = set()
+    if "dense-confirm" in selected_names:
+        dependency_cell_names.add("center")
+    if "lfu-isolation" in selected_names:
+        dependency_cell_names.update({"center", "trend-h-010"})
+    if dependency_cell_names and "controller-screen" not in selected_names:
         controller_profile = spec.profile("controller-screen")
-        center_cells = tuple(
+        dependency_cells = tuple(
             cell
             for cell in controller_profile.cells
-            if cell.name == "center"
+            if cell.name in dependency_cell_names
         )
-        if len(center_cells) != 1:
+        if {cell.name for cell in dependency_cells} != dependency_cell_names:
             raise Phase9Error(
-                "controller-screen must define exactly one center cell"
+                "controller-screen is missing a required dependency cell"
             )
-        generation_profiles.insert(0, (controller_profile, center_cells))
+        generation_profiles.insert(0, (controller_profile, dependency_cells))
     selected_replicas = tuple(
         replica_indices
         or range(
@@ -485,15 +542,19 @@ def build_phase9_bundle(
                     cell.overrides,
                     context=f"{profile.name}.{cell.name}",
                 )
+                policy = cell.policy or "optimal_plugin"
+                policy_suffix = (
+                    "fixed" if policy == "fixed_unified" else "plugin"
+                )
                 mapping = _config_with_identity(
                     mapping,
                     experiment=_experiment_name(
-                        profile.name, cell.name, "plugin"
+                        profile.name, cell.name, policy_suffix
                     ),
                     replica_index=replica_index,
                     replica_seed=seed,
                 )
-                mapping["controller"]["policy"] = "optimal_plugin"
+                mapping["controller"]["policy"] = policy
                 config = ExperimentConfig.from_mapping(mapping)
                 candidates.append(
                     {
@@ -504,6 +565,8 @@ def build_phase9_bundle(
                         "replica_index": replica_index,
                         "config": config,
                         "mapping": mapping,
+                        "policy": policy,
+                        "policy_suffix": policy_suffix,
                     }
                 )
 
@@ -540,15 +603,23 @@ def build_phase9_bundle(
             config = ExperimentConfig.from_mapping(mapping)
         profile = candidate["profile"]
         cell = candidate["cell"]
+        factors = _factors(config)
+        if profile.control_scope == "explicit":
+            factors = {
+                **factors,
+                "fisher_update_method": config.estimator.method,
+                "controller_policy": config.controller.policy,
+                "fixed_pi": config.controller.fixed_pi,
+            }
         entry = {
             "entry_id": (
                 f"r{candidate['replica_index']:04d}:{profile.name}:"
-                f"{cell.name}:plugin"
+                f"{cell.name}:{candidate['policy_suffix']}"
             ),
-            "kind": "treatment",
+            "kind": cell.kind,
             "profile": profile.name,
             "cell": cell.name,
-            "policy": "optimal_plugin",
+            "policy": candidate["policy"],
             "replica_index": candidate["replica_index"],
             "replica_id": config.replica_id,
             "replica_seed": config.replica_seed,
@@ -560,7 +631,7 @@ def build_phase9_bundle(
             "oracle_anchor_run_id": anchor["run_id"],
             "is_oracle_anchor": is_anchor,
             "control_run_id": None,
-            "factors": _factors(config),
+            "factors": factors,
             "estimated_trajectory_seconds": profile.estimated_trajectory_seconds
             * config.data.num_p_steps
             / 100.0
@@ -581,6 +652,8 @@ def build_phase9_bundle(
     controls: dict[tuple[Any, ...], dict[str, Any]] = {}
     for candidate in candidates:
         profile = candidate["profile"]
+        if profile.control_scope == "explicit":
+            continue
         cell = candidate["cell"]
         config = candidate["config"]
         scope_key = (
@@ -662,6 +735,31 @@ def build_phase9_bundle(
         treatment_entries[
             (candidate["replica_index"], profile.name, cell.name)
         ]["control_run_id"] = controls[scope_key]["run_id"]
+
+    entries_by_cell: dict[tuple[int, str, str], dict[str, Any]] = {}
+    for entry in entries:
+        key = (entry["replica_index"], entry["profile"], entry["cell"])
+        # Per-cell generated controls intentionally share the treatment cell's
+        # name. Prefer the control when resolving explicit cross-profile refs.
+        if key not in entries_by_cell or entry["kind"] == "control":
+            entries_by_cell[key] = entry
+    for candidate in candidates:
+        profile = candidate["profile"]
+        cell = candidate["cell"]
+        if profile.control_scope != "explicit" or cell.control_ref is None:
+            continue
+        control_profile, control_cell = cell.control_ref.split(":", 1)
+        control = entries_by_cell.get(
+            (candidate["replica_index"], control_profile, control_cell)
+        )
+        if control is None:
+            raise Phase9Error(
+                f"{profile.name}.{cell.name} refers to missing control "
+                f"{cell.control_ref}"
+            )
+        treatment_entries[
+            (candidate["replica_index"], profile.name, cell.name)
+        ]["control_run_id"] = control["run_id"]
 
     entries.sort(
         key=lambda row: (
@@ -850,4 +948,3 @@ def phase9_status_rows(
             }
         )
     return rows
-

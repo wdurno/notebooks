@@ -131,6 +131,64 @@ def test_dense_confirmation_reuses_canonical_controller_anchor() -> None:
     ]
 
 
+def test_lfu_isolation_uses_explicit_paired_comparisons() -> None:
+    spec = load_phase9_spec(SPEC_PATH)
+    manifest, configs = build_phase9_bundle(
+        spec,
+        REPO_ROOT,
+        profile_names=("lfu-isolation",),
+        replica_indices=(4,),
+    )
+    rows = {
+        (row["profile"], row["cell"]): row
+        for row in manifest["entries"]
+    }
+
+    assert manifest["entry_count"] == 9
+    assert manifest["oracle_anchor_count"] == 1
+    assert set(rows) == {
+        ("controller-screen", "center"),
+        ("controller-screen", "trend-h-010"),
+        ("controller-screen", "control"),
+        ("lfu-isolation", "fixed-005-no-lfu"),
+        ("lfu-isolation", "fixed-010-no-lfu"),
+        ("lfu-isolation", "fixed-010-ac-only"),
+        ("lfu-isolation", "fixed-010-full-lfu"),
+        ("lfu-isolation", "adaptive-h010-no-lfu"),
+        ("lfu-isolation", "adaptive-h010-ac-only"),
+    }
+
+    fixed_005_full = rows[("controller-screen", "control")]
+    adaptive_h010_full = rows[("controller-screen", "trend-h-010")]
+    fixed_010_none = rows[("lfu-isolation", "fixed-010-no-lfu")]
+    assert rows[("lfu-isolation", "fixed-005-no-lfu")][
+        "control_run_id"
+    ] == fixed_005_full["run_id"]
+    for cell in ("fixed-010-ac-only", "fixed-010-full-lfu"):
+        assert rows[("lfu-isolation", cell)]["control_run_id"] == (
+            fixed_010_none["run_id"]
+        )
+    for cell in ("adaptive-h010-no-lfu", "adaptive-h010-ac-only"):
+        assert rows[("lfu-isolation", cell)]["control_run_id"] == (
+            adaptive_h010_full["run_id"]
+        )
+
+    expected = {
+        "fixed-005-no-lfu": ("fixed_unified", "ema", 0.05),
+        "fixed-010-no-lfu": ("fixed_unified", "ema", 0.10),
+        "fixed-010-ac-only": ("fixed_unified", "ac_only", 0.10),
+        "fixed-010-full-lfu": ("fixed_unified", "full_lfu", 0.10),
+        "adaptive-h010-no-lfu": ("optimal_plugin", "ema", 0.50),
+        "adaptive-h010-ac-only": ("optimal_plugin", "ac_only", 0.50),
+    }
+    for cell, (policy, method, fixed_pi) in expected.items():
+        entry = rows[("lfu-isolation", cell)]
+        config = ExperimentConfig.from_mapping(configs[entry["entry_id"]])
+        assert config.controller.policy == policy
+        assert config.estimator.method == method
+        assert config.controller.fixed_pi == fixed_pi
+
+
 def test_prepared_bundle_is_immutable_and_strict(tmp_path: Path) -> None:
     spec = dataclasses.replace(
         load_phase9_spec(SPEC_PATH),
@@ -224,3 +282,26 @@ def test_phase9_pairing_uses_replicas_as_the_statistical_unit() -> None:
     assert accuracy["standard_error"] == pytest.approx(0.1)
     assert accuracy["ci95_low"] < 0.0 < accuracy["ci95_high"]
     assert accuracy["initial_replica_target_met"] is False
+
+
+def test_phase9_pairing_can_use_an_explicit_treatment_as_control() -> None:
+    baseline = _summary_row(
+        1,
+        kind="treatment",
+        run_id="fixed-010-no-lfu",
+        control_run_id=None,
+        shift=0.0,
+    )
+    treatment = _summary_row(
+        1,
+        kind="treatment",
+        run_id="fixed-010-full-lfu",
+        control_run_id=baseline["run_id"],
+        shift=0.25,
+    )
+
+    pairs = phase9_paired_rows((baseline, treatment))
+
+    assert len(pairs) == 1
+    assert pairs[0]["control_run_id"] == baseline["run_id"]
+    assert pairs[0]["delta_nine_accuracy_auc"] == pytest.approx(0.25)

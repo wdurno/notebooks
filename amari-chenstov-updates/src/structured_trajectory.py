@@ -18,6 +18,17 @@ from .reference import relative_frobenius_error
 from .representations import DiagonalFisher, LowRankDiagonalFisher
 
 
+STRUCTURED_CORRECTION_METHODS = frozenset({"ema", "ac_only", "full_lfu"})
+
+
+def _select_correction(method: str, ridge) -> Tensor:
+    if method == "ema":
+        return torch.zeros_like(ridge.full)
+    if method == "ac_only":
+        return ridge.amari_chentsov
+    return ridge.full
+
+
 @dataclasses.dataclass(frozen=True)
 class DiagonalProjectionDiagnostics:
     pre_projection_minimum: float
@@ -54,6 +65,7 @@ class DiagonalFisherUpdate:
     ridge_metrics: dict[str, Any]
     ridge_state: dict[str, Any]
     blend_gain: float
+    correction_method: str
 
 
 class DiagonalFisherTracker:
@@ -65,6 +77,7 @@ class DiagonalFisherTracker:
         ridge_half_life_steps: float,
         ridge_amplitude_epsilon: float,
         ridge_coherence_threshold: float,
+        correction_method: str = "full_lfu",
     ) -> None:
         if ema_gain is not None and not 0.0 < ema_gain <= 1.0:
             raise ValueError("ema_gain must be in (0, 1]")
@@ -76,8 +89,13 @@ class DiagonalFisherTracker:
         ):
             raise ValueError("initial_fisher must be a finite floating square matrix")
         initial, _ = _project_diagonal(torch.diagonal(initial_fisher))
+        if correction_method not in STRUCTURED_CORRECTION_METHODS:
+            raise ValueError(
+                f"unsupported structured correction method: {correction_method}"
+            )
         self.previous = DiagonalFisher(initial)
         self.ema_gain = None if ema_gain is None else float(ema_gain)
+        self.correction_method = correction_method
         self.next_step = 0
         self.ridge = DirectionalRidgeLFUState(
             half_life_steps=ridge_half_life_steps,
@@ -113,7 +131,9 @@ class DiagonalFisherTracker:
             prediction = self.previous.values
             candidate = self.previous.values
         else:
-            correction = torch.diagonal(ridge.full)
+            correction = torch.diagonal(
+                _select_correction(self.correction_method, ridge)
+            )
             prediction = self.previous.values + correction
             candidate = (
                 (1.0 - gain) * prediction
@@ -133,6 +153,7 @@ class DiagonalFisherTracker:
             ridge_metrics=ridge.metrics_mapping(),
             ridge_state=ridge.state_artifact(),
             blend_gain=gain,
+            correction_method=self.correction_method,
         )
 
 
@@ -148,6 +169,7 @@ class LowRankDiagonalUpdate:
     ridge_metrics: dict[str, Any]
     ridge_state: dict[str, Any]
     blend_gain: float
+    correction_method: str
 
 
 class LowRankDiagonalFisherTracker:
@@ -160,6 +182,7 @@ class LowRankDiagonalFisherTracker:
         ridge_half_life_steps: float,
         ridge_amplitude_epsilon: float,
         ridge_coherence_threshold: float,
+        correction_method: str = "full_lfu",
     ) -> None:
         if ema_gain is not None and not 0.0 < ema_gain <= 1.0:
             raise ValueError("ema_gain must be in (0, 1]")
@@ -176,9 +199,14 @@ class LowRankDiagonalFisherTracker:
                 "initial_fisher must be finite, floating, square, and support rank"
             )
         self.initial_fisher = initial_fisher
+        if correction_method not in STRUCTURED_CORRECTION_METHODS:
+            raise ValueError(
+                f"unsupported structured correction method: {correction_method}"
+            )
         self.previous: LowRankDiagonalFisher | None = None
         self.rank = rank
         self.ema_gain = None if ema_gain is None else float(ema_gain)
+        self.correction_method = correction_method
         self.next_step = 0
         self.ridge = DirectionalRidgeLFUState(
             half_life_steps=ridge_half_life_steps,
@@ -215,7 +243,7 @@ class LowRankDiagonalFisherTracker:
             correction = torch.zeros_like(self.initial_fisher)
             candidate = self.initial_fisher
         else:
-            correction = ridge.full
+            correction = _select_correction(self.correction_method, ridge)
             prediction = self.previous.to_dense() + correction
             candidate = (
                 (1.0 - gain) * prediction
@@ -242,6 +270,7 @@ class LowRankDiagonalFisherTracker:
             ridge_metrics=ridge.metrics_mapping(),
             ridge_state=ridge.state_artifact(),
             blend_gain=gain,
+            correction_method=self.correction_method,
         )
 
 

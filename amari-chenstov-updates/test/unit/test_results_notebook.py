@@ -35,6 +35,10 @@ def test_results_notebook_is_valid_and_artifact_only() -> None:
         for cell in notebook["cells"]
     )
     assert any(
+        "EXPERIMENTAL_CONDITIONS.md" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+    assert any(
         "Paired controller evidence" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )

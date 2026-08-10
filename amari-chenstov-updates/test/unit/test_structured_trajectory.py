@@ -1,4 +1,5 @@
 import torch
+import pytest
 
 from src.fisher import LFUBatchEstimate
 from src.fixed_trajectory import OnlineStepStatistics
@@ -122,3 +123,56 @@ def test_structured_metrics_are_zero_for_exact_target() -> None:
     assert metrics["directional_quadratic_relative_error"] == 0.0
     assert metrics["leading_eigenvalue_relative_error"] == 0.0
     assert metrics["leading_eigenvector_alignment"] == 1.0
+
+
+def test_structured_correction_modes_isolate_ac_and_residual_terms() -> None:
+    initial = torch.eye(2, dtype=torch.float64)
+    first = _statistics(
+        initial,
+        torch.zeros_like(initial),
+        torch.zeros_like(initial),
+    )
+    second = _statistics(
+        initial,
+        torch.diag(torch.tensor([0.4, -0.2], dtype=torch.float64)),
+        torch.diag(torch.tensor([0.3, 0.1], dtype=torch.float64)),
+    )
+    direction_zero = torch.zeros(2, dtype=torch.float64)
+    direction = torch.tensor([0.2, -0.1], dtype=torch.float64)
+
+    corrections = {}
+    for method in ("ema", "ac_only", "full_lfu"):
+        tracker = DiagonalFisherTracker(
+            initial,
+            ema_gain=0.25,
+            ridge_half_life_steps=2.0,
+            ridge_amplitude_epsilon=1e-6,
+            ridge_coherence_threshold=0.75,
+            correction_method=method,
+        )
+        tracker.update(0, first, direction_zero)
+        update = tracker.update(1, second, direction)
+        corrections[method] = update.correction
+        assert update.correction_method == method
+
+    torch.testing.assert_close(
+        corrections["ema"],
+        torch.zeros_like(corrections["ema"]),
+    )
+    assert torch.linalg.vector_norm(corrections["ac_only"]) > 0
+    assert not torch.allclose(
+        corrections["full_lfu"],
+        corrections["ac_only"],
+    )
+
+
+def test_structured_tracker_rejects_unknown_correction_method() -> None:
+    with pytest.raises(ValueError, match="unsupported structured correction"):
+        DiagonalFisherTracker(
+            torch.eye(2, dtype=torch.float64),
+            ema_gain=0.25,
+            ridge_half_life_steps=2.0,
+            ridge_amplitude_epsilon=1e-6,
+            ridge_coherence_threshold=0.75,
+            correction_method="mystery",
+        )

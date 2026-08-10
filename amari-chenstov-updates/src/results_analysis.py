@@ -2453,7 +2453,6 @@ def phase9_progress_rows(
     control_states = {
         row["run_id"]: row["run_state"]
         for row in inventory_rows
-        if row["kind"] == "control"
     }
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
     for row in inventory_rows:

@@ -1,5 +1,8 @@
 # Phase 9 command center
 
+See [Phase 9 experimental conditions](EXPERIMENTAL_CONDITIONS.md) for the
+shared LFU mechanics and a concise definition of every condition.
+
 Preview the five-replica controller screen without writing or running anything:
 
 ```bash
@@ -23,11 +26,20 @@ Add independent replicas without changing earlier bundles:
 python -m mnist_experiment.command_center prepare --replicas 6-10
 ```
 
+Prepare the five-replica LFU-isolation screen separately so its completed
+full-LFU dependencies can be reused:
+
+```bash
+python -m mnist_experiment.command_center prepare \
+  --profiles lfu-isolation --replicas 1-5
+```
+
 Profiles are selected explicitly and never form an automatic Cartesian sweep:
 
 | Profile | Purpose |
 |---|---|
 | `controller-screen` | Rank-8, budget 50, axial controller search with one shared fixed control |
+| `lfu-isolation` | Paired no-LFU, AC-only, and full-LFU contrasts under fixed and adaptive controllers |
 | `data-screen` | Opt-in sample-size and trajectory-resolution axes |
 | `dense-confirm` | Opt-in dense, budget-100 confirmation |
 | `smoke` | Tiny CPU integration check |
