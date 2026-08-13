@@ -496,23 +496,38 @@ def build_phase9_bundle(
     generation_profiles = [
         (profile, profile.cells) for profile in selected_profiles
     ]
-    dependency_cell_names = set()
+    dependency_cells_by_profile: dict[str, set[str]] = {}
     if "dense-confirm" in selected_names:
-        dependency_cell_names.add("center")
+        dependency_cells_by_profile.setdefault("controller-screen", set()).add(
+            "center"
+        )
     if "lfu-isolation" in selected_names:
-        dependency_cell_names.update({"center", "trend-h-010"})
-    if dependency_cell_names and "controller-screen" not in selected_names:
-        controller_profile = spec.profile("controller-screen")
+        dependency_cells_by_profile.setdefault("controller-screen", set()).update(
+            {"center", "trend-h-010"}
+        )
+    if "adaptation-screen" in selected_names:
+        dependency_cells_by_profile.setdefault("controller-screen", set()).update(
+            {"center", "trend-h-010"}
+        )
+        dependency_cells_by_profile.setdefault("lfu-isolation", set()).add(
+            "adaptive-h010-no-lfu"
+        )
+    for dependency_name, dependency_names in reversed(
+        tuple(dependency_cells_by_profile.items())
+    ):
+        if dependency_name in selected_names:
+            continue
+        dependency_profile = spec.profile(dependency_name)
         dependency_cells = tuple(
             cell
-            for cell in controller_profile.cells
-            if cell.name in dependency_cell_names
+            for cell in dependency_profile.cells
+            if cell.name in dependency_names
         )
-        if {cell.name for cell in dependency_cells} != dependency_cell_names:
+        if {cell.name for cell in dependency_cells} != dependency_names:
             raise Phase9Error(
-                "controller-screen is missing a required dependency cell"
+                f"{dependency_name} is missing a required dependency cell"
             )
-        generation_profiles.insert(0, (controller_profile, dependency_cells))
+        generation_profiles.insert(0, (dependency_profile, dependency_cells))
     selected_replicas = tuple(
         replica_indices
         or range(

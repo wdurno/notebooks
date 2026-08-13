@@ -193,3 +193,20 @@ All comparisons are paired within replica. Existing full-LFU dependencies are
 reused as immutable controls and are not recomputed. Reported effects are
 always the named condition minus its named comparison; consult the table when
 interpreting the sign.
+
+## Adaptation screen
+
+This compact follow-up holds the no-LFU Fisher update fixed and varies the
+controller. Every new condition uses the completed adaptive $h=.10$ no-LFU
+condition as its paired comparison.
+
+| New condition | Controller | Purpose |
+|---|---|---|
+| `adaptive-h020-no-lfu` | Plug-in, $h=.20$ | Intermediate trend memory |
+| `adaptive-h040-no-lfu` | Plug-in, $h=.40$ | Long trend memory |
+| `fixed-100-no-ewc` | Fixed $\pi=1$ | Current-batch likelihood with zero EWC penalty |
+
+For `fixed-100-no-ewc`, $(1-\pi)/\pi=0$, so the EWC quadratic vanishes. The
+current experiment runner still calculates Fisher diagnostics; its predictive
+trajectory is a valid no-EWC comparison, but its runtime is not an optimized
+no-EWC deployment benchmark.

@@ -189,6 +189,57 @@ def test_lfu_isolation_uses_explicit_paired_comparisons() -> None:
         assert config.controller.fixed_pi == fixed_pi
 
 
+def test_adaptation_screen_reuses_no_lfu_h010_and_adds_three_conditions() -> None:
+    spec = load_phase9_spec(SPEC_PATH)
+    manifest, configs = build_phase9_bundle(
+        spec,
+        REPO_ROOT,
+        profile_names=("adaptation-screen",),
+        replica_indices=(4,),
+    )
+    rows = {
+        (row["profile"], row["cell"]): row
+        for row in manifest["entries"]
+    }
+
+    assert manifest["entry_count"] == 7
+    assert manifest["oracle_anchor_count"] == 1
+    assert set(rows) == {
+        ("controller-screen", "center"),
+        ("controller-screen", "trend-h-010"),
+        ("controller-screen", "control"),
+        ("lfu-isolation", "adaptive-h010-no-lfu"),
+        ("adaptation-screen", "adaptive-h020-no-lfu"),
+        ("adaptation-screen", "adaptive-h040-no-lfu"),
+        ("adaptation-screen", "fixed-100-no-ewc"),
+    }
+
+    baseline = rows[("lfu-isolation", "adaptive-h010-no-lfu")]
+    for cell in (
+        "adaptive-h020-no-lfu",
+        "adaptive-h040-no-lfu",
+        "fixed-100-no-ewc",
+    ):
+        assert rows[("adaptation-screen", cell)]["control_run_id"] == (
+            baseline["run_id"]
+        )
+
+    expected = {
+        "adaptive-h020-no-lfu": ("optimal_plugin", 0.2, 0.5, 0.05, 0.95),
+        "adaptive-h040-no-lfu": ("optimal_plugin", 0.4, 0.5, 0.05, 0.95),
+        "fixed-100-no-ewc": ("fixed_unified", 0.2, 1.0, 1.0, 1.0),
+    }
+    for cell, values in expected.items():
+        entry = rows[("adaptation-screen", cell)]
+        config = ExperimentConfig.from_mapping(configs[entry["entry_id"]])
+        assert config.controller.policy == values[0]
+        assert config.controller.trend_half_life_p == values[1]
+        assert config.controller.fixed_pi == values[2]
+        assert config.controller.pi_min == values[3]
+        assert config.controller.pi_max == values[4]
+        assert config.estimator.method == "ema"
+
+
 def test_prepared_bundle_is_immutable_and_strict(tmp_path: Path) -> None:
     spec = dataclasses.replace(
         load_phase9_spec(SPEC_PATH),

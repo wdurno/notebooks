@@ -78,6 +78,60 @@
     {
       "cells": [
         {
+          "control_ref": "lfu-isolation:adaptive-h010-no-lfu",
+          "kind": "treatment",
+          "name": "adaptive-h020-no-lfu",
+          "overrides": {
+            "controller": {
+              "trend_half_life_p": 0.2
+            },
+            "estimator": {
+              "method": "ema"
+            }
+          },
+          "policy": "optimal_plugin"
+        },
+        {
+          "control_ref": "lfu-isolation:adaptive-h010-no-lfu",
+          "kind": "treatment",
+          "name": "adaptive-h040-no-lfu",
+          "overrides": {
+            "controller": {
+              "trend_half_life_p": 0.4
+            },
+            "estimator": {
+              "method": "ema"
+            }
+          },
+          "policy": "optimal_plugin"
+        },
+        {
+          "control_ref": "lfu-isolation:adaptive-h010-no-lfu",
+          "kind": "treatment",
+          "name": "fixed-100-no-ewc",
+          "overrides": {
+            "controller": {
+              "fixed_pi": 1.0,
+              "pi_max": 1.0,
+              "pi_min": 1.0
+            },
+            "estimator": {
+              "method": "ema"
+            }
+          },
+          "policy": "fixed_unified"
+        }
+      ],
+      "control_scope": "explicit",
+      "estimated_run_bytes": 60000000,
+      "estimated_trajectory_seconds": 290.0,
+      "name": "adaptation-screen",
+      "overrides": {},
+      "template": "mnist_experiment/configs/phase8_gpu_k50_plugin_rank8.json"
+    },
+    {
+      "cells": [
+        {
           "control_ref": "controller-screen:control",
           "kind": "treatment",
           "name": "fixed-005-no-lfu",

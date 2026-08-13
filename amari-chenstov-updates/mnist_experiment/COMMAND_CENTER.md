@@ -40,6 +40,7 @@ Profiles are selected explicitly and never form an automatic Cartesian sweep:
 |---|---|
 | `controller-screen` | Rank-8, budget 50, axial controller search with one shared fixed control |
 | `lfu-isolation` | Paired no-LFU, AC-only, and full-LFU contrasts under fixed and adaptive controllers |
+| `adaptation-screen` | No-LFU controller half-lives plus a no-EWC comparison |
 | `data-screen` | Opt-in sample-size and trajectory-resolution axes |
 | `dense-confirm` | Opt-in dense, budget-100 confirmation |
 | `smoke` | Tiny CPU integration check |
