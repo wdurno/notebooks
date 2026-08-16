@@ -4,10 +4,45 @@ import pytest
 from src.fisher import LFUBatchEstimate
 from src.fixed_trajectory import OnlineStepStatistics
 from src.structured_trajectory import (
+    _candidate_spectrum_diagnostics,
     DiagonalFisherTracker,
     LowRankDiagonalFisherTracker,
     structured_representation_metrics,
 )
+
+
+def test_candidate_spectrum_tolerates_rank_deficiency() -> None:
+    vector = torch.linspace(-2.0, 3.0, 64, dtype=torch.float64)
+    candidate = torch.outer(vector, vector)
+
+    diagnostics = _candidate_spectrum_diagnostics(candidate)
+
+    assert diagnostics.materially_negative_eigenvalue_count == 0
+    assert diagnostics.numerical_rank == 1
+    assert diagnostics.tolerance > 0.0
+    assert diagnostics.backend == "cpu"
+
+
+def test_candidate_spectrum_retries_eigh_nonconvergence_on_cpu_float64(
+    monkeypatch,
+) -> None:
+    original = torch.linalg.eigvalsh
+    calls = []
+
+    def flaky_eigvalsh(candidate: torch.Tensor) -> torch.Tensor:
+        calls.append((candidate.device.type, candidate.dtype))
+        if len(calls) == 1:
+            raise RuntimeError("linalg.eigh: The algorithm failed to converge")
+        return original(candidate)
+
+    monkeypatch.setattr(torch.linalg, "eigvalsh", flaky_eigvalsh)
+    diagnostics = _candidate_spectrum_diagnostics(
+        torch.eye(4, dtype=torch.float32)
+    )
+
+    assert calls == [("cpu", torch.float32), ("cpu", torch.float64)]
+    assert diagnostics.backend == "cpu_float64_fallback"
+    assert diagnostics.minimum_eigenvalue == pytest.approx(1.0)
 
 
 def _statistics(
@@ -37,6 +72,38 @@ def _trackers(
         DiagonalFisherTracker(**arguments),
         LowRankDiagonalFisherTracker(**arguments, rank=0),
     )
+
+
+def test_tracker_caps_krylov_depth_for_rank_one_candidate() -> None:
+    vector = torch.linspace(-2.0, 3.0, 64, dtype=torch.float64)
+    candidate = torch.outer(vector, vector)
+    tracker = LowRankDiagonalFisherTracker(
+        candidate,
+        rank=8,
+        ema_gain=1.0,
+        ridge_half_life_steps=2.0,
+        ridge_amplitude_epsilon=1e-6,
+        ridge_coherence_threshold=0.75,
+        correction_method="ema",
+    )
+
+    update = tracker.update(
+        0,
+        _statistics(
+            candidate,
+            torch.zeros_like(candidate),
+            torch.zeros_like(candidate),
+        ),
+        torch.zeros(64, dtype=torch.float64),
+        lanczos_seed=7,
+    )
+
+    assert update.candidate_numerical_rank == 1
+    assert update.lanczos.requested_rank == 8
+    assert update.lanczos.krylov_rank_limit == 2
+    assert update.lanczos.executed_krylov_rank <= 2
+    assert update.lanczos.realized_rank == 1
+    assert update.lanczos.represented_diagonal_relative_error < 1e-10
 
 
 def test_rank_zero_tracker_matches_explicit_diagonal_tracker() -> None:

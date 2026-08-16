@@ -165,11 +165,60 @@ class LowRankDiagonalUpdate:
     correction: Tensor
     candidate_minimum_eigenvalue: float
     candidate_negative_eigenvalue_count: int
+    candidate_materially_negative_eigenvalue_count: int
+    candidate_spectral_tolerance: float
+    candidate_numerical_rank: int
+    candidate_eigendecomposition_backend: str
     lanczos: LanczosDiagnostics
     ridge_metrics: dict[str, Any]
     ridge_state: dict[str, Any]
     blend_gain: float
     correction_method: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _CandidateSpectrumDiagnostics:
+    minimum_eigenvalue: float
+    negative_eigenvalue_count: int
+    materially_negative_eigenvalue_count: int
+    tolerance: float
+    numerical_rank: int
+    backend: str
+
+
+def _candidate_spectrum_diagnostics(
+    candidate: Tensor,
+) -> _CandidateSpectrumDiagnostics:
+    """Diagnose a symmetric candidate without making CUDA convergence fatal."""
+
+    backend = candidate.device.type
+    try:
+        eigenvalues = torch.linalg.eigvalsh(candidate)
+    except RuntimeError as error:
+        message = str(error)
+        if "linalg.eigh" not in message or "failed to converge" not in message:
+            raise
+        eigenvalues = torch.linalg.eigvalsh(
+            candidate.detach().to(device="cpu", dtype=torch.float64).contiguous()
+        )
+        backend = "cpu_float64_fallback"
+
+    spectral_scale = max(float(eigenvalues.abs().max()), 1.0)
+    tolerance = (
+        torch.finfo(eigenvalues.dtype).eps
+        * candidate.shape[0]
+        * spectral_scale
+    )
+    return _CandidateSpectrumDiagnostics(
+        minimum_eigenvalue=float(eigenvalues.min()),
+        negative_eigenvalue_count=int((eigenvalues < 0).sum()),
+        materially_negative_eigenvalue_count=int(
+            (eigenvalues < -tolerance).sum()
+        ),
+        tolerance=float(tolerance),
+        numerical_rank=int((eigenvalues.abs() > tolerance).sum()),
+        backend=backend,
+    )
 
 
 class LowRankDiagonalFisherTracker:
@@ -250,12 +299,18 @@ class LowRankDiagonalFisherTracker:
                 + gain * statistics.estimate.fisher
             )
         candidate = (candidate + candidate.mT) / 2
-        eigenvalues = torch.linalg.eigvalsh(candidate)
+        spectrum = _candidate_spectrum_diagnostics(candidate)
+        krylov_rank_limit = min(
+            self.rank,
+            spectrum.numerical_rank
+            + int(spectrum.numerical_rank < parameter_count),
+        )
         approximation = approximate_low_rank_diagonal(
             lambda vector: candidate @ vector,
             torch.diagonal(candidate),
             rank=self.rank,
             seed=lanczos_seed,
+            maximum_krylov_rank=krylov_rank_limit,
         )
         self.previous = approximation.representation
         self.next_step += 1
@@ -264,8 +319,16 @@ class LowRankDiagonalFisherTracker:
             representation=self.previous,
             candidate=candidate,
             correction=correction,
-            candidate_minimum_eigenvalue=float(eigenvalues.min()),
-            candidate_negative_eigenvalue_count=int((eigenvalues < 0).sum()),
+            candidate_minimum_eigenvalue=spectrum.minimum_eigenvalue,
+            candidate_negative_eigenvalue_count=(
+                spectrum.negative_eigenvalue_count
+            ),
+            candidate_materially_negative_eigenvalue_count=(
+                spectrum.materially_negative_eigenvalue_count
+            ),
+            candidate_spectral_tolerance=spectrum.tolerance,
+            candidate_numerical_rank=spectrum.numerical_rank,
+            candidate_eigendecomposition_backend=spectrum.backend,
             lanczos=approximation.diagnostics,
             ridge_metrics=ridge.metrics_mapping(),
             ridge_state=ridge.state_artifact(),

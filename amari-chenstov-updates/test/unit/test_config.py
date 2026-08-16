@@ -297,6 +297,32 @@ def test_schema_ten_round_trips_explicit_lbfgs_controls() -> None:
     assert config.to_mapping() == raw
 
 
+def test_schema_eleven_versions_exposure_and_calibration_metrics() -> None:
+    raw = json.loads(K100_PLUGIN_CONFIG.read_text(encoding="utf-8"))
+    raw["schema_version"] = 11
+    raw["metric_schema_version"] = 7
+
+    config = ExperimentConfig.from_mapping(raw)
+
+    assert config.schema_version == 11
+    assert config.artifact_schema_version == 4
+    assert config.metric_schema_version == 7
+    assert config.to_mapping() == raw
+
+
+def test_schema_twelve_versions_nine_classification_metrics() -> None:
+    raw = json.loads(K100_PLUGIN_CONFIG.read_text(encoding="utf-8"))
+    raw["schema_version"] = 12
+    raw["metric_schema_version"] = 8
+
+    config = ExperimentConfig.from_mapping(raw)
+
+    assert config.schema_version == 12
+    assert config.artifact_schema_version == 4
+    assert config.metric_schema_version == 8
+    assert config.to_mapping() == raw
+
+
 def test_schema_ten_principal_configs_are_replica_paired() -> None:
     configs = [
         load_config(path)

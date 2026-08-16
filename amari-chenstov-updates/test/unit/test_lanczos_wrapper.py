@@ -81,3 +81,33 @@ def test_lanczos_wrapper_rejects_an_invalid_operator_contract() -> None:
             rank=2,
             seed=0,
         )
+
+
+def test_lanczos_wrapper_retries_a_nonfinite_krylov_depth(monkeypatch) -> None:
+    calls = []
+
+    def flaky_lanczos(*, r, p, device, diag_alternate, **_):
+        calls.append(r)
+        if r == 3:
+            return (
+                torch.full((p, r), float("nan"), dtype=torch.float64),
+                torch.full((p, 1), float("nan"), dtype=torch.float64),
+            )
+        return (
+            torch.zeros((p, r), dtype=torch.float64),
+            diag_alternate(),
+        )
+
+    monkeypatch.setattr("src.lanczos_wrapper.l_lanczos", flaky_lanczos)
+    diagonal = torch.ones(4, dtype=torch.float64)
+    result = approximate_low_rank_diagonal(
+        lambda vector: vector,
+        diagonal,
+        rank=3,
+        seed=9,
+    )
+
+    assert calls == [3, 2]
+    assert result.diagnostics.requested_rank == 3
+    assert result.diagnostics.executed_krylov_rank == 2
+    assert result.diagnostics.numerical_retry_count == 1

@@ -5,11 +5,13 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import random
 import shutil
 import tempfile
 import time
+from collections.abc import Mapping
 from functools import partial
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +23,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from .artifacts import collect_runtime_metadata
+from .classification_metrics import nine_environment_metrics
 from .config import ExperimentConfig, InitializationConfig
 from .mnist_data import (
     MNIST_DATA_SCHEMA_VERSION,
@@ -38,6 +41,7 @@ from .parameters import ParameterLayout
 from .seeding import derive_seed_map
 
 REPLICA_BUNDLE_SCHEMA_VERSION = 2
+DERIVED_STREAM_SCHEMA_VERSION = 1
 
 
 class ReplicaBundleError(RuntimeError):
@@ -140,7 +144,21 @@ def evaluate_classifier(
     device: torch.device,
     dtype: torch.dtype,
     num_workers: int = 0,
-) -> dict[str, float | int]:
+    calibration_bins: int | None = None,
+    nine_prevalence: float | None = None,
+) -> dict[str, float | int | None]:
+    if calibration_bins is not None and (
+        not isinstance(calibration_bins, int)
+        or isinstance(calibration_bins, bool)
+        or calibration_bins < 2
+    ):
+        raise ValueError("calibration_bins must be null or an integer at least two")
+    if nine_prevalence is not None and (
+        isinstance(nine_prevalence, bool)
+        or not math.isfinite(float(nine_prevalence))
+        or not 0.0 <= float(nine_prevalence) <= 1.0
+    ):
+        raise ValueError("nine_prevalence must be null or in [0, 1]")
     loader = _make_loader(
         dataset,
         batch_size=batch_size,
@@ -156,8 +174,33 @@ def evaluate_classifier(
     group_loss = {False: 0.0, True: 0.0}
     group_count = {False: 0, True: 0}
     group_correct = {False: 0, True: 0}
+    nine_false_positive_count = 0
     class_count = torch.zeros(10, dtype=torch.long)
     class_correct = torch.zeros(10, dtype=torch.long)
+    brier_total = 0.0
+    group_brier = {False: 0.0, True: 0.0}
+    calibration_count = (
+        None
+        if calibration_bins is None
+        else torch.zeros(calibration_bins, dtype=torch.long)
+    )
+    calibration_confidence = (
+        None
+        if calibration_bins is None
+        else torch.zeros(calibration_bins, dtype=torch.float64)
+    )
+    calibration_correct = (
+        None
+        if calibration_bins is None
+        else torch.zeros(calibration_bins, dtype=torch.float64)
+    )
+    calibration_boundaries = (
+        None
+        if calibration_bins is None
+        else torch.linspace(0.0, 1.0, calibration_bins + 1, dtype=torch.float64)[
+            1:-1
+        ]
+    )
 
     with torch.no_grad():
         for inputs, targets in loader:
@@ -171,15 +214,49 @@ def evaluate_classifier(
             )
             predictions = logits.argmax(dim=1)
             correct = predictions == targets
+            nine_false_positive_count += int(
+                ((targets != 9) & (predictions == 9)).sum()
+            )
             total_loss += float(losses.sum())
             total_count += targets.numel()
             total_correct += int(correct.sum())
+
+            if calibration_bins is not None:
+                probabilities = torch.softmax(logits, dim=1).double()
+                targets_one_hot = nn.functional.one_hot(
+                    targets, num_classes=10
+                ).double()
+                brier = (probabilities - targets_one_hot).square().sum(dim=1)
+                brier_total += float(brier.sum())
+                confidence, calibrated_predictions = probabilities.max(dim=1)
+                calibration_is_correct = calibrated_predictions == targets
+                cpu_confidence = confidence.cpu()
+                cpu_calibration_correct = calibration_is_correct.double().cpu()
+                assert calibration_boundaries is not None
+                bins = torch.bucketize(
+                    cpu_confidence,
+                    calibration_boundaries,
+                )
+                assert calibration_count is not None
+                assert calibration_confidence is not None
+                assert calibration_correct is not None
+                calibration_count += torch.bincount(
+                    bins, minlength=calibration_bins
+                )
+                calibration_confidence.scatter_add_(
+                    0, bins, cpu_confidence
+                )
+                calibration_correct.scatter_add_(
+                    0, bins, cpu_calibration_correct
+                )
 
             for is_nine in (False, True):
                 mask = (targets == 9) if is_nine else (targets != 9)
                 group_loss[is_nine] += float(losses[mask].sum())
                 group_count[is_nine] += int(mask.sum())
                 group_correct[is_nine] += int(correct[mask].sum())
+                if calibration_bins is not None:
+                    group_brier[is_nine] += float(brier[mask].sum())
 
             cpu_targets = targets.cpu()
             cpu_correct = correct.cpu()
@@ -197,7 +274,7 @@ def evaluate_classifier(
         raise ValueError("evaluation data must contain every MNIST class")
 
     class_accuracy = class_correct.double() / class_count
-    return {
+    metrics: dict[str, float | int | None] = {
         "sample_count": total_count,
         "nll": total_loss / total_count,
         "accuracy": total_correct / total_count,
@@ -207,6 +284,55 @@ def evaluate_classifier(
         "nine_accuracy": group_correct[True] / group_count[True],
         "balanced_accuracy": float(class_accuracy.mean()),
     }
+    if nine_prevalence is not None:
+        prevalence = float(nine_prevalence)
+        true_positive_count = group_correct[True]
+        false_negative_count = group_count[True] - true_positive_count
+        true_negative_count = group_count[False] - nine_false_positive_count
+        recall = true_positive_count / group_count[True]
+        false_positive_rate = nine_false_positive_count / group_count[False]
+        metrics.update(
+            {
+                "nine_true_positive_count": true_positive_count,
+                "nine_false_positive_count": nine_false_positive_count,
+                "nine_true_negative_count": true_negative_count,
+                "nine_false_negative_count": false_negative_count,
+                **nine_environment_metrics(
+                    prevalence=prevalence,
+                    recall=recall,
+                    false_positive_rate=false_positive_rate,
+                    non_nine_accuracy=(
+                        group_correct[False] / group_count[False]
+                    ),
+                ),
+            }
+        )
+    if calibration_bins is not None:
+        assert calibration_count is not None
+        assert calibration_confidence is not None
+        assert calibration_correct is not None
+        populated = calibration_count > 0
+        mean_confidence = (
+            calibration_confidence[populated]
+            / calibration_count[populated].double()
+        )
+        mean_accuracy = (
+            calibration_correct[populated]
+            / calibration_count[populated].double()
+        )
+        weights = calibration_count[populated].double() / total_count
+        metrics.update(
+            {
+                "brier": brier_total / total_count,
+                "non_nine_brier": group_brier[False] / group_count[False],
+                "nine_brier": group_brier[True] / group_count[True],
+                "expected_calibration_error": float(
+                    (weights * (mean_confidence - mean_accuracy).abs()).sum()
+                ),
+                "calibration_bin_count": calibration_bins,
+            }
+        )
+    return metrics
 
 
 def _build_optimizer(
@@ -349,6 +475,7 @@ def save_replica_bundle(
     *,
     device: torch.device,
     repo_root: str | Path,
+    derivation: Mapping[str, Any] | None = None,
 ) -> Path:
     """Atomically write an immutable shared initialization and stream bundle."""
 
@@ -391,6 +518,8 @@ def save_replica_bundle(
             "runtime": collect_runtime_metadata(repo_root, config),
             "status": "completed",
         }
+        if derivation is not None:
+            metadata["stream_derivation"] = dict(derivation)
         _write_torch(temporary / "model.pt", state_dict)
         _write_json(temporary / "partitions.json", partitions.to_mapping())
         _write_json(temporary / "stream_plan.json", stream_plan.to_mapping())
@@ -455,6 +584,43 @@ def load_replica_bundle(
         raise ReplicaBundleError("partition hash does not match metadata")
     if stream_plan.content_hash != metadata.get("stream_plan_hash"):
         raise ReplicaBundleError("stream plan hash does not match metadata")
+    derivation = metadata.get("stream_derivation")
+    if derivation is not None:
+        if not isinstance(derivation, Mapping):
+            raise ReplicaBundleError("stream derivation metadata must be an object")
+        expected_fields = {
+            "schema_version",
+            "parent_bundle_id",
+            "parent_replica_design_hash",
+            "parent_model_state_hash",
+            "parent_partition_hash",
+            "parent_stream_plan_hash",
+            "parent_samples_per_step",
+            "requested_samples_per_step",
+            "prefix_rule",
+            "derived_stream_plan_hash",
+        }
+        if set(derivation) != expected_fields:
+            raise ReplicaBundleError("stream derivation metadata has invalid fields")
+        if derivation["schema_version"] != DERIVED_STREAM_SCHEMA_VERSION:
+            raise ReplicaBundleError("unsupported stream derivation schema")
+        if derivation["prefix_rule"] != (
+            "first_m_ordered_observations_at_each_p_step"
+        ):
+            raise ReplicaBundleError("unsupported stream derivation prefix rule")
+        if derivation["derived_stream_plan_hash"] != stream_plan.content_hash:
+            raise ReplicaBundleError("derived stream hash does not match metadata")
+        if derivation["requested_samples_per_step"] != (
+            stream_plan.samples_per_step
+        ):
+            raise ReplicaBundleError("derived stream sample size does not match")
+        parent_size = derivation["parent_samples_per_step"]
+        if (
+            not isinstance(parent_size, int)
+            or isinstance(parent_size, bool)
+            or parent_size <= stream_plan.samples_per_step
+        ):
+            raise ReplicaBundleError("derived stream parent sample size is invalid")
     initialization_value = _read_json(
         bundle_path / "initialization_metrics.json"
     )
@@ -494,3 +660,71 @@ def load_replica_bundle_for_config(
             "replica bundle design does not match configuration"
         )
     return loaded
+
+
+def derive_replica_bundle(
+    parent_path: str | Path,
+    root: str | Path,
+    config: ExperimentConfig,
+    *,
+    repo_root: str | Path,
+) -> Path:
+    """Create an immutable per-step prefix while preserving initialization."""
+
+    config.validate()
+    parent = load_replica_bundle(parent_path, device="cpu")
+    requested = config.data.samples_per_step
+    parent_size = parent.stream_plan.samples_per_step
+    if requested >= parent_size:
+        raise ReplicaBundleError(
+            "derived samples_per_step must be smaller than its parent stream"
+        )
+
+    parent_config = dataclasses.replace(
+        config,
+        data=dataclasses.replace(
+            config.data,
+            samples_per_step=parent_size,
+        ),
+    )
+    expected_parent_design = replica_design_mapping(parent_config)
+    if parent.metadata.get("replica_design") != expected_parent_design:
+        raise ReplicaBundleError(
+            "parent bundle differs from the requested derived design outside "
+            "samples_per_step"
+        )
+
+    stream_plan = parent.stream_plan.prefix_per_step(requested)
+    derivation = {
+        "schema_version": DERIVED_STREAM_SCHEMA_VERSION,
+        "parent_bundle_id": parent.metadata["bundle_id"],
+        "parent_replica_design_hash": parent.metadata["replica_design_hash"],
+        "parent_model_state_hash": parent.metadata["model_state_hash"],
+        "parent_partition_hash": parent.metadata["partition_hash"],
+        "parent_stream_plan_hash": parent.metadata["stream_plan_hash"],
+        "parent_samples_per_step": parent_size,
+        "requested_samples_per_step": requested,
+        "prefix_rule": "first_m_ordered_observations_at_each_p_step",
+        "derived_stream_plan_hash": stream_plan.content_hash,
+    }
+    destination = Path(root) / replica_bundle_id(config)
+    if destination.exists():
+        loaded = load_replica_bundle_for_config(root, config, device="cpu")
+        if loaded.metadata.get("stream_derivation") != derivation:
+            raise ReplicaBundleError(
+                "existing derived bundle has incompatible provenance"
+            )
+        return destination
+
+    return save_replica_bundle(
+        root,
+        config,
+        parent.model,
+        parent.layout,
+        parent.partitions,
+        stream_plan,
+        parent.initialization,
+        device=torch.device("cpu"),
+        repo_root=repo_root,
+        derivation=derivation,
+    )

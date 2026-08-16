@@ -7,7 +7,9 @@ from torch.utils.data import Dataset
 
 from src.config import EstimatorConfig, load_config
 from src.initialization import (
+    InitializationResult,
     ReplicaBundleError,
+    derive_replica_bundle,
     fit_p0_initialization,
     load_replica_bundle,
     load_replica_bundle_for_config,
@@ -193,6 +195,108 @@ def test_tiny_initialization_bundle_round_trip_is_exact(tmp_path: Path) -> None:
             stream,
             result,
             device=torch.device("cpu"),
+            repo_root=REPO_ROOT,
+        )
+
+
+def test_derived_replica_bundle_is_an_exact_immutable_stream_prefix(
+    tmp_path: Path,
+) -> None:
+    config, _, _, partitions, stream, model, layout = _tiny_fixture()
+    initialization = InitializationResult(
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:01+00:00",
+        wall_time_seconds=1.0,
+        epochs_completed=1,
+        stopped_on_target=False,
+        history=(),
+        final_metrics={"accuracy": 0.5},
+    )
+    parent_path = save_replica_bundle(
+        tmp_path,
+        config,
+        model,
+        layout,
+        partitions,
+        stream,
+        initialization,
+        device=torch.device("cpu"),
+        repo_root=REPO_ROOT,
+    )
+    derived_config = dataclasses.replace(
+        config,
+        data=dataclasses.replace(config.data, samples_per_step=1),
+    )
+
+    derived_path = derive_replica_bundle(
+        parent_path,
+        tmp_path,
+        derived_config,
+        repo_root=REPO_ROOT,
+    )
+    repeated_path = derive_replica_bundle(
+        parent_path,
+        tmp_path,
+        derived_config,
+        repo_root=REPO_ROOT,
+    )
+    parent = load_replica_bundle(parent_path)
+    derived = load_replica_bundle_for_config(tmp_path, derived_config)
+
+    assert repeated_path == derived_path
+    assert derived.stream_plan == parent.stream_plan.prefix_per_step(1)
+    assert derived.metadata["model_state_hash"] == parent.metadata[
+        "model_state_hash"
+    ]
+    assert derived.metadata["partition_hash"] == parent.metadata["partition_hash"]
+    provenance = derived.metadata["stream_derivation"]
+    assert provenance["parent_bundle_id"] == parent.metadata["bundle_id"]
+    assert provenance["parent_stream_plan_hash"] == parent.stream_plan.content_hash
+    assert provenance["derived_stream_plan_hash"] == derived.stream_plan.content_hash
+    assert provenance["requested_samples_per_step"] == 1
+    assert provenance["prefix_rule"] == (
+        "first_m_ordered_observations_at_each_p_step"
+    )
+    for name, tensor in derived.model.state_dict().items():
+        assert torch.equal(tensor, parent.model.state_dict()[name])
+
+
+def test_derived_bundle_rejects_non_stream_design_changes(tmp_path: Path) -> None:
+    config, _, _, partitions, stream, model, layout = _tiny_fixture()
+    initialization = InitializationResult(
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:01+00:00",
+        wall_time_seconds=1.0,
+        epochs_completed=1,
+        stopped_on_target=False,
+        history=(),
+        final_metrics={},
+    )
+    parent_path = save_replica_bundle(
+        tmp_path,
+        config,
+        model,
+        layout,
+        partitions,
+        stream,
+        initialization,
+        device=torch.device("cpu"),
+        repo_root=REPO_ROOT,
+    )
+    incompatible = dataclasses.replace(
+        config,
+        data=dataclasses.replace(
+            config.data,
+            samples_per_step=1,
+            non_nine_sampling="balanced",
+        ),
+    )
+
+    with pytest.raises(ReplicaBundleError, match="outside samples_per_step"):
+        derive_replica_bundle(
+            parent_path,
+            tmp_path,
+            incompatible,
             repo_root=REPO_ROOT,
         )
 

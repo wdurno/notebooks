@@ -10,13 +10,23 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 10
-SUPPORTED_CONFIG_SCHEMA_VERSIONS = (4, 5, 6, 7, 8, 9, CONFIG_SCHEMA_VERSION)
+CONFIG_SCHEMA_VERSION = 12
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = (
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    CONFIG_SCHEMA_VERSION,
+)
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
 CONTROLLER_ARTIFACT_SCHEMA_VERSION = 4
-CONTROLLER_METRIC_SCHEMA_VERSION = 6
-SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6)
+CONTROLLER_METRIC_SCHEMA_VERSION = 8
+SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6, 7, 8)
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _T = TypeVar("_T")
@@ -708,7 +718,9 @@ class ExperimentConfig:
             )
         expected_metric_schema = (
             CONTROLLER_METRIC_SCHEMA_VERSION
-            if self.schema_version >= 10
+            if self.schema_version >= 12
+            else 7 if self.schema_version == 11
+            else 6 if self.schema_version == 10
             else 5 if self.schema_version == 9
             else 4 if self.schema_version == 8
             else 3 if self.schema_version == 7
@@ -716,7 +728,9 @@ class ExperimentConfig:
         )
         valid_metric_schemas = (
             (CONTROLLER_METRIC_SCHEMA_VERSION,)
-            if self.schema_version >= 10
+            if self.schema_version >= 12
+            else (7,) if self.schema_version == 11
+            else (6,) if self.schema_version == 10
             else (5,) if self.schema_version == 9
             else (4,) if self.schema_version == 8
             else (2, 3) if self.schema_version == 7

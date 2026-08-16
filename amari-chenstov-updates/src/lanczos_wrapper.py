@@ -29,6 +29,9 @@ def legacy_lanczos_source_hash() -> str:
 @dataclasses.dataclass(frozen=True)
 class LanczosDiagnostics:
     requested_rank: int
+    krylov_rank_limit: int
+    executed_krylov_rank: int
+    numerical_retry_count: int
     realized_rank: int
     retained_eigenvalues: tuple[float, ...]
     residual_diagonal_minimum: float
@@ -56,6 +59,7 @@ def approximate_low_rank_diagonal(
     *,
     rank: int,
     seed: int,
+    maximum_krylov_rank: int | None = None,
 ) -> LanczosApproximation:
     """Approximate a symmetric operator by ``AA^T + diag(d)``.
 
@@ -85,6 +89,18 @@ def approximate_low_rank_diagonal(
         or not 0 <= rank <= parameter_count
     ):
         raise ValueError("rank must be an integer in [0, parameter_count]")
+    if maximum_krylov_rank is None:
+        krylov_rank_limit = rank
+    elif (
+        not isinstance(maximum_krylov_rank, int)
+        or isinstance(maximum_krylov_rank, bool)
+        or not 0 <= maximum_krylov_rank <= rank
+    ):
+        raise ValueError(
+            "maximum_krylov_rank must be an integer in [0, rank]"
+        )
+    else:
+        krylov_rank_limit = maximum_krylov_rank
     if (
         not isinstance(seed, int)
         or isinstance(seed, bool)
@@ -111,7 +127,9 @@ def approximate_low_rank_diagonal(
         )
 
     started = time.perf_counter()
-    if rank == 0:
+    numerical_retry_count = 0
+    executed_krylov_rank = krylov_rank_limit
+    if krylov_rank_limit == 0:
         factor = diagonal.new_zeros((parameter_count, 0))
         residual = diagonal.clamp_min(0)
         retained_eigenvalues: tuple[float, ...] = ()
@@ -122,38 +140,52 @@ def approximate_low_rank_diagonal(
             else []
         )
         with torch.random.fork_rng(devices=devices):
-            torch.manual_seed(seed)
-            if diagonal.device.type == "cuda":
-                torch.cuda.manual_seed(seed)
             default_dtype = torch.get_default_dtype()
             try:
                 torch.set_default_dtype(diagonal.dtype)
-                try:
-                    factor, residual_column = l_lanczos(
-                        get_grad_generator=None,
-                        r=rank,
-                        p=parameter_count,
-                        device=diagonal.device,
-                        mfi_alternate=operator,
-                        diag_alternate=lambda: diagonal.reshape(-1, 1).clone(),
-                        disable_tqdm=True,
-                        calc_diag=True,
-                    )
-                finally:
-                    torch.set_default_dtype(default_dtype)
-            except (RuntimeError, ZeroDivisionError) as exc:
-                raise RuntimeError(
-                    f"legacy Lanczos failed at requested rank {rank}: {exc}"
-                ) from exc
-        factor = factor.to(device=diagonal.device, dtype=diagonal.dtype)
-        residual = residual_column.reshape(-1).to(
-            device=diagonal.device,
-            dtype=diagonal.dtype,
-        )
-        if not torch.isfinite(factor).all() or not torch.isfinite(residual).all():
-            raise RuntimeError(
-                f"legacy Lanczos numerical breakdown at requested rank {rank}"
-            )
+                last_error = None
+                for attempted_rank in range(krylov_rank_limit, 0, -1):
+                    torch.manual_seed(seed)
+                    if diagonal.device.type == "cuda":
+                        torch.cuda.manual_seed(seed)
+                    try:
+                        factor, residual_column = l_lanczos(
+                            get_grad_generator=None,
+                            r=attempted_rank,
+                            p=parameter_count,
+                            device=diagonal.device,
+                            mfi_alternate=operator,
+                            diag_alternate=(
+                                lambda: diagonal.reshape(-1, 1).clone()
+                            ),
+                            disable_tqdm=True,
+                            calc_diag=True,
+                        )
+                        factor = factor.to(
+                            device=diagonal.device,
+                            dtype=diagonal.dtype,
+                        )
+                        residual = residual_column.reshape(-1).to(
+                            device=diagonal.device,
+                            dtype=diagonal.dtype,
+                        )
+                        outputs_are_finite = bool(
+                            torch.isfinite(factor).all()
+                            and torch.isfinite(residual).all()
+                        )
+                        if outputs_are_finite:
+                            executed_krylov_rank = attempted_rank
+                            break
+                        last_error = RuntimeError("nonfinite Lanczos output")
+                    except (RuntimeError, ZeroDivisionError) as error:
+                        last_error = error
+                    numerical_retry_count += 1
+                else:
+                    raise RuntimeError(
+                        "legacy Lanczos numerical breakdown through rank 1"
+                    ) from last_error
+            finally:
+                torch.set_default_dtype(default_dtype)
         gram = (factor.mT @ factor)
         gram = (gram + gram.mT) / 2
         eigenvalues, eigenvectors = torch.linalg.eigh(gram)
@@ -181,6 +213,9 @@ def approximate_low_rank_diagonal(
     )
     diagnostics = LanczosDiagnostics(
         requested_rank=rank,
+        krylov_rank_limit=krylov_rank_limit,
+        executed_krylov_rank=executed_krylov_rank,
+        numerical_retry_count=numerical_retry_count,
         realized_rank=representation.rank,
         retained_eigenvalues=retained_eigenvalues,
         residual_diagonal_minimum=float(residual.min()),

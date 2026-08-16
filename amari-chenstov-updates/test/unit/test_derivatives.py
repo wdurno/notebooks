@@ -91,6 +91,29 @@ def test_loss_gradient_is_negative_gaussian_score() -> None:
     )
 
 
+def test_singleton_vmap_preserves_sample_dimension() -> None:
+    model = GaussianMeanModel(1.0, squared=True)
+    layout = ParameterLayout.from_module(model)
+    inputs = torch.zeros(1, 1, dtype=torch.float64)
+    targets = torch.tensor([2.0], dtype=torch.float64)
+    direction = torch.ones(1, dtype=torch.float64)
+
+    derivatives = per_sample_derivatives(
+        model,
+        inputs,
+        targets,
+        gaussian_nll,
+        layout,
+        direction=direction,
+        strategy="vmap",
+    )
+
+    assert derivatives.gradients.shape == (1, 1)
+    assert derivatives.hvps.shape == (1, 1)
+    assert torch.isfinite(derivatives.gradients).all()
+    assert torch.isfinite(derivatives.hvps).all()
+
+
 @pytest.mark.parametrize("squared", [False, True])
 def test_hvp_agrees_with_central_gradient_difference(squared: bool) -> None:
     model = GaussianMeanModel(1.0, squared=squared)

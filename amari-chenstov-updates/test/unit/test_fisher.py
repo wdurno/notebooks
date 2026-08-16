@@ -108,6 +108,18 @@ def test_batch_estimate_equals_mean_of_sample_estimates() -> None:
         torch.testing.assert_close(getattr(batch, name), expected)
 
 
+def test_singleton_fisher_and_lfu_keep_matrix_scaling() -> None:
+    gradients = torch.tensor([[2.0, -1.0]], dtype=torch.float64)
+    hvps = torch.tensor([[0.5, 3.0]], dtype=torch.float64)
+    direction = torch.tensor([0.25, -0.5], dtype=torch.float64)
+
+    estimate = dense_lfu_estimate(gradients, hvps, direction)
+
+    assert estimate.fisher.shape == (2, 2)
+    torch.testing.assert_close(estimate.fisher, gradients.mT @ gradients)
+    assert torch.isfinite(estimate.full).all()
+
+
 @pytest.mark.parametrize("probe_columns", [None, 3])
 def test_matrix_free_products_equal_dense_products(
     probe_columns: int | None,

@@ -209,4 +209,133 @@ condition as its paired comparison.
 For `fixed-100-no-ewc`, $(1-\pi)/\pi=0$, so the EWC quadratic vanishes. The
 current experiment runner still calculates Fisher diagnostics; its predictive
 trajectory is a valid no-EWC comparison, but its runtime is not an optimized
-no-EWC deployment benchmark.
+no-EWC deployment benchmark. After initialization, its auxiliary recursion also
+has no memory: it reports the instantaneous empirical Fisher $Z_t$ from the
+current batch. This is a diagnostic of a different process, not another name
+for the current-batch learner.
+
+## Plan 2 low-data regime discovery
+
+Plan 2 searches for the online data budget at which compressed historical
+information becomes useful. It is preparatory: LFUs and replay comparisons are
+deferred until this screen finds a regime where current-batch-only learning is
+not adequate.
+
+The initial screen holds the 100-point linear path from $p=0$ to $p=1$ fixed
+and varies
+
+$$
+m\in\{1,2,4,8,16,32,64\}.
+$$
+
+The completed $m=128$ adaptation screen remains the easy-regime anchor. Each
+lower-$m$ stream is planned as a deterministic prefix of the same ordered
+128-observation master batches within a replica. Thus, conditions share the
+exact $p=0$ model, initial Fisher, partitions, and observations, while larger
+$m$ values add observations to smaller ones.
+
+### Initial conditions
+
+All three conditions use rank 8 plus a diagonal, an L-BFGS budget of 50, and
+the no-LFU Fisher recursion. The screen therefore asks whether old information
+and the controller help before reintroducing derivative corrections.
+
+| Condition | Original learning process | Auxiliary Fisher process | Role |
+|---|---|---|---|
+| `no-ewc-pi100` | Current batch only; fixed $\pi=1$ makes the EWC penalty zero | Instantaneous empirical Fisher $Z_t$ after initialization | Primary control |
+| `fixed-ewc-pi010` | Current batch plus EWC-compressed history at fixed $\pi=.10$ | Recursive Fisher summary | EWC mechanism control |
+| `adaptive-ewc-h010` | Current batch plus EWC-compressed history at plug-in $\pi_t\in[.05,.95]$ | Recursive Fisher summary | Applied adaptive treatment |
+
+The two entries in each row describe coupled but distinct processes. In
+particular, the rank of the no-EWC condition's instantaneous empirical Fisher
+does not describe the rank of information learned by its optimizer.
+
+The fixed weight and half-life are starting values, not claimed optima. If
+fixed EWC succeeds while adaptive EWC fails, the experiment has found a
+controller problem rather than disproved the compressed summary.
+
+### Primary predictive metrics
+
+Plan 2 uses four primary metric trajectories, evaluated separately within each
+environmental mixture value $p_t$:
+
+1. digit-9 one-vs-rest accuracy $A_{9,\mathrm{OvR}}(p_t)$;
+2. digit-9 precision at prevalence $p_t$;
+3. digit-9 recall; and
+4. environmental multiclass accuracy.
+
+Let $r_9$ be recall on true nines, $f_9$ the rate at which non-nines are
+predicted as 9, $s_9=1-f_9$, and $A_{\mathrm{non9}}$ exact multiclass accuracy
+conditioned on a non-nine. The environmental metrics are
+
+$$
+A_{9,\mathrm{OvR}}(p_t)=p_t r_9+(1-p_t)s_9,
+$$
+
+$$
+P_9(p_t)=\frac{p_t r_9}{p_t r_9+(1-p_t)f_9},
+$$
+
+and
+
+$$
+A_{\mathrm{env}}(p_t)=p_t r_9+(1-p_t)A_{\mathrm{non9}}.
+$$
+
+Precision is undefined when its denominator is zero and is reported as
+missing, not fabricated. The fixed holdout estimates the class-conditional
+rates; its empirical digit prevalence is not substituted for $p_t$.
+
+Replicas are the statistical units. Each metric is calculated per replica and
+$p_t$, then averaged across replicas at that same $p_t$ with pointwise
+variability retained. The legacy field `nine_accuracy` means 9 recall. Balanced
+accuracy is not a Plan 2 target metric. NLL, calibration, old-digit retention,
+Fisher diagnostics, and compute remain supporting evidence.
+
+### Decision gate
+
+A target-regime candidate must satisfy both conditions:
+
+1. `no-ewc-pi100` no longer learns digit 9 adequately or stably at the
+   available observation budget.
+2. At least one EWC condition obtains a practical acquisition advantage
+   without unacceptable old-digit loss.
+
+Poor no-EWC NLL is not enough when its digit-9 classifier still works. Likewise,
+high 9 recall is not enough when precision or 9 OvR accuracy reveals excessive
+false positives. A budget where every learner fails is also not useful.
+Selection uses expected trajectories, paired effects, uncertainty, and
+fixed-exposure comparisons rather than one replica or one threshold crossing.
+
+If no-EWC still works at `m=1`, the next intervention is trajectory geometry or
+implicit rehearsal, not a still smaller batch.
+
+### Exposure and calibration
+
+New scalar artifacts record the actual batch class counts, repeated and unique
+observation counts, and cumulative exposure before and after each model update.
+The terminal batch is available to the auxiliary Fisher diagnostic but is not
+charged as optimizer-consumed data because no subsequent model update occurs.
+
+Digit-9 acquisition is summarized from the mean post-update trajectories
+across replicas at each $p_t$. A recall-only 90% crossing is not a target-regime
+gate because it can be attained by predicting 9 too often. Any later durable
+criterion must include a false-positive-sensitive metric. If it is not met,
+report all four primary metrics at common fixed observation budgets.
+
+NLL remains the primary proper scoring rule. New-schema runs also record the
+multiclass Brier score and 15-bin, equal-width maximum-probability expected
+calibration error during the existing holdout pass; logits are not stored.
+
+### Compute labels
+
+Measured quantities include process wall time, per-operation wall time,
+optimizer iterations and function evaluations, score-gradient and HVP counts,
+peak allocated CUDA memory, peak process RSS, and artifact bytes. Peak memory
+is a high-water mark, not memory-time consumption.
+
+The Plan 2 command center reports `estimated_wall_hours`, a planning proxy based
+on historical trajectory timing. The older Phase 9 command center retains its
+legacy `estimated_gpu_hours` field; do not interpret that label as measured GPU
+occupancy. A future accelerator-consumption claim requires CUDA-event timing or
+sampled device utilization.

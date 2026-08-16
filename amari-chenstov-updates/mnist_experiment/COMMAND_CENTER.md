@@ -48,3 +48,44 @@ Profiles are selected explicitly and never form an automatic Cartesian sweep:
 Open `results.ipynb` for completion status, paired effects, uncertainty, and
 links to detailed diagnostic notebooks. Cost previews are rough planning
 estimates calibrated from the Phase 8 pilot, not runtime guarantees.
+
+## Plan 2 low-data screen
+
+Preview the explicit three-condition screen over selected online batch sizes:
+
+```bash
+python -m mnist_experiment.plan2_command_center preview \
+  --samples-per-step 1,2,4,8,16,32,64 --replicas 1-3
+```
+
+Prepare immutable prefix streams and configurations, then inspect or run the
+returned bundle path:
+
+```bash
+python -m mnist_experiment.plan2_command_center prepare
+python -m mnist_experiment.plan2_command_center status --bundle <bundle-path>
+python -m mnist_experiment.plan2_command_center run \
+  --bundle <bundle-path> --resume
+```
+
+Preparation performs no new initialization fit. Each low-`m` stream is the
+first `m` ordered observations from every batch of its retained `m=128` master,
+and all conditions at that `m` share the derived bundle and reference path.
+
+Completed schema-7 runs need one inference-only pass to add 9 OvR accuracy,
+9 precision, and explicit 9 recall without mutating their artifacts. Include
+the reused `m=128` anchors in the same resumable pass:
+
+```bash
+python -m mnist_experiment.plan2_command_center backfill-metrics \
+  --bundle <bundle-path> --device cuda --resume --include-m128-anchors
+```
+
+New schema-8 runs record those metrics directly. The results notebook averages
+each primary metric across replicas separately at every environmental `p`.
+
+The preview uses a fixed-overhead-plus-observation cost model. Its production
+anchor is the 283.68-second median from 85 completed `m=128`, `K=100`, rank-8,
+budget-50 trajectories; the Phase 1 CUDA smoke was effectively flat between
+`m=1` and `m=2`, so the estimate is deliberately not scaled linearly from zero.
+It remains a planning proxy rather than measured GPU time.

@@ -7,6 +7,8 @@ Do not implement a large Cartesian experiment immediately. Build and validate th
 Phase 9 orchestration invariants are recorded in
 [AGENTS_PHASE9.md](AGENTS_PHASE9.md). That file is agent-only maintenance
 context; keep user commands concise in [COMMAND_CENTER.md](COMMAND_CENTER.md).
+Plan 2 nested-stream invariants are recorded separately in
+[AGENTS_PLAN2.md](AGENTS_PLAN2.md).
 
 ## Scientific model
 

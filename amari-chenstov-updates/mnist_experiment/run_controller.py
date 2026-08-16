@@ -45,7 +45,12 @@ from src.controller import (
 )
 from src.coupled_trajectory import DenseFisherTracker, dense_fisher_metrics
 from src.ewc import build_optimizer, mixture_ewc_strength, take_ewc_proposal
-from src.initialization import evaluate_classifier, load_replica_bundle_for_config
+from src.exposure import stream_exposure_rows
+from src.initialization import (
+    LoadedReplicaBundle,
+    evaluate_classifier,
+    load_replica_bundle_for_config,
+)
 from src.mnist_data import dataset_targets, load_mnist_datasets
 from src.mnist_model import configure_torch_runtime, resolve_device, resolve_dtype
 from src.parameters import ParameterLayout
@@ -61,8 +66,9 @@ from src.structured_trajectory import (
     LowRankDiagonalFisherTracker,
 )
 
-PHASE8_METRIC_SCHEMA_VERSION = 6
+PHASE8_METRIC_SCHEMA_VERSION = 7
 PHASE8_ARTIFACT_SCHEMA_VERSION = 4
+CALIBRATION_BINS = 15
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -77,11 +83,17 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def _validate_config(config: ExperimentConfig) -> int:
-    if config.schema_version not in {9, 10}:
+    if config.schema_version not in {9, 10, 11, 12}:
         raise ValueError(
-            "corrected Phase 8 controller runs require schema version 9 or 10"
+            "corrected Phase 8 controller runs require schema version 9-12"
         )
-    expected_metric_schema = 6 if config.schema_version >= 10 else 5
+    expected_metric_schema = (
+        8
+        if config.schema_version >= 12
+        else 7
+        if config.schema_version == 11
+        else 6 if config.schema_version == 10 else 5
+    )
     if config.metric_schema_version != expected_metric_schema:
         raise ValueError(
             "corrected Phase 8 metric schema must be version "
@@ -115,6 +127,47 @@ def _validate_config(config: ExperimentConfig) -> int:
     if config.controller.oracle_mode not in {"reference_path", "diagnostic"}:
         raise ValueError("Phase 8 requires reference-path oracle diagnostics")
     return config.estimator.low_rank
+
+
+def _validate_external_oracle_provenance(
+    source_path: Path,
+    source_metrics: dict[str, Any],
+    loaded: LoadedReplicaBundle,
+    oracle_path: ReferenceOptimumPath,
+) -> dict[str, Any]:
+    """Verify an external path was built from this initialization and design."""
+
+    source_bundle_id = source_metrics.get("replica_bundle_id")
+    derivation = loaded.metadata.get("stream_derivation")
+    expected_source_bundle = (
+        derivation.get("parent_bundle_id")
+        if isinstance(derivation, dict)
+        else loaded.metadata.get("bundle_id")
+    )
+    if source_bundle_id != expected_source_bundle:
+        raise RuntimeError(
+            "external oracle path uses a different parent replica bundle"
+        )
+    pairing = source_metrics.get("pairing")
+    if not isinstance(pairing, dict):
+        raise RuntimeError("external oracle source lacks pairing provenance")
+    initial_vector = loaded.layout.flatten_module(loaded.model, detach=True)
+    initial_parameter_hash = _tensor_hash(initial_vector)
+    if pairing.get("initial_parameter_hash") != initial_parameter_hash:
+        raise RuntimeError(
+            "external oracle path uses a different initial model state"
+        )
+    if source_metrics.get("parameter_count") != loaded.layout.total_numel:
+        raise RuntimeError("external oracle source uses a different model layout")
+    if source_metrics.get("oracle_path_hash") != oracle_path.content_hash:
+        raise RuntimeError("external oracle source path hash is inconsistent")
+    return {
+        "source_metrics_path": str(source_path.with_name("phase8_metrics.json")),
+        "source_replica_bundle_id": source_bundle_id,
+        "expected_source_replica_bundle_id": expected_source_bundle,
+        "initial_parameter_hash": initial_parameter_hash,
+        "parent_derivation_validated": isinstance(derivation, dict),
+    }
 
 
 def _cosine(left: Tensor, right: Tensor) -> float | None:
@@ -274,6 +327,13 @@ def _run_condition(
     controller_states: dict[str, Any] = {}
     lagged_displacement = torch.zeros_like(initial_vector).cpu()
     previous_reference = None
+    exposures = stream_exposure_rows(
+        stream_plan.observation_indices,
+        stream_plan.class_labels,
+    )
+    calibration_bins = (
+        CALIBRATION_BINS if config.metric_schema_version >= 7 else None
+    )
     started = time.perf_counter()
 
     progress = tqdm(
@@ -384,6 +444,16 @@ def _run_condition(
                 "candidate_negative_eigenvalue_count": (
                     update.candidate_negative_eigenvalue_count
                 ),
+                "candidate_materially_negative_eigenvalue_count": (
+                    update.candidate_materially_negative_eigenvalue_count
+                ),
+                "candidate_spectral_tolerance": (
+                    update.candidate_spectral_tolerance
+                ),
+                "candidate_numerical_rank": update.candidate_numerical_rank,
+                "candidate_eigendecomposition_backend": (
+                    update.candidate_eigendecomposition_backend
+                ),
                 "lanczos": update.lanczos.mapping(),
                 "ridge": update.ridge_metrics,
             }
@@ -400,6 +470,10 @@ def _run_condition(
             device=device,
             dtype=training_dtype,
             num_workers=config.initialization.num_workers,
+            calibration_bins=calibration_bins,
+            nine_prevalence=(
+                p_value if config.metric_schema_version >= 8 else None
+            ),
         )
         proposal_mapping = None
         acceptance_mapping = None
@@ -520,6 +594,10 @@ def _run_condition(
                 device=device,
                 dtype=training_dtype,
                 num_workers=config.initialization.num_workers,
+                calibration_bins=calibration_bins,
+                nine_prevalence=(
+                    p_value if config.metric_schema_version >= 8 else None
+                ),
             )
 
         oracle_displacement = oracle_inputs[step].displacement
@@ -613,6 +691,7 @@ def _run_condition(
                 ),
                 "update_elapsed_seconds": update_elapsed,
                 "update_diagnostics": update_diagnostics,
+                **exposures[step],
                 **_prefix_mapping("before", before_evaluation),
                 **_prefix_mapping("after", after_evaluation),
                 **online,
@@ -900,6 +979,25 @@ def main() -> None:
             for plan in oracle_path.sample_plans
         ):
             raise RuntimeError("external oracle path uses different data partitions")
+        source_metrics_path = source_path.with_name("phase8_metrics.json")
+        if not source_metrics_path.is_file():
+            raise RuntimeError(
+                "external oracle path lacks sibling phase8_metrics.json provenance"
+            )
+        try:
+            source_metrics = json.loads(source_metrics_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                "external oracle source metrics are unreadable"
+            ) from exc
+        if not isinstance(source_metrics, dict):
+            raise RuntimeError("external oracle source metrics must be an object")
+        validated_source = _validate_external_oracle_provenance(
+            source_path,
+            source_metrics,
+            loaded,
+            oracle_path,
+        )
         oracle_inputs, oracle_reference_rows = _oracle_inputs(
             oracle_path, matrix_dtype=matrix_dtype
         )
@@ -908,6 +1006,7 @@ def main() -> None:
             "source_path": str(source_path),
             "source_envelope_schema_version": stored_source.get("schema_version"),
             "content_hash": oracle_path.content_hash,
+            "validated_source": validated_source,
         }
         session.write_torch(
             "phase8_reference_optimum.pt",
@@ -1108,6 +1207,36 @@ def main() -> None:
             resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
         ),
     }
+    if config.metric_schema_version >= 7:
+        metrics.update(
+            {
+                "exposure_accounting": (
+                    "ordered_stream_batches_with_optimizer_consumption"
+                ),
+                "calibration_contract": {
+                    "brier": "mean_multiclass_probability_squared_error",
+                    "expected_calibration_error_bins": CALIBRATION_BINS,
+                    "expected_calibration_error_binning": (
+                        "equal_width_maximum_probability"
+                    ),
+                },
+            }
+        )
+    if config.metric_schema_version >= 8:
+        metrics["classification_contract"] = {
+            "nine_accuracy_legacy_semantics": (
+                "recall_conditioned_on_true_nine"
+            ),
+            "nine_recall": "true_positive_rate_conditioned_on_true_nine",
+            "nine_false_positive_rate": (
+                "predicted_nine_conditioned_on_true_non_nine"
+            ),
+            "nine_ovr_accuracy": "prevalence_adjusted_at_row_p",
+            "nine_precision": (
+                "prevalence_adjusted_at_row_p_null_when_undefined"
+            ),
+            "environment_accuracy": "multiclass_prevalence_adjusted_at_row_p",
+        }
     trajectory_path = session.write_torch(
         "phase8_trajectories.pt", _cpu_tree(trajectory_artifact)
     )

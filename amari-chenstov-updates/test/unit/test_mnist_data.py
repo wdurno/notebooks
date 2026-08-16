@@ -1,5 +1,6 @@
 import dataclasses
 
+import pytest
 import torch
 
 from src.config import DataConfig
@@ -225,3 +226,29 @@ def test_reference_sample_prefixes_are_nested_and_reproducible() -> None:
     assert prefix.class_labels == full.class_labels[:40]
     assert independently_short == prefix
     assert prefix.content_hash != full.content_hash
+
+
+def test_mixture_stream_prefixes_each_ordered_batch_without_resampling() -> None:
+    targets, test_targets = _targets()
+    config = _data_config(samples_per_step=8)
+    partitions = partition_mnist(
+        targets,
+        test_targets,
+        config,
+        replica_seed=44,
+    )
+    full = generate_mixture_stream(targets, partitions, config, seed=44)
+
+    prefix = full.prefix_per_step(1)
+
+    assert prefix.samples_per_step == 1
+    assert prefix.p_values == full.p_values
+    assert prefix.partition_hash == full.partition_hash
+    assert prefix.seed == full.seed
+    assert prefix.observation_indices == tuple(
+        row[:1] for row in full.observation_indices
+    )
+    assert prefix.class_labels == tuple(row[:1] for row in full.class_labels)
+    assert prefix.content_hash != full.content_hash
+    with pytest.raises(ValueError, match="prefix samples_per_step"):
+        full.prefix_per_step(9)

@@ -63,9 +63,9 @@ documented command suitable for `tmux`.
 
 | Phase | Name | Status |
 |---|---|---|
-| 0 | Regime and measurement contracts | Pending |
-| 1 | Nested low-data streams and pipeline hardening | Pending |
-| 2 | Coarse sample-size boundary screen | Pending |
+| 0 | Regime and measurement contracts | Complete |
+| 1 | Nested low-data streams and pipeline hardening | Complete |
+| 2 | Coarse sample-size boundary screen | In progress |
 | 3 | Boundary selection and focused bracketing | Pending |
 | 4 | Controller recalibration in the selected regime | Pending |
 | 5 | Confirmatory target-regime replication | Pending |
@@ -110,11 +110,11 @@ All use the no-LFU Fisher recursion so the screen isolates the value of old
 information and the controller rather than the quality of a derivative
 correction.
 
-| Condition | Applied $\pi_t$ | EWC penalty | Purpose |
-|---|---:|---|---|
-| `no-ewc-pi100` | $1$ | Zero | Primary current-batch-only control |
-| `fixed-ewc-pi010` | $0.10$ | Fixed old-to-new odds | EWC mechanism control without controller-estimation risk |
-| `adaptive-ewc-h010` | Plug-in, clipped to $[0.05,0.95]$ | Adaptive | Applied controller treatment using the best Phase 9 default |
+| Condition | Original learning process | Auxiliary Fisher process | Purpose |
+|---|---|---|---|
+| `no-ewc-pi100` | Current batch only; $\pi=1$ removes EWC | Instantaneous empirical Fisher $Z_t$ after initialization | Primary control |
+| `fixed-ewc-pi010` | Current batch plus fixed EWC, $\pi=.10$ | Recursive Fisher summary | EWC mechanism control without controller-estimation risk |
+| `adaptive-ewc-h010` | Current batch plus adaptive EWC, $\pi_t\in[.05,.95]$ | Recursive Fisher summary | Applied controller treatment using the best Phase 9 default |
 
 The fixed value $0.10$ is a diagnostic control, not a claim of optimality. It
 separates a failure of the EWC summary from a failure of the plug-in controller.
@@ -124,7 +124,10 @@ increases.
 
 All three conditions continue to calculate the same diagnostics during the
 screen. No-EWC runtime is therefore experimental runtime, not an optimized
-deployment benchmark.
+deployment benchmark. The no-EWC learner and its instantaneous empirical
+Fisher diagnostic are two distinct memoryless processes. Its rank-one
+$m=1$ diagnostic must not be interpreted as the learner retaining only one
+parameter direction or as a failed rank-8 approximation.
 
 ### Sample-size axis
 
@@ -175,17 +178,46 @@ mixture sample.
 Treat replicas, not trajectory steps, as the statistical units. Preserve each
 trajectory and summarize expected trajectories across replicas.
 
-Primary adaptation outcomes are:
+Primary predictive outcomes are the following four trajectories:
 
-1. expected accuracy conditioned on true digit 9 versus cumulative total
-   observations;
-2. expected accuracy conditioned on true digit 9 versus cumulative digit-9
-   presentations and unique digit-9 observations;
-3. the first durable crossing of 90% by the expected digit-9 accuracy
-   trajectory, when it exists;
-4. digit-9 accuracy AUC over $p$ and over cumulative observations;
-5. expected non-nine accuracy and forgetting at matched observation budgets;
-6. expected environment-weighted accuracy.
+1. digit-9 one-vs-rest accuracy $A_{9,\mathrm{OvR}}(p_t)$;
+2. digit-9 precision at the environmental prevalence $p_t$;
+3. digit-9 recall, equivalently accuracy conditioned on a true digit 9; and
+4. environmental multiclass accuracy.
+
+Calculate every metric once per replica and $p_t$, then average pointwise over
+replicas at the same $p_t$. Preserve pointwise standard deviations or confidence
+intervals. Precision and one-vs-rest accuracy must use the environmental
+prevalence rather than the fixed holdout prevalence. If $r_9$ is digit-9 recall,
+$f_9$ is the false-positive rate among non-nine observations, and $s_9=1-f_9$,
+then
+
+$$
+A_{9,\mathrm{OvR}}(p_t)=p_t r_9+(1-p_t)s_9,
+$$
+
+$$
+P_9(p_t)=\frac{p_t r_9}{p_t r_9+(1-p_t)f_9},
+$$
+
+whenever the precision denominator is nonzero. Environmental multiclass
+accuracy remains
+
+$$
+A_{\mathrm{env}}(p_t)
+=p_t r_9+(1-p_t)A_{\mathrm{non9}},
+$$
+
+where $A_{\mathrm{non9}}$ requires the exact multiclass prediction for a
+non-nine observation. The distinction between $s_9$ and
+$A_{\mathrm{non9}}$ is essential: a model may avoid false digit-9 predictions
+while still confusing the old digits with one another.
+
+Compare these trajectories against $p_t$, cumulative total observations,
+digit-9 presentations, and unique digit-9 observations. Report their AUCs and
+fixed-exposure contrasts. Any durable threshold criterion adopted at a phase
+gate must consider false positives; a digit-9 recall crossing alone is not
+evidence of adequate adaptation.
 
 "Durable" means that the expected trajectory remains at or above the threshold
 for all later recorded points. If the threshold is never reached, report that
@@ -195,7 +227,7 @@ per-replica stopping times as the principal estimand.
 Secondary outcomes are:
 
 - digit-9, non-nine, and environment-weighted NLL;
-- balanced accuracy and calibration;
+- non-nine multiclass retention and calibration;
 - pointwise trajectory variability and paired uncertainty;
 - Fisher tracking and controller diagnostics;
 - optimizer iterations and function evaluations;
@@ -299,6 +331,32 @@ conditions.
 Approve the outcome hierarchy and the operational meaning of "no-EWC works"
 before constructing the low-data streams.
 
+### Completion record
+
+**Status:** Complete (2026-08-13)
+
+- Added exact optimizer-consumed exposure accounting from recorded stream IDs
+  and labels, including repeated and unique digit-9/non-nine observations.
+- Added opt-in multiclass Brier score and 15-bin maximum-probability ECE to the
+  existing holdout forward pass. New controller runs use config schema 11 and
+  scalar-metric schema 7; unchanged tensor artifacts remain at schema 4.
+- Added artifact-only expected-trajectory, durable-crossing, exposure-AUC,
+  fixed-budget, uncertainty, pairing, and metric-availability helpers.
+- Added a Plan 2 readiness panel to `results.ipynb` and the concise human
+  contract to `EXPERIMENTAL_CONDITIONS.md`.
+- Verified that completed Plan 1/Phase 9 bundles still load. Their exact
+  exposure coordinates are derived from immutable stream artifacts; calibration
+  fields correctly remain unavailable when their older schemas did not record
+  them.
+- `python -m pytest -q test/unit`: 184 passed in 3.83 seconds.
+- `python -m mnist_experiment.validate_results_notebook --notebook
+  mnist_experiment/results.ipynb --max-seconds 60`: valid, 17 code cells in
+  45.70 seconds, with no training, data download, model loading, or Fisher
+  calculation.
+
+**Gate recommendation:** review and approve the documented target-regime rule,
+then proceed to Phase 1's immutable nested-stream construction.
+
 ## Phase 1: Nested low-data streams and pipeline hardening
 
 ### Goal
@@ -350,6 +408,51 @@ the immutable-run contract.
 Inspect numerical behavior and measured per-run cost. Approve or revise the
 coarse $m$ grid and initial replica count before starting the long screen.
 
+### Completion record
+
+**Status:** Complete (2026-08-14)
+
+- Added self-contained immutable prefix bundles with derivation schema 1.
+  Metadata records parent bundle/design/model/partition/stream hashes, the
+  requested $m$, the exact prefix rule, and the derived stream hash. Existing
+  completed masters remain unchanged.
+- Added `plan2_command_center.py` and explicit production/CPU-smoke/CUDA-smoke
+  specifications. The production preview creates exactly 63 runs from three
+  conditions, seven requested $m$ values, and three replicas, with 21 derived
+  bundles and zero new initialization fits.
+- Strengthened external reference-path validation to check the source bundle
+  (or a derived bundle's parent), initial parameter hash, parameter count,
+  partition, $p$ grid, and oracle content hash.
+- Added singleton `vmap`, Fisher-scaling, controller-finiteness, derivation,
+  pairing, and no-Cartesian-expansion tests. `python -m pytest -q test/unit`
+  passed all 196 tests in 3.41 seconds.
+- Completed all six CPU and six CUDA smoke trajectories at $m\in\{1,2\}$.
+  Every loss, parameter tensor, displacement, controller value, optimizer
+  diagnostic, and represented PSD component was finite. All conditions shared
+  oracle hash `32552156d0ac...` and initial-Fisher cache digest
+  `6eb19716f989...`.
+- CUDA condition time after warm-up was approximately 0.53 seconds for both
+  $m=1$ and $m=2$, confirming dominant fixed overhead at tiny batches. The
+  production proxy now combines an intercept with observation-dependent cost
+  and is anchored by the 283.68-second median of 85 completed production-shaped
+  $m=128$ runs. The full proposed screen previews at 4.01 wall-hours and 3.52
+  GiB; these remain planning proxies.
+- Prepared an artifact-only production check for replica 1 at $m\in\{1,2\}$. Both
+  streams are exact prefixes of its retained $m=128$ master and share model hash
+  `8acc1ee09a5e...` and partition hash `ce28156d60b3...`.
+- Deviation: the first CPU smoke found a schema-v7 manifest `NameError` after
+  trajectory calculation. The calibration-bin constant was centralized and
+  the incomplete run resumed successfully; no completed artifact was changed.
+- Residual risk: the CUDA adaptive-average-pooling backward remains warning-only
+  nondeterministic. The smoke was finite, but exact bitwise CUDA replication is
+  not claimed. Production cost at low $m$ is also still an estimate until the
+  first coarse-screen runs are measured.
+
+**Gate recommendation:** retain the planned grid
+$m\in\{1,2,4,8,16,32,64\}$ and three paired replicas for Phase 2. Use early
+status and timing from the first completed runs to revise the remaining-time
+estimate, but do not narrow the statistical grid before observing outcomes.
+
 ## Phase 2: Coarse sample-size boundary screen
 
 ### Goal
@@ -361,10 +464,11 @@ Locate where the no-EWC learner begins to lose practical effectiveness.
 1. Prepare immutable paired runs for the three principal conditions at
    $m\in\{1,2,4,8,16,32,64\}$ using replicas 1 through 3.
 2. Reuse compatible $m=128$ evidence as the easy endpoint.
-3. Preview expected GPU time and disk use, then provide one resumable `tmux`
+3. Preview expected wall time and disk use, then provide one resumable `tmux`
    command. The user controls execution.
 4. After completion, produce artifact-only summaries of:
-   - expected digit-9 acquisition trajectories;
+   - expected digit-9 OvR accuracy, precision, and recall trajectories;
+   - expected environmental multiclass accuracy trajectories;
    - actual total and digit-9 exposure;
    - non-nine retention;
    - accuracy/NLL/calibration disagreement;
@@ -374,13 +478,64 @@ Locate where the no-EWC learner begins to lose practical effectiveness.
 5. Compare conditions only within paired replica and $m$ cells. Across $m$,
    exploit nested streams but keep replica-level uncertainty visible.
 
+### Pre-launch record
+
+**Status:** User-controlled execution in progress (2026-08-15)
+
+- Prepared immutable bundle
+  `plan2-low-data__r0001-r0003__913b7f56a535`: 63 run intentions from three
+  conditions, seven values of $m$, and three paired replicas.
+- All 21 derived stream bundles and reference paths validate as complete; no
+  new initialization fits are required. The six intentions also present in the
+  Phase 1 subset bundle deduplicate by run ID rather than creating extra runs.
+- The artifact-only analysis maps the compatible Phase 9 conditions for
+  replicas 1 through 3 into the $m=128$ endpoint, checks their aligned $p$
+  grids, and pairs both EWC treatments to the no-EWC control.
+- `results.ipynb` now reports Plan 2 launch/completion state and merges completed
+  nested-stream trajectories with that $m=128$ anchor. It executes without
+  training and validated in 45.36 seconds against the prepared inventory.
+- The calibrated planning proxy is 4.01 wall-hours and 3.52 GiB. It is not a
+  measurement of active GPU time.
+- The first production launch exposed two rank-deficiency failures in the
+  `m=1`, no-EWC Fisher diagnostics: CUDA `eigvalsh` nonconvergence and a
+  legacy Lanczos recurrence continuing beyond the candidate's numerical rank.
+  The update itself remained finite. The tracker now retries only failed
+  spectral diagnostics on CPU float64, reports a scale-aware
+  material-negative count, caps Krylov depth at numerical rank plus one
+  null-space direction, and lets the wrapper step down to a finite Krylov
+  prefix if needed. The pinned copied `lanczos.py` source was not modified.
+- The exact failed run subsequently completed all 100 steps in 257.85 seconds.
+  Two spectral diagnostics used the CPU fallback; no candidate was materially
+  negative, no finite-prefix Lanczos retry was required after rank limiting,
+  and maximum represented-diagonal relative error was
+  $2.63\times10^{-5}$.
+- Plan 2 analysis derives separate original-learning and auxiliary-Fisher
+  process labels from the named condition. Existing artifacts are not mutated:
+  `no-ewc-pi100` is reported as current-batch learning with an instantaneous
+  empirical Fisher diagnostic after initialization, while both EWC conditions
+  retain recursive Fisher summaries.
+- The artifact-only expected-trajectory, durable-crossing, and metric-coverage
+  summaries now stratify by `samples_per_step`. This prevents completed
+  low-data trajectories from colliding with or being averaged into the reused
+  $m=128$ anchors during partial execution.
+- Metric-contract amendment (2026-08-15): the original scalar artifacts called
+  accuracy conditioned on a true 9 `nine_accuracy`; that quantity is 9 recall
+  and cannot detect a classifier that predicts 9 indiscriminately. Plan 2 now
+  uses 9 OvR accuracy, environmental-prevalence-adjusted 9 precision, 9 recall,
+  and environmental multiclass accuracy as its four primary predictive
+  trajectories. Completed schema-7 runs remain immutable and will receive a
+  separate inference-only classification summary derived from their saved
+  parameter trajectories. Future runs record the required confusion rates
+  directly under scalar-metric schema 8.
+
 ### Verification
 
 - Every requested run is complete or explicitly identified as incomplete.
 - No condition has silently changed representation, optimizer budget, path
   grid, initialization, or Fisher-update method.
-- Expected-trajectory calculations use post-update accuracy for acquisition and
-  actual observed class counts for exposure.
+- Expected-trajectory calculations use post-update 9 OvR accuracy, precision,
+  recall, and environmental multiclass accuracy for acquisition and actual
+  observed class counts for exposure.
 - Before-update trajectory metrics remain available for online predictive
   evaluation.
 - Any optimizer failure, bound saturation, or nonfinite diagnostic is shown
@@ -410,9 +565,9 @@ produce the target regime.
    needed to bracket it. Avoid rerunning completed powers-of-two cells.
 2. Increase the transition bracket to at least five paired replicas.
 3. At each candidate $m$, compare:
-   - expected digit-9 accuracy at common exposure budgets;
-   - durable 90% crossing or failure to cross;
-   - digit-9 and environment AUC;
+   - expected 9 OvR accuracy, precision, and recall at common exposure budgets;
+   - any jointly defined durable acquisition criterion or failure to meet it;
+   - 9-centric and environmental multiclass AUC;
    - non-nine retention;
    - paired variability and worst-replica behavior;
    - NLL and calibration;
@@ -577,7 +732,7 @@ application-motivated comparison.
 
 ### Verification
 
-- A fresh preview can calculate Plan 3's proposed run count, GPU time, and disk
+- A fresh preview can calculate Plan 3's proposed run count, wall time, and disk
   use without creating artifacts.
 - Every proposed Plan 3 comparison has a named control and a clear estimand.
 - The handoff distinguishes measured findings from assumptions and deferred

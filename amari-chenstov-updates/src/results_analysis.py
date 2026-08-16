@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import MANIFEST_SCHEMA_VERSION
+from .classification_backfill import (
+    default_classification_backfill_root,
+    overlay_classification_backfill,
+)
 from .config import ExperimentConfig
+from .exposure import EXPOSURE_FIELDS, stream_exposure_rows
 from .phase9 import Phase9Bundle, phase9_status_rows
 
 PHASE3_REFERENCE_SCHEMA_VERSION = 1
@@ -44,10 +49,34 @@ PHASE7_LEGACY_LANCZOS_SHA256 = (
 )
 PHASE7_DIAGONAL_ERROR_INSTABILITY_THRESHOLD = 0.1
 PHASE7_DENSE_ERROR_INSTABILITY_THRESHOLD = 1.0
-PHASE8_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6)
-PHASE8_TRAJECTORY_SCHEMA_BY_METRIC = {2: 2, 3: 2, 4: 3, 5: 4, 6: 4}
-PHASE8_CONTROLLER_STATE_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4}
-PHASE8_ORACLE_PATH_SCHEMA_BY_METRIC = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4}
+PHASE8_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6, 7, 8)
+PHASE8_TRAJECTORY_SCHEMA_BY_METRIC = {
+    2: 2,
+    3: 2,
+    4: 3,
+    5: 4,
+    6: 4,
+    7: 4,
+    8: 4,
+}
+PHASE8_CONTROLLER_STATE_SCHEMA_BY_METRIC = {
+    2: 1,
+    3: 2,
+    4: 3,
+    5: 4,
+    6: 4,
+    7: 4,
+    8: 4,
+}
+PHASE8_ORACLE_PATH_SCHEMA_BY_METRIC = {
+    2: 1,
+    3: 2,
+    4: 3,
+    5: 4,
+    6: 4,
+    7: 4,
+    8: 4,
+}
 RIDGE_METHODS = frozenset({"ridge_ac_only", "ridge_full_lfu"})
 DEFAULT_PHASE3_RUN_IDS = (
     "mnist_lfu_phase3_final__replica-0000__e216d98c2f668d87",
@@ -1695,6 +1724,7 @@ class Phase8ControllerRun:
     metrics: Mapping[str, Any]
     p_values: tuple[float, ...]
     methods: tuple[str, ...]
+    exposures: tuple[Mapping[str, Any], ...]
 
 
 def _read_torch_mapping(path: Path) -> Mapping[str, Any]:
@@ -1711,9 +1741,10 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
     """Strictly load notebook-sized Phase 8 artifacts without checkpoints."""
 
     envelope = _load_envelope(path)
-    if envelope.config.schema_version not in {7, 8, 9, 10}:
+    if envelope.config.schema_version not in {7, 8, 9, 10, 11, 12}:
         raise AnalysisArtifactError(
-            f"Phase 8 requires config schema 7, 8, 9, or 10: {envelope.path}"
+            "Phase 8 requires config schema 7-12: "
+            f"{envelope.path}"
         )
     metrics_path = envelope.path / "phase8_metrics.json"
     metrics = _require_mapping(_read_json(metrics_path), str(metrics_path))
@@ -1813,6 +1844,52 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
             raise AnalysisArtifactError(
                 f"Phase 8 optimizer-budget contract is invalid: {mismatched}"
             )
+    if metric_schema >= 7:
+        _require_keys(
+            metrics,
+            {"exposure_accounting", "calibration_contract"},
+            str(metrics_path),
+        )
+        if metrics["exposure_accounting"] != (
+            "ordered_stream_batches_with_optimizer_consumption"
+        ):
+            raise AnalysisArtifactError(
+                "Phase 8 exposure-accounting contract is invalid"
+            )
+        calibration_contract = _require_mapping(
+            metrics["calibration_contract"],
+            f"{metrics_path}:calibration_contract",
+        )
+        if calibration_contract != {
+            "brier": "mean_multiclass_probability_squared_error",
+            "expected_calibration_error_bins": 15,
+            "expected_calibration_error_binning": (
+                "equal_width_maximum_probability"
+            ),
+        }:
+            raise AnalysisArtifactError(
+                "Phase 8 calibration contract is invalid"
+            )
+    if metric_schema >= 8:
+        classification_contract = {
+            "nine_accuracy_legacy_semantics": (
+                "recall_conditioned_on_true_nine"
+            ),
+            "nine_recall": "true_positive_rate_conditioned_on_true_nine",
+            "nine_false_positive_rate": (
+                "predicted_nine_conditioned_on_true_non_nine"
+            ),
+            "nine_ovr_accuracy": "prevalence_adjusted_at_row_p",
+            "nine_precision": (
+                "prevalence_adjusted_at_row_p_null_when_undefined"
+            ),
+            "environment_accuracy": "multiclass_prevalence_adjusted_at_row_p",
+        }
+        _require_keys(metrics, {"classification_contract"}, str(metrics_path))
+        if metrics["classification_contract"] != classification_contract:
+            raise AnalysisArtifactError(
+                "Phase 8 classification contract is invalid"
+            )
 
     trajectory_path = envelope.path / "phase8_trajectories.pt"
     controller_path = envelope.path / "phase8_controller_states.pt"
@@ -1868,6 +1945,27 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
         raise AnalysisArtifactError("Phase 8 scalar row count is incomplete")
     if any(row.get("same_pi_consumed") is not True for row in metrics["condition_steps"]):
         raise AnalysisArtifactError("Phase 8 run violated the unified pi contract")
+
+    observation_indices = trajectory.get("observation_indices")
+    class_labels = trajectory.get("class_labels")
+    if observation_indices is None and class_labels is None:
+        exposures: tuple[Mapping[str, Any], ...] = ()
+    elif observation_indices is None or class_labels is None:
+        raise AnalysisArtifactError(
+            "Phase 8 trajectory has incomplete stream-plan observations"
+        )
+    else:
+        try:
+            exposures = stream_exposure_rows(observation_indices, class_labels)
+        except (TypeError, ValueError) as exc:
+            raise AnalysisArtifactError(
+                f"invalid Phase 8 stream exposure data: {exc}"
+            ) from exc
+        if len(exposures) != len(p_values):
+            raise AnalysisArtifactError(
+                "Phase 8 exposure rows do not align with the p grid"
+            )
+
     if metric_schema >= 6:
         for row in metrics["condition_steps"]:
             proposal = row.get("proposal")
@@ -1896,6 +1994,77 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
                     raise AnalysisArtifactError(
                         f"invalid Phase 8 optimizer accounting {name}={value}"
                     )
+    if metric_schema >= 7:
+        if not exposures:
+            raise AnalysisArtifactError(
+                "Phase 8 metric schema 7 requires stream exposure data"
+            )
+        exposure_by_step = {int(row["step"]): row for row in exposures}
+        calibration_fields = {
+            "before_brier",
+            "before_non_nine_brier",
+            "before_nine_brier",
+            "before_expected_calibration_error",
+            "before_calibration_bin_count",
+            "after_brier",
+            "after_non_nine_brier",
+            "after_nine_brier",
+            "after_expected_calibration_error",
+            "after_calibration_bin_count",
+        }
+        for row in metrics["condition_steps"]:
+            step = int(row["step"])
+            expected_exposure = exposure_by_step.get(step)
+            if expected_exposure is None:
+                raise AnalysisArtifactError(
+                    f"Phase 8 scalar row has unknown exposure step {step}"
+                )
+            _require_keys(
+                row,
+                set(EXPOSURE_FIELDS) | calibration_fields,
+                f"{metrics_path}:condition step {step}",
+            )
+            mismatched_exposure = {
+                name: (row[name], expected_exposure[name])
+                for name in EXPOSURE_FIELDS
+                if row[name] != expected_exposure[name]
+            }
+            if mismatched_exposure:
+                raise AnalysisArtifactError(
+                    "Phase 8 scalar exposure data does not match its stream: "
+                    f"{mismatched_exposure}"
+                )
+    if metric_schema >= 8:
+        classification_names = {
+            "nine_metric_prevalence",
+            "nine_true_positive_count",
+            "nine_false_positive_count",
+            "nine_true_negative_count",
+            "nine_false_negative_count",
+            "nine_recall",
+            "nine_false_positive_rate",
+            "nine_specificity",
+            "nine_ovr_accuracy",
+            "nine_precision",
+            "environment_accuracy",
+        }
+        for row in metrics["condition_steps"]:
+            for stage in ("before", "after"):
+                _require_keys(
+                    row,
+                    {f"{stage}_{name}" for name in classification_names},
+                    f"{metrics_path}:condition step {row.get('step')}",
+                )
+                prevalence = float(row[f"{stage}_nine_metric_prevalence"])
+                if prevalence != float(row["p"]):
+                    raise AnalysisArtifactError(
+                        "Phase 8 classification prevalence does not match p"
+                    )
+                recall = float(row[f"{stage}_nine_recall"])
+                if recall != float(row[f"{stage}_nine_accuracy"]):
+                    raise AnalysisArtifactError(
+                        "Phase 8 legacy nine accuracy is not nine recall"
+                    )
     return Phase8ControllerRun(
         path=envelope.path,
         run_id=envelope.run_id,
@@ -1904,6 +2073,7 @@ def load_phase8_controller_run(path: str | Path) -> Phase8ControllerRun:
         metrics=metrics,
         p_values=p_values,
         methods=methods,
+        exposures=exposures,
     )
 
 
@@ -1931,9 +2101,11 @@ def discover_phase8_controller_runs(
 def _environment_metric(
     source: Mapping[str, Any],
     metric: str,
+    *,
+    stage: str = "before",
 ) -> float | None:
-    nine_key = f"before_nine_{metric}"
-    non_nine_key = f"before_non_nine_{metric}"
+    nine_key = f"{stage}_nine_{metric}"
+    non_nine_key = f"{stage}_non_nine_{metric}"
     if nine_key not in source or non_nine_key not in source:
         return None
     p = float(source["p"])
@@ -1944,17 +2116,26 @@ def _environment_metric(
 
 def phase8_controller_rows(
     runs: Sequence[Phase8ControllerRun],
+    *,
+    classification_backfill_root: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     rows = []
     for run in runs:
+        run_rows = []
+        exposure_by_step = {
+            int(row["step"]): row for row in run.exposures
+        }
         for source in run.metrics["condition_steps"]:
-            rows.append(
+            exposure = exposure_by_step.get(int(source["step"]), {})
+            run_rows.append(
                 {
                     **source,
+                    **exposure,
                     "run_id": run.run_id,
                     "run_path": str(run.path),
                     "experiment": run.config.experiment,
                     "replica_id": run.config.replica_id,
+                    "samples_per_step": run.config.data.samples_per_step,
                     "policy": run.metrics["policy"],
                     "metric_schema": run.metrics[
                         "phase8_metric_schema_version"
@@ -1966,6 +2147,18 @@ def phase8_controller_rows(
                         source, "accuracy"
                     ),
                     "environment_nll": _environment_metric(source, "nll"),
+                    "environment_brier": _environment_metric(
+                        source, "brier"
+                    ),
+                    "after_environment_accuracy": _environment_metric(
+                        source, "accuracy", stage="after"
+                    ),
+                    "after_environment_nll": _environment_metric(
+                        source, "nll", stage="after"
+                    ),
+                    "after_environment_brier": _environment_metric(
+                        source, "brier", stage="after"
+                    ),
                     "theoretical_status": (
                         "legacy_spectral_trace_smoke"
                         if run.metrics["phase8_metric_schema_version"] == 2
@@ -1975,6 +2168,18 @@ def phase8_controller_rows(
                     ),
                 }
             )
+        if run.metrics["phase8_metric_schema_version"] >= 8:
+            run_rows = [
+                {**row, "classification_metric_source": "runtime_schema8"}
+                for row in run_rows
+            ]
+        elif classification_backfill_root is not None:
+            run_rows = overlay_classification_backfill(
+                run_rows,
+                run.path,
+                classification_backfill_root,
+            )
+        rows.extend(run_rows)
     return rows
 
 
@@ -2480,3 +2685,631 @@ def phase9_progress_rows(
             }
         )
     return sorted(rows, key=lambda row: (row["profile"], row["cell"]))
+
+PLAN2_TRAJECTORY_METRICS = (
+    "after_nine_ovr_accuracy",
+    "after_nine_precision",
+    "after_nine_recall",
+    "after_environment_accuracy",
+    "after_non_nine_accuracy",
+    "after_nine_nll",
+    "after_non_nine_nll",
+    "after_environment_nll",
+    "after_brier",
+    "after_non_nine_brier",
+    "after_nine_brier",
+    "after_environment_brier",
+    "after_expected_calibration_error",
+)
+PLAN2_EXPOSURE_COORDINATES = (
+    "after_cumulative_observations",
+    "after_cumulative_nine_observations",
+    "after_cumulative_non_nine_observations",
+    "after_cumulative_unique_observations",
+    "after_cumulative_unique_nine_observations",
+    "after_cumulative_unique_non_nine_observations",
+)
+
+
+def phase9_trajectory_rows(
+    bundles: Sequence[Phase9Bundle],
+    repo_root: str | Path,
+) -> list[dict[str, Any]]:
+    """Load completed Phase 9 scalar trajectories with exposure provenance."""
+
+    root = Path(repo_root)
+    rows = []
+    for entry in phase9_inventory_rows(bundles, root):
+        if entry["run_state"] != "completed":
+            continue
+        run = load_phase8_controller_run(entry["run_path"])
+        for source in phase8_controller_rows(
+            [run],
+            classification_backfill_root=default_classification_backfill_root(
+                root
+            ),
+        ):
+            rows.append(
+                {
+                    **source,
+                    "profile": entry["profile"],
+                    "cell": entry["cell"],
+                    "kind": entry["kind"],
+                    "replica_index": entry["replica_index"],
+                    "replica_seed": entry["replica_seed"],
+                    "replica_bundle_id": entry["replica_bundle_id"],
+                    "control_run_id": entry["control_run_id"],
+                    "factors": entry["factors"],
+                    "bundle_ids": entry["bundle_ids"],
+                }
+            )
+    return sorted(
+        rows,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["replica_index"],
+            row["step"],
+        ),
+    )
+
+
+def _sample_interval(values: Sequence[float]) -> dict[str, float | int | None]:
+    count = len(values)
+    if count == 0:
+        raise ValueError("sample interval requires at least one value")
+    mean = sum(values) / count
+    if count < 2:
+        standard_deviation = standard_error = ci_low = ci_high = None
+    else:
+        variance = sum((value - mean) ** 2 for value in values) / (count - 1)
+        standard_deviation = math.sqrt(variance)
+        standard_error = standard_deviation / math.sqrt(count)
+        critical = _T_CRITICAL_975.get(count - 1, 1.96)
+        half_width = critical * standard_error
+        ci_low = mean - half_width
+        ci_high = mean + half_width
+    return {
+        "replica_count": count,
+        "mean": mean,
+        "standard_deviation": standard_deviation,
+        "standard_error": standard_error,
+        "ci95_low": ci_low,
+        "ci95_high": ci_high,
+    }
+
+
+def phase9_expected_trajectory_rows(
+    trajectory_rows: Sequence[Mapping[str, Any]],
+    *,
+    metrics: Sequence[str] = PLAN2_TRAJECTORY_METRICS,
+) -> list[dict[str, Any]]:
+    """Aggregate pointwise expected trajectories with replicas as units."""
+
+    grouped: dict[
+        tuple[str, str, str, int, int], list[Mapping[str, Any]]
+    ] = defaultdict(list)
+    for row in trajectory_rows:
+        grouped[
+            (
+                str(row["profile"]),
+                str(row["cell"]),
+                str(row["method"]),
+                int(row["samples_per_step"]),
+                int(row["step"]),
+            )
+        ].append(row)
+
+    results = []
+    for (profile, cell, method, samples_per_step, step), group in grouped.items():
+        replica_ids = [str(row["replica_id"]) for row in group]
+        if len(replica_ids) != len(set(replica_ids)):
+            raise AnalysisArtifactError(
+                "duplicate replica trajectory point for "
+                f"{profile}:{cell}:m={samples_per_step}:{step}"
+            )
+        p_values = {float(row["p"]) for row in group}
+        if len(p_values) != 1:
+            raise AnalysisArtifactError(
+                f"unaligned p values for {profile}:{cell}:m={samples_per_step}:{step}"
+            )
+        coordinate_means = {
+            f"mean_{name}": (
+                None
+                if not any(row.get(name) is not None for row in group)
+                else sum(
+                    float(row[name])
+                    for row in group
+                    if row.get(name) is not None
+                )
+                / sum(row.get(name) is not None for row in group)
+            )
+            for name in PLAN2_EXPOSURE_COORDINATES
+        }
+        for metric in metrics:
+            values = [
+                float(row[metric])
+                for row in group
+                if row.get(metric) is not None
+            ]
+            if not values:
+                continue
+            interval = _sample_interval(values)
+            results.append(
+                {
+                    "profile": profile,
+                    "cell": cell,
+                    "method": method,
+                    "step": step,
+                    "p": next(iter(p_values)),
+                    "samples_per_step": samples_per_step,
+                    "metric": metric,
+                    "completed_replica_count": len(group),
+                    "metric_complete": len(values) == len(group),
+                    **coordinate_means,
+                    **interval,
+                }
+            )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+            row["metric"],
+            row["step"],
+        ),
+    )
+
+
+def phase9_durable_crossing_rows(
+    expected_rows: Sequence[Mapping[str, Any]],
+    *,
+    metric: str = "after_nine_ovr_accuracy",
+    threshold: float = 0.90,
+) -> list[dict[str, Any]]:
+    """Find the first expected-trajectory point that stays above a threshold."""
+
+    if not math.isfinite(threshold):
+        raise ValueError("threshold must be finite")
+    grouped: dict[
+        tuple[str, str, str, int], list[Mapping[str, Any]]
+    ] = defaultdict(list)
+    for row in expected_rows:
+        if row.get("metric") == metric:
+            grouped[
+                (
+                    str(row["profile"]),
+                    str(row["cell"]),
+                    str(row["method"]),
+                    int(row["samples_per_step"]),
+                )
+            ].append(row)
+
+    results = []
+    for (profile, cell, method, samples_per_step), group in grouped.items():
+        ordered = sorted(group, key=lambda row: int(row["step"]))
+        crossing = next(
+            (
+                row
+                for index, row in enumerate(ordered)
+                if float(row["mean"]) >= threshold
+                and all(
+                    float(later["mean"]) >= threshold
+                    for later in ordered[index:]
+                )
+            ),
+            None,
+        )
+        base = {
+            "profile": profile,
+            "cell": cell,
+            "method": method,
+            "samples_per_step": samples_per_step,
+            "metric": metric,
+            "threshold": threshold,
+            "crossed": crossing is not None,
+        }
+        if crossing is None:
+            results.append(
+                {
+                    **base,
+                    "step": None,
+                    "p": None,
+                    "mean": None,
+                    "standard_deviation": None,
+                    "replica_count": min(
+                        int(row["replica_count"]) for row in ordered
+                    ),
+                    **{
+                        f"mean_{name}": None
+                        for name in PLAN2_EXPOSURE_COORDINATES
+                    },
+                }
+            )
+        else:
+            results.append(
+                {
+                    **base,
+                    "step": crossing["step"],
+                    "p": crossing["p"],
+                    "mean": crossing["mean"],
+                    "standard_deviation": crossing["standard_deviation"],
+                    "replica_count": crossing["replica_count"],
+                    **{
+                        f"mean_{name}": crossing.get(f"mean_{name}")
+                        for name in PLAN2_EXPOSURE_COORDINATES
+                    },
+                }
+            )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+        ),
+    )
+
+
+def phase9_metric_availability_rows(
+    trajectory_rows: Sequence[Mapping[str, Any]],
+    *,
+    metrics: Sequence[str] = PLAN2_TRAJECTORY_METRICS,
+) -> list[dict[str, Any]]:
+    """Report complete-replica coverage for requested trajectory metrics."""
+
+    grouped: dict[
+        tuple[str, str, str, int], list[Mapping[str, Any]]
+    ] = defaultdict(list)
+    for row in trajectory_rows:
+        grouped[
+            (
+                str(row["profile"]),
+                str(row["cell"]),
+                str(row["method"]),
+                int(row["samples_per_step"]),
+            )
+        ].append(row)
+
+    results = []
+    for (profile, cell, method, samples_per_step), group in grouped.items():
+        by_replica: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+        for row in group:
+            by_replica[str(row["replica_id"])].append(row)
+        for metric in metrics:
+            complete = sum(
+                all(metric in row for row in replica_rows)
+                for replica_rows in by_replica.values()
+            )
+            results.append(
+                {
+                    "profile": profile,
+                    "cell": cell,
+                    "method": method,
+                    "samples_per_step": samples_per_step,
+                    "metric": metric,
+                    "completed_replicas": len(by_replica),
+                    "replicas_with_complete_metric": complete,
+                    "metric_available": complete > 0,
+                    "metric_complete": complete == len(by_replica),
+                }
+            )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+            row["metric"],
+        ),
+    )
+
+
+def require_phase9_metrics(
+    availability_rows: Sequence[Mapping[str, Any]],
+    *,
+    profile: str,
+    cells: Sequence[str],
+    metrics: Sequence[str],
+) -> None:
+    """Fail clearly when a requested condition or scalar metric is unavailable."""
+
+    indexed = {
+        (str(row["profile"]), str(row["cell"]), str(row["metric"])): row
+        for row in availability_rows
+    }
+    missing = []
+    for cell in cells:
+        for metric in metrics:
+            row = indexed.get((profile, cell, metric))
+            if row is None or not row.get("metric_available"):
+                missing.append(f"{profile}:{cell}:{metric}")
+    if missing:
+        raise AnalysisArtifactError(
+            "requested Phase 9 trajectory metrics are unavailable: "
+            + ", ".join(missing)
+        )
+
+
+def _normalized_auc_by_key(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    x_key: str,
+    y_key: str,
+) -> float | None:
+    points = sorted(
+        (
+            (float(row[x_key]), float(row[y_key]))
+            for row in rows
+            if row.get(x_key) is not None and row.get(y_key) is not None
+        ),
+        key=lambda point: point[0],
+    )
+    if not points:
+        return None
+    if any(right[0] < left[0] for left, right in zip(points, points[1:])):
+        raise AnalysisArtifactError(f"{x_key} is not monotone")
+    if len(points) == 1 or points[-1][0] == points[0][0]:
+        return points[0][1]
+    area = sum(
+        0.5 * (left[1] + right[1]) * (right[0] - left[0])
+        for left, right in zip(points, points[1:])
+    )
+    return area / (points[-1][0] - points[0][0])
+
+
+def phase9_exposure_auc_rows(
+    trajectory_rows: Sequence[Mapping[str, Any]],
+    *,
+    metrics: Sequence[str] = (
+        "after_nine_ovr_accuracy",
+        "after_nine_precision",
+        "after_nine_recall",
+        "after_environment_accuracy",
+    ),
+) -> list[dict[str, Any]]:
+    """Return per-replica p- and observation-normalized trajectory AUCs."""
+
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in trajectory_rows:
+        grouped[(str(row["run_id"]), str(row["method"]))].append(row)
+
+    results = []
+    for group in grouped.values():
+        ordered = sorted(group, key=lambda row: int(row["step"]))
+        first = ordered[0]
+        result = {
+            "profile": first["profile"],
+            "cell": first["cell"],
+            "kind": first["kind"],
+            "method": first["method"],
+            "run_id": first["run_id"],
+            "control_run_id": first["control_run_id"],
+            "replica_id": first["replica_id"],
+            "replica_index": first["replica_index"],
+            "samples_per_step": first["samples_per_step"],
+        }
+        for metric in metrics:
+            result[f"{metric}_p_auc"] = _normalized_auc_by_key(
+                ordered, x_key="p", y_key=metric
+            )
+            result[f"{metric}_observation_auc"] = _normalized_auc_by_key(
+                ordered,
+                x_key="after_cumulative_observations",
+                y_key=metric,
+            )
+        results.append(result)
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+            row["replica_index"],
+        ),
+    )
+
+
+def phase9_paired_auc_rows(
+    auc_rows: Sequence[Mapping[str, Any]],
+    *,
+    metrics: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Pair arbitrary AUC metrics by immutable control run identity."""
+
+    by_run_method = {
+        (str(row["run_id"]), str(row["method"])): row for row in auc_rows
+    }
+    results = []
+    for treatment in auc_rows:
+        control_run_id = treatment.get("control_run_id")
+        if treatment.get("kind") != "treatment" or control_run_id is None:
+            continue
+        control = by_run_method.get(
+            (str(control_run_id), str(treatment["method"]))
+        )
+        if control is None:
+            continue
+        result = {
+            "profile": treatment["profile"],
+            "cell": treatment["cell"],
+            "method": treatment["method"],
+            "samples_per_step": treatment["samples_per_step"],
+            "replica_id": treatment["replica_id"],
+            "replica_index": treatment["replica_index"],
+            "treatment_run_id": treatment["run_id"],
+            "control_run_id": control_run_id,
+        }
+        for metric in metrics:
+            treatment_value = treatment.get(metric)
+            control_value = control.get(metric)
+            result[f"treatment_{metric}"] = treatment_value
+            result[f"control_{metric}"] = control_value
+            result[f"delta_{metric}"] = (
+                None
+                if treatment_value is None or control_value is None
+                else float(treatment_value) - float(control_value)
+            )
+        results.append(result)
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+            row["replica_index"],
+        ),
+    )
+
+
+def phase9_fixed_budget_rows(
+    trajectory_rows: Sequence[Mapping[str, Any]],
+    *,
+    observation_budgets: Sequence[int],
+    metrics: Sequence[str] = PLAN2_TRAJECTORY_METRICS,
+) -> list[dict[str, Any]]:
+    """Select each replica's latest post-update state within fixed budgets."""
+
+    budgets = tuple(sorted(set(observation_budgets)))
+    if not budgets or any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in budgets
+    ):
+        raise ValueError("observation budgets must be nonnegative integers")
+
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in trajectory_rows:
+        grouped[(str(row["run_id"]), str(row["method"]))].append(row)
+
+    results = []
+    for group in grouped.values():
+        ordered = sorted(group, key=lambda row: int(row["step"]))
+        first = ordered[0]
+        if any(
+            row.get("after_cumulative_observations") is None for row in ordered
+        ):
+            continue
+        for budget in budgets:
+            eligible = [
+                row
+                for row in ordered
+                if int(row["after_cumulative_observations"]) <= budget
+            ]
+            if not eligible:
+                continue
+            selected = max(
+                eligible,
+                key=lambda row: (
+                    int(row["after_cumulative_observations"]),
+                    int(row["step"]),
+                ),
+            )
+            results.append(
+                {
+                    "profile": first["profile"],
+                    "cell": first["cell"],
+                    "kind": first["kind"],
+                    "method": first["method"],
+                    "run_id": first["run_id"],
+                    "control_run_id": first["control_run_id"],
+                    "replica_id": first["replica_id"],
+                    "replica_index": first["replica_index"],
+                    "samples_per_step": first["samples_per_step"],
+                    "requested_observation_budget": budget,
+                    "observed_cumulative_observations": selected[
+                        "after_cumulative_observations"
+                    ],
+                    "observed_cumulative_nine_observations": selected[
+                        "after_cumulative_nine_observations"
+                    ],
+                    "observed_cumulative_unique_nine_observations": selected[
+                        "after_cumulative_unique_nine_observations"
+                    ],
+                    "step": selected["step"],
+                    "p": selected["p"],
+                    **{metric: selected.get(metric) for metric in metrics},
+                }
+            )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+            row["replica_index"],
+            row["requested_observation_budget"],
+        ),
+    )
+
+
+def phase9_paired_fixed_budget_rows(
+    budget_rows: Sequence[Mapping[str, Any]],
+    *,
+    metrics: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Pair fixed-budget outcomes by control run, method, and budget."""
+
+    by_key = {
+        (
+            str(row["run_id"]),
+            str(row["method"]),
+            int(row["requested_observation_budget"]),
+        ): row
+        for row in budget_rows
+    }
+    results = []
+    for treatment in budget_rows:
+        control_run_id = treatment.get("control_run_id")
+        if treatment.get("kind") != "treatment" or control_run_id is None:
+            continue
+        key = (
+            str(control_run_id),
+            str(treatment["method"]),
+            int(treatment["requested_observation_budget"]),
+        )
+        control = by_key.get(key)
+        if control is None:
+            continue
+        result = {
+            "profile": treatment["profile"],
+            "cell": treatment["cell"],
+            "method": treatment["method"],
+            "samples_per_step": treatment["samples_per_step"],
+            "replica_id": treatment["replica_id"],
+            "replica_index": treatment["replica_index"],
+            "requested_observation_budget": treatment[
+                "requested_observation_budget"
+            ],
+            "treatment_run_id": treatment["run_id"],
+            "control_run_id": control_run_id,
+        }
+        for metric in metrics:
+            treatment_value = treatment.get(metric)
+            control_value = control.get(metric)
+            result[f"treatment_{metric}"] = treatment_value
+            result[f"control_{metric}"] = control_value
+            result[f"delta_{metric}"] = (
+                None
+                if treatment_value is None or control_value is None
+                else float(treatment_value) - float(control_value)
+            )
+        results.append(result)
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+            row["replica_index"],
+            row["requested_observation_budget"],
+        ),
+    )

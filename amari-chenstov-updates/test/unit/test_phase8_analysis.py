@@ -6,6 +6,7 @@ import torch
 
 from src.artifacts import MANIFEST_SCHEMA_VERSION
 from src.config import ExperimentConfig
+from src.exposure import stream_exposure_rows
 from src.results_analysis import (
     AnalysisArtifactError,
     load_phase8_controller_run,
@@ -43,7 +44,7 @@ LBFGS_CONFIG_PATH = (
 def _write_run(tmp_path: Path, *, metric_schema: int = 3) -> Path:
     source = (
         LBFGS_CONFIG_PATH
-        if metric_schema == 6
+        if metric_schema in {6, 7, 8}
         else CORRECTED_CONFIG_PATH
         if metric_schema == 5
         else CONVERGENCE_CONFIG_PATH
@@ -52,8 +53,16 @@ def _write_run(tmp_path: Path, *, metric_schema: int = 3) -> Path:
     )
     raw = json.loads(source.read_text(encoding="utf-8"))
     raw["metric_schema_version"] = metric_schema
-    trajectory_schema = {2: 2, 3: 2, 4: 3, 5: 4, 6: 4}[metric_schema]
-    state_schema = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4}[metric_schema]
+    if metric_schema == 7:
+        raw["schema_version"] = 11
+    if metric_schema == 8:
+        raw["schema_version"] = 12
+    trajectory_schema = {2: 2, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4, 8: 4}[
+        metric_schema
+    ]
+    state_schema = {2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4, 8: 4}[
+        metric_schema
+    ]
     config = ExperimentConfig.from_mapping(raw)
     run = tmp_path / config.run_id
     run.mkdir()
@@ -93,6 +102,53 @@ def _write_run(tmp_path: Path, *, metric_schema: int = 3) -> Path:
         "before_nine_nll": 0.6,
         "before_non_nine_nll": 0.2,
         "parameter_squared_error_to_oracle": 0.02,
+        **(
+            {
+                **stream_exposure_rows(((1,),), ((0,),))[0],
+                "before_brier": 0.3,
+                "before_non_nine_brier": 0.3,
+                "before_nine_brier": 0.4,
+                "before_expected_calibration_error": 0.1,
+                "before_calibration_bin_count": 15,
+                "after_brier": 0.25,
+                "after_non_nine_brier": 0.25,
+                "after_nine_brier": 0.35,
+                "after_expected_calibration_error": 0.08,
+                "after_calibration_bin_count": 15,
+            }
+            if metric_schema >= 7
+            else {}
+        ),
+        **(
+            {
+                "before_nine_metric_prevalence": 0.0,
+                "before_nine_true_positive_count": 7,
+                "before_nine_false_positive_count": 1,
+                "before_nine_true_negative_count": 9,
+                "before_nine_false_negative_count": 3,
+                "before_nine_recall": 0.7,
+                "before_nine_false_positive_rate": 0.1,
+                "before_nine_specificity": 0.9,
+                "before_nine_ovr_accuracy": 0.9,
+                "before_nine_precision": 0.0,
+                "before_environment_accuracy": 0.9,
+                "after_nine_accuracy": 0.8,
+                "after_non_nine_accuracy": 0.85,
+                "after_nine_metric_prevalence": 0.0,
+                "after_nine_true_positive_count": 8,
+                "after_nine_false_positive_count": 2,
+                "after_nine_true_negative_count": 8,
+                "after_nine_false_negative_count": 2,
+                "after_nine_recall": 0.8,
+                "after_nine_false_positive_rate": 0.2,
+                "after_nine_specificity": 0.8,
+                "after_nine_ovr_accuracy": 0.8,
+                "after_nine_precision": 0.0,
+                "after_environment_accuracy": 0.85,
+            }
+            if metric_schema >= 8
+            else {}
+        ),
         "proposal": {
             "optimization_guard": "monotone_objective_backtracking",
             "inner_steps": 100,
@@ -164,6 +220,36 @@ def _write_run(tmp_path: Path, *, metric_schema: int = 3) -> Path:
                 ),
             }
         )
+    if metric_schema >= 7:
+        metrics.update(
+            {
+                "exposure_accounting": (
+                    "ordered_stream_batches_with_optimizer_consumption"
+                ),
+                "calibration_contract": {
+                    "brier": "mean_multiclass_probability_squared_error",
+                    "expected_calibration_error_bins": 15,
+                    "expected_calibration_error_binning": (
+                        "equal_width_maximum_probability"
+                    ),
+                },
+            }
+        )
+    if metric_schema >= 8:
+        metrics["classification_contract"] = {
+            "nine_accuracy_legacy_semantics": (
+                "recall_conditioned_on_true_nine"
+            ),
+            "nine_recall": "true_positive_rate_conditioned_on_true_nine",
+            "nine_false_positive_rate": (
+                "predicted_nine_conditioned_on_true_non_nine"
+            ),
+            "nine_ovr_accuracy": "prevalence_adjusted_at_row_p",
+            "nine_precision": (
+                "prevalence_adjusted_at_row_p_null_when_undefined"
+            ),
+            "environment_accuracy": "multiclass_prevalence_adjusted_at_row_p",
+        }
     (run / "phase8_metrics.json").write_text(
         json.dumps(metrics), encoding="utf-8"
     )
@@ -171,6 +257,8 @@ def _write_run(tmp_path: Path, *, metric_schema: int = 3) -> Path:
         {
             "schema_version": trajectory_schema,
             "p_values": [0.0],
+            "observation_indices": [[1]],
+            "class_labels": [[0]],
             "conditions": {methods[0]: {}},
         },
         run / "phase8_trajectories.pt",
@@ -247,6 +335,29 @@ def test_phase8_loader_accepts_compute_budget_schema(tmp_path: Path) -> None:
     assert run.config.schema_version == 10
     assert summaries[0]["mean_optimizer_iterations"] == 27
     assert summaries[0]["maximum_optimizer_function_evaluations"] == 35
+
+
+
+def test_phase8_loader_accepts_exposure_and_calibration_schema(
+    tmp_path: Path,
+) -> None:
+    run = load_phase8_controller_run(_write_run(tmp_path, metric_schema=7))
+    rows = phase8_controller_rows([run])
+
+    assert run.config.schema_version == 11
+    assert rows[0]["after_cumulative_observations"] == 0
+    assert rows[0]["after_brier"] == 0.25
+    assert rows[0]["after_environment_brier"] == 0.25
+
+
+def test_phase8_loader_accepts_nine_classification_schema(tmp_path: Path) -> None:
+    run = load_phase8_controller_run(_write_run(tmp_path, metric_schema=8))
+    rows = phase8_controller_rows([run])
+
+    assert run.config.schema_version == 12
+    assert rows[0]["classification_metric_source"] == "runtime_schema8"
+    assert rows[0]["before_nine_ovr_accuracy"] == 0.9
+    assert rows[0]["after_nine_precision"] == 0.0
 
 
 def test_phase8_loader_rejects_unified_contract_violation(tmp_path: Path) -> None:

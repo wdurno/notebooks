@@ -204,6 +204,35 @@ class MixtureStreamPlan:
     def content_hash(self) -> str:
         return _canonical_hash(self.to_mapping())
 
+    def prefix_per_step(self, samples_per_step: int) -> "MixtureStreamPlan":
+        """Keep the first ordered observations from every path-point batch."""
+
+        if (
+            not isinstance(samples_per_step, int)
+            or isinstance(samples_per_step, bool)
+            or not 1 <= samples_per_step <= self.samples_per_step
+        ):
+            raise ValueError(
+                "prefix samples_per_step must be an integer in "
+                f"[1, {self.samples_per_step}]"
+            )
+        prefix = MixtureStreamPlan(
+            p_values=self.p_values,
+            observation_indices=tuple(
+                row[:samples_per_step] for row in self.observation_indices
+            ),
+            class_labels=tuple(
+                row[:samples_per_step] for row in self.class_labels
+            ),
+            samples_per_step=samples_per_step,
+            non_nine_sampling=self.non_nine_sampling,
+            seed=self.seed,
+            partition_hash=self.partition_hash,
+            schema_version=self.schema_version,
+        )
+        prefix.validate()
+        return prefix
+
     def validate(self) -> None:
         if self.schema_version != STREAM_PLAN_SCHEMA_VERSION:
             raise ValueError("unsupported mixture stream schema")
