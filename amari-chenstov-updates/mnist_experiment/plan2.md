@@ -248,6 +248,45 @@ Process wall time is not automatically "GPU-seconds." Label resource metrics
 according to what is actually measured; add CUDA-event or sampled-utilization
 instrumentation before making accelerator-consumption claims.
 
+### Finite-sample relative efficiency
+
+Report sample efficiency as a finite-sample relative efficiency, presented as
+the **Equivalent Data Multiplier** (EDM). At a fixed environmental state $p$,
+let treatment $T$ use $n_T$ unique digit-9 observations and attain expected
+primary-metric vector $\boldsymbol\mu_T(p)$. For baseline $B$, define
+
+$$
+n_B^{\mathrm{eq}}(p)
+=\inf\left\{n:
+\mu_{B,k}(n,p)\geq \mu_{T,k}(n_T,p)-\delta_k
+\text{ for every requested metric }k\right\},
+$$
+
+and
+
+$$
+\operatorname{EDM}_{T:B}(p)=\frac{n_B^{\mathrm{eq}}(p)}{n_T}.
+$$
+
+The joint EDM requests all four primary predictive metrics, preventing recall
+from hiding false-positive or old-task failure. Also report one EDM per metric
+to identify the binding outcome. Practical-equivalence margins $\delta_k$ must
+be declared; zero is the default until a phase gate approves nonzero margins.
+
+Use the tested no-EWC data-budget envelope rather than assuming a smooth or
+monotone realized learner. Sparse screens report discrete brackets: $(2,4]$
+means twice the treatment exposure failed to match it and four times succeeded.
+If the largest baseline budget still fails, report a right-censored result such
+as EDM $>4$. Interpolation may be descriptive but is not the principal estimate.
+
+Plot the EDM over $p_t$ and preserve the state-specific bracket. For an agreed
+joint acceptable region, also report the expected trajectory's durable
+observations-to-criterion. Keep data, optimizer work, elapsed compute, and
+storage as separate efficiency denominators; never combine them into an opaque
+single score. Use expected exposure for design calculations and actual unique
+and presented digit-9 counts for experimental reporting. Phase 3 should attach
+paired-replica uncertainty to these quantities once five replicas are present.
+
 ### Operational definition of the target regime
 
 A value of $m$ is a target-regime candidate only when the paired expected
@@ -528,6 +567,43 @@ Locate where the no-EWC learner begins to lose practical effectiveness.
   parameter trajectories. Future runs record the required confusion rates
   directly under scalar-metric schema 8.
 
+### Completion record
+
+**Status:** Complete (2026-08-16)
+
+- All 63 requested low-data trajectories completed, and inference-only
+  classification sidecars supplied the four primary metrics for those runs and
+  the nine compatible $m=128$ anchors without mutating their source artifacts.
+- The screen found the intended transition. $m\in\{1,2\}$ was general failure,
+  $m=4$ was noisy and borderline, $m=8$ was the clearest strongly
+  data-constrained EWC advantage, $m=16$ retained a material EWC advantage,
+  and no-EWC became competitive by $m=32$. The methods were near parity at
+  $m=64$, while no-EWC won the easy $m=128$ anchor.
+- At $m=8$ and the last state below $p=.5$, fixed EWC obtained 9 OvR accuracy
+  $.822$, 9 precision $.790$, 9 recall $.873$, and environmental multiclass
+  accuracy $.738$. No-EWC obtained $.577$, $.551$, $.992$, and $.547$.
+  Its high recall therefore reflected excessive digit-9 prediction rather than
+  a superior joint classifier.
+- Reaching that state used 400 online observations per trajectory, with 99
+  expected digit-9 presentations; the empirical means were 97.3 presentations
+  and 95.7 unique nines.
+- No-EWC at $m=16$ did not jointly match fixed EWC at $m=8$, while no-EWC at
+  $m=32$ did. The principal finite-sample statement is therefore a tested EDM
+  bracket $(2,4]$. A roughly threefold interpolation is useful motivation, not
+  yet a precise estimate.
+- Fixed $\pi=.10$ was slightly better and substantially less variable than the
+  adaptive controller at $m=8$. The adaptive controller averaged $\pi_t=.060$
+  over the first half of the path, suggesting excess retention in this regime.
+  It remains the portability candidate rather than being promoted as the
+  within-path winner.
+- All Plan 2 conditions used no LFU. The screen identifies a data regime and
+  does not provide evidence for or against the derivative correction.
+
+**Gate decision:** accept $m=8$ as the provisional target and advance to a
+focused Phase 3 replication. Preserve the $m=16$ and $m=32$ upper bracket so
+the EWC advantage and no-EWC-equivalent data boundary are estimated with the
+same five paired replicas.
+
 ### Verification
 
 - Every requested run is complete or explicitly identified as incomplete.
@@ -583,6 +659,61 @@ produce the target regime.
 
 Do not vary these axes together. The check-in should choose the smallest
 scientifically interpretable intervention.
+
+### Pre-launch decision
+
+**Status:** Compute complete; check-in pending (2026-08-16)
+
+- Retain $m\in\{8,16,32\}$ and add replicas 4 and 5, producing 18 new paired
+  trajectories across the three principal conditions. Existing replicas 1
+  through 3 remain immutable and are not rerun.
+- Keep the 100-point path, rank-8-plus-diagonal representation, no-LFU Fisher
+  recursion, and $K=50$ L-BFGS budget fixed. Existing diagnostics do not
+  motivate the optional optimizer-budget screen.
+- Treat $m=8$ as the provisional application target, $m=16$ as its upper
+  neighbor, and $m=32$ as the tested no-EWC matching boundary used by the EDM.
+- Report the four expected predictive trajectories, discrete per-metric and
+  joint EDM brackets, exposure counts, retention, controller behavior,
+  numerical diagnostics, and separately labelled resource costs. Do not use
+  an interpolated EDM as the confirmatory estimate.
+- Prepared immutable bundle
+  `plan2-low-data__r0004-r0005__ebf1dd35123e` contains the intended 18 runs,
+  six completed derived streams, completed reference paths, and zero new
+  initialization fits. Its planning estimate is 1.15 wall-hours and 1.01 GiB.
+
+### Compute record
+
+- All 18 new trajectories completed without run failures, numerical rejection,
+  hard freezes, negative-eigenvalue events, or CPU spectral fallbacks. Their
+  summed sequential trajectory time was 1.44 hours.
+- At $m=8$ and the last state below $p=.5$, adaptive EWC averaged 9 OvR
+  accuracy $.827$, precision $.817$, recall $.853$, and environmental accuracy
+  $.740$. Fixed EWC averaged $.813$, $.817$, $.811$, and $.716$; no-EWC
+  averaged $.701$, $.684$, $.954$, and $.624$ with substantially greater
+  between-replica variability.
+- Adaptive EWC also had the best midpoint NLL, Brier score, ECE, and non-nine
+  accuracy. Its paired environmental-accuracy advantage over no-EWC was $.115$
+  with a 95% interval $[.006,.225]$; the corresponding first-half trajectory
+  AUC advantage was $.211$ with interval $[.032,.390]$.
+- Adaptive and fixed EWC are not decisively separated. Adaptive leads on the
+  mean joint classifier and environmental trajectory, while fixed remains a
+  useful mechanism control. The adaptive controller averaged $\pi_t=.058$ in
+  the first half of the $m=8$ path and occupied $\pi_{\min}=.05$ on 48% of
+  those steps.
+- The strict joint point-mean EDM lies in the empirical unique-nine exposure
+  bracket $(1.96,3.79]$ for both EWC treatments. Exact paired bootstrap
+  matching probabilities show why this must remain a bracket: no-EWC $m=16$
+  matched only 47% of adaptive and 51% of fixed resamples, whereas no-EWC
+  $m=32$ matched 82% and 95%, respectively.
+- No-EWC's instantaneous rank-8 Fisher diagnostic remained numerically weak at
+  some low-data steps. This is an expected rank-limited diagnostic and is not
+  evidence that its learner failed. The EWC recursive summaries remained
+  numerically stable.
+
+**Recommended gate decision:** accept $m=8$ and proceed to Phase 4 controller
+recalibration. Preserve the EDM as an interval rather than claiming a precise
+threefold gain; narrow it later only if that precision changes an application
+decision.
 
 ### Verification
 

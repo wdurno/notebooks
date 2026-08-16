@@ -84,6 +84,19 @@ python -m mnist_experiment.plan2_command_center backfill-metrics \
 New schema-8 runs record those metrics directly. The results notebook averages
 each primary metric across replicas separately at every environmental `p`.
 
+The accepted Phase 3 replication uses the prepared immutable bundle
+`plan2-low-data__r0004-r0005__ebf1dd35123e`. It adds replicas 4 and 5 only at
+`m=8,16,32`:
+
+```bash
+python -m mnist_experiment.plan2_command_center run \
+  --bundle cache/mnist_experiment/plan2/bundles/plan2-low-data__r0004-r0005__ebf1dd35123e \
+  --resume
+```
+
+The package contains 18 trajectories, uses two independent retained
+initializations, and records schema-8 classification metrics directly.
+
 The preview uses a fixed-overhead-plus-observation cost model. Its production
 anchor is the 283.68-second median from 85 completed `m=128`, `K=100`, rank-8,
 budget-50 trajectories; the Phase 1 CUDA smoke was effectively flat between

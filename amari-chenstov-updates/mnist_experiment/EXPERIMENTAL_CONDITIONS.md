@@ -323,6 +323,32 @@ gate because it can be attained by predicting 9 too often. Any later durable
 criterion must include a false-positive-sensitive metric. If it is not met,
 report all four primary metrics at common fixed observation budgets.
 
+### Equivalent Data Multiplier
+
+The Equivalent Data Multiplier (EDM) is the no-EWC exposure required to match
+an EWC condition at the same $p_t$, divided by the EWC exposure. Its primary
+denominator is cumulative unique digit-9 observations. Report each primary
+metric separately and a joint EDM that requires all four simultaneously.
+
+EDM uses the tested no-EWC data-budget envelope. Sparse results are brackets,
+not interpolated point claims: $(2,4]$ means twice the data failed to match the
+EWC outcome and four times succeeded. An unmatched largest budget is reported
+as right-censored. Data, optimizer work, elapsed compute, and storage remain
+separate efficiency measures.
+
+The coarse screen selected $m=8$ provisionally. Phase 3 adds replicas 4 and 5
+at $m\in\{8,16,32\}$, retaining the same three conditions, 100-point path,
+rank-8-plus-diagonal summary, no-LFU recursion, and L-BFGS budget 50. The three
+budgets represent the target, its upper neighbor, and the tested no-EWC
+equivalence boundary.
+
+All five replicas support retaining $m=8$ as the low-data target. At the last
+state below $p=.5$, adaptive EWC had the best mean joint and environmental
+performance, but it was not decisively separated from fixed EWC. The strict
+joint EDM is bracketed by no-EWC $m=16$ and $m=32$; paired resampling makes the
+lower budget unresolved and the upper budget a credible match. Treat this as
+an exposure interval, not a precise threefold estimate.
+
 NLL remains the primary proper scoring rule. New-schema runs also record the
 multiclass Brier score and 15-bin, equal-width maximum-probability expected
 calibration error during the existing holdout pass; logits are not stored.

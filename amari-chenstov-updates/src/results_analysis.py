@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import itertools
 import json
 import math
+import random
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -2701,6 +2703,12 @@ PLAN2_TRAJECTORY_METRICS = (
     "after_environment_brier",
     "after_expected_calibration_error",
 )
+PLAN2_PRIMARY_PREDICTIVE_METRICS = (
+    "after_nine_ovr_accuracy",
+    "after_nine_precision",
+    "after_nine_recall",
+    "after_environment_accuracy",
+)
 PLAN2_EXPOSURE_COORDINATES = (
     "after_cumulative_observations",
     "after_cumulative_nine_observations",
@@ -2951,6 +2959,528 @@ def phase9_durable_crossing_rows(
             row["cell"],
             row["method"],
             row["samples_per_step"],
+        ),
+    )
+
+
+def phase9_joint_durable_crossing_rows(
+    expected_rows: Sequence[Mapping[str, Any]],
+    *,
+    thresholds: Mapping[str, float],
+) -> list[dict[str, Any]]:
+    """Find the first point after which every requested mean stays acceptable."""
+
+    requested = dict(thresholds)
+    if not requested:
+        raise ValueError("thresholds must be nonempty")
+    for metric, threshold in requested.items():
+        if not metric or not math.isfinite(threshold):
+            raise ValueError("threshold metrics and values must be finite")
+
+    grouped: dict[
+        tuple[str, str, str, int], dict[int, dict[str, Mapping[str, Any]]]
+    ] = defaultdict(lambda: defaultdict(dict))
+    for row in expected_rows:
+        metric = str(row.get("metric"))
+        if metric not in requested:
+            continue
+        key = (
+            str(row["profile"]),
+            str(row["cell"]),
+            str(row["method"]),
+            int(row["samples_per_step"]),
+        )
+        step = int(row["step"])
+        if metric in grouped[key][step]:
+            raise AnalysisArtifactError(
+                f"duplicate expected metric at {key}:step={step}:{metric}"
+            )
+        grouped[key][step][metric] = row
+
+    results = []
+    for (profile, cell, method, samples_per_step), by_step in grouped.items():
+        ordered_steps = sorted(by_step)
+
+        def acceptable(step: int) -> bool:
+            rows = by_step[step]
+            return all(
+                metric in rows
+                and bool(rows[metric].get("metric_complete"))
+                and float(rows[metric]["mean"]) >= threshold
+                for metric, threshold in requested.items()
+            )
+
+        crossing_step = next(
+            (
+                step
+                for index, step in enumerate(ordered_steps)
+                if acceptable(step)
+                and all(acceptable(later) for later in ordered_steps[index:])
+            ),
+            None,
+        )
+        base = {
+            "profile": profile,
+            "cell": cell,
+            "method": method,
+            "samples_per_step": samples_per_step,
+            "thresholds": requested,
+            "crossed": crossing_step is not None,
+        }
+        if crossing_step is None:
+            results.append(
+                {
+                    **base,
+                    "step": None,
+                    "p": None,
+                    "minimum_replica_count": min(
+                        int(row["replica_count"])
+                        for rows in by_step.values()
+                        for row in rows.values()
+                    ),
+                    **{
+                        f"mean_{name}": None
+                        for name in PLAN2_EXPOSURE_COORDINATES
+                    },
+                }
+            )
+            continue
+        selected = by_step[crossing_step]
+        representative = selected[next(iter(requested))]
+        results.append(
+            {
+                **base,
+                "step": crossing_step,
+                "p": representative["p"],
+                "minimum_replica_count": min(
+                    int(row["replica_count"]) for row in selected.values()
+                ),
+                **{
+                    f"mean_{name}": representative.get(f"mean_{name}")
+                    for name in PLAN2_EXPOSURE_COORDINATES
+                },
+            }
+        )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["cell"],
+            row["method"],
+            row["samples_per_step"],
+        ),
+    )
+
+
+def phase9_equivalent_data_multiplier_rows(
+    expected_rows: Sequence[Mapping[str, Any]],
+    *,
+    baseline_cell: str,
+    treatment_cells: Sequence[str],
+    metrics: Sequence[str] = PLAN2_PRIMARY_PREDICTIVE_METRICS,
+    practical_margins: Mapping[str, float] | None = None,
+    exposure_key: str = "mean_after_cumulative_unique_nine_observations",
+) -> list[dict[str, Any]]:
+    """Bracket baseline exposure needed to match each treatment trajectory."""
+
+    requested = tuple(metrics)
+    if not requested or len(requested) != len(set(requested)):
+        raise ValueError("metrics must be unique and nonempty")
+    treatments = tuple(treatment_cells)
+    if not treatments or len(treatments) != len(set(treatments)):
+        raise ValueError("treatment_cells must be unique and nonempty")
+    margins = {metric: 0.0 for metric in requested}
+    if practical_margins is not None:
+        unknown = set(practical_margins) - set(requested)
+        if unknown:
+            raise ValueError(f"practical margins contain unknown metrics: {unknown}")
+        margins.update(
+            {metric: float(value) for metric, value in practical_margins.items()}
+        )
+    if any(not math.isfinite(value) or value < 0.0 for value in margins.values()):
+        raise ValueError("practical margins must be finite and nonnegative")
+
+    indexed: dict[
+        tuple[str, str, str, int, int], dict[str, Mapping[str, Any]]
+    ] = defaultdict(dict)
+    for row in expected_rows:
+        metric = str(row.get("metric"))
+        if metric not in requested:
+            continue
+        key = (
+            str(row["profile"]),
+            str(row["cell"]),
+            str(row["method"]),
+            int(row["samples_per_step"]),
+            int(row["step"]),
+        )
+        if metric in indexed[key]:
+            raise AnalysisArtifactError(f"duplicate expected metric at {key}:{metric}")
+        indexed[key][metric] = row
+
+    def complete_metric_set(rows: Mapping[str, Mapping[str, Any]]) -> bool:
+        return all(
+            metric in rows
+            and bool(rows[metric].get("metric_complete"))
+            and rows[metric].get(exposure_key) is not None
+            for metric in requested
+        )
+
+    baseline_by_step: dict[
+        tuple[str, str, int], list[tuple[int, dict[str, Mapping[str, Any]]]]
+    ] = defaultdict(list)
+    for key, rows in indexed.items():
+        profile, cell, method, samples_per_step, step = key
+        if cell == baseline_cell and complete_metric_set(rows):
+            baseline_by_step[(profile, method, step)].append(
+                (samples_per_step, rows)
+            )
+
+    results = []
+    for key, target_rows in indexed.items():
+        profile, cell, method, target_m, step = key
+        if cell not in treatments or not complete_metric_set(target_rows):
+            continue
+        representative = target_rows[requested[0]]
+        target_exposure = float(representative[exposure_key])
+        if target_exposure <= 0.0 or not math.isfinite(target_exposure):
+            continue
+        p = float(representative["p"])
+        candidates = []
+        for candidate_m, candidate_rows in baseline_by_step.get(
+            (profile, method, step), ()
+        ):
+            candidate_rep = candidate_rows[requested[0]]
+            if not math.isclose(float(candidate_rep["p"]), p, abs_tol=1e-12):
+                raise AnalysisArtifactError(
+                    f"unaligned EDM p values for {profile}:{method}:step={step}"
+                )
+            exposure = float(candidate_rep[exposure_key])
+            if exposure < 0.0 or not math.isfinite(exposure):
+                continue
+            candidates.append((exposure, candidate_m, candidate_rows))
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        if not candidates:
+            continue
+
+        comparisons = [*requested, "joint_primary"]
+        for comparison in comparisons:
+            comparison_metrics = (
+                requested if comparison == "joint_primary" else (comparison,)
+            )
+
+            def matches(rows: Mapping[str, Mapping[str, Any]]) -> bool:
+                return all(
+                    float(rows[metric]["mean"])
+                    >= float(target_rows[metric]["mean"]) - margins[metric]
+                    for metric in comparison_metrics
+                )
+
+            matched_index = next(
+                (
+                    index
+                    for index, (_, _, candidate_rows) in enumerate(candidates)
+                    if matches(candidate_rows)
+                ),
+                None,
+            )
+            if matched_index is None:
+                lower_exposure, lower_m, _ = candidates[-1]
+                upper_exposure = upper_m = matched_rows = None
+                status = "right_censored"
+            else:
+                upper_exposure, upper_m, matched_rows = candidates[matched_index]
+                if matched_index == 0:
+                    lower_exposure = lower_m = None
+                    status = "left_censored"
+                else:
+                    lower_exposure, lower_m, _ = candidates[matched_index - 1]
+                    status = "bracketed"
+            if matched_index is None:
+                count_rows = (target_rows, candidates[-1][2])
+            elif matched_index == 0:
+                count_rows = (target_rows, candidates[0][2])
+            else:
+                count_rows = (
+                    target_rows,
+                    candidates[matched_index - 1][2],
+                    candidates[matched_index][2],
+                )
+            results.append(
+                {
+                    "profile": profile,
+                    "treatment_cell": cell,
+                    "baseline_cell": baseline_cell,
+                    "method": method,
+                    "step": step,
+                    "p": p,
+                    "treatment_samples_per_step": target_m,
+                    "comparison": comparison,
+                    "comparison_metrics": comparison_metrics,
+                    "practical_margins": {
+                        metric: margins[metric] for metric in comparison_metrics
+                    },
+                    "exposure_key": exposure_key,
+                    "treatment_exposure": target_exposure,
+                    "target_means": {
+                        metric: float(target_rows[metric]["mean"])
+                        for metric in comparison_metrics
+                    },
+                    "status": status,
+                    "baseline_samples_per_step_lower": lower_m,
+                    "baseline_exposure_lower": lower_exposure,
+                    "multiplier_lower": (
+                        None
+                        if lower_exposure is None
+                        else lower_exposure / target_exposure
+                    ),
+                    "baseline_samples_per_step_upper": upper_m,
+                    "baseline_exposure_upper": upper_exposure,
+                    "multiplier_upper": (
+                        None
+                        if upper_exposure is None
+                        else upper_exposure / target_exposure
+                    ),
+                    "matched_baseline_means": (
+                        None
+                        if matched_rows is None
+                        else {
+                            metric: float(matched_rows[metric]["mean"])
+                            for metric in comparison_metrics
+                        }
+                    ),
+                    "minimum_replica_count": min(
+                        int(row["replica_count"])
+                        for rows in count_rows
+                        for row in rows.values()
+                    ),
+                }
+            )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["treatment_cell"],
+            row["method"],
+            row["treatment_samples_per_step"],
+            row["comparison"],
+            row["step"],
+        ),
+    )
+
+
+def _linear_quantile(values: Sequence[float], probability: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("quantile values must be nonempty")
+    if not 0.0 <= probability <= 1.0:
+        raise ValueError("quantile probability must lie in [0, 1]")
+    position = probability * (len(ordered) - 1)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def phase9_paired_dominance_bootstrap_rows(
+    trajectory_rows: Sequence[Mapping[str, Any]],
+    *,
+    baseline_cell: str,
+    treatment_cells: Sequence[str],
+    treatment_samples_per_step: int,
+    baseline_samples_per_step: Sequence[int],
+    steps: Sequence[int],
+    metrics: Sequence[str] = PLAN2_PRIMARY_PREDICTIVE_METRICS,
+    practical_margins: Mapping[str, float] | None = None,
+    maximum_draws: int = 10_000,
+    seed: int = 1729,
+    exposure_key: str = "after_cumulative_unique_nine_observations",
+) -> list[dict[str, Any]]:
+    """Estimate paired bootstrap support for baseline dominance at fixed states."""
+
+    requested = tuple(metrics)
+    treatments = tuple(treatment_cells)
+    baseline_sizes = tuple(sorted(set(baseline_samples_per_step)))
+    requested_steps = tuple(sorted(set(steps)))
+    if not requested or len(requested) != len(set(requested)):
+        raise ValueError("metrics must be unique and nonempty")
+    if not treatments or len(treatments) != len(set(treatments)):
+        raise ValueError("treatment_cells must be unique and nonempty")
+    if not baseline_sizes or any(value <= 0 for value in baseline_sizes):
+        raise ValueError("baseline samples_per_step values must be positive")
+    if not requested_steps or any(value < 0 for value in requested_steps):
+        raise ValueError("steps must be nonnegative")
+    if maximum_draws <= 0:
+        raise ValueError("maximum_draws must be positive")
+    margins = {metric: 0.0 for metric in requested}
+    if practical_margins is not None:
+        unknown = set(practical_margins) - set(requested)
+        if unknown:
+            raise ValueError(f"practical margins contain unknown metrics: {unknown}")
+        margins.update(
+            {metric: float(value) for metric, value in practical_margins.items()}
+        )
+    if any(not math.isfinite(value) or value < 0.0 for value in margins.values()):
+        raise ValueError("practical margins must be finite and nonnegative")
+
+    indexed: dict[
+        tuple[str, str, str, int, int], dict[int, Mapping[str, Any]]
+    ] = defaultdict(dict)
+    allowed_cells = {baseline_cell, *treatments}
+    allowed_sizes = {treatment_samples_per_step, *baseline_sizes}
+    for row in trajectory_rows:
+        cell = str(row["cell"])
+        samples_per_step = int(row["samples_per_step"])
+        step = int(row["step"])
+        if (
+            cell not in allowed_cells
+            or samples_per_step not in allowed_sizes
+            or step not in requested_steps
+        ):
+            continue
+        key = (
+            str(row["profile"]),
+            cell,
+            str(row["method"]),
+            samples_per_step,
+            step,
+        )
+        replica = int(row["replica_index"])
+        if replica in indexed[key]:
+            raise AnalysisArtifactError(f"duplicate paired-bootstrap row: {key}:{replica}")
+        indexed[key][replica] = row
+
+    results = []
+    rng = random.Random(seed)
+    for key, treatment_by_replica in indexed.items():
+        profile, treatment_cell, method, samples_per_step, step = key
+        if (
+            treatment_cell not in treatments
+            or samples_per_step != treatment_samples_per_step
+        ):
+            continue
+        for baseline_m in baseline_sizes:
+            baseline_by_replica = indexed.get(
+                (profile, baseline_cell, method, baseline_m, step)
+            )
+            if baseline_by_replica is None:
+                continue
+            replicas = sorted(
+                set(treatment_by_replica).intersection(baseline_by_replica)
+            )
+            replicas = [
+                replica
+                for replica in replicas
+                if all(
+                    treatment_by_replica[replica].get(metric) is not None
+                    and baseline_by_replica[replica].get(metric) is not None
+                    for metric in requested
+                )
+                and treatment_by_replica[replica].get(exposure_key) is not None
+                and baseline_by_replica[replica].get(exposure_key) is not None
+            ]
+            if len(replicas) < 2:
+                continue
+            p_values = {
+                float(rows[replica]["p"])
+                for rows in (treatment_by_replica, baseline_by_replica)
+                for replica in replicas
+            }
+            if len(p_values) != 1:
+                raise AnalysisArtifactError(
+                    f"unaligned paired-bootstrap p values at {profile}:{step}"
+                )
+
+            exact_draw_count = len(replicas) ** len(replicas)
+            if exact_draw_count <= maximum_draws:
+                draws: Iterable[tuple[int, ...]] = itertools.product(
+                    replicas, repeat=len(replicas)
+                )
+                draw_count = exact_draw_count
+                bootstrap_mode = "exact"
+            else:
+                draws = (
+                    tuple(rng.choice(replicas) for _ in replicas)
+                    for _ in range(maximum_draws)
+                )
+                draw_count = maximum_draws
+                bootstrap_mode = "monte_carlo"
+
+            deltas = {metric: [] for metric in requested}
+            metric_match_counts = {metric: 0 for metric in requested}
+            joint_match_count = 0
+            for draw in draws:
+                draw_deltas = {}
+                for metric in requested:
+                    delta = sum(
+                        float(baseline_by_replica[replica][metric])
+                        - float(treatment_by_replica[replica][metric])
+                        + margins[metric]
+                        for replica in draw
+                    ) / len(draw)
+                    deltas[metric].append(delta)
+                    draw_deltas[metric] = delta
+                    metric_match_counts[metric] += delta >= 0.0
+                joint_match_count += all(
+                    delta >= 0.0 for delta in draw_deltas.values()
+                )
+
+            treatment_exposure = sum(
+                float(treatment_by_replica[replica][exposure_key])
+                for replica in replicas
+            ) / len(replicas)
+            baseline_exposure = sum(
+                float(baseline_by_replica[replica][exposure_key])
+                for replica in replicas
+            ) / len(replicas)
+            results.append(
+                {
+                    "profile": profile,
+                    "treatment_cell": treatment_cell,
+                    "baseline_cell": baseline_cell,
+                    "method": method,
+                    "step": step,
+                    "p": next(iter(p_values)),
+                    "treatment_samples_per_step": treatment_samples_per_step,
+                    "baseline_samples_per_step": baseline_m,
+                    "replica_count": len(replicas),
+                    "replica_indices": replicas,
+                    "bootstrap_mode": bootstrap_mode,
+                    "bootstrap_draw_count": draw_count,
+                    "practical_margins": margins,
+                    "exposure_key": exposure_key,
+                    "treatment_exposure": treatment_exposure,
+                    "baseline_exposure": baseline_exposure,
+                    "exposure_multiplier": baseline_exposure / treatment_exposure,
+                    "mean_metric_deltas": {
+                        metric: sum(values) / len(values)
+                        for metric, values in deltas.items()
+                    },
+                    "metric_delta_ci95": {
+                        metric: (
+                            _linear_quantile(values, 0.025),
+                            _linear_quantile(values, 0.975),
+                        )
+                        for metric, values in deltas.items()
+                    },
+                    "metric_match_probabilities": {
+                        metric: count / draw_count
+                        for metric, count in metric_match_counts.items()
+                    },
+                    "joint_match_probability": joint_match_count / draw_count,
+                }
+            )
+    return sorted(
+        results,
+        key=lambda row: (
+            row["profile"],
+            row["treatment_cell"],
+            row["method"],
+            row["treatment_samples_per_step"],
+            row["baseline_samples_per_step"],
+            row["step"],
         ),
     )
 
