@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from mnist_experiment.command_center import _execution_entries
 from src.config import ExperimentConfig
 from src.phase9 import (
+    Phase9Bundle,
     Phase9Error,
     build_phase9_bundle,
     load_phase9_bundle,
@@ -73,6 +75,24 @@ def test_controller_screen_generates_one_shared_control_per_replica() -> None:
             assert config.controller.reference_optimum_artifact is None
         else:
             assert config.controller.reference_optimum_artifact is not None
+
+
+def test_anchor_only_execution_selects_one_reference_path_per_replica() -> None:
+    spec = load_phase9_spec(SPEC_PATH)
+    manifest, _ = build_phase9_bundle(
+        spec,
+        REPO_ROOT,
+        profile_names=("controller-screen",),
+        replica_indices=(6, 7),
+    )
+    selected = _execution_entries(
+        Phase9Bundle(path=Path("<test>"), manifest=manifest),
+        oracle_anchors_only=True,
+    )
+
+    assert len(selected) == 2
+    assert {row["replica_index"] for row in selected} == {6, 7}
+    assert all(row["is_oracle_anchor"] for row in selected)
 
 
 def test_data_screen_keeps_cell_specific_fixed_controls() -> None:

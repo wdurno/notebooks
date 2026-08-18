@@ -16,6 +16,13 @@ from .results_analysis import (
 from .classification_backfill import default_classification_backfill_root
 
 PLAN2_PROFILE = "plan2-low-data"
+PLAN2_SUPERSEDED_BUNDLE_IDS = frozenset(
+    {
+        # Replaced before execution by a treatment-only extension so completed
+        # schema-7 controls could be reused without mutable regeneration.
+        "plan2-low-data__r0001-r0005__967e09afc995",
+    }
+)
 PLAN2_M128_ANCHORS = {
     "no-ewc-pi100": ("adaptation-screen", "fixed-100-no-ewc", "control"),
     "fixed-ewc-pi010": (
@@ -40,7 +47,31 @@ PLAN2_CONDITION_SEMANTICS = {
         "original_learning_process": "current batch plus EWC-compressed history",
         "auxiliary_fisher_process": "recursive Fisher summary",
     },
+    "fixed-ewc-pi005": {
+        "original_learning_process": "current batch plus EWC-compressed history",
+        "auxiliary_fisher_process": "recursive Fisher summary",
+    },
     "adaptive-ewc-h010": {
+        "original_learning_process": "current batch plus EWC-compressed history",
+        "auxiliary_fisher_process": "recursive Fisher summary",
+    },
+    "adaptive-ewc-h005": {
+        "original_learning_process": "current batch plus EWC-compressed history",
+        "auxiliary_fisher_process": "recursive Fisher summary",
+    },
+    "adaptive-ewc-h020": {
+        "original_learning_process": "current batch plus EWC-compressed history",
+        "auxiliary_fisher_process": "recursive Fisher summary",
+    },
+    "adaptive-ewc-h040": {
+        "original_learning_process": "current batch plus EWC-compressed history",
+        "auxiliary_fisher_process": "recursive Fisher summary",
+    },
+    "adaptive-ewc-h020-pimin001": {
+        "original_learning_process": "current batch plus EWC-compressed history",
+        "auxiliary_fisher_process": "recursive Fisher summary",
+    },
+    "adaptive-ewc-h020-pimin010": {
         "original_learning_process": "current batch plus EWC-compressed history",
         "auxiliary_fisher_process": "recursive Fisher summary",
     },
@@ -65,6 +96,16 @@ def plan2_condition_semantics_rows() -> list[dict[str, str]]:
     ]
 
 
+def _accepted_bundles(bundles: Sequence[Plan2Bundle]) -> list[Plan2Bundle]:
+    """Exclude immutable intentions explicitly superseded before execution."""
+
+    return [
+        bundle
+        for bundle in bundles
+        if bundle.bundle_id not in PLAN2_SUPERSEDED_BUNDLE_IDS
+    ]
+
+
 def _deduplicated_entries(bundles: Sequence[Plan2Bundle]) -> list[dict[str, Any]]:
     by_run_id: dict[str, dict[str, Any]] = {}
     for bundle in bundles:
@@ -75,14 +116,32 @@ def _deduplicated_entries(bundles: Sequence[Plan2Bundle]) -> list[dict[str, Any]
             if existing is None:
                 entry["bundle_ids"] = [bundle.bundle_id]
                 entry["spec_name"] = bundle.manifest["spec_name"]
+                entry["declared_control_run_ids"] = (
+                    []
+                    if entry["control_run_id"] is None
+                    else [entry["control_run_id"]]
+                )
+                entry["external_control_pairing"] = (
+                    entry["control_run_id"] is None
+                )
                 by_run_id[run_id] = entry
                 continue
             comparable = {
                 key: value
                 for key, value in existing.items()
-                if key not in {"bundle_ids", "spec_name"}
+                if key
+                not in {
+                    "bundle_ids",
+                    "spec_name",
+                    "control_run_id",
+                    "declared_control_run_ids",
+                    "external_control_pairing",
+                }
             }
-            if comparable != entry:
+            source_comparable = {
+                key: value for key, value in entry.items() if key != "control_run_id"
+            }
+            if comparable != source_comparable:
                 raise AnalysisArtifactError(
                     f"Plan 2 run {run_id} has conflicting bundle metadata"
                 )
@@ -91,6 +150,22 @@ def _deduplicated_entries(bundles: Sequence[Plan2Bundle]) -> list[dict[str, Any]
                     f"Plan 2 run {run_id} has conflicting specification names"
                 )
             existing["bundle_ids"].append(bundle.bundle_id)
+            control_run_id = entry["control_run_id"]
+            if (
+                control_run_id is not None
+                and control_run_id not in existing["declared_control_run_ids"]
+            ):
+                existing["declared_control_run_ids"].append(control_run_id)
+            existing["external_control_pairing"] = bool(
+                existing["external_control_pairing"]
+                or control_run_id is None
+            )
+            existing["control_run_id"] = (
+                None
+                if existing["external_control_pairing"]
+                or len(existing["declared_control_run_ids"]) != 1
+                else existing["declared_control_run_ids"][0]
+            )
     return sorted(
         by_run_id.values(),
         key=lambda row: (
@@ -107,8 +182,9 @@ def plan2_inventory_rows(
 ) -> list[dict[str, Any]]:
     """Return deduplicated run intentions and dependency states."""
 
+    accepted_bundles = _accepted_bundles(bundles)
     status_by_run: dict[str, dict[str, Any]] = {}
-    for bundle in bundles:
+    for bundle in accepted_bundles:
         for status in plan2_status_rows(bundle, repo_root):
             run_id = str(status["run_id"])
             existing = status_by_run.get(run_id)
@@ -124,7 +200,7 @@ def plan2_inventory_rows(
             status_by_run[run_id] = {"status": status, "state": state}
 
     rows = []
-    for entry in _deduplicated_entries(bundles):
+    for entry in _deduplicated_entries(accepted_bundles):
         status = status_by_run[entry["run_id"]]["status"]
         rows.append(
             {

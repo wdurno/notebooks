@@ -97,8 +97,47 @@ python -m mnist_experiment.plan2_command_center run \
 The package contains 18 trajectories, uses two independent retained
 initializations, and records schema-8 classification metrics directly.
 
+Phase 4 controller recalibration is complete in three accepted immutable
+extensions:
+
+- `plan2-low-data__r0001-r0005__292a833830f0`: half-life screen;
+- `plan2-low-data__r0001-r0005__0c4eebbf40db`: conditional lower-bound screen;
+- `plan2-low-data__r0001-r0005__69aea5f9bdc3`: explicit fixed-$\pi=.05$ audit.
+
+The prelaunch intention `plan2-low-data__r0001-r0005__967e09afc995` was never
+executed and is explicitly excluded from accepted analysis. Phase 4 selected
+fixed $\pi=.05$ for confirmation; the adaptive plug-in formula remains
+unresolved because its leading conditions were bound-driven.
+
+Phase 5 independent confirmation is complete:
+
+- source anchors: `phase9-initial__r0006-r0010__065c98b1061d`;
+- paired confirmation: `plan2-low-data__r0006-r0010__7bb69d3a9424`.
+
+The source bundle intentionally executed only its five oracle anchors via
+`--oracle-anchors-only`; its other controller-screen intentions remain missing
+and are not part of Phase 5. The confirmation bundle contains 20 completed
+`m=8` trajectories across fresh replicas 6 through 10.
+
 The preview uses a fixed-overhead-plus-observation cost model. Its production
 anchor is the 283.68-second median from 85 completed `m=128`, `K=100`, rank-8,
 budget-50 trajectories; the Phase 1 CUDA smoke was effectively flat between
 `m=1` and `m=2`, so the estimate is deliberately not scaled linearly from zero.
 It remains a planning proxy rather than measured GPU time.
+
+## Plan 3 handoff
+
+Preview the staged replay, hybrid, LFU, and deployment proposal without writing
+artifacts:
+
+```bash
+python -m mnist_experiment.plan3_command_center preview
+python -m mnist_experiment.plan3_command_center preview \
+  --stages replay-screen --details
+```
+
+The preview reuses Plan 2 replicas 6 through 10. Values shown for `selected`
+and `memory-matched` replay are planning placeholders used only to estimate
+cost. Plan 3 will select the replay budget at a phase gate and derive the
+memory-matched capacity from measured persistent bytes. There is intentionally
+no Plan 3 `prepare` or `run` command yet.

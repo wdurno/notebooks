@@ -1,0 +1,331 @@
+{
+  "cost_model": {
+    "estimated_artifact_bytes": 60000000,
+    "fixed_seconds_per_run": 220.0,
+    "observation_payload_bytes": 792,
+    "parameter_scalar_bytes": 4,
+    "seconds_per_optimizer_observation": 0.0052
+  },
+  "handoff": {
+    "confirmation_bundle": "plan2-low-data__r0006-r0010__7bb69d3a9424",
+    "replica_indices": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "source_anchor_bundle": "phase9-initial__r0006-r0010__065c98b1061d"
+  },
+  "name": "plan3-main",
+  "planning_placeholders": {
+    "memory_matched_replay_budget": 32,
+    "selected_replay_budget": 32
+  },
+  "schema_version": 1,
+  "shared_design": {
+    "fisher_rank": 8,
+    "num_p_steps": 100,
+    "optimizer_inner_steps": 50,
+    "parameter_count": 512,
+    "samples_per_step": 8
+  },
+  "stages": [
+    {
+      "check_in": "Choose a bounded replay budget from the predictive, compute, and storage frontier before implementing hybrid compression.",
+      "conditions": [
+        {
+          "comparison": null,
+          "controller": "not-applicable",
+          "data_mode": "current",
+          "estimand": "Performance when the learner retains no online history.",
+          "fisher_update": "none",
+          "name": "current-only",
+          "replay_budget": null,
+          "role": "primary-control",
+          "source": "plan2:no-ewc-pi100",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "current-only",
+          "controller": "fixed-005",
+          "data_mode": "current",
+          "estimand": "Benefit of the constant-memory EWC summary without LFU corrections.",
+          "fisher_update": "none",
+          "name": "ewc-fixed005-no-lfu",
+          "replay_budget": null,
+          "role": "mechanism-reference",
+          "source": "plan2:fixed-ewc-pi005",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "current-only",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Benefit of retaining the most recent 8 online observations without compression.",
+          "fisher_update": "none",
+          "name": "replay-b008",
+          "replay_budget": 8,
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "current-only",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Benefit of retaining the most recent 32 online observations without compression.",
+          "fisher_update": "none",
+          "name": "replay-b032",
+          "replay_budget": 32,
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "current-only",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Benefit of retaining the most recent 128 online observations without compression.",
+          "fisher_update": "none",
+          "name": "replay-b128",
+          "replay_budget": 128,
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "current-only",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Expected online-history ceiling when no encountered online observation is evicted.",
+          "fisher_update": "none",
+          "name": "replay-unbounded",
+          "replay_budget": "unbounded",
+          "role": "upper-control",
+          "source": "new",
+          "uses_ewc": false
+        }
+      ],
+      "decision": "Select the smallest bounded replay budget on the useful predictive-cost frontier; retain unbounded replay as an upper control.",
+      "name": "replay-screen",
+      "plan_phase": 2
+    },
+    {
+      "check_in": "Select a history mechanism and verify that measured persistent bytes, rather than nominal observation counts, define memory matching.",
+      "conditions": [
+        {
+          "comparison": "current-only",
+          "controller": "fixed-005",
+          "data_mode": "current",
+          "estimand": "Constant-memory EWC reference retained from Plan 2.",
+          "fisher_update": "none",
+          "name": "ewc-fixed005-no-lfu",
+          "replay_budget": null,
+          "role": "mechanism-reference",
+          "source": "plan2:fixed-ewc-pi005",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "ewc-fixed005-no-lfu",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Replay performance at the empirically selected bounded capacity.",
+          "fisher_update": "none",
+          "name": "replay-selected",
+          "replay_budget": "selected",
+          "role": "mechanism-reference",
+          "source": "gate:replay-screen",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "ewc-fixed005-no-lfu",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Replay performance when its measured persistent bytes match the EWC summary.",
+          "fisher_update": "none",
+          "name": "replay-memory-matched",
+          "replay_budget": "memory-matched",
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "replay-selected",
+          "controller": "fixed-005",
+          "data_mode": "hybrid",
+          "estimand": "Incremental value of compressing observations evicted from the selected replay window into EWC.",
+          "fisher_update": "none",
+          "name": "hybrid-selected-no-lfu",
+          "replay_budget": "selected",
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "replay-memory-matched",
+          "controller": "fixed-005",
+          "data_mode": "hybrid",
+          "estimand": "Incremental value of EWC compression at the memory-matched replay capacity.",
+          "fisher_update": "none",
+          "name": "hybrid-memory-matched-no-lfu",
+          "replay_budget": "memory-matched",
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "replay-selected",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Loss caused by the selected finite replay capacity relative to retaining all online observations.",
+          "fisher_update": "none",
+          "name": "replay-unbounded",
+          "replay_budget": "unbounded",
+          "role": "upper-control",
+          "source": "gate:replay-screen",
+          "uses_ewc": false
+        }
+      ],
+      "decision": "Choose the history mechanism that best serves the predictive-memory-compute frontier before testing LFUs.",
+      "name": "memory-hybrid",
+      "plan_phase": 4
+    },
+    {
+      "check_in": "Decide whether full LFU earns its derivative cost and whether AC-only remains scientifically informative.",
+      "conditions": [
+        {
+          "comparison": "current-only",
+          "controller": "fixed-005",
+          "data_mode": "current",
+          "estimand": "No-LFU EWC reference for derivative-correction effects.",
+          "fisher_update": "none",
+          "name": "ewc-fixed005-no-lfu",
+          "replay_budget": null,
+          "role": "mechanism-reference",
+          "source": "plan2:fixed-ewc-pi005",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "ewc-fixed005-no-lfu",
+          "controller": "fixed-005",
+          "data_mode": "current",
+          "estimand": "Effect of applying only the Amari-Chentsov component of the Fisher derivative.",
+          "fisher_update": "ac-only",
+          "name": "ewc-fixed005-ac-only",
+          "replay_budget": null,
+          "role": "diagnostic",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "ewc-fixed005-no-lfu",
+          "controller": "fixed-005",
+          "data_mode": "current",
+          "estimand": "Effect of the full Amari-Chentsov plus residual LFU on the EWC summary.",
+          "fisher_update": "full-lfu",
+          "name": "ewc-fixed005-full-lfu",
+          "replay_budget": null,
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "replay-selected",
+          "controller": "fixed-005",
+          "data_mode": "hybrid",
+          "estimand": "No-LFU hybrid reference selected at the prior gate.",
+          "fisher_update": "none",
+          "name": "hybrid-selected-no-lfu",
+          "replay_budget": "selected",
+          "role": "mechanism-reference",
+          "source": "gate:memory-hybrid",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "hybrid-selected-no-lfu",
+          "controller": "fixed-005",
+          "data_mode": "hybrid",
+          "estimand": "Effect of full LFU on the archive summary behind a bounded replay window.",
+          "fisher_update": "full-lfu",
+          "name": "hybrid-selected-full-lfu",
+          "replay_budget": "selected",
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
+        }
+      ],
+      "decision": "Select no LFU or full LFU for the deployment comparison; AC-only is not promoted without an unexpected mechanistic result.",
+      "name": "lfu-isolation",
+      "plan_phase": 5
+    },
+    {
+      "check_in": "Review paired predictive and realized resource frontiers, then decide whether more replicas or a new manifold are warranted.",
+      "conditions": [
+        {
+          "comparison": null,
+          "controller": "not-applicable",
+          "data_mode": "current",
+          "estimand": "Realized deployment cost and predictive quality without retained online history.",
+          "fisher_update": "none",
+          "name": "deployment-current-only",
+          "replay_budget": null,
+          "role": "primary-control",
+          "source": "new",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "deployment-current-only",
+          "controller": "fixed-005",
+          "data_mode": "gate-selected-ewc",
+          "estimand": "Realized deployment frontier for the selected fixed-controller history mechanism.",
+          "fisher_update": "gate-selected",
+          "name": "deployment-selected-fixed",
+          "replay_budget": "selected",
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "deployment-selected-fixed",
+          "controller": "adaptive-h020",
+          "data_mode": "gate-selected-ewc",
+          "estimand": "Portability value and cost of adaptive pi on the selected history mechanism.",
+          "fisher_update": "gate-selected",
+          "name": "deployment-selected-adaptive",
+          "replay_budget": "selected",
+          "role": "diagnostic",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "deployment-current-only",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Realized deployment frontier for the selected pure replay capacity.",
+          "fisher_update": "none",
+          "name": "deployment-replay-selected",
+          "replay_budget": "selected",
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "deployment-replay-selected",
+          "controller": "not-applicable",
+          "data_mode": "replay",
+          "estimand": "Predictive and resource gap between selected bounded replay and all online history.",
+          "fisher_update": "none",
+          "name": "deployment-replay-unbounded",
+          "replay_budget": "unbounded",
+          "role": "upper-control",
+          "source": "new",
+          "uses_ewc": false
+        }
+      ],
+      "decision": "Choose the practical deployment frontier and preserve adaptive pi as a diagnostic unless it produces variable actuation.",
+      "name": "deployment-frontier",
+      "plan_phase": 6
+    }
+  ]
+}

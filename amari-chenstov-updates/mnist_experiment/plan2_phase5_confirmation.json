@@ -1,0 +1,74 @@
+{
+  "base_overrides": {
+    "controller": {
+      "pi_max": 0.95,
+      "pi_min": 0.05,
+      "trend_half_life_p": 0.2
+    },
+    "estimator": {
+      "controller_methods": [
+        "low_rank_diagonal"
+      ],
+      "method": "ema"
+    }
+  },
+  "bundle_root": "cache/mnist_experiment/plan2/bundles",
+  "conditions": [
+    {
+      "kind": "control",
+      "name": "no-ewc-pi100",
+      "overrides": {
+        "controller": {
+          "fixed_pi": 1.0,
+          "pi_max": 1.0,
+          "pi_min": 1.0
+        }
+      },
+      "policy": "fixed_unified"
+    },
+    {
+      "kind": "treatment",
+      "name": "fixed-ewc-pi005",
+      "overrides": {
+        "controller": {
+          "fixed_pi": 0.05
+        }
+      },
+      "policy": "fixed_unified"
+    },
+    {
+      "kind": "treatment",
+      "name": "adaptive-ewc-h020",
+      "overrides": {},
+      "policy": "optimal_plugin"
+    },
+    {
+      "kind": "treatment",
+      "name": "fixed-ewc-pi010",
+      "overrides": {
+        "controller": {
+          "fixed_pi": 0.1,
+          "pi_min": 0.1
+        }
+      },
+      "policy": "fixed_unified"
+    }
+  ],
+  "cost_model": {
+    "estimated_run_bytes": 60000000,
+    "fixed_seconds_per_run": 220.0,
+    "seconds_per_optimizer_observation": 0.0052
+  },
+  "default_replica_count": 5,
+  "default_replica_start": 6,
+  "default_samples_per_step": [
+    8
+  ],
+  "master_cell": "center",
+  "master_profile": "controller-screen",
+  "name": "plan2-low-data",
+  "phase9_spec": "mnist_experiment/phase9_profiles.json",
+  "replica_root": "cache/mnist_experiment/replicas",
+  "run_cache_root": "cache/mnist_experiment/phase8_runs",
+  "schema_version": 1
+}

@@ -349,6 +349,50 @@ joint EDM is bracketed by no-EWC $m=16$ and $m=32$; paired resampling makes the
 lower budget unresolved and the upper budget a credible match. Treat this as
 an exposure interval, not a precise threefold estimate.
 
+### Phase 4 controller recalibration
+
+Phase 4 holds $m=8$, the 100-point path, rank-8-plus-diagonal Fisher summary,
+no-LFU recursion, and optimizer budget 50 fixed across five paired replicas.
+It screens controller half-life $h\in\{.05,.10,.20,.40\}$, then screens
+$\pi_{\min}\in\{.01,.05,.10\}$ at $h=.20$. An explicit fixed-$\pi=.05$
+condition separates the selected weight from the plug-in rule that proposed
+it.
+
+| Condition | Meaning | Phase 4 conclusion |
+|---|---|---|
+| `adaptive-ewc-h005` to `adaptive-ewc-h040` | Plug-in controller with the named trend half-life and $\pi_{\min}=.05$ | $h=.20$ and $.40$ led the screen; both were almost entirely lower-bound driven. |
+| `adaptive-ewc-h020-pimin001` | Same controller with lower bound $.01$ | Feedback and trace estimates became unstable; predictive quality fell. |
+| `adaptive-ewc-h020-pimin010` | Same controller with lower bound $.10$ | Exactly reproduced fixed $\pi=.10$. |
+| `fixed-ewc-pi005` | Fixed sample-composition/EWC weight $.05$ | Selected applied policy for confirmation. |
+
+The explicit fixed-$.05$ policy and `adaptive-ewc-h040` match exactly at all
+500 paired replica-step points. `adaptive-ewc-h020` differs at only two points
+and never exceeds $.0516$. Thus Phase 4 supports the fixed $.05$ weight on this
+path, but does not validate the current plug-in controller formula. Fixed
+$\pi=.10$ remains a mechanism comparator and no EWC remains the primary
+control.
+
+### Phase 5 independent confirmation
+
+Phase 5 repeats the selected $m=8$ regime on five fresh statistical units,
+replicas 6 through 10. Each has an independent $p=0$ fit, initial Fisher,
+ordered stream, and reference path. The four paired conditions are no EWC,
+fixed $\pi=.05$, adaptive $h=.20$ with $\pi_{\min}=.05$, and fixed
+$\pi=.10$; all retain rank 8 plus a diagonal, no LFU, and optimizer budget 50.
+
+Across $p<.5$, fixed $.05$ and adaptive $h=.20$ both obtained environmental
+accuracy AUC $.682$, compared with $.532$ for no EWC. Their environmental NLL,
+Brier, ECE, and non-nine-accuracy AUCs improved against no EWC in every fresh
+replica. Improvements in 9 OvR accuracy and precision were positive on average
+but less uniform, while recall was approximately unchanged.
+
+The adaptive and fixed-$.05$ trajectories were exactly equal at all 500 fresh
+replica-step points because adaptive $\pi_t$ remained at its $.05$ lower bound.
+Accordingly, both conditions proceed to later work, but with different claims:
+fixed $.05$ is the confirmed practical policy; adaptive $\pi$ remains a
+diagnostic and a candidate for a future variable-speed or variable-curvature
+path.
+
 NLL remains the primary proper scoring rule. New-schema runs also record the
 multiclass Brier score and 15-bin, equal-width maximum-probability expected
 calibration error during the existing holdout pass; logits are not stored.
@@ -365,3 +409,31 @@ on historical trajectory timing. The older Phase 9 command center retains its
 legacy `estimated_gpu_hours` field; do not interpret that label as measured GPU
 occupancy. A future accelerator-consumption claim requires CUDA-event timing or
 sampled device utilization.
+
+## Plan 3 proposed controls
+
+Plan 3 holds the accepted `m=8`, 100-point path, rank-8-plus-diagonal summary,
+and 50-iteration optimizer budget fixed. Factors are staged rather than crossed
+in one grid.
+
+| Condition family | Meaning | Role |
+|---|---|---|
+| Current only | Current batch, no EWC, no replay | Primary no-history control |
+| EWC/no LFU | Fixed $\pi=.05$ compressed summary | Constant-memory reference |
+| Bounded replay | FIFO capacities 8, 32, and 128 | Replay-capacity screen |
+| Unbounded replay | Retain all online observations | Expected online-history upper control |
+| Memory-matched replay | Replay capacity derived from EWC persistent bytes | Storage-matched control |
+| Hybrid | Active FIFO replay; evictions enter a disjoint EWC archive | Compression-plus-replay treatment |
+| LFU variants | No LFU, AC-only diagnostic, and full LFU | Fisher-update isolation |
+
+At each update, replay fits the current batch once together with the pre-update
+buffer. The current batch enters the buffer after an accepted fit. Pure bounded
+replay discards FIFO evictions; hybrid replay compresses each eviction into the
+archive exactly once. Unbounded replay never evicts and reaches at most 800
+online observations here. It does not replay the original initialization
+dataset, so it is not a full-data retraining oracle.
+
+Plan 3 reports logical observation bytes even when MNIST indices are stored as
+an implementation shortcut. Persistent learner state, peak working memory,
+repeated optimizer presentations, unique exposure, wall time, and CUDA elapsed
+time remain distinct quantities.

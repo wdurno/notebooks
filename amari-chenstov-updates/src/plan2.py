@@ -271,8 +271,8 @@ def load_plan2_spec(path: str | Path) -> Plan2Spec:
             )
         )
     controls = [condition for condition in conditions if condition.kind == "control"]
-    if len(controls) != 1:
-        raise Plan2Error("Plan 2 requires exactly one primary control condition")
+    if len(controls) > 1:
+        raise Plan2Error("Plan 2 permits at most one primary control condition")
 
     return Plan2Spec(
         path=spec_path,
@@ -362,7 +362,12 @@ def build_plan2_bundle(
     entries = []
     configs: dict[str, dict[str, Any]] = {}
     control_name = next(
-        condition.name for condition in spec.conditions if condition.kind == "control"
+        (
+            condition.name
+            for condition in spec.conditions
+            if condition.kind == "control"
+        ),
+        None,
     )
     for replica_index in replicas:
         source_entry, source_mapping = sources[replica_index]
@@ -444,14 +449,15 @@ def build_plan2_bundle(
                 entries.append(entry)
                 cell_entries.append(entry)
                 configs[entry_id] = mapping
-            control_run_id = next(
-                entry["run_id"]
-                for entry in cell_entries
-                if entry["condition"] == control_name
-            )
-            for entry in cell_entries:
-                if entry["kind"] == "treatment":
-                    entry["control_run_id"] = control_run_id
+            if control_name is not None:
+                control_run_id = next(
+                    entry["run_id"]
+                    for entry in cell_entries
+                    if entry["condition"] == control_name
+                )
+                for entry in cell_entries:
+                    if entry["kind"] == "treatment":
+                        entry["control_run_id"] = control_run_id
 
     entries.sort(
         key=lambda row: (
@@ -485,10 +491,12 @@ def build_plan2_bundle(
         "replica_count": len(replicas),
         "samples_per_step_count": len(samples),
         "condition_count": len(spec.conditions),
-        "derived_bundle_count": sum(
-            row["samples_per_step"] < row["master_samples_per_step"]
-            for row in entries
-            if row["condition"] == control_name
+        "derived_bundle_count": len(
+            {
+                row["replica_bundle_id"]
+                for row in entries
+                if row["samples_per_step"] < row["master_samples_per_step"]
+            }
         ),
         "new_initialization_fit_count": 0,
         "estimated_seconds": sum(

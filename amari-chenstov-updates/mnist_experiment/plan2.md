@@ -65,11 +65,11 @@ documented command suitable for `tmux`.
 |---|---|---|
 | 0 | Regime and measurement contracts | Complete |
 | 1 | Nested low-data streams and pipeline hardening | Complete |
-| 2 | Coarse sample-size boundary screen | In progress |
-| 3 | Boundary selection and focused bracketing | Pending |
-| 4 | Controller recalibration in the selected regime | Pending |
-| 5 | Confirmatory target-regime replication | Pending |
-| 6 | Plan 3 handoff package | Pending |
+| 2 | Coarse sample-size boundary screen | Complete |
+| 3 | Boundary selection and focused bracketing | Complete |
+| 4 | Controller recalibration in the selected regime | Complete |
+| 5 | Confirmatory target-regime replication | Complete |
+| 6 | Plan 3 handoff package | Complete |
 
 ## Governing experimental design
 
@@ -662,7 +662,7 @@ scientifically interpretable intervention.
 
 ### Pre-launch decision
 
-**Status:** Compute complete; check-in pending (2026-08-16)
+**Status:** Complete (2026-08-16)
 
 - Retain $m\in\{8,16,32\}$ and add replicas 4 and 5, producing 18 new paired
   trajectories across the three principal conditions. Existing replicas 1
@@ -715,6 +715,9 @@ recalibration. Preserve the EDM as an interval rather than claiming a precise
 threefold gain; narrow it later only if that precision changes an application
 decision.
 
+**Gate decision:** accepted $m=8$ and advanced to Phase 4. The strict joint
+EDM remains an interval, and no extra Phase 3 replicas are requested.
+
 ### Verification
 
 - The selected candidate is not based solely on NLL degradation.
@@ -740,6 +743,97 @@ Choose exactly one of:
 
 Determine whether the plug-in controller can use the selected low-data regime
 as effectively as a simple fixed EWC weight.
+
+### Pre-launch decision
+
+**Status:** Complete (2026-08-16)
+
+- Phase 4A screens $h\in\{.05,.10,.20,.40\}$ at $m=8$ with five paired
+  replicas. Reuse the completed $h=.10$, fixed-EWC, and no-EWC trajectories;
+  execute only the 15 missing adaptive trajectories.
+- The initial expanded bundle `plan2-low-data__r0001-r0005__967e09afc995` was
+  superseded before execution because schema-8 regeneration would have
+  needlessly duplicated nine schema-7-plus-sidecar controls. It remains an
+  immutable intention but is excluded from execution. The replacement bundle
+  contains only the three missing adaptive conditions and pairs them during
+  analysis by replica and stream provenance.
+- Keep the 100-point path, rank-8-plus-diagonal representation, no-LFU Fisher
+  recursion, $K=50$ optimizer budget, $\pi_{\min}=.05$, and
+  $\pi_{\max}=.95$ fixed.
+- Interpret each $h$ as an applied policy package because it controls both
+  trend responsiveness and cold-start duration.
+- Select $h$ using the four primary expected trajectories, proper scoring and
+  calibration, non-nine retention, controller diagnostics, and paired
+  variability. No single endpoint or recall trajectory decides the screen.
+- Phase 4B is conditional. If the selected controller remains materially
+  pinned to $\pi_{\min}$, screen $\pi_{\min}\in\{.01,.05,.10\}$ only at the
+  selected $h$, reusing the center value and executing ten missing trajectories.
+
+### Half-life compute record
+
+- Immutable bundle `plan2-low-data__r0001-r0005__292a833830f0` completed all
+  15 missing trajectories without run failures, numerical rejection, hard
+  freezes, spectral fallbacks, or materially negative eigenvalues.
+- At the last state below $p=.5$, $h=.20$ obtained 9 OvR accuracy $.831$,
+  precision $.824$, recall $.848$, environmental accuracy $.752$, NLL $.901$,
+  Brier score $.485$, ECE $.162$, and non-nine accuracy $.657$.
+- $h=.20$ and $h=.40$ were operationally indistinguishable over the first half
+  of the path. Their paired midpoint differences were below $.003$ on every
+  reported predictive or proper-scoring metric. Select $h=.20$ because it has
+  the shorter cold start and therefore preserves more responsiveness without a
+  measured loss.
+- $h=.05$ was materially worse, while $h=.10$ remained competitive but had
+  weaker midpoint environmental accuracy, proper scores, calibration, and
+  retention than $h=.20$.
+- The selected $h=.20$ controller occupied $\pi_{\min}=.05$ on 99.2% of
+  first-half points; $h=.40$ occupied it on 100%. The lower bound therefore
+  obscures the controller formula and triggers Phase 4B.
+
+**Phase 4B decision:** hold $h=.20$ fixed and add only
+$\pi_{\min}\in\{.01,.10\}$ around the completed $.05$ center, using the same
+five replicas and all other Phase 4 factors unchanged.
+
+### Lower-bound compute record
+
+- Immutable bundle `plan2-low-data__r0001-r0005__0c4eebbf40db` completed all
+  ten requested trajectories without numerical or artifact failures.
+- Lowering $\pi_{\min}$ to $.01$ destabilized the feedback loop: first-half
+  applied $\pi_t$ averaged $.121$ with standard deviation $.160$, trace error
+  increased sharply, and midpoint environmental accuracy fell to $.589$.
+- Raising $\pi_{\min}$ to $.10$ pinned every point to $.10$ and reproduced the
+  fixed-$\pi=.10$ learner exactly. This is a useful implementation audit, not
+  evidence for successful adaptation.
+- The $.05$ center remained best, but it was bound-active on 99.6% of all path
+  points. The $h=.40$ condition was bound-active at $.05$ on every point and is
+  therefore behaviorally fixed, despite retaining an adaptive configuration.
+
+**Begged control:** run one explicit fixed-$\pi=.05$ five-replica condition.
+It should reproduce the realized $h=.40$ learner exactly. Use this audit to
+separate the value of the $.05$ composition from the value of the plug-in
+controller before selecting the Phase 5 policy.
+
+### Fixed-policy audit and decision
+
+- Immutable bundle `plan2-low-data__r0001-r0005__69aea5f9bdc3` completed all
+  five explicit fixed-$\pi=.05$ trajectories without numerical or artifact
+  failures.
+- The fixed policy reproduced `adaptive-ewc-h040` exactly at all 500 paired
+  replica-step points. Parameter hashes, parameter norms, applied EWC and
+  Fisher weights, predictive metrics, proper scores, calibration, Fisher
+  error, and storage diagnostics all matched.
+- At the last state below $p=.5$, fixed $\pi=.05$ obtained 9 OvR accuracy
+  $.831$, precision $.824$, recall $.846$, environmental accuracy $.750$,
+  NLL $.904$, Brier score $.487$, ECE $.163$, and non-nine accuracy $.655$.
+- The $h=.20$ plug-in policy was nearly fixed as well: only two of 500 points
+  rose above $.05$, with a maximum applied value of $.0516$. Lowering the
+  bound did not uncover a stable controller, while raising it reproduced the
+  corresponding fixed policy.
+
+**Gate decision:** carry explicit fixed $\pi=.05$ into Phase 5 as the selected
+applied policy, retain fixed $\pi=.10$ as a mechanism comparator, and classify
+the plug-in controller as unresolved in this low-data regime. The adaptive
+conditions show that $.05$ is a useful composition weight here; they do not
+establish that the current trend-and-trace formula selected it.
 
 ### Scope
 
@@ -786,12 +880,70 @@ plug-in controller as unresolved rather than forcing it into Plan 3.
 Verify that the selected low-data regime and EWC advantage are reproducible
 enough to justify the broader Plan 3 experiment.
 
+### Pre-launch decision
+
+**Status:** Complete (2026-08-17)
+
+- Use five fresh replicas, 6 through 10. Each receives an independent
+  early-stopped $p=0$ fit, initial Fisher summary, stream, and reference path.
+  Replicas 1 through 5 selected the Phase 4 settings and are not reused as
+  confirmatory statistical units.
+- Hold $m=8$, the 100-point path, rank-8-plus-diagonal representation,
+  no-LFU Fisher recursion, and optimizer budget $K=50$ fixed.
+- Confirm four paired conditions: no EWC, fixed $\pi=.05$, adaptive
+  $h=.20$ with $\pi_{\min}=.05$, and fixed $\pi=.10$.
+- Treat fixed $\pi=.05$ as the selected practical policy. Retain adaptive
+  $\pi$ as a forward-looking policy whose value may emerge on more dynamic
+  manifolds; it need not beat fixed $.05$ on this path, but material harm must
+  remain visible. Fixed $.10$ measures sensitivity to the composition weight.
+- Generate only one Phase 9 oracle anchor per fresh replica. Do not execute the
+  seven unrelated controller-screen cells used solely to define the reusable
+  source configuration.
+- Estimated sequential wall time is approximately 6.25 hours: 4.2 hours for
+  five reference paths, about 32 minutes for initialization and source-anchor
+  trajectories, and about 1.6 hours for the 20 confirmatory trajectories.
+
+### Compute and result record
+
+- Source bundle `phase9-initial__r0006-r0010__065c98b1061d` completed exactly
+  five requested oracle anchors, one per fresh replica. The 35 unrelated
+  controller-screen cells were intentionally not executed.
+- Confirmation bundle `plan2-low-data__r0006-r0010__7bb69d3a9424` completed all
+  20 trajectories with exit status zero. Every derived stream and reference
+  dependency is complete; no run failed or required numerical recovery.
+- Over $p<.5$, fixed $\pi=.05$ and adaptive $h=.20$ obtained mean
+  environmental-accuracy AUC $.682$ versus $.532$ for no EWC. The paired
+  improvement was positive in every fresh replica, averaging $.151$ with
+  standard deviation $.155$.
+- Their corresponding 9 OvR, precision, and recall AUCs were $.837$, $.579$,
+  and $.573$, versus $.798$, $.553$, and $.570$ for no EWC. These 9-specific
+  paired effects were positive on average but varied across replicas.
+- Proper scoring and retention replicated cleanly. Relative to no EWC, the
+  paired first-half AUC differences were $-6.929$ for environmental NLL,
+  $-.328$ for Brier score, $-.215$ for ECE, and $+.187$ for non-nine accuracy;
+  every fresh replica improved in the favorable direction on all four.
+- At the last state below $p=.5$, the $.05$ policies obtained 9 OvR accuracy
+  $.821$, precision $.779$, recall $.899$, environmental accuracy $.763$, NLL
+  $.824$, Brier score $.504$, ECE $.152$, and non-nine accuracy $.630$.
+- Adaptive $h=.20$ occupied $\pi_{\min}=.05$ on every point and reproduced
+  fixed $\pi=.05$ exactly at all 500 paired replica-step points. This confirms
+  the selected EWC weight, but still treats adaptive $\pi$ as a diagnostic on
+  the current path rather than evidence of successful variable actuation.
+- Fixed $\pi=.10$ improved NLL and calibration over no EWC but was materially
+  weaker than $.05$ on acquisition, environmental accuracy, and retention.
+
+**Gate decision:** accept the $m=8$, rank-8-plus-diagonal, no-LFU regime as the
+foundation for Plan 3. Carry both fixed $\pi=.05$ and adaptive $h=.20$ with
+$\pi_{\min}=.05$: fixed $.05$ is the confirmed practical policy, while the
+adaptive condition remains a forward-looking diagnostic for later paths with
+more variable speed or curvature.
+
 ### Scope
 
 1. Freeze a minimal confirmatory package containing:
    - `no-ewc-pi100`;
+   - `fixed-ewc-pi005` as the selected policy;
    - `fixed-ewc-pi010`;
-   - the selected applied EWC controller, if distinct;
    - no LFU;
    - rank-8 plus diagonal;
    - the selected $m$, path design, and optimizer budget.
@@ -869,6 +1021,52 @@ application-motivated comparison.
 - The handoff distinguishes measured findings from assumptions and deferred
   questions.
 - No long Plan 3 experiment starts as part of this phase.
+
+### Completion record
+
+**Status:** Complete (2026-08-17)
+
+- Added [plan3.md](plan3.md), with eight gated phases sized around replay,
+  hybrid-archive, LFU, and deployment decisions. Tricky replay and archive
+  implementations each receive a smoke-and-review phase before a long run.
+- Froze replicas 6 through 10 through source bundle
+  `phase9-initial__r0006-r0010__065c98b1061d` and confirmation bundle
+  `plan2-low-data__r0006-r0010__7bb69d3a9424`. New Plan 3 conditions reuse
+  those initialization, stream, partition, holdout, and reference identities
+  while writing new immutable runs.
+- Recorded the accepted $m=8$, 100-point path, 50-iteration optimizer,
+  rank-8-plus-diagonal summary, fixed $\pi=.05$, adaptive $h=.20$ diagnostic,
+  and no-LFU baseline. Rejected and non-promoted Plan 2 regions are listed so
+  later work does not reopen them accidentally.
+- Defined a first replay screen with FIFO capacities 8, 32, 128, and an
+  unbounded online-history control. The unbounded condition retains at most
+  800 observations here and is distinct from full retraining on the original
+  initialization data.
+- Defined memory-matched replay and a hybrid whose active buffer is disjoint
+  from the EWC archive. Evicted observations enter the archive once. The exact
+  memory-matched capacity will be derived from measured persistent bytes after
+  implementation rather than selected for predictive performance.
+- Added a validated planning-only specification and
+  `python -m mnist_experiment.plan3_command_center preview`. It has no
+  `prepare` or `run` command and creates no artifacts. The replay screen
+  contains 20 new runs and currently previews at 1.64 sequential wall-hours
+  and 1.12 GiB. All contingent later stages total at most 75 new runs, 5.50
+  planning hours, and 4.19 GiB before gate-based pruning.
+- The cost model is explicitly provisional: replay timing, LFU incremental
+  cost, deployment diagnostic savings, and the selected/memory-matched budget
+  placeholders must be recalibrated during Plan 3.
+- Added concise human condition/command documentation and separate
+  [AGENTS_PLAN3.md](AGENTS_PLAN3.md) implementation invariants.
+- `python -m pytest -q test/unit/test_plan3.py`: 5 passed.
+- `python -m pytest -q test/unit/test_plan2.py test/unit/test_phase9.py`: 19
+  passed.
+- `python -m pytest -q test/unit`: 231 passed.
+- `python -m mnist_experiment.plan3_command_center preview --stages
+  replay-screen --details`: completed without writing run artifacts.
+
+**Gate decision:** Plan 2 is complete. Begin Plan 3 only after reviewing the
+replay timing and hybrid weighting contracts in its Phase 0; no Plan 3 compute
+experiment was launched here.
 
 ### Final check-in
 

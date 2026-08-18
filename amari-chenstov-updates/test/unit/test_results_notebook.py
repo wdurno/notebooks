@@ -47,6 +47,14 @@ def test_results_notebook_is_valid_and_artifact_only() -> None:
         for cell in notebook["cells"]
     )
     assert any(
+        "Phase 4 controller recalibration" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+    assert any(
+        "Phase 5 independent confirmation" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+    assert any(
         "instantaneous empirical" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )

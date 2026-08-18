@@ -107,14 +107,32 @@ def _ordered_entries(bundle: Phase9Bundle) -> list[dict[str, Any]]:
     )
 
 
+def _execution_entries(
+    bundle: Phase9Bundle,
+    *,
+    oracle_anchors_only: bool,
+) -> list[dict[str, Any]]:
+    entries = _ordered_entries(bundle)
+    if oracle_anchors_only:
+        entries = [entry for entry in entries if entry["is_oracle_anchor"]]
+    return entries
+
+
 def _execute_bundle(
     bundle: Phase9Bundle,
     *,
     resume: bool,
     download: bool,
     max_runs: int | None,
+    oracle_anchors_only: bool,
 ) -> None:
     rows = phase9_status_rows(bundle, REPO_ROOT)
+    entries = _execution_entries(
+        bundle,
+        oracle_anchors_only=oracle_anchors_only,
+    )
+    selected_entry_ids = {entry["entry_id"] for entry in entries}
+    rows = [row for row in rows if row["entry_id"] in selected_entry_ids]
     invalid = [
         row
         for row in rows
@@ -148,7 +166,7 @@ def _execute_bundle(
     rows_by_entry = {row["entry_id"]: row for row in rows}
     initialized = set()
     executed = 0
-    for entry in _ordered_entries(bundle):
+    for entry in entries:
         row = rows_by_entry[entry["entry_id"]]
         design = entry["replica_bundle_id"]
         if design not in initialized:
@@ -217,6 +235,11 @@ def parse_arguments() -> argparse.Namespace:
     run.add_argument("--resume", action="store_true")
     run.add_argument("--download", action="store_true")
     run.add_argument("--max-runs", type=int)
+    run.add_argument(
+        "--oracle-anchors-only",
+        action="store_true",
+        help="initialize replicas and run only each design's reference-path anchor",
+    )
     return parser.parse_args()
 
 
@@ -257,6 +280,7 @@ def main() -> None:
         resume=arguments.resume,
         download=arguments.download,
         max_runs=arguments.max_runs,
+        oracle_anchors_only=arguments.oracle_anchors_only,
     )
 
 

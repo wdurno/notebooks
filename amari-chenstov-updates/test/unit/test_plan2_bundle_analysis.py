@@ -1,11 +1,14 @@
 import pytest
 
 from src.plan2_analysis import (
+    _accepted_bundles,
+    _deduplicated_entries,
     combined_plan2_trajectory_rows,
     plan2_condition_semantics_rows,
     plan2_m128_anchor_rows,
     plan2_progress_rows,
 )
+from src.plan2 import Plan2Bundle
 from src.results_analysis import AnalysisArtifactError
 
 
@@ -78,6 +81,12 @@ def test_condition_semantics_keep_learning_and_fisher_memory_distinct() -> None:
     assert rows["adaptive-ewc-h010"]["auxiliary_fisher_process"] == (
         "recursive Fisher summary"
     )
+    assert rows["adaptive-ewc-h005"]["auxiliary_fisher_process"] == (
+        "recursive Fisher summary"
+    )
+    assert rows["adaptive-ewc-h040"]["original_learning_process"] == (
+        "current batch plus EWC-compressed history"
+    )
 
 
 def test_m128_anchor_mapping_fails_clearly_when_condition_is_missing() -> None:
@@ -130,3 +139,56 @@ def test_combined_plan2_rows_reject_duplicate_points() -> None:
     }
     with pytest.raises(AnalysisArtifactError, match="duplicate"):
         combined_plan2_trajectory_rows([row], [row])
+
+
+def test_deduplication_allows_external_pairing_to_supersede_bundle_control() -> None:
+    common = {
+        "run_id": "adaptive-run",
+        "condition": "adaptive-ewc-h005",
+        "replica_index": 1,
+        "samples_per_step": 8,
+        "kind": "treatment",
+    }
+    internal = Plan2Bundle(
+        path=None,
+        manifest={
+            "bundle_id": "internal",
+            "spec_name": "plan2-low-data",
+            "entries": [{**common, "control_run_id": "unused-control"}],
+        },
+    )
+    extension = Plan2Bundle(
+        path=None,
+        manifest={
+            "bundle_id": "extension",
+            "spec_name": "plan2-low-data",
+            "entries": [{**common, "control_run_id": None}],
+        },
+    )
+
+    assert _deduplicated_entries((internal, extension)) == [
+        {
+            **common,
+            "control_run_id": None,
+            "bundle_ids": ["internal", "extension"],
+            "spec_name": "plan2-low-data",
+            "declared_control_run_ids": ["unused-control"],
+            "external_control_pairing": True,
+        }
+    ]
+
+
+def test_accepted_bundles_exclude_prelaunch_superseded_intention() -> None:
+    superseded = Plan2Bundle(
+        path=None,
+        manifest={
+            "bundle_id": "plan2-low-data__r0001-r0005__967e09afc995",
+            "entries": [],
+        },
+    )
+    accepted = Plan2Bundle(
+        path=None,
+        manifest={"bundle_id": "accepted", "entries": []},
+    )
+
+    assert _accepted_bundles((superseded, accepted)) == [accepted]
