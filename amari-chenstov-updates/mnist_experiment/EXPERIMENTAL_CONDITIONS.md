@@ -421,19 +421,103 @@ in one grid.
 | Current only | Current batch, no EWC, no replay | Primary no-history control |
 | EWC/no LFU | Fixed $\pi=.05$ compressed summary | Constant-memory reference |
 | Bounded replay | FIFO capacities 8, 32, and 128 | Replay-capacity screen |
-| Unbounded replay | Retain all online observations | Expected online-history upper control |
-| Memory-matched replay | Replay capacity derived from EWC persistent bytes | Storage-matched control |
+| Unbounded replay | Retain all online observations | Unconstrained-memory control |
+| Memory-matched replay | Replay capacity derived from canonical EWC bytes | Storage-matched control |
 | Hybrid | Active FIFO replay; evictions enter a disjoint EWC archive | Compression-plus-replay treatment |
 | LFU variants | No LFU, AC-only diagnostic, and full LFU | Fisher-update isolation |
 
 At each update, replay fits the current batch once together with the pre-update
-buffer. The current batch enters the buffer after an accepted fit. Pure bounded
+buffer. The current batch enters the buffer after a successfully completed fit.
+An aborted transaction inserts nothing. Pure bounded
 replay discards FIFO evictions; hybrid replay compresses each eviction into the
 archive exactly once. Unbounded replay never evicts and reaches at most 800
 online observations here. It does not replay the original initialization
 dataset, so it is not a full-data retraining oracle.
 
+The hybrid archive has its own anchor: the parameter estimate belonging to the
+archive-only EWC summary. The main learner is fitted against that anchor using
+the current batch and active replay, but its fitted parameters never recenter
+the archive. Afterward, only FIFO evictions are consolidated against the prior
+archive, and their score Fisher is evaluated at the resulting archive anchor.
+This gives every online event the disjoint lifecycle current batch, exact
+replay, then compressed archive. Phase 4 includes capacities 8, 25, and 32 so
+the incremental value of one replay batch can be separated from larger hybrid
+windows.
+
+The online stream samples source MNIST indices with replacement. Repeated
+indices remain distinct arrival events, occupy distinct FIFO positions, and
+are not deduplicated.
+
 Plan 3 reports logical observation bytes even when MNIST indices are stored as
-an implementation shortcut. Persistent learner state, peak working memory,
-repeated optimizer presentations, unique exposure, wall time, and CUDA elapsed
-time remain distinct quantities.
+an implementation shortcut. Each canonical replay item costs 800 bytes: 784
+uint8 pixels, an int64 label, and an int64 identity. With 24 bytes of FIFO
+metadata, the 20,480-byte fixed-policy rank-8-plus-diagonal EWC summary matches
+25 replay observations. Persistent learner state, peak working memory, repeated
+optimizer presentations, unique exposure, wall time, and CUDA elapsed time
+remain distinct quantities.
+
+### Phase 4 history frontier
+
+Phase 4 compared the fixed-$.05$ EWC summary, pure replay, and clean no-LFU
+hybrids over five paired replicas. The table reports normalized AUC over
+$0\leq p<.5$.
+
+| Condition | Environment accuracy | 9 OvR accuracy | 9 precision | 9 recall | NLL | Persistent bytes |
+|---|---:|---:|---:|---:|---:|---:|
+| EWC | .682 | .838 | .587 | .555 | 1.54 | 20,480 |
+| Replay B8 | .650 | .867 | .667 | .632 | 8.90 | 6,424 |
+| Replay B25 | .691 | .882 | .700 | .644 | 8.48 | 20,024 |
+| Replay B32 | .718 | .888 | .714 | .648 | 7.68 | 25,624 |
+| Hybrid B8 | .738 | .870 | .677 | .631 | 1.44 | 26,904 |
+| Hybrid B25 | .768 | .887 | .716 | .639 | 1.22 | 40,504 |
+| Hybrid B32 | .774 | .890 | .723 | .639 | 1.19 | 46,104 |
+| Unbounded replay | .772 | .917 | .812 | .636 | 6.11 | 633,624 |
+
+Hybrid B32 is the bounded Phase 5 selection. It approximately matched
+unbounded replay's environmental accuracy with much lower storage and better
+calibration, but unbounded replay retained a clear advantage in digit-9 OvR
+accuracy and precision. Hybrid B8 and B25 remain meaningful lower-memory
+frontier points rather than failed conditions.
+
+### Phase 5 LFU isolation
+
+Phase 5 holds `m=8`, fixed $\pi=.05$, rank 8 plus diagonal, the 100-point
+path, optimizer budget, stream, and initialization fixed. It reuses the
+completed no-LFU EWC and Hybrid B32 trajectories and adds AC-only and full-LFU
+EWC plus full-LFU Hybrid B32. The hybrid LFU is evaluated at the updated
+archive anchor using the realized archive displacement and only the newly
+evicted observations; active replay observations remain outside the archive.
+
+The LFU treatments use the accepted eight-step directional ridge. Their
+persistent-memory charge includes its reference direction and two dense
+matrix numerators, not only the rank-8 Fisher summary. Report predictive
+effects together with score-gradient/HVP counts, derivative time, correction
+magnitude, direction resets, and pre-projection PSD diagnostics. Phase 5 is a
+mechanism screen; Phase 6 removes scientific diagnostics before measuring
+deployment cost.
+
+The replica-6 preflight failed this gate. In the primary region, full-LFU
+Hybrid B32 projected away 33.5% of candidate Frobenius norm on average and its
+directional ridge reset on 97.8% of updates. EWC AC-only and full-LFU
+candidates were materially indefinite on 92% and 98% of steps. These are
+failed treatment diagnostics, not missing-data estimates; the remaining
+replicas were deliberately not run.
+
+### Phase 6 deployment frontier
+
+Phase 6 reruns seven deployment-form conditions without a reference-optimum
+path or online high-sample Fisher diagnostics. EWC and hybrid conditions use
+rank-8-plus-diagonal Fisher EMA without LFU. Fixed conditions use $\pi=.05$;
+adaptive conditions use $h=.20$, $\pi_{\min}=.05$, and $\pi_{\max}=.95$.
+For adaptive hybrids, one realized $\pi_t$ weights learner EWC, archive
+consolidation, and Fisher EMA.
+
+The primary analysis is normalized AUC over $0\leq p<.5$. Fixed Hybrid B32 is
+the strongest constrained-memory all-rounder: it improves environmental
+accuracy and calibration over EWC or Replay B32 while using 46,104 logical
+bytes. Unbounded replay uses 633,624 bytes and retains higher 9 OvR accuracy
+and precision, but is tied with the hybrid on environmental-accuracy AUC.
+Replay B32 is the cheapest useful learner at 11.1 mean learner seconds;
+Hybrid B32 needs 48.6 seconds because archive consolidation adds a second fit.
+Adaptive EWC exactly equals fixed EWC here, and adaptive hybrid differs only
+negligibly because the controller remains near its lower bound.

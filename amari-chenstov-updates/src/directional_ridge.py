@@ -111,6 +111,120 @@ class DirectionalRidgeLFUState:
         self.warmup_mass = 0.0
         self.prior_mass = 0.0
 
+    def state_mapping(self) -> dict[str, Any]:
+        """Return the complete recursive state needed for exact resumption."""
+
+        return {
+            "schema_version": 1,
+            "half_life_steps": self.half_life_steps,
+            "amplitude_epsilon": self.amplitude_epsilon,
+            "coherence_threshold": self.coherence_threshold,
+            "reference_direction": (
+                None
+                if self.reference_direction is None
+                else self.reference_direction.detach().cpu().clone()
+            ),
+            "ac_numerator": (
+                None
+                if self.ac_numerator is None
+                else self.ac_numerator.detach().cpu().clone()
+            ),
+            "residual_numerator": (
+                None
+                if self.residual_numerator is None
+                else self.residual_numerator.detach().cpu().clone()
+            ),
+            "amplitude_denominator": (
+                None
+                if self.amplitude_denominator is None
+                else self.amplitude_denominator.detach().cpu().clone()
+            ),
+            "segment_eligible_steps": self.segment_eligible_steps,
+            "warmup_mass": self.warmup_mass,
+            "prior_mass": self.prior_mass,
+        }
+
+    @classmethod
+    def from_state_mapping(
+        cls,
+        value: dict[str, Any],
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> "DirectionalRidgeLFUState":
+        if value.get("schema_version") != 1:
+            raise ValueError("unsupported directional-ridge state schema")
+        state = cls(
+            half_life_steps=float(value["half_life_steps"]),
+            amplitude_epsilon=float(value["amplitude_epsilon"]),
+            coherence_threshold=float(value["coherence_threshold"]),
+        )
+        tensors = {
+            name: (
+                None
+                if value.get(name) is None
+                else value[name].to(device=device, dtype=dtype)
+            )
+            for name in (
+                "reference_direction",
+                "ac_numerator",
+                "residual_numerator",
+                "amplitude_denominator",
+            )
+        }
+        present = {name for name, tensor in tensors.items() if tensor is not None}
+        if present and present != set(tensors):
+            raise ValueError("directional-ridge tensors must be all present or absent")
+        if present:
+            direction = tensors["reference_direction"]
+            ac = tensors["ac_numerator"]
+            residual = tensors["residual_numerator"]
+            denominator = tensors["amplitude_denominator"]
+            assert direction is not None
+            assert ac is not None
+            assert residual is not None
+            assert denominator is not None
+            parameter_count = direction.numel()
+            if (
+                direction.ndim != 1
+                or ac.shape != (parameter_count, parameter_count)
+                or residual.shape != ac.shape
+                or denominator.numel() != 1
+                or not all(
+                    torch.isfinite(tensor).all()
+                    for tensor in (direction, ac, residual, denominator)
+                )
+            ):
+                raise ValueError("directional-ridge tensors are incompatible")
+            state.reference_direction = direction
+            state.ac_numerator = ac
+            state.residual_numerator = residual
+            state.amplitude_denominator = denominator.reshape(())
+        state.segment_eligible_steps = int(value["segment_eligible_steps"])
+        state.warmup_mass = float(value["warmup_mass"])
+        state.prior_mass = float(value["prior_mass"])
+        if (
+            state.segment_eligible_steps < 0
+            or not math.isfinite(state.warmup_mass)
+            or not math.isfinite(state.prior_mass)
+            or state.warmup_mass < 0
+            or state.prior_mass < 0
+        ):
+            raise ValueError("directional-ridge scalar state is invalid")
+        return state
+
+    def tensor_bytes(self) -> int:
+        return sum(
+            tensor.numel() * tensor.element_size()
+            for tensor in (
+                self.reference_direction,
+                self.ac_numerator,
+                self.residual_numerator,
+                self.amplitude_denominator,
+            )
+            if tensor is not None
+        )
+
     @staticmethod
     def _validate_inputs(
         direction: Tensor,

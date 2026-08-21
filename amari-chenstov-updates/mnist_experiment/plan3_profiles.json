@@ -2,8 +2,12 @@
   "cost_model": {
     "estimated_artifact_bytes": 60000000,
     "fixed_seconds_per_run": 220.0,
-    "observation_payload_bytes": 792,
+    "observation_payload_bytes": 800,
     "parameter_scalar_bytes": 4,
+    "replay_estimated_artifact_bytes": 1700000,
+    "replay_fixed_metadata_bytes": 24,
+    "replay_fixed_seconds_per_run": 46.78900167600386,
+    "replay_seconds_per_optimizer_observation": 0.0032139186698443446,
     "seconds_per_optimizer_observation": 0.0052
   },
   "handoff": {
@@ -19,7 +23,6 @@
   },
   "name": "plan3-main",
   "planning_placeholders": {
-    "memory_matched_replay_budget": 32,
     "selected_replay_budget": 32
   },
   "schema_version": 1,
@@ -98,21 +101,21 @@
           "comparison": "current-only",
           "controller": "not-applicable",
           "data_mode": "replay",
-          "estimand": "Expected online-history ceiling when no encountered online observation is evicted.",
+          "estimand": "Behavior when memory is unconstrained and no encountered online observation is evicted.",
           "fisher_update": "none",
           "name": "replay-unbounded",
           "replay_budget": "unbounded",
-          "role": "upper-control",
+          "role": "unconstrained-memory-control",
           "source": "new",
           "uses_ewc": false
         }
       ],
-      "decision": "Select the smallest bounded replay budget on the useful predictive-cost frontier; retain unbounded replay as an upper control.",
+      "decision": "Select the smallest bounded replay budget on the useful predictive-cost frontier; retain unbounded replay as the unconstrained-memory control.",
       "name": "replay-screen",
       "plan_phase": 2
     },
     {
-      "check_in": "Select a history mechanism and verify that measured persistent bytes, rather than nominal observation counts, define memory matching.",
+      "check_in": "Select a history mechanism and verify canonical serialized memory matching alongside secondary measured resident bytes.",
       "conditions": [
         {
           "comparison": "current-only",
@@ -130,6 +133,18 @@
           "comparison": "ewc-fixed005-no-lfu",
           "controller": "not-applicable",
           "data_mode": "replay",
+          "estimand": "Pure one-batch replay reference for the smallest hybrid window.",
+          "fisher_update": "none",
+          "name": "replay-b008",
+          "replay_budget": 8,
+          "role": "mechanism-reference",
+          "source": "gate:replay-screen",
+          "uses_ewc": false
+        },
+        {
+          "comparison": "ewc-fixed005-no-lfu",
+          "controller": "not-applicable",
+          "data_mode": "replay",
           "estimand": "Replay performance at the empirically selected bounded capacity.",
           "fisher_update": "none",
           "name": "replay-selected",
@@ -142,13 +157,25 @@
           "comparison": "ewc-fixed005-no-lfu",
           "controller": "not-applicable",
           "data_mode": "replay",
-          "estimand": "Replay performance when its measured persistent bytes match the EWC summary.",
+          "estimand": "Replay performance when its canonical serialized persistent bytes match the EWC summary.",
           "fisher_update": "none",
           "name": "replay-memory-matched",
           "replay_budget": "memory-matched",
           "role": "treatment",
           "source": "new",
           "uses_ewc": false
+        },
+        {
+          "comparison": "replay-b008",
+          "controller": "fixed-005",
+          "data_mode": "hybrid",
+          "estimand": "Incremental value of archiving evictions behind one exact replay batch.",
+          "fisher_update": "none",
+          "name": "hybrid-b008-no-lfu",
+          "replay_budget": 8,
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
         },
         {
           "comparison": "replay-selected",
@@ -178,11 +205,11 @@
           "comparison": "replay-selected",
           "controller": "not-applicable",
           "data_mode": "replay",
-          "estimand": "Loss caused by the selected finite replay capacity relative to retaining all online observations.",
+          "estimand": "Difference caused by the selected finite replay capacity relative to retaining all online observations.",
           "fisher_update": "none",
           "name": "replay-unbounded",
           "replay_budget": "unbounded",
-          "role": "upper-control",
+          "role": "unconstrained-memory-control",
           "source": "gate:replay-screen",
           "uses_ewc": false
         }
@@ -277,23 +304,47 @@
         {
           "comparison": "deployment-current-only",
           "controller": "fixed-005",
-          "data_mode": "gate-selected-ewc",
-          "estimand": "Realized deployment frontier for the selected fixed-controller history mechanism.",
-          "fisher_update": "gate-selected",
-          "name": "deployment-selected-fixed",
-          "replay_budget": "selected",
+          "data_mode": "current",
+          "estimand": "Constant-memory deployment quality and cost of fixed EWC with EMA and no LFU.",
+          "fisher_update": "none",
+          "name": "deployment-ewc-fixed005",
+          "replay_budget": null,
           "role": "treatment",
           "source": "new",
           "uses_ewc": true
         },
         {
-          "comparison": "deployment-selected-fixed",
+          "comparison": "deployment-ewc-fixed005",
+          "controller": "fixed-005",
+          "data_mode": "hybrid",
+          "estimand": "Deployment quality and cost of fixed EWC behind the selected 32-observation replay window.",
+          "fisher_update": "none",
+          "name": "deployment-hybrid-b032-fixed005",
+          "replay_budget": 32,
+          "role": "treatment",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "deployment-ewc-fixed005",
           "controller": "adaptive-h020",
-          "data_mode": "gate-selected-ewc",
-          "estimand": "Portability value and cost of adaptive pi on the selected history mechanism.",
-          "fisher_update": "gate-selected",
-          "name": "deployment-selected-adaptive",
-          "replay_budget": "selected",
+          "data_mode": "current",
+          "estimand": "Oracle-free adaptive-pi diagnostic for constant-memory EWC.",
+          "fisher_update": "none",
+          "name": "deployment-ewc-adaptive-h020",
+          "replay_budget": null,
+          "role": "diagnostic",
+          "source": "new",
+          "uses_ewc": true
+        },
+        {
+          "comparison": "deployment-hybrid-b032-fixed005",
+          "controller": "adaptive-h020",
+          "data_mode": "hybrid",
+          "estimand": "Oracle-free adaptive-pi diagnostic behind the selected replay window.",
+          "fisher_update": "none",
+          "name": "deployment-hybrid-b032-adaptive-h020",
+          "replay_budget": 32,
           "role": "diagnostic",
           "source": "new",
           "uses_ewc": true
@@ -304,21 +355,21 @@
           "data_mode": "replay",
           "estimand": "Realized deployment frontier for the selected pure replay capacity.",
           "fisher_update": "none",
-          "name": "deployment-replay-selected",
-          "replay_budget": "selected",
+          "name": "deployment-replay-b032",
+          "replay_budget": 32,
           "role": "treatment",
           "source": "new",
           "uses_ewc": false
         },
         {
-          "comparison": "deployment-replay-selected",
+          "comparison": "deployment-replay-b032",
           "controller": "not-applicable",
           "data_mode": "replay",
           "estimand": "Predictive and resource gap between selected bounded replay and all online history.",
           "fisher_update": "none",
           "name": "deployment-replay-unbounded",
           "replay_budget": "unbounded",
-          "role": "upper-control",
+          "role": "unconstrained-memory-control",
           "source": "new",
           "uses_ewc": false
         }

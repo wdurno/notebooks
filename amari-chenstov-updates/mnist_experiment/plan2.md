@@ -1039,9 +1039,9 @@ application-motivated comparison.
   and no-LFU baseline. Rejected and non-promoted Plan 2 regions are listed so
   later work does not reopen them accidentally.
 - Defined a first replay screen with FIFO capacities 8, 32, 128, and an
-  unbounded online-history control. The unbounded condition retains at most
-  800 observations here and is distinct from full retraining on the original
-  initialization data.
+  unbounded unconstrained-memory control. The unbounded condition retains at
+  most 800 observations here and is distinct from full retraining on the
+  original initialization data.
 - Defined memory-matched replay and a hybrid whose active buffer is disjoint
   from the EWC archive. Evicted observations enter the archive once. The exact
   memory-matched capacity will be derived from measured persistent bytes after
@@ -1053,8 +1053,9 @@ application-motivated comparison.
   and 1.12 GiB. All contingent later stages total at most 75 new runs, 5.50
   planning hours, and 4.19 GiB before gate-based pruning.
 - The cost model is explicitly provisional: replay timing, LFU incremental
-  cost, deployment diagnostic savings, and the selected/memory-matched budget
-  placeholders must be recalibrated during Plan 3.
+  cost, deployment diagnostic savings, and the selected-budget placeholder
+  must be recalibrated during Plan 3. Memory matching is now derived separately
+  from the canonical persistent-byte contract.
 - Added concise human condition/command documentation and separate
   [AGENTS_PLAN3.md](AGENTS_PLAN3.md) implementation invariants.
 - `python -m pytest -q test/unit/test_plan3.py`: 5 passed.

@@ -136,6 +136,42 @@ def test_mixture_ewc_proposal_records_odds_without_post_scaling() -> None:
     )
 
 
+def test_ewc_proposal_can_penalize_against_a_separate_archive_anchor() -> None:
+    model = nn.Linear(1, 2, bias=False, dtype=torch.float64)
+    with torch.no_grad():
+        model.weight.copy_(torch.tensor([[1.0], [-1.0]], dtype=torch.float64))
+    layout = ParameterLayout.from_module(model)
+    starting = layout.flatten_module(model, detach=True)
+    archive_anchor = torch.zeros_like(starting)
+    inputs = torch.tensor([[1.0], [-1.0]], dtype=torch.float64)
+    targets = torch.tensor([0, 1])
+    fisher = torch.eye(layout.total_numel, dtype=torch.float64)
+    config = OptimizerConfig(
+        name="sgd",
+        learning_rate=0.01,
+        inner_steps=2,
+        ewc_strength=1.0,
+    )
+
+    result = take_ewc_proposal(
+        model,
+        layout,
+        inputs,
+        targets,
+        fisher,
+        config,
+        build_optimizer(model, config),
+        adaptation_weight=0.5,
+        penalty_anchor=archive_anchor,
+    )
+
+    final = layout.flatten_module(model, detach=True)
+    torch.testing.assert_close(result.displacement, final - starting)
+    assert result.ewc_penalty_after > 0.0
+    assert result.objective_decrease > 0.0
+    assert not torch.equal(final, archive_anchor)
+
+
 def test_ewc_proposal_backtracks_through_high_quadratic_curvature() -> None:
     model = nn.Linear(1, 2, bias=False, dtype=torch.float64)
     layout = ParameterLayout.from_module(model)

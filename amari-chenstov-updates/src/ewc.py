@@ -88,6 +88,27 @@ def _flatten_gradients(model: nn.Module) -> Tensor:
     return torch.cat(gradients)
 
 
+def _proposal_vectors(
+    model: nn.Module,
+    layout: ParameterLayout,
+    penalty_anchor: Tensor | None,
+) -> tuple[Tensor, Tensor]:
+    starting_vector = layout.flatten_module(model, detach=True)
+    if penalty_anchor is None:
+        return starting_vector, starting_vector
+    if (
+        penalty_anchor.shape != starting_vector.shape
+        or penalty_anchor.device != starting_vector.device
+        or penalty_anchor.dtype != starting_vector.dtype
+        or not torch.isfinite(penalty_anchor).all()
+    ):
+        raise ValueError(
+            "penalty_anchor must be a finite parameter vector sharing the "
+            "model's shape, dtype, and device"
+        )
+    return starting_vector, penalty_anchor.detach().clone()
+
+
 def mixture_ewc_strength(
     adaptation_weight: float,
     *,
@@ -190,13 +211,14 @@ def _take_lbfgs_proposal(
     optimizer: torch.optim.Optimizer,
     *,
     adaptation_weight: float | None,
+    penalty_anchor: Tensor | None,
 ) -> EWCProposalResult:
     if not isinstance(optimizer, torch.optim.LBFGS):
         raise ValueError("optimizer must be L-BFGS when config.name is 'lbfgs'")
     layout.validate_module(model)
     if inputs.shape[0] != targets.shape[0] or inputs.shape[0] == 0:
         raise ValueError("inputs and targets must have a nonempty shared batch")
-    anchor = layout.flatten_module(model, detach=True)
+    starting_vector, anchor = _proposal_vectors(model, layout, penalty_anchor)
     if fisher.shape != (layout.total_numel, layout.total_numel):
         raise ValueError("Fisher shape does not match the model")
     if fisher.device != anchor.device or fisher.dtype != anchor.dtype:
@@ -278,7 +300,7 @@ def _take_lbfgs_proposal(
         if not torch.isfinite(final_gradient).all():
             raise RuntimeError("final L-BFGS EWC gradient is non-finite")
     except BaseException:
-        layout.copy_vector_to_module(model, anchor)
+        layout.copy_vector_to_module(model, starting_vector)
         optimizer.load_state_dict(original_optimizer_state)
         raise
     finally:
@@ -311,12 +333,13 @@ def _take_lbfgs_proposal(
         torch.finfo(final_gradient.dtype).tiny,
     )
     final_vector = final_parameter_vector.detach().clone()
-    displacement = final_vector - anchor
+    displacement = final_vector - starting_vector
     with torch.no_grad():
+        penalty_displacement = final_vector - anchor
         quadratic = (
-            displacement @ (fisher @ displacement)
+            penalty_displacement @ (fisher @ penalty_displacement)
             if isinstance(fisher, Tensor)
-            else fisher.quadratic(displacement)
+            else fisher.quadratic(penalty_displacement)
         )
         numerical_floor = -100 * torch.finfo(quadratic.dtype).eps
         if float(quadratic) < numerical_floor:
@@ -348,7 +371,7 @@ def _take_lbfgs_proposal(
         final_gradient_max_abs=final_gradient_max_abs,
         relative_final_gradient_norm=relative_final_gradient_norm,
         final_gradient_rms=final_gradient_rms,
-        objective_decrease=float(data_loss_before - objective_after_tensor.detach()),
+        objective_decrease=float(objective_before - objective_after_tensor.detach()),
         stopping_reason=stopping_reason,
     )
     optimizer.zero_grad(set_to_none=True)
@@ -365,14 +388,17 @@ def take_ewc_proposal(
     optimizer: torch.optim.Optimizer,
     *,
     adaptation_weight: float | None = None,
+    penalty_anchor: Tensor | None = None,
 ) -> EWCProposalResult:
-    """Optimize one batch around the current anchor and return its realized move.
+    """Optimize one batch against an EWC anchor and return its realized move.
 
     When ``adaptation_weight`` is supplied, the mean new-data loss is used with
     the equivalent old-to-new odds coefficient
     ``config.ewc_strength * (1 - pi) / pi``. The optimizer's displacement is
     accepted directly; this function never applies a post-optimization
-    multiplication by ``pi``.
+    multiplication by ``pi``. By default the penalty anchor is the model's
+    starting parameter vector. Supplying ``penalty_anchor`` allows a hybrid
+    learner to start elsewhere while retaining an archive-specific EWC center.
     """
 
     config.validate()
@@ -386,11 +412,12 @@ def take_ewc_proposal(
             config,
             optimizer,
             adaptation_weight=adaptation_weight,
+            penalty_anchor=penalty_anchor,
         )
     layout.validate_module(model)
     if inputs.shape[0] != targets.shape[0] or inputs.shape[0] == 0:
         raise ValueError("inputs and targets must have a nonempty shared batch")
-    anchor = layout.flatten_module(model, detach=True)
+    starting_vector, anchor = _proposal_vectors(model, layout, penalty_anchor)
     if fisher.shape != (layout.total_numel, layout.total_numel):
         raise ValueError("Fisher shape does not match the model")
     if fisher.device != anchor.device or fisher.dtype != anchor.dtype:
@@ -412,6 +439,12 @@ def take_ewc_proposal(
     model.train()
     with torch.no_grad():
         data_loss_before = nn.functional.cross_entropy(model(inputs), targets)
+        objective_before = data_loss_before + ewc_penalty(
+            starting_vector,
+            anchor,
+            fisher,
+            effective_strength,
+        )
 
     original_optimizer_state = copy.deepcopy(optimizer.state_dict())
     original_learning_rates = [
@@ -458,11 +491,11 @@ def take_ewc_proposal(
 
             step_anchor = layout.flatten_module(model, detach=True)
             step_optimizer_state = copy.deepcopy(optimizer.state_dict())
-            objective_before = float(objective.detach())
+            step_objective_before = float(objective.detach())
             tolerance = (
                 64.0
                 * torch.finfo(step_anchor.dtype).eps
-                * max(abs(objective_before), 1.0)
+                * max(abs(step_objective_before), 1.0)
             )
             accepted = False
             for backtracks in range(EWC_MAX_BACKTRACKS + 1):
@@ -500,7 +533,7 @@ def take_ewc_proposal(
                     accepted = bool(
                         torch.isfinite(candidate_objective)
                         and float(candidate_objective)
-                        <= objective_before + tolerance
+                        <= step_objective_before + tolerance
                     )
                 if accepted:
                     backtracking_rejections += backtracks
@@ -517,7 +550,7 @@ def take_ewc_proposal(
                     f"descent step after {EWC_MAX_BACKTRACKS} reductions"
                 )
     except BaseException:
-        layout.copy_vector_to_module(model, anchor)
+        layout.copy_vector_to_module(model, starting_vector)
         optimizer.load_state_dict(original_optimizer_state)
         raise
     finally:
@@ -553,20 +586,21 @@ def take_ewc_proposal(
             torch.finfo(final_gradient.dtype).tiny,
         )
     except BaseException:
-        layout.copy_vector_to_module(model, anchor)
+        layout.copy_vector_to_module(model, starting_vector)
         optimizer.load_state_dict(original_optimizer_state)
         raise
 
     final_vector = final_parameter_vector.detach().clone()
-    displacement = final_vector - anchor
+    displacement = final_vector - starting_vector
     with torch.no_grad():
         data_loss_after = data_loss_after_tensor.detach()
         penalty_after = penalty_after_tensor.detach()
         objective_after = objective_after_tensor.detach()
+        penalty_displacement = final_vector - anchor
         quadratic = (
-            displacement @ (fisher @ displacement)
+            penalty_displacement @ (fisher @ penalty_displacement)
             if isinstance(fisher, Tensor)
-            else fisher.quadratic(displacement)
+            else fisher.quadratic(penalty_displacement)
         )
         numerical_floor = -100 * torch.finfo(quadratic.dtype).eps
         if float(quadratic) < numerical_floor:
@@ -598,7 +632,7 @@ def take_ewc_proposal(
         final_gradient_max_abs=final_gradient_max_abs,
         relative_final_gradient_norm=relative_final_gradient_norm,
         final_gradient_rms=final_gradient_rms,
-        objective_decrease=float(data_loss_before - objective_after),
+        objective_decrease=float(objective_before - objective_after),
         stopping_reason="fixed_inner_step_budget",
     )
     optimizer.zero_grad(set_to_none=True)

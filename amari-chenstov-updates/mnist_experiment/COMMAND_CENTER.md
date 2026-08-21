@@ -134,10 +134,125 @@ artifacts:
 python -m mnist_experiment.plan3_command_center preview
 python -m mnist_experiment.plan3_command_center preview \
   --stages replay-screen --details
+python -m mnist_experiment.plan3_command_center audit-handoff
 ```
 
-The preview reuses Plan 2 replicas 6 through 10. Values shown for `selected`
-and `memory-matched` replay are planning placeholders used only to estimate
-cost. Plan 3 will select the replay budget at a phase gate and derive the
-memory-matched capacity from measured persistent bytes. There is intentionally
-no Plan 3 `prepare` or `run` command yet.
+The preview reuses Plan 2 replicas 6 through 10. The value shown for `selected`
+replay is a planning placeholder used only to estimate cost. Memory-matched
+replay is derived from the canonical persistent-state contract and currently
+equals 25 observations. `audit-handoff` verifies the frozen bundle, run,
+configuration, initialization, stream, and reference identities without
+writing artifacts.
+
+Phase 1's immutable replay-engine validation is available through:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase1
+python -m mnist_experiment.plan3_command_center phase1-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase1 \
+  --bundle <bundle-path> --resume
+```
+
+The accepted completed bundle is
+`plan3-phase1__r0006__3930db574a45`. It contains CPU/CUDA smoke runs and one
+capacity-32 production timing pilot. The pure-replay preview now uses that
+pilot; Fisher and LFU conditions retain the prior conservative cost model.
+
+The paired Phase 2 replay-capacity screen is also complete. Its commands are:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase2
+python -m mnist_experiment.plan3_command_center phase2-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase2 \
+  --bundle <bundle-path> --resume
+python -m mnist_experiment.plan3_command_center analyze-phase2 \
+  --bundle <bundle-path>
+```
+
+The accepted bundle is
+`plan3-replay-screen__r0006-r0010__16a259169db6`; its immutable analysis is
+`phase2__plan3-replay-screen__r0006-r0010__16a259169db6__adfadd6ed85f`.
+Capacity 32 is the gate recommendation as the smallest replay budget that
+reliably improved the principal classification outcomes over fixed-$.05$ EWC.
+
+Phase 3's hybrid-engine validation is also complete:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase3
+python -m mnist_experiment.plan3_command_center phase3-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase3 \
+  --bundle <bundle-path> --resume
+```
+
+The accepted smoke bundle is `plan3-phase3__r0006__a8ffdd4d6e7b`. Its eight
+short runs validate capacities 0, 8, 25, and unbounded on CPU and CUDA. They
+are implementation checks, not predictive comparisons.
+
+Phase 4's paired history-mechanism frontier uses:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase4
+python -m mnist_experiment.plan3_command_center phase4-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase4 \
+  --bundle <bundle-path> --resume
+python -m mnist_experiment.plan3_command_center analyze-phase4 \
+  --bundle <bundle-path>
+```
+
+The immutable bundle is
+`plan3-history-frontier__r0006-r0010__12582f2d297a`. It reuses 20 completed
+EWC and replay cells and adds 20 runs: replay B25 plus hybrid B8, B25, and B32
+on each paired replica. Here “memory-matched” means that the B25 replay
+component matches one EWC summary; the complete B25 hybrid stores both.
+
+Phase 4 is complete. Its accepted analysis is
+`phase4__plan3-history-frontier__r0006-r0010__12582f2d297a__113026398aa0`.
+Hybrid B32 is the Phase 5 recommendation; hybrid B8 and B25 remain
+lower-memory Pareto alternatives.
+
+Phase 5 isolates LFU effects while reusing the accepted no-LFU controls:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase5
+python -m mnist_experiment.plan3_command_center phase5-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase5 \
+  --bundle <bundle-path> --resume
+python -m mnist_experiment.plan3_command_center analyze-phase5 \
+  --bundle <bundle-path>
+```
+
+The production bundle is
+`plan3-lfu-isolation__r0006-r0010__6d8c4ad67265`: 15 new trajectories and 10
+immutable controls. LFU artifacts use a versioned hybrid schema and charge the
+directional-ridge state to persistent memory.
+
+The replica-6 preflight completed all three new treatment types and then
+triggered the Phase 5 stop rule: directional resets were nearly universal and
+PSD projection materially determined the LFU candidates. The remaining 12
+runs are intentionally absent. Do not run the bundle merely to fill its grid;
+see the Phase 5 preflight record in `plan3.md`.
+
+Phase 6's oracle-free deployment frontier uses:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase6
+python -m mnist_experiment.plan3_command_center phase6-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase6 \
+  --bundle <bundle-path> --resume
+python -m mnist_experiment.plan3_command_center analyze-phase6 \
+  --bundle <bundle-path>
+```
+
+The completed bundle is
+`plan3-deployment-frontier__r0006-r0010__f21931201ff8`; the accepted analysis
+is
+`phase6__plan3-deployment-frontier__r0006-r0010__f21931201ff8__ce7440f3fe91`.
+It contains 35 paired runs: current-only, fixed and adaptive EWC, fixed and
+adaptive Hybrid B32, Replay B32, and unbounded replay. All EWC summaries use
+EMA without LFU, and all learner costs exclude offline holdout evaluation.

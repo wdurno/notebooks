@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 12
+CONFIG_SCHEMA_VERSION = 16
 SUPPORTED_CONFIG_SCHEMA_VERSIONS = (
     4,
     5,
@@ -20,12 +20,24 @@ SUPPORTED_CONFIG_SCHEMA_VERSIONS = (
     9,
     10,
     11,
+    12,
+    13,
+    14,
+    15,
     CONFIG_SCHEMA_VERSION,
 )
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
 CONTROLLER_ARTIFACT_SCHEMA_VERSION = 4
 CONTROLLER_METRIC_SCHEMA_VERSION = 8
+REPLAY_ARTIFACT_SCHEMA_VERSION = 5
+REPLAY_METRIC_SCHEMA_VERSION = 9
+HYBRID_ARTIFACT_SCHEMA_VERSION = 6
+HYBRID_METRIC_SCHEMA_VERSION = 10
+HYBRID_LFU_ARTIFACT_SCHEMA_VERSION = 7
+HYBRID_LFU_METRIC_SCHEMA_VERSION = 11
+DEPLOYMENT_HYBRID_ARTIFACT_SCHEMA_VERSION = 8
+DEPLOYMENT_HYBRID_METRIC_SCHEMA_VERSION = 12
 SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6, 7, 8)
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -579,6 +591,47 @@ class ControllerConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class ReplayConfig:
+    capacity: int | str
+    policy: str
+    max_steps: int | None
+    mode: str = "pure"
+    archive_initialization_artifact: str | None = None
+
+    def validate(self) -> None:
+        if self.policy != "fifo":
+            raise ConfigError("replay.policy must be 'fifo'")
+        if self.mode not in {"pure", "hybrid"}:
+            raise ConfigError("replay.mode must be 'pure' or 'hybrid'")
+        if self.capacity != "unbounded" and (
+            not _is_integer(self.capacity) or self.capacity < 0
+        ):
+            raise ConfigError(
+                "replay.capacity must be a nonnegative integer or 'unbounded'"
+            )
+        if self.max_steps is not None and (
+            not _is_integer(self.max_steps) or self.max_steps < 2
+        ):
+            raise ConfigError("replay.max_steps must be null or an integer >= 2")
+        if self.archive_initialization_artifact is not None and (
+            not isinstance(self.archive_initialization_artifact, str)
+            or not self.archive_initialization_artifact.strip()
+        ):
+            raise ConfigError(
+                "replay.archive_initialization_artifact must be null or a "
+                "nonempty path"
+            )
+        if self.mode == "hybrid" and self.archive_initialization_artifact is None:
+            raise ConfigError(
+                "hybrid replay requires replay.archive_initialization_artifact"
+            )
+        if self.mode == "pure" and self.archive_initialization_artifact is not None:
+            raise ConfigError(
+                "pure replay must not specify replay.archive_initialization_artifact"
+            )
+
+
+@dataclasses.dataclass(frozen=True)
 class ExperimentConfig:
     schema_version: int
     artifact_schema_version: int
@@ -594,13 +647,17 @@ class ExperimentConfig:
     initialization: InitializationConfig
     optimizer: OptimizerConfig
     controller: ControllerConfig
+    replay: ReplayConfig | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "ExperimentConfig":
         if not isinstance(value, Mapping):
             raise ConfigError("configuration root must be an object")
 
+        schema_version = value.get("schema_version")
         expected = {field.name for field in dataclasses.fields(cls)}
+        if not _is_integer(schema_version) or schema_version < 13:
+            expected.remove("replay")
         supplied = set(value)
         missing = sorted(expected - supplied)
         unknown = sorted(supplied - expected)
@@ -693,6 +750,16 @@ class ExperimentConfig:
             controller=_construct_dataclass(
                 ControllerConfig, controller_mapping, "controller"
             ),
+            replay=(
+                None
+                if schema_version < 13
+                else _construct_dataclass(
+                    ReplayConfig,
+                    value["replay"],
+                    "replay",
+                    allow_missing_defaults=schema_version < 14,
+                )
+            ),
         )
         config.validate()
         return config
@@ -705,7 +772,16 @@ class ExperimentConfig:
                 f"got {self.schema_version}"
             )
         expected_artifact_schema = (
-            CONTROLLER_ARTIFACT_SCHEMA_VERSION
+            DEPLOYMENT_HYBRID_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version >= 16
+            else
+            HYBRID_LFU_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version >= 15
+            else HYBRID_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version == 14
+            else REPLAY_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version == 13
+            else CONTROLLER_ARTIFACT_SCHEMA_VERSION
             if self.schema_version >= 9
             else 3 if self.schema_version == 8
             else 2 if self.schema_version == 7
@@ -717,7 +793,16 @@ class ExperimentConfig:
                 f"got {self.artifact_schema_version}"
             )
         expected_metric_schema = (
-            CONTROLLER_METRIC_SCHEMA_VERSION
+            DEPLOYMENT_HYBRID_METRIC_SCHEMA_VERSION
+            if self.schema_version >= 16
+            else
+            HYBRID_LFU_METRIC_SCHEMA_VERSION
+            if self.schema_version >= 15
+            else HYBRID_METRIC_SCHEMA_VERSION
+            if self.schema_version == 14
+            else REPLAY_METRIC_SCHEMA_VERSION
+            if self.schema_version == 13
+            else CONTROLLER_METRIC_SCHEMA_VERSION
             if self.schema_version >= 12
             else 7 if self.schema_version == 11
             else 6 if self.schema_version == 10
@@ -727,7 +812,16 @@ class ExperimentConfig:
             else METRIC_SCHEMA_VERSION
         )
         valid_metric_schemas = (
-            (CONTROLLER_METRIC_SCHEMA_VERSION,)
+            (DEPLOYMENT_HYBRID_METRIC_SCHEMA_VERSION,)
+            if self.schema_version >= 16
+            else
+            (HYBRID_LFU_METRIC_SCHEMA_VERSION,)
+            if self.schema_version >= 15
+            else (HYBRID_METRIC_SCHEMA_VERSION,)
+            if self.schema_version == 14
+            else (REPLAY_METRIC_SCHEMA_VERSION,)
+            if self.schema_version == 13
+            else (CONTROLLER_METRIC_SCHEMA_VERSION,)
             if self.schema_version >= 12
             else (7,) if self.schema_version == 11
             else (6,) if self.schema_version == 10
@@ -757,6 +851,21 @@ class ExperimentConfig:
         self.initialization.validate()
         self.optimizer.validate()
         self.controller.validate()
+        if self.schema_version >= 13:
+            if self.replay is None:
+                raise ConfigError("schema-v13 replay configuration is required")
+            self.replay.validate()
+            if (
+                self.replay.max_steps is not None
+                and self.replay.max_steps > self.data.num_p_steps
+            ):
+                raise ConfigError("replay.max_steps cannot exceed data.num_p_steps")
+            if self.schema_version == 13 and self.replay.mode != "pure":
+                raise ConfigError("schema-v13 replay mode must be pure")
+            if self.schema_version >= 14 and self.replay.mode != "hybrid":
+                raise ConfigError("schema-v14 replay mode must be hybrid")
+        elif self.replay is not None:
+            raise ConfigError("replay configuration requires schema version 13")
 
         if self.schema_version < 7:
             if self.estimator.ema_gain is None:
@@ -810,6 +919,11 @@ class ExperimentConfig:
 
     def to_mapping(self) -> dict[str, Any]:
         mapping = dataclasses.asdict(self)
+        if self.schema_version < 13:
+            mapping.pop("replay")
+        elif self.schema_version < 14:
+            mapping["replay"].pop("mode")
+            mapping["replay"].pop("archive_initialization_artifact")
         if self.schema_version < 10:
             mapping["estimator"].pop("controller_methods")
             for name in (
