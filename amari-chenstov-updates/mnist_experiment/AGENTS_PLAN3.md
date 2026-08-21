@@ -7,6 +7,25 @@ This file is implementation context. Human commands stay in
 
 ## Current boundary
 
+- Phase 7 is complete. Its predeclared fresh-confirmation bundle is
+  `plan3-fresh-confirmation__r0011-r0025__89c1451b1983`. Execute replicas in
+  complete blocks of five. Replicas 11 through 20 met the precision gate;
+  replicas 21 through 25 must remain absent unless the scientific decision is
+  explicitly reopened. The accepted analysis is
+  `phase7__plan3-fresh-confirmation__r0011-r0025__89c1451b1983__n10__85db75d1349e`.
+  The bundle intentionally contains no adaptive or LFU conditions.
+- Fresh replicas require two treatment-independent dependencies: an independent
+  initialization bundle and a standalone `initial_archive.pt`. The latter is
+  a score-only $p=0$ Fisher estimate with the existing adaptive six-sigma
+  convergence rule. It must never build or consume a reference-optimum path.
+- Phase 7 analysis uses only complete leading blocks and only fresh replicas.
+  Underlying runs preserve all 100 linear $p$ steps; summaries and plots alone
+  restrict to $p<.5$. Step-$t$ metrics precede its update and therefore have
+  exposure `8*t`.
+- None of the ten initial Fisher estimates met the 1% six-sigma Frobenius
+  early-stop target before the 32,768-score maximum. Do not call these
+  converged reference Fishers. The accepted analysis and notebook retain the
+  per-replica convergence, dependence, and Lanczos diagnostics.
 - Phase 6 is complete. Its bundle is
   `plan3-deployment-frontier__r0006-r0010__f21931201ff8`; the accepted analysis
   is

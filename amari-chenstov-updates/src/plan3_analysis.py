@@ -19,10 +19,12 @@ from .plan3 import (
     Plan3Phase4Bundle,
     Plan3Phase5Bundle,
     Plan3Phase6Bundle,
+    Plan3Phase7Bundle,
     plan3_phase2_status_rows,
     plan3_phase4_status_rows,
     plan3_phase5_status_rows,
     plan3_phase6_status_rows,
+    plan3_phase7_status_rows,
 )
 
 
@@ -30,6 +32,7 @@ PLAN3_PHASE2_ANALYSIS_SCHEMA_VERSION = 1
 PLAN3_PHASE4_ANALYSIS_SCHEMA_VERSION = 2
 PLAN3_PHASE5_ANALYSIS_SCHEMA_VERSION = 1
 PLAN3_PHASE6_ANALYSIS_SCHEMA_VERSION = 2
+PLAN3_PHASE7_ANALYSIS_SCHEMA_VERSION = 1
 PRIMARY_METRICS = (
     "environment_accuracy",
     "nine_ovr_accuracy",
@@ -99,6 +102,13 @@ PHASE6_CONDITION_ORDER = (
     "deployment-hybrid-b032-adaptive-h020",
     "deployment-replay-b032",
     "deployment-replay-unbounded",
+)
+PHASE7_CONDITION_ORDER = (
+    "confirm-current-only",
+    "confirm-ewc-fixed005",
+    "confirm-hybrid-b032-fixed005",
+    "confirm-replay-b032",
+    "confirm-replay-unbounded",
 )
 
 
@@ -1576,6 +1586,7 @@ def build_phase6_analysis(
                 [float(resources[(replica, condition)][metric]) for replica in replicas]
             )
         resource_summary.append(row)
+
     controller_summary = []
     for condition in conditions:
         rows = [controller[(replica, condition)] for replica in replicas]
@@ -1663,6 +1674,488 @@ def write_phase6_analysis(
             raise Plan3Error(f"incomplete Phase 6 analysis exists: {destination}")
         if _read_json(destination / "summary.json") != analysis:
             raise Plan3Error("completed Phase 6 analysis has incompatible contents")
+        return destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    incomplete = destination.parent / ".incomplete"
+    incomplete.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f"{destination.name}.", dir=incomplete))
+    try:
+        (temporary / "summary.json").write_text(
+            json.dumps(analysis, allow_nan=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (temporary / "manifest.json").write_text(
+            json.dumps(identity, allow_nan=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (temporary / "COMPLETED").touch()
+        os.replace(temporary, destination)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return destination
+
+
+_T95 = {
+    1: 12.706,
+    2: 4.303,
+    3: 3.182,
+    4: 2.776,
+    5: 2.571,
+    6: 2.447,
+    7: 2.365,
+    8: 2.306,
+    9: 2.262,
+    10: 2.228,
+    11: 2.201,
+    12: 2.179,
+    13: 2.160,
+    14: 2.145,
+    15: 2.131,
+    16: 2.120,
+    17: 2.110,
+    18: 2.101,
+    19: 2.093,
+    20: 2.086,
+    21: 2.080,
+    22: 2.074,
+    23: 2.069,
+    24: 2.064,
+    25: 2.060,
+    26: 2.056,
+    27: 2.052,
+    28: 2.048,
+    29: 2.045,
+}
+
+
+def _phase7_interval(values: Sequence[float]) -> dict[str, float | int | None]:
+    if len(values) < 2:
+        return _mean_interval(values)
+    mean = statistics.fmean(values)
+    standard_deviation = statistics.stdev(values)
+    standard_error = standard_deviation / math.sqrt(len(values))
+    critical = _T95.get(len(values) - 1, 1.96)
+    radius = critical * standard_error
+    return {
+        "count": len(values),
+        "mean": mean,
+        "standard_deviation": standard_deviation,
+        "standard_error": standard_error,
+        "ci95_low": mean - radius,
+        "ci95_high": mean + radius,
+    }
+
+
+def _interval_half_width(interval: Mapping[str, Any]) -> float | None:
+    low = interval.get("ci95_low")
+    high = interval.get("ci95_high")
+    if low is None or high is None:
+        return None
+    return (float(high) - float(low)) / 2.0
+
+
+def build_phase7_analysis(
+    bundle: Plan3Phase7Bundle,
+    repo_root: str | Path,
+) -> dict[str, Any]:
+    root = Path(repo_root)
+    statuses = plan3_phase7_status_rows(bundle, root)
+    by_replica: dict[int, list[dict[str, Any]]] = {}
+    for row in statuses:
+        by_replica.setdefault(int(row["replica_index"]), []).append(row)
+    completed: list[int] = []
+    for replica in bundle.manifest["replica_indices"]:
+        rows = by_replica[int(replica)]
+        if all(
+            row["run_state"] == "completed"
+            and row["replica_bundle_state"] == "completed"
+            and row["archive_source_state"] in {"completed", "not-applicable"}
+            for row in rows
+        ):
+            completed.append(int(replica))
+        else:
+            break
+    block_size = int(bundle.manifest["block_size"])
+    usable_count = len(completed) - len(completed) % block_size
+    replicas = tuple(completed[:usable_count])
+    if not replicas:
+        raise Plan3Error("Phase 7 analysis requires one complete five-replica block")
+
+    conditions = tuple(str(value) for value in bundle.manifest["condition_order"])
+    if conditions != PHASE7_CONDITION_ORDER:
+        raise Plan3Error("Phase 7 condition order is incompatible")
+    selected_entries = [
+        entry
+        for entry in bundle.manifest["entries"]
+        if int(entry["replica_index"]) in replicas
+    ]
+    normalized: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    resources: dict[tuple[int, str], dict[str, float | int]] = {}
+    provenance: dict[tuple[int, str], dict[str, Any]] = {}
+    for entry in selected_entries:
+        replica = int(entry["replica_index"])
+        condition = str(entry["condition"])
+        key = (replica, condition)
+        path = root / entry["cache_root"] / entry["run_id"]
+        config = _read_json(path / "config.json")
+        if config["controller"].get("oracle_mode") != "none" or config[
+            "controller"
+        ].get("reference_optimum_artifact") is not None:
+            raise Plan3Error("Phase 7 confirmation retained an oracle dependency")
+        if entry["runner"] == "replay":
+            metrics = _read_json(path / "plan3_replay_metrics.json")
+            normalized[key] = _normalize_replay_rows(metrics)
+            source_schema = int(metrics["plan3_replay_metric_schema_version"])
+        else:
+            metrics = _read_json(path / "plan3_hybrid_metrics.json")
+            if metrics.get("plan3_hybrid_metric_schema_version") != 12:
+                raise Plan3Error("Phase 7 hybrid requires schema-12 metrics")
+            if metrics.get("condition", {}).get("oracle_free") is not True:
+                raise Plan3Error("Phase 7 hybrid is not marked oracle-free")
+            normalized[key] = _normalize_hybrid_rows(metrics)
+            source_schema = int(metrics["plan3_hybrid_metric_schema_version"])
+        resources[key] = _phase6_resource(metrics, runner=entry["runner"])
+        if resources[key]["hvp_count"] != 0:
+            raise Plan3Error("Phase 7 no-LFU confirmation unexpectedly used HVPs")
+        archive_source = entry.get("archive_source_artifact")
+        provenance[key] = {
+            "run_id": entry["run_id"],
+            "config_hash": entry["config_hash"],
+            "stream_plan_hash": metrics["stream_plan_hash"],
+            "replica_bundle_id": metrics["replica_bundle_id"],
+            "initial_parameter_hash": metrics["initial_parameter_hash"],
+            "source_schema": source_schema,
+            "initial_archive_sha256": (
+                None
+                if archive_source is None
+                else hashlib.sha256((root / archive_source).read_bytes()).hexdigest()
+            ),
+        }
+    expected = {(replica, condition) for replica in replicas for condition in conditions}
+    if set(normalized) != expected:
+        raise Plan3Error("Phase 7 fresh confirmation matrix is incomplete")
+    for replica in replicas:
+        for field in ("stream_plan_hash", "replica_bundle_id", "initial_parameter_hash"):
+            if len(
+                {provenance[(replica, condition)][field] for condition in conditions}
+            ) != 1:
+                raise Plan3Error(f"Phase 7 {field} pairing failed for {replica}")
+
+    expected_trajectories = []
+    for condition in conditions:
+        rows = [
+            row
+            for row in normalized[(replicas[0], condition)]
+            if 0.0 <= float(row["p"]) < 0.5
+        ]
+        for row in rows:
+            step = int(row["step"])
+            summary: dict[str, Any] = {
+                "condition": condition,
+                "step": step,
+                "p": float(row["p"]),
+                "observations_before_evaluation": step * 8,
+                "expected_nines_before_evaluation": (
+                    8.0 * step * (step - 1) / (2.0 * 99.0)
+                ),
+            }
+            for metric in ALL_METRICS:
+                summary[metric] = _phase7_interval(
+                    [
+                        float(normalized[(replica, condition)][step][metric])
+                        for replica in replicas
+                        if normalized[(replica, condition)][step][metric] is not None
+                    ]
+                )
+            expected_trajectories.append(summary)
+
+    replica_auc = []
+    for replica in replicas:
+        for condition in conditions:
+            row: dict[str, Any] = {"replica_index": replica, "condition": condition}
+            for metric in ALL_METRICS:
+                row[metric] = _normalized_auc(normalized[(replica, condition)], metric)
+            replica_auc.append(row)
+    auc_by_key = {
+        (int(row["replica_index"]), str(row["condition"])): row
+        for row in replica_auc
+    }
+    condition_auc = []
+    for condition in conditions:
+        row = {"condition": condition}
+        for metric in ALL_METRICS:
+            row[metric] = _phase7_interval(
+                [auc_by_key[(replica, condition)][metric] for replica in replicas]
+            )
+            row[metric]["direction"] = (
+                "lower" if metric in LOWER_IS_BETTER else "higher"
+            )
+        condition_auc.append(row)
+
+    comparison_pairs = (
+        ("confirm-ewc-fixed005", "confirm-current-only"),
+        ("confirm-hybrid-b032-fixed005", "confirm-ewc-fixed005"),
+        ("confirm-replay-b032", "confirm-current-only"),
+        ("confirm-hybrid-b032-fixed005", "confirm-replay-b032"),
+        ("confirm-replay-unbounded", "confirm-replay-b032"),
+        ("confirm-hybrid-b032-fixed005", "confirm-replay-unbounded"),
+    )
+    paired_auc = []
+    pointwise = []
+    for treatment, comparison in comparison_pairs:
+        auc_row: dict[str, Any] = {
+            "treatment": treatment,
+            "comparison": comparison,
+        }
+        for metric in ALL_METRICS:
+            auc_row[metric] = _phase7_interval(
+                [
+                    auc_by_key[(replica, treatment)][metric]
+                    - auc_by_key[(replica, comparison)][metric]
+                    for replica in replicas
+                ]
+            )
+            auc_row[metric]["favorable_sign"] = (
+                "negative" if metric in LOWER_IS_BETTER else "positive"
+            )
+        paired_auc.append(auc_row)
+        for step in range(50):
+            row = {
+                "treatment": treatment,
+                "comparison": comparison,
+                "step": step,
+                "p": float(normalized[(replicas[0], treatment)][step]["p"]),
+                "observations_before_evaluation": step * 8,
+            }
+            for metric in ALL_METRICS:
+                row[metric] = _phase7_interval(
+                    [
+                        float(normalized[(replica, treatment)][step][metric])
+                        - float(normalized[(replica, comparison)][step][metric])
+                        for replica in replicas
+                        if normalized[(replica, treatment)][step][metric] is not None
+                        and normalized[(replica, comparison)][step][metric] is not None
+                    ]
+                )
+            pointwise.append(row)
+
+    resource_summary = []
+    for condition in conditions:
+        row: dict[str, Any] = {"condition": condition}
+        for metric in next(iter(resources.values())):
+            row[metric] = _phase7_interval(
+                [float(resources[(replica, condition)][metric]) for replica in replicas]
+            )
+        resource_summary.append(row)
+
+    anchor_by_replica = {
+        int(row["replica_index"]): row for row in bundle.manifest["anchors"]
+    }
+    initial_archive_diagnostics = []
+    for replica in replicas:
+        anchor_entry = anchor_by_replica[replica]
+        anchor_path = root / anchor_entry["cache_root"] / anchor_entry["run_id"]
+        metrics = _read_json(anchor_path / "initial_archive_metrics.json")
+        if metrics.get("oracle_free") is not True:
+            raise Plan3Error("Phase 7 initial archive is not oracle-free")
+        if metrics.get("replica_bundle_id") != anchor_entry["replica_bundle_id"]:
+            raise Plan3Error("Phase 7 initial archive pairing failed")
+        convergence = metrics["fisher"]["convergence"]
+        dependence = metrics["fisher"]["dependence"]
+        lanczos = metrics["lanczos"]
+        initial_archive_diagnostics.append(
+            {
+                "replica_index": replica,
+                "run_id": anchor_entry["run_id"],
+                "config_hash": anchor_entry["config_hash"],
+                "score_gradient_count": int(metrics["score_gradient_count"]),
+                "converged": bool(convergence["converged"]),
+                "stopping_reason": str(convergence["stopping_reason"]),
+                "relative_confidence_radius": float(
+                    convergence["relative_confidence_radius"]
+                ),
+                "relative_epsilon": float(convergence["relative_epsilon"]),
+                "lag_one_frobenius_correlation": float(
+                    dependence["lag_one_frobenius_correlation"]
+                ),
+                "draw_duplicate_fraction": float(
+                    dependence["draw_duplicate_fraction"]
+                ),
+                "mean_adjacent_chunk_index_overlap": float(
+                    dependence["mean_adjacent_chunk_index_overlap"]
+                ),
+                "realized_rank": int(lanczos["realized_rank"]),
+                "lanczos_retry_count": int(lanczos["numerical_retry_count"]),
+                "represented_diagonal_relative_error": float(
+                    lanczos["represented_diagonal_relative_error"]
+                ),
+                "wall_time_seconds": float(metrics["wall_time_seconds"]),
+            }
+        )
+    initial_archive_summary = {
+        "replica_count": len(replicas),
+        "converged_count": sum(
+            int(row["converged"]) for row in initial_archive_diagnostics
+        ),
+        "maximum_budget_count": sum(
+            int(row["stopping_reason"] == "maximum_budget")
+            for row in initial_archive_diagnostics
+        ),
+        "relative_confidence_radius": _phase7_interval(
+            [row["relative_confidence_radius"] for row in initial_archive_diagnostics]
+        ),
+        "lag_one_frobenius_correlation": _phase7_interval(
+            [
+                row["lag_one_frobenius_correlation"]
+                for row in initial_archive_diagnostics
+            ]
+        ),
+        "draw_duplicate_fraction": _phase7_interval(
+            [row["draw_duplicate_fraction"] for row in initial_archive_diagnostics]
+        ),
+        "represented_diagonal_relative_error": _phase7_interval(
+            [
+                row["represented_diagonal_relative_error"]
+                for row in initial_archive_diagnostics
+            ]
+        ),
+        "wall_time_seconds": _phase7_interval(
+            [row["wall_time_seconds"] for row in initial_archive_diagnostics]
+        ),
+    }
+
+    primary = next(
+        row
+        for row in paired_auc
+        if row["treatment"] == "confirm-hybrid-b032-fixed005"
+        and row["comparison"] == "confirm-replay-b032"
+    )
+    primary_interval = primary["environment_accuracy"]
+    nine_interval = primary["nine_ovr_accuracy"]
+    primary_half_width = _interval_half_width(primary_interval)
+    pointwise_half_widths = sorted(
+        value
+        for row in pointwise
+        if row["treatment"] == "confirm-hybrid-b032-fixed005"
+        and row["comparison"] == "confirm-replay-b032"
+        for value in [_interval_half_width(row["environment_accuracy"])]
+        if value is not None
+    )
+    median_pointwise_half_width = statistics.median(pointwise_half_widths)
+    contract = bundle.manifest["analysis_contract"]
+    precision_met = (
+        len(replicas) >= int(bundle.manifest["initial_replica_target"])
+        and primary_half_width is not None
+        and primary_half_width
+        <= float(contract["primary_auc_ci_half_width_target"])
+        and median_pointwise_half_width
+        <= float(contract["median_pointwise_ci_half_width_target"])
+    )
+    maximum_reached = len(replicas) >= int(bundle.manifest["maximum_replica_count"])
+    precision_gate = {
+        "completed_replica_count": len(replicas),
+        "minimum_replica_count": int(bundle.manifest["initial_replica_target"]),
+        "maximum_replica_count": int(bundle.manifest["maximum_replica_count"]),
+        "primary_auc_ci_half_width": primary_half_width,
+        "primary_auc_ci_half_width_target": float(
+            contract["primary_auc_ci_half_width_target"]
+        ),
+        "median_pointwise_ci_half_width": median_pointwise_half_width,
+        "median_pointwise_ci_half_width_target": float(
+            contract["median_pointwise_ci_half_width_target"]
+        ),
+        "primary_effect_positive": (
+            primary_interval["ci95_low"] is not None
+            and float(primary_interval["ci95_low"]) > 0.0
+        ),
+        "nine_ovr_practically_equivalent": (
+            nine_interval["ci95_low"] is not None
+            and float(nine_interval["ci95_low"])
+            >= -float(contract["nine_ovr_practical_equivalence_margin"])
+            and float(nine_interval["ci95_high"])
+            <= float(contract["nine_ovr_practical_equivalence_margin"])
+        ),
+        "precision_target_met": precision_met,
+        "maximum_reached": maximum_reached,
+        "recommendation": (
+            "stop_precision_target_met"
+            if precision_met
+            else "stop_maximum_reached"
+            if maximum_reached
+            else "continue_one_predeclared_five_replica_block"
+        ),
+    }
+    bundle_sha = hashlib.sha256((bundle.path / "bundle.json").read_bytes()).hexdigest()
+    return {
+        "schema_version": PLAN3_PHASE7_ANALYSIS_SCHEMA_VERSION,
+        "bundle_id": bundle.bundle_id,
+        "bundle_manifest_sha256": bundle_sha,
+        "replica_indices": list(replicas),
+        "conditions": list(conditions),
+        "analysis_domain": {
+            "trajectory": "only 0 <= p < 0.5 is summarized and plotted",
+            "underlying_path": "unchanged 100-point linear p trajectory from 0 to 1",
+            "auc": "normalized trapezoidal area over 0 <= p < 0.5",
+            "ci95": "two-sided Student-t interval across fresh paired replicas",
+            "evaluation_timing": (
+                "step t metrics precede the step-t update; exposure is t*m"
+            ),
+            "oracle_free": True,
+            "fisher_update": "EMA with no LFU",
+        },
+        "pairing_validated": True,
+        "provenance": [
+            {
+                "replica_index": replica,
+                "condition": condition,
+                **provenance[(replica, condition)],
+            }
+            for replica in replicas
+            for condition in conditions
+        ],
+        "expected_trajectories": expected_trajectories,
+        "pointwise_paired_differences": pointwise,
+        "replica_auc": replica_auc,
+        "condition_auc": condition_auc,
+        "paired_auc_differences": paired_auc,
+        "resource_summary": resource_summary,
+        "initial_archive_diagnostics": initial_archive_diagnostics,
+        "initial_archive_summary": initial_archive_summary,
+        "precision_gate": precision_gate,
+    }
+
+
+def write_phase7_analysis(
+    bundle: Plan3Phase7Bundle,
+    repo_root: str | Path,
+) -> Path:
+    root = Path(repo_root)
+    analysis = build_phase7_analysis(bundle, root)
+    identity = {
+        "schema_version": PLAN3_PHASE7_ANALYSIS_SCHEMA_VERSION,
+        "bundle_id": bundle.bundle_id,
+        "bundle_manifest_sha256": analysis["bundle_manifest_sha256"],
+        "replica_indices": analysis["replica_indices"],
+        "analysis_sha256": _json_sha256(analysis),
+        "auc_domain": "0<=p<0.5",
+    }
+    digest = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    destination = (
+        root
+        / "cache"
+        / "mnist_experiment"
+        / "plan3"
+        / "analysis"
+        / f"phase7__{bundle.bundle_id}__n{len(analysis['replica_indices']):02d}__{digest[:12]}"
+    )
+    if destination.exists():
+        if not (destination / "COMPLETED").is_file():
+            raise Plan3Error(f"incomplete Phase 7 analysis exists: {destination}")
+        if _read_json(destination / "summary.json") != analysis:
+            raise Plan3Error("completed Phase 7 analysis has incompatible contents")
         return destination
     destination.parent.mkdir(parents=True, exist_ok=True)
     incomplete = destination.parent / ".incomplete"

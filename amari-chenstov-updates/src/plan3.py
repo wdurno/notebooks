@@ -13,9 +13,16 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from .phase9 import Phase9Error, load_phase9_bundle, phase9_status_rows
+from .phase9 import (
+    Phase9Error,
+    load_phase9_bundle,
+    load_phase9_spec,
+    phase9_status_rows,
+)
 from .plan2 import Plan2Error, load_plan2_bundle, plan2_status_rows
 from .config import ExperimentConfig
+from .initialization import replica_bundle_id
+from .seeding import derive_component_seed
 
 
 PLAN3_SPEC_SCHEMA_VERSION = 1
@@ -25,6 +32,7 @@ PLAN3_PHASE3_BUNDLE_SCHEMA_VERSION = 1
 PLAN3_PHASE4_BUNDLE_SCHEMA_VERSION = 1
 PLAN3_PHASE5_BUNDLE_SCHEMA_VERSION = 1
 PLAN3_PHASE6_BUNDLE_SCHEMA_VERSION = 1
+PLAN3_PHASE7_BUNDLE_SCHEMA_VERSION = 1
 PLAN3_PHASE1_ACCEPTED_BUNDLE_ID = "plan3-phase1__r0006__3930db574a45"
 PLAN3_PHASE2_ACCEPTED_BUNDLE_ID = (
     "plan3-replay-screen__r0006-r0010__16a259169db6"
@@ -34,6 +42,9 @@ PLAN3_PHASE4_ACCEPTED_BUNDLE_ID = (
 )
 PLAN3_PHASE5_ACCEPTED_BUNDLE_ID = (
     "plan3-lfu-isolation__r0006-r0010__6d8c4ad67265"
+)
+PLAN3_PHASE6_ACCEPTED_BUNDLE_ID = (
+    "plan3-deployment-frontier__r0006-r0010__f21931201ff8"
 )
 
 
@@ -2570,6 +2581,355 @@ def plan3_phase6_status_rows(
                 "run_path": str(run_path),
                 "run_state": state,
                 "archive_source_state": source_state,
+            }
+        )
+    return rows
+
+
+@dataclasses.dataclass(frozen=True)
+class Plan3Phase7Bundle:
+    path: Path
+    manifest: dict[str, Any]
+
+    @property
+    def bundle_id(self) -> str:
+        return str(self.manifest["bundle_id"])
+
+
+def _phase7_profiles() -> tuple[dict[str, Any], ...]:
+    return (
+        {
+            "condition": "confirm-current-only",
+            "source_condition": "deployment-current-only",
+            "runner": "replay",
+            "estimated_seconds": 55.0,
+        },
+        {
+            "condition": "confirm-ewc-fixed005",
+            "source_condition": "deployment-ewc-fixed005",
+            "runner": "hybrid",
+            "estimated_seconds": 100.0,
+        },
+        {
+            "condition": "confirm-hybrid-b032-fixed005",
+            "source_condition": "deployment-hybrid-b032-fixed005",
+            "runner": "hybrid",
+            "estimated_seconds": 100.0,
+        },
+        {
+            "condition": "confirm-replay-b032",
+            "source_condition": "deployment-replay-b032",
+            "runner": "replay",
+            "estimated_seconds": 60.0,
+        },
+        {
+            "condition": "confirm-replay-unbounded",
+            "source_condition": "deployment-replay-unbounded",
+            "runner": "replay",
+            "estimated_seconds": 75.0,
+        },
+    )
+
+
+def _phase7_identity(
+    mapping: Mapping[str, Any],
+    *,
+    experiment: str,
+    replica_index: int,
+    replica_seed: int,
+) -> dict[str, Any]:
+    result = json.loads(json.dumps(mapping))
+    result["experiment"] = experiment
+    result["replica_id"] = f"replica-{replica_index:04d}"
+    result["replica_seed"] = replica_seed
+    result["controller"]["oracle_mode"] = "none"
+    result["controller"]["reference_optimum_artifact"] = None
+    return result
+
+
+def build_plan3_phase7_bundle(
+    spec: Plan3Spec,
+    repo_root: str | Path,
+    replica_indices: Sequence[int],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    root = Path(repo_root)
+    replicas = tuple(sorted(set(int(value) for value in replica_indices)))
+    if not replicas or replicas[0] < 0:
+        raise Plan3Error("Phase 7 requires nonnegative replica indices")
+    if len(replicas) % 5:
+        raise Plan3Error("Phase 7 replicas must be predeclared in blocks of five")
+    phase6 = load_plan3_phase6_bundle(
+        root
+        / "cache"
+        / "mnist_experiment"
+        / "plan3"
+        / "bundles"
+        / PLAN3_PHASE6_ACCEPTED_BUNDLE_ID
+    )
+    phase6_statuses = plan3_phase6_status_rows(phase6, root)
+    if any(row["run_state"] != "completed" for row in phase6_statuses):
+        raise Plan3Error("accepted Phase 6 bundle is incomplete")
+    templates: dict[str, dict[str, Any]] = {}
+    for entry in phase6.manifest["entries"]:
+        condition = str(entry["condition"])
+        if condition in templates:
+            continue
+        templates[condition] = _read_json(
+            root / entry["cache_root"] / entry["run_id"] / "config.json"
+        )
+    expected_sources = {row["source_condition"] for row in _phase7_profiles()}
+    if set(templates).isdisjoint(expected_sources) or not expected_sources.issubset(
+        templates
+    ):
+        raise Plan3Error("Phase 7 source templates are incomplete")
+
+    phase9 = load_phase9_spec(spec.path.parent / "phase9_profiles.json")
+    configs: dict[str, dict[str, Any]] = {}
+    anchors = []
+    entries = []
+    for replica in replicas:
+        replica_seed = derive_component_seed(
+            phase9.base_replica_seed,
+            f"phase9_replica:{replica}",
+        )
+        anchor_mapping = _phase7_identity(
+            templates["deployment-current-only"],
+            experiment="mnist_lfu_plan3-phase7_initial-archive",
+            replica_index=replica,
+            replica_seed=replica_seed,
+        )
+        anchor_mapping["cache_root"] = (
+            "cache/mnist_experiment/plan3_initial_archives"
+        )
+        anchor_mapping["replay"] = {
+            "capacity": 0,
+            "policy": "fifo",
+            "max_steps": None,
+        }
+        anchor_config = ExperimentConfig.from_mapping(anchor_mapping)
+        anchor_relative = f"anchors/replica-{replica:04d}.json"
+        configs[anchor_relative] = anchor_config.to_mapping()
+        archive_relative = str(
+            Path(anchor_config.cache_root)
+            / anchor_config.run_id
+            / "initial_archive.pt"
+        )
+        anchors.append(
+            {
+                "replica_index": replica,
+                "replica_id": anchor_config.replica_id,
+                "replica_seed": replica_seed,
+                "config_file": anchor_relative,
+                "config_hash": anchor_config.config_hash,
+                "run_id": anchor_config.run_id,
+                "cache_root": anchor_config.cache_root,
+                "replica_bundle_id": replica_bundle_id(anchor_config),
+                "archive_artifact": archive_relative,
+                "estimated_seconds": 45.0,
+            }
+        )
+        for profile in _phase7_profiles():
+            mapping = _phase7_identity(
+                templates[profile["source_condition"]],
+                experiment=f"mnist_lfu_plan3-phase7_{profile['condition']}",
+                replica_index=replica,
+                replica_seed=replica_seed,
+            )
+            mapping["cache_root"] = "cache/mnist_experiment/plan3_runs"
+            if profile["runner"] == "hybrid":
+                mapping["replay"]["archive_initialization_artifact"] = (
+                    archive_relative
+                )
+            config = ExperimentConfig.from_mapping(mapping)
+            relative = f"configs/replica-{replica:04d}/{profile['condition']}.json"
+            configs[relative] = config.to_mapping()
+            entries.append(
+                {
+                    "replica_index": replica,
+                    "replica_id": config.replica_id,
+                    "condition": profile["condition"],
+                    "runner": profile["runner"],
+                    "source_phase6_condition": profile["source_condition"],
+                    "config_file": relative,
+                    "config_hash": config.config_hash,
+                    "run_id": config.run_id,
+                    "cache_root": config.cache_root,
+                    "replica_bundle_id": replica_bundle_id(config),
+                    "archive_source_artifact": (
+                        archive_relative if profile["runner"] == "hybrid" else None
+                    ),
+                    "estimated_seconds": profile["estimated_seconds"],
+                }
+            )
+
+    identity = {
+        "schema_version": PLAN3_PHASE7_BUNDLE_SCHEMA_VERSION,
+        "spec_name": spec.name,
+        "phase": 7,
+        "stage": "fresh-confirmation",
+        "source_phase6_bundle": phase6.bundle_id,
+        "replica_indices": list(replicas),
+        "condition_order": [row["condition"] for row in _phase7_profiles()],
+        "block_size": 5,
+        "initial_replica_target": 10,
+        "maximum_replica_count": len(replicas),
+        "config_hashes": [row["config_hash"] for row in anchors]
+        + [row["config_hash"] for row in entries],
+        "analysis_contract": {
+            "path": "unchanged 100-point linear p trajectory from 0 to 1",
+            "samples_per_step": 8,
+            "principal_plot_domain": "0<=p<0.5",
+            "auc_domain": "0<=p<0.5",
+            "primary_contrast": (
+                "confirm-hybrid-b032-fixed005 minus confirm-replay-b032"
+            ),
+            "primary_metric": "environment_accuracy AUC",
+            "primary_auc_ci_half_width_target": 0.02,
+            "median_pointwise_ci_half_width_target": 0.03,
+            "nine_ovr_practical_equivalence_margin": 0.03,
+            "ci": "two-sided 95% Student-t intervals across paired replicas",
+        },
+    }
+    digest = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
+    bundle_id = (
+        f"plan3-fresh-confirmation__r{replicas[0]:04d}-r{replicas[-1]:04d}__"
+        f"{digest[:12]}"
+    )
+    return {
+        **identity,
+        "bundle_id": bundle_id,
+        "anchor_count": len(anchors),
+        "entry_count": len(entries),
+        "estimated_seconds": sum(float(row["estimated_seconds"]) for row in anchors)
+        + sum(float(row["estimated_seconds"]) for row in entries),
+        "phase6_manifest_sha256": hashlib.sha256(
+            (phase6.path / "bundle.json").read_bytes()
+        ).hexdigest(),
+        "anchors": anchors,
+        "entries": entries,
+    }, configs
+
+
+def prepare_plan3_phase7_bundle(
+    spec: Plan3Spec,
+    repo_root: str | Path,
+    replica_indices: Sequence[int],
+) -> Plan3Phase7Bundle:
+    root = Path(repo_root)
+    manifest, configs = build_plan3_phase7_bundle(spec, root, replica_indices)
+    bundle_root = root / "cache" / "mnist_experiment" / "plan3" / "bundles"
+    destination = bundle_root / manifest["bundle_id"]
+    if destination.exists():
+        loaded = load_plan3_phase7_bundle(destination)
+        if loaded.manifest != manifest:
+            raise Plan3Error("existing Phase 7 bundle has incompatible contents")
+        return loaded
+    incomplete = bundle_root / ".incomplete"
+    incomplete.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f"{manifest['bundle_id']}.", dir=incomplete))
+    try:
+        for relative_path, mapping in configs.items():
+            config_path = temporary / relative_path
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(
+                json.dumps(mapping, allow_nan=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        (temporary / "bundle.json").write_text(
+            json.dumps(manifest, allow_nan=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (temporary / "COMPLETED").touch()
+        os.replace(temporary, destination)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return Plan3Phase7Bundle(destination, manifest)
+
+
+def load_plan3_phase7_bundle(path: str | Path) -> Plan3Phase7Bundle:
+    bundle_path = Path(path)
+    if not (bundle_path / "COMPLETED").is_file():
+        raise Plan3Error(f"Phase 7 bundle is incomplete: {bundle_path}")
+    manifest = _read_json(bundle_path / "bundle.json")
+    if manifest.get("schema_version") != PLAN3_PHASE7_BUNDLE_SCHEMA_VERSION:
+        raise Plan3Error("unsupported Phase 7 bundle schema")
+    if manifest.get("bundle_id") != bundle_path.name:
+        raise Plan3Error("Phase 7 bundle ID does not match its directory")
+    if len(manifest.get("anchors", [])) != manifest.get("anchor_count"):
+        raise Plan3Error("Phase 7 anchor count is invalid")
+    if len(manifest.get("entries", [])) != manifest.get("entry_count"):
+        raise Plan3Error("Phase 7 entry count is invalid")
+    for row in (*manifest["anchors"], *manifest["entries"]):
+        config = ExperimentConfig.from_mapping(_read_json(bundle_path / row["config_file"]))
+        if config.config_hash != row["config_hash"] or config.run_id != row["run_id"]:
+            raise Plan3Error(f"Phase 7 config identity mismatch: {row['config_file']}")
+    return Plan3Phase7Bundle(bundle_path, manifest)
+
+
+def _phase7_run_state(root: Path, cache_root: str, run_id: str) -> tuple[str, Path]:
+    run_root = root / cache_root
+    final = run_root / run_id
+    incomplete = run_root / ".incomplete" / run_id
+    if (final / "COMPLETED").is_file():
+        return "completed", final
+    if incomplete.exists():
+        return "incomplete", incomplete
+    if final.exists():
+        return "invalid", final
+    return "missing", final
+
+
+def plan3_phase7_status_rows(
+    bundle: Plan3Phase7Bundle,
+    repo_root: str | Path,
+) -> list[dict[str, Any]]:
+    root = Path(repo_root)
+    anchors = {int(row["replica_index"]): row for row in bundle.manifest["anchors"]}
+    rows = []
+    for entry in bundle.manifest["entries"]:
+        replica = int(entry["replica_index"])
+        anchor = anchors[replica]
+        replica_path = root / "cache" / "mnist_experiment" / "replicas" / anchor[
+            "replica_bundle_id"
+        ]
+        if (replica_path / "COMPLETED").is_file():
+            replica_state = "completed"
+        elif replica_path.exists():
+            replica_state = "invalid"
+        else:
+            replica_state = "missing"
+        anchor_state, anchor_path = _phase7_run_state(
+            root, anchor["cache_root"], anchor["run_id"]
+        )
+        archive_path = root / anchor["archive_artifact"]
+        archive_state = (
+            "completed"
+            if anchor_state == "completed" and archive_path.is_file()
+            else "invalid"
+            if anchor_state == "completed"
+            else anchor_state
+        )
+        run_state, run_path = _phase7_run_state(
+            root, entry["cache_root"], entry["run_id"]
+        )
+        rows.append(
+            {
+                **entry,
+                "config_path": str(bundle.path / entry["config_file"]),
+                "run_path": str(run_path),
+                "run_state": run_state,
+                "replica_config_path": str(bundle.path / anchor["config_file"]),
+                "replica_bundle_path": str(replica_path),
+                "replica_bundle_state": replica_state,
+                "anchor_run_id": anchor["run_id"],
+                "anchor_run_path": str(anchor_path),
+                "anchor_run_state": anchor_state,
+                "archive_source_state": (
+                    archive_state
+                    if entry["runner"] == "hybrid"
+                    else "not-applicable"
+                ),
             }
         )
     return rows

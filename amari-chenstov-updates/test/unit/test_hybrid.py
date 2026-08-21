@@ -225,6 +225,44 @@ def test_initial_archive_source_validates_anchor_rank_and_fixed_pi(
     assert len(source.artifact_sha256) == 64
 
 
+def test_standalone_initial_archive_source_preserves_actual_score_count(
+    tmp_path: Path,
+) -> None:
+    anchor = torch.tensor([0.2, -0.1], dtype=torch.float32)
+    state = HybridArchiveState(
+        anchor=anchor,
+        fisher=LowRankDiagonalFisher(
+            factor=torch.ones((2, 1), dtype=torch.float64),
+            residual_diagonal=torch.ones(2, dtype=torch.float64),
+        ),
+        initial_anchor_observations=100,
+        initial_fisher_score_observations=64,
+    )
+    artifact = tmp_path / "initial_archive.pt"
+    torch.save(
+        {
+            "schema_version": 1,
+            "kind": "plan3_initial_archive",
+            "archive_state": state.to_mapping(),
+        },
+        artifact,
+    )
+
+    source = load_initial_archive_source(
+        artifact,
+        anchor,
+        expected_rank=1,
+        initial_anchor_observations=100,
+        initial_fisher_score_observations=128,
+        device="cpu",
+        anchor_dtype=torch.float32,
+        fisher_dtype=torch.float64,
+    )
+
+    assert source.condition == "p0_adaptive_reference_fisher"
+    assert source.state.initial_fisher_score_observations == 64
+
+
 def test_capacity_zero_matches_separate_archive_consolidation_parameters() -> None:
     learner = nn.Linear(1, 2, bias=False, dtype=torch.float64)
     archive_model = nn.Linear(1, 2, bias=False, dtype=torch.float64)

@@ -5,6 +5,7 @@ import pytest
 from src.plan3_analysis import (
     ALL_METRICS,
     _mean_interval,
+    _phase7_interval,
     _json_sha256,
     _normalize_control_rows,
     _normalize_hybrid_rows,
@@ -77,6 +78,16 @@ def test_mean_interval_uses_small_sample_student_t_radius() -> None:
     assert result["standard_error"] == pytest.approx(1 / 2**0.5)
     assert result["ci95_high"] - result["mean"] == pytest.approx(
         2.776 / 2**0.5
+    )
+
+
+def test_phase7_interval_uses_t_radius_at_ten_replicas() -> None:
+    result = _phase7_interval([float(value) for value in range(10)])
+
+    assert result["count"] == 10
+    assert result["mean"] == 4.5
+    assert result["ci95_high"] - result["mean"] == pytest.approx(
+        2.262 * result["standard_error"]
     )
 
 

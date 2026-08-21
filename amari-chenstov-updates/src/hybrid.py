@@ -24,6 +24,7 @@ from .representations import (
 
 
 HYBRID_ARCHIVE_STATE_SCHEMA_VERSION = 1
+INITIAL_ARCHIVE_SOURCE_SCHEMA_VERSION = 1
 
 
 @dataclasses.dataclass(frozen=True)
@@ -136,6 +137,44 @@ def load_initial_archive_source(
 ) -> InitialArchiveSource:
     artifact_path = Path(path)
     value = torch.load(artifact_path, map_location="cpu", weights_only=False)
+    if (
+        value.get("schema_version") == INITIAL_ARCHIVE_SOURCE_SCHEMA_VERSION
+        and value.get("kind") == "plan3_initial_archive"
+    ):
+        state_mapping = value.get("archive_state")
+        if not isinstance(state_mapping, Mapping):
+            raise ValueError("standalone archive source is missing archive state")
+        state = HybridArchiveState.from_mapping(
+            state_mapping,
+            device=device,
+            anchor_dtype=anchor_dtype,
+            fisher_dtype=fisher_dtype,
+        )
+        expected = expected_anchor.to(device=device, dtype=anchor_dtype)
+        if not torch.equal(state.anchor, expected):
+            raise ValueError(
+                "standalone archive source anchor does not match paired initialization"
+            )
+        if state.rank != expected_rank:
+            raise ValueError("standalone archive source has the wrong Fisher rank")
+        if state.initial_anchor_observations != initial_anchor_observations:
+            raise ValueError(
+                "standalone archive source has the wrong initialization sample count"
+            )
+        if not (
+            0 < state.initial_fisher_score_observations
+            <= initial_fisher_score_observations
+        ):
+            raise ValueError(
+                "standalone archive score count exceeds the configured Fisher budget"
+            )
+        return InitialArchiveSource(
+            state=state,
+            artifact_sha256=hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+            condition="p0_adaptive_reference_fisher",
+            checkpoint_step=0,
+        )
+
     conditions = value.get("conditions")
     if value.get("schema_version") != 4 or not isinstance(conditions, Mapping):
         raise ValueError("archive source must be a schema-v4 controller checkpoint")

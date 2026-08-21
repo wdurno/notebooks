@@ -30,7 +30,7 @@ Replay and LFU are not crossed until each has earned a narrower setting.
 | 4 | History-mechanism frontier | Complete |
 | 5 | LFU isolation | Complete: no LFU selected |
 | 6 | Deployment frontier | Complete |
-| 7 | Analysis and next-manifold handoff | Pending |
+| 7 | Analysis and next-manifold handoff | Complete |
 
 ## Frozen Plan 2 Handoff
 
@@ -693,6 +693,72 @@ adaptive $\pi$ under variable speed or curvature.
    informs variance planning but remains exploratory.
 5. Record whether the next experiment should change path speed, curvature,
    model scale, or application domain; do not implement it here.
+
+### Frozen confirmation design
+
+- Preserve the existing `m=8`, `K=100` linear trajectory from $p=0$ to $p=1$.
+  Do not truncate, rescale, or plateau the generating process. Restrict only
+  plots and principal inference to $0\leq p<.5$.
+- Confirm current-only, fixed-$.05$ EWC, fixed-$.05$ Hybrid B32, Replay B32,
+  and unbounded replay. Do not rerun adaptive or LFU conditions.
+- Use fresh replicas 11 onward, initialized independently at $p=0$. Build each
+  initial rank-8-plus-diagonal Fisher from an oracle-free adaptive score
+  estimate with the existing six-sigma Frobenius convergence rule. Never build
+  or consume a future reference-optimum path.
+- Predeclare replicas 11 through 25 in blocks of five. Run ten initially, then
+  add one complete block only if precision remains inadequate. A completed
+  block is the smallest analysis unit.
+- Use fresh replicas only for confirmation. Phase 6 remains exploratory and is
+  not pooled into confirmatory intervals.
+- Report pointwise mean trajectories and paired differences with 95% Student-t
+  bands. Keep each contrast to two conditions. The primary contrast is Hybrid
+  B32 minus Replay B32 environmental-accuracy AUC; digit-9 OvR accuracy,
+  precision, and recall remain required secondary outcomes.
+- Target primary AUC CI half-width at most .02 and median pointwise paired CI
+  half-width at most .03 after at least ten replicas. Stop on precision or the
+  predeclared maximum, not on the first significant result. Treat a digit-9
+  OvR CI within $[-.03,.03]$ as practical equivalence, reported rather than
+  required for stopping.
+- Step-$t$ classification is evaluated before the step-$t$ update. Therefore,
+  its exact prior exposure is $8t$ observations; analysis must not label the
+  current batch as already observed.
+
+### Completion record
+
+- The immutable bundle is
+  `plan3-fresh-confirmation__r0011-r0025__89c1451b1983`. Replicas 11 through
+  20 completed all 50 treatment runs, ten independent initializations, and ten
+  independent $p=0$ archives. Replicas 21 through 25 remain intentionally
+  absent.
+- The first-block analysis is
+  `phase7__plan3-fresh-confirmation__r0011-r0025__89c1451b1983__n05__0e7051fca335`.
+  It correctly recommended continuing because the minimum and pointwise
+  precision targets were not met.
+- The accepted analysis is
+  `phase7__plan3-fresh-confirmation__r0011-r0025__89c1451b1983__n10__85db75d1349e`.
+  Primary AUC half-width was .0187 and median pointwise half-width .0266, so
+  the predeclared precision gate stopped at ten replicas.
+- Hybrid B32 minus Replay B32 environmental-accuracy AUC was .0365 with 95%
+  CI [.0177, .0552]. Its digit-9 OvR difference was -.0116
+  [-.0209, -.0023], inside the predeclared $\pm.03$ practical-equivalence
+  margin; precision and recall differences were individually unresolved.
+- EWC minus current-only environmental AUC was .1080 [.0902, .1258]. Replay
+  B32 minus current-only was .1332 [.1209, .1455]. Hybrid B32 added .0617
+  [.0552, .0681] over EWC alone.
+- Hybrid B32 and unbounded replay remained environmentally tied: -.0043
+  [-.0245, .0158]. Unbounded replay led digit-9 OvR by .0298 and precision by
+  .0859, while recall remained unresolved. Hybrid retained substantially lower
+  NLL and ECE.
+- Mean learner-only times were 44.9 seconds for EWC, 46.2 for Hybrid B32, 8.9
+  for Replay B32, and 19.7 for unbounded replay. Logical persistent state was
+  20,504, 46,104, 25,624, and 633,624 bytes, respectively.
+- All initial Fishers consumed the 32,768-score maximum; none met the stringent
+  1% relative six-sigma Frobenius early-stop target. Mean relative radius was
+  .230, while mean lag-one Frobenius correlation was -.020. Treat these as
+  high-sample maximum-budget estimates, not converged reference Fishers.
+- `deployment_results.ipynb` loads only completed schema-1 analysis artifacts,
+  draws two-condition expected trajectories and paired differences for
+  $p<.5$, and displays the initial-Fisher assumption check.
 
 ### Verification
 

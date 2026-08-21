@@ -256,3 +256,33 @@ is
 It contains 35 paired runs: current-only, fixed and adaptive EWC, fixed and
 adaptive Hybrid B32, Replay B32, and unbounded replay. All EWC summaries use
 EMA without LFU, and all learner costs exclude offline holdout evaluation.
+
+Phase 7 predeclares fresh replicas 11 through 25 and executes them in blocks
+of five. The initial target is ten replicas:
+
+```bash
+python -m mnist_experiment.plan3_command_center prepare-phase7 \
+  --replicas 11-25
+python -m mnist_experiment.plan3_command_center phase7-status \
+  --bundle <bundle-path>
+python -m mnist_experiment.plan3_command_center run-phase7 \
+  --bundle <bundle-path> --resume --max-replicas 5
+python -m mnist_experiment.plan3_command_center analyze-phase7 \
+  --bundle <bundle-path>
+```
+
+Run one five-replica block at a time, analyze after each block, and honor the
+recorded precision gate. Each fresh replica gets an independent $p=0$ fit and
+an adaptive high-sample initial Fisher archive; no reference-optimum path is
+built. The five paired treatments are current-only, fixed-$.05$ EWC, fixed
+Hybrid B32, Replay B32, and unbounded replay. The artifact-only figures are in
+`deployment_results.ipynb` and intentionally display only $p<.5$, although
+the computational trajectory remains the unchanged 100-point path to $p=1$.
+
+Phase 7 stopped at its ten-replica precision target. The bundle is
+`plan3-fresh-confirmation__r0011-r0025__89c1451b1983`; the accepted analysis is
+`phase7__plan3-fresh-confirmation__r0011-r0025__89c1451b1983__n10__85db75d1349e`.
+Do not run replicas 21 through 25 merely to fill the bundle. All ten initial
+Fisher estimates reached the 32,768-score maximum without meeting the 1%
+relative six-sigma early-stop target; the analysis and notebook expose those
+diagnostics explicitly.

@@ -11,6 +11,7 @@ from src.plan3 import (
     _phase4_new_profiles,
     _phase5_new_profiles,
     _phase6_profiles,
+    _phase7_profiles,
     load_plan3_spec,
     parse_stage_names,
     preview_plan3,
@@ -162,6 +163,25 @@ def test_phase6_expands_the_explicit_oracle_free_deployment_frontier() -> None:
         ("hybrid", 32),
         ("replay", 32),
         ("replay", "unbounded"),
+    ]
+
+
+def test_phase7_freezes_five_fresh_no_lfu_confirmation_conditions() -> None:
+    profiles = _phase7_profiles()
+
+    assert [row["condition"] for row in profiles] == [
+        "confirm-current-only",
+        "confirm-ewc-fixed005",
+        "confirm-hybrid-b032-fixed005",
+        "confirm-replay-b032",
+        "confirm-replay-unbounded",
+    ]
+    assert [row["runner"] for row in profiles] == [
+        "replay",
+        "hybrid",
+        "hybrid",
+        "replay",
+        "replay",
     ]
 
 

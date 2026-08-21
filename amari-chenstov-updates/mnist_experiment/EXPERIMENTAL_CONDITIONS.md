@@ -521,3 +521,50 @@ Replay B32 is the cheapest useful learner at 11.1 mean learner seconds;
 Hybrid B32 needs 48.6 seconds because archive consolidation adds a second fit.
 Adaptive EWC exactly equals fixed EWC here, and adaptive hybrid differs only
 negligibly because the controller remains near its lower bound.
+
+### Phase 7 fresh confirmation
+
+Phase 7 reruns five selected deployment conditions on independent replicas:
+
+| Condition | Historical state | Role |
+|---|---|---|
+| Current only | None | No-history control |
+| Fixed EWC | Rank-8 plus diagonal EMA, $\pi=.05$ | Compressed-history control |
+| Hybrid B32 | FIFO replay of 32 plus fixed EWC archive | Principal constrained treatment |
+| Replay B32 | FIFO replay of 32 | Direct bounded-replay comparison |
+| Unbounded replay | All online arrivals | Unconstrained-memory control |
+
+Every replica receives a fresh early-stopped $p=0$ fit and its own initial
+Fisher estimate. The initial Fisher uses score samples at $p=0$, the six-sigma
+Frobenius convergence rule, and a rank-8-plus-diagonal projection. It does not
+use a future reference-optimum path. Conditions within a replica share that
+initialization and ordered stream; replicas are statistically independent
+apart from permitted overlap in the finite MNIST source data.
+
+The generating process remains 100 evenly spaced $p$ values from zero to one
+with eight arrivals per step. Principal plots and AUCs use only $p<.5$; this is
+an analysis restriction, not a changed environmental schedule. Since metrics
+at step $t$ are evaluated before its update, the model has observed exactly
+$8t$ online arrivals at that point.
+
+Confirmation proceeds in predeclared blocks of five fresh replicas, with ten
+as the initial target and fifteen as the maximum. Pointwise trajectories and
+paired differences use 95% Student-t intervals. The primary estimand is Hybrid
+B32 minus Replay B32 environmental-accuracy AUC. Digit-9 OvR accuracy,
+precision, and recall are reported together so adaptation and false-positive
+behavior remain visible.
+
+Ten fresh replicas met both predeclared precision targets. Hybrid B32 improved
+environmental-accuracy AUC over Replay B32 by .0365 (95% CI [.0177, .0552])
+while trailing its digit-9 OvR AUC by .0116 ([-.0209, -.0023]). The latter is
+inside the $\pm.03$ practical-equivalence margin, but its sign is consistently
+in replay's favor. EWC and Replay B32 both clearly outperformed current-only
+learning. Hybrid B32 matched unbounded replay on environmental AUC, used 13.7
+times less persistent state, and had better NLL and calibration; unbounded
+replay retained higher digit-9 OvR accuracy and precision.
+
+The initial-Fisher convergence check did not pass its stringent early-stop
+criterion. Every replica used all 32,768 scores; the mean relative six-sigma
+Frobenius radius was .230 versus a .01 target. Mean lag-one correlation was
+near zero, and every Lanczos projection realized rank 8. These are therefore
+maximum-budget high-sample estimates, not numerically exact Fisher controls.
