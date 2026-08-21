@@ -104,6 +104,52 @@ def _validate_identifier(value: str, name: str) -> None:
 
 
 @dataclasses.dataclass(frozen=True)
+class ScheduleConfig:
+    kind: str
+    p_start: float
+    p_end: float
+    center_fraction: float | None
+    steepness: float | None
+
+    def validate(self) -> None:
+        if self.kind not in {"linear", "normalized_logistic"}:
+            raise ConfigError(
+                "data.schedule.kind must be 'linear' or 'normalized_logistic'"
+            )
+        if (
+            not _is_finite_number(self.p_start)
+            or not _is_finite_number(self.p_end)
+            or not 0.0 <= float(self.p_start) < float(self.p_end) <= 1.0
+        ):
+            raise ConfigError(
+                "data.schedule requires 0 <= p_start < p_end <= 1"
+            )
+        if self.kind == "linear":
+            if self.center_fraction is not None or self.steepness is not None:
+                raise ConfigError(
+                    "linear data.schedule requires null center_fraction and steepness"
+                )
+            return
+        if (
+            not _is_finite_number(self.center_fraction)
+            or not 0.0 < float(self.center_fraction) < 1.0
+        ):
+            raise ConfigError(
+                "normalized_logistic center_fraction must be in (0, 1)"
+            )
+        if (
+            not _is_finite_number(self.steepness)
+            or float(self.steepness) <= 0.0
+        ):
+            raise ConfigError(
+                "normalized_logistic steepness must be finite and positive"
+            )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass(frozen=True)
 class DataConfig:
     num_p_steps: int
     samples_per_step: int
@@ -112,6 +158,7 @@ class DataConfig:
     online_pool_size: int
     reference_pool_size: int
     evaluation_size: int
+    schedule: ScheduleConfig | None = None
 
     def validate(self) -> None:
         if not _is_integer(self.num_p_steps) or self.num_p_steps < 2:
@@ -130,6 +177,14 @@ class DataConfig:
         }.items():
             if not _is_integer(value) or value < 1:
                 raise ConfigError(f"data.{name} must be an integer >= 1")
+        if self.schedule is not None:
+            self.schedule.validate()
+
+    def to_mapping(self) -> dict[str, Any]:
+        mapping = dataclasses.asdict(self)
+        if self.schedule is None:
+            mapping.pop("schedule")
+        return mapping
 
 
 @dataclasses.dataclass(frozen=True)
@@ -714,6 +769,19 @@ class ExperimentConfig:
                 "lbfgs_line_search_fn",
             ):
                 optimizer_mapping[name] = None
+        data_mapping = value["data"]
+        if isinstance(data_mapping, Mapping):
+            data_mapping = dict(data_mapping)
+            schedule_mapping = data_mapping.get("schedule")
+            if schedule_mapping is None:
+                data_mapping["schedule"] = None
+            else:
+                data_mapping["schedule"] = _construct_dataclass(
+                    ScheduleConfig,
+                    schedule_mapping,
+                    "data.schedule",
+                )
+
         config = cls(
             schema_version=schema_version,
             artifact_schema_version=value["artifact_schema_version"],
@@ -722,7 +790,7 @@ class ExperimentConfig:
             replica_id=value["replica_id"],
             replica_seed=value["replica_seed"],
             cache_root=value["cache_root"],
-            data=_construct_dataclass(DataConfig, value["data"], "data"),
+            data=_construct_dataclass(DataConfig, data_mapping, "data"),
             runtime=_construct_dataclass(RuntimeConfig, value["runtime"], "runtime"),
             estimator=_construct_dataclass(
                 EstimatorConfig,
@@ -860,6 +928,14 @@ class ExperimentConfig:
                 and self.replay.max_steps > self.data.num_p_steps
             ):
                 raise ConfigError("replay.max_steps cannot exceed data.num_p_steps")
+            if (
+                self.data.schedule is not None
+                and self.replay.max_steps is not None
+                and self.replay.max_steps != self.data.num_p_steps
+            ):
+                raise ConfigError(
+                    "explicit schedules cannot be truncated by replay.max_steps"
+                )
             if self.schema_version == 13 and self.replay.mode != "pure":
                 raise ConfigError("schema-v13 replay mode must be pure")
             if self.schema_version >= 14 and self.replay.mode != "hybrid":
@@ -919,6 +995,8 @@ class ExperimentConfig:
 
     def to_mapping(self) -> dict[str, Any]:
         mapping = dataclasses.asdict(self)
+        if self.data.schedule is None:
+            mapping["data"].pop("schedule")
         if self.schema_version < 13:
             mapping.pop("replay")
         elif self.schema_version < 14:

@@ -18,6 +18,12 @@ REPRESENTATION_NOTEBOOK = (
 CONTROLLER_NOTEBOOK = (
     REPO_ROOT / "mnist_experiment" / "controller_results.ipynb"
 )
+DEPLOYMENT_NOTEBOOK = (
+    REPO_ROOT / "mnist_experiment" / "deployment_results.ipynb"
+)
+PLAN4_ORACLE_NOTEBOOK = (
+    REPO_ROOT / "mnist_experiment" / "plan4_oracle_results.ipynb"
+)
 
 
 def test_results_notebook_is_valid_and_artifact_only() -> None:
@@ -94,6 +100,34 @@ def test_controller_results_notebook_is_valid_and_artifact_only() -> None:
         "Assumption checks" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )
+
+
+def test_deployment_results_notebook_has_exposure_contrast() -> None:
+    notebook = load_notebook(DEPLOYMENT_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert "Learning by expected digit-9 exposure" in source
+    assert "expected_nines_before_evaluation" in source
+    assert "nine_ovr_accuracy" in source
+
+
+def test_plan4_oracle_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(PLAN4_ORACLE_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "phase2__*" in source
+    assert "unbounded_raw_oracle_pi" in source
+    assert "bounded_state_raw_oracle_pi" in source
+    assert "run_controller" not in source
 
 
 def test_results_notebook_validator_rejects_training_imports(

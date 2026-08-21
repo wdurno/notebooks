@@ -3,7 +3,7 @@ import dataclasses
 import pytest
 import torch
 
-from src.config import DataConfig
+from src.config import DataConfig, ScheduleConfig
 from src.mnist_data import (
     DatasetPartitions,
     MixtureStreamPlan,
@@ -20,6 +20,7 @@ def _data_config(
     non_nine_sampling: str = "empirical",
     num_p_steps: int = 5,
     samples_per_step: int = 5000,
+    schedule: ScheduleConfig | None = None,
 ) -> DataConfig:
     return DataConfig(
         num_p_steps=num_p_steps,
@@ -29,6 +30,7 @@ def _data_config(
         online_pool_size=500,
         reference_pool_size=500,
         evaluation_size=200,
+        schedule=schedule,
     )
 
 
@@ -252,3 +254,51 @@ def test_mixture_stream_prefixes_each_ordered_batch_without_resampling() -> None
     assert prefix.content_hash != full.content_hash
     with pytest.raises(ValueError, match="prefix samples_per_step"):
         full.prefix_per_step(9)
+
+
+def test_explicit_schedules_share_common_uniform_and_candidate_streams() -> None:
+    train_targets, test_targets = _targets()
+    first_config = _data_config(
+        num_p_steps=9,
+        samples_per_step=100,
+        schedule=ScheduleConfig(
+            kind="normalized_logistic",
+            p_start=0.0,
+            p_end=0.2,
+            center_fraction=0.5,
+            steepness=8.0,
+        ),
+    )
+    second_config = dataclasses.replace(
+        first_config,
+        schedule=dataclasses.replace(first_config.schedule, steepness=32.0),
+    )
+    partitions = partition_mnist(
+        train_targets,
+        test_targets,
+        first_config,
+        replica_seed=1729,
+    )
+
+    first = generate_mixture_stream(
+        train_targets,
+        partitions,
+        first_config,
+        seed=derive_seed_map(1729)["online_stream"],
+    )
+    second = generate_mixture_stream(
+        train_targets,
+        partitions,
+        second_config,
+        seed=derive_seed_map(1729)["online_stream"],
+    )
+
+    assert first.schema_version == second.schema_version == 2
+    assert first.uniform_stream_hash == second.uniform_stream_hash
+    assert first.schedule_hash != second.schedule_hash
+    assert first.content_hash != second.content_hash
+    assert first.observation_indices[0] == second.observation_indices[0]
+    assert first.observation_indices[-1] == second.observation_indices[-1]
+    assert first.class_labels[0] == second.class_labels[0]
+    assert first.class_labels[-1] == second.class_labels[-1]
+    assert MixtureStreamPlan.from_mapping(first.to_mapping()) == first

@@ -14,10 +14,12 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 from .config import DataConfig
-from .seeding import derive_seed_map
+from .schedules import resolve_schedule
+from .seeding import derive_component_seed, derive_seed_map
 
 MNIST_DATA_SCHEMA_VERSION = 1
-STREAM_PLAN_SCHEMA_VERSION = 1
+LEGACY_STREAM_PLAN_SCHEMA_VERSION = 1
+STREAM_PLAN_SCHEMA_VERSION = 2
 REFERENCE_SAMPLE_PLAN_SCHEMA_VERSION = 2
 
 
@@ -195,10 +197,21 @@ class MixtureStreamPlan:
     non_nine_sampling: str
     seed: int
     partition_hash: str
-    schema_version: int = STREAM_PLAN_SCHEMA_VERSION
+    schema_version: int = LEGACY_STREAM_PLAN_SCHEMA_VERSION
+    schedule_name: str | None = None
+    schedule_hash: str | None = None
+    uniform_stream_hash: str | None = None
 
     def to_mapping(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
+        mapping = dataclasses.asdict(self)
+        if self.schema_version == LEGACY_STREAM_PLAN_SCHEMA_VERSION:
+            for name in (
+                "schedule_name",
+                "schedule_hash",
+                "uniform_stream_hash",
+            ):
+                mapping.pop(name)
+        return mapping
 
     @property
     def content_hash(self) -> str:
@@ -229,17 +242,56 @@ class MixtureStreamPlan:
             seed=self.seed,
             partition_hash=self.partition_hash,
             schema_version=self.schema_version,
+            schedule_name=self.schedule_name,
+            schedule_hash=self.schedule_hash,
+            uniform_stream_hash=self.uniform_stream_hash,
         )
         prefix.validate()
         return prefix
 
     def validate(self) -> None:
-        if self.schema_version != STREAM_PLAN_SCHEMA_VERSION:
+        if self.schema_version not in {
+            LEGACY_STREAM_PLAN_SCHEMA_VERSION,
+            STREAM_PLAN_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported mixture stream schema")
         if len(self.p_values) < 2:
             raise ValueError("mixture stream requires at least two p values")
-        if self.p_values[0] != 0.0 or self.p_values[-1] != 1.0:
-            raise ValueError("mixture stream must include p=0 and p=1")
+        if self.schema_version == LEGACY_STREAM_PLAN_SCHEMA_VERSION:
+            if self.p_values[0] != 0.0 or self.p_values[-1] != 1.0:
+                raise ValueError("legacy mixture stream must include p=0 and p=1")
+            if any(
+                value is not None
+                for value in (
+                    self.schedule_name,
+                    self.schedule_hash,
+                    self.uniform_stream_hash,
+                )
+            ):
+                raise ValueError("legacy mixture stream has schedule metadata")
+        else:
+            if (
+                not 0.0 <= self.p_values[0] < self.p_values[-1] <= 1.0
+                or any(
+                    right <= left
+                    for left, right in zip(self.p_values, self.p_values[1:])
+                )
+            ):
+                raise ValueError(
+                    "scheduled mixture stream requires increasing p in [0, 1]"
+                )
+            if not isinstance(self.schedule_name, str) or not self.schedule_name:
+                raise ValueError("scheduled mixture stream requires a schedule name")
+            for name, value in {
+                "schedule_hash": self.schedule_hash,
+                "uniform_stream_hash": self.uniform_stream_hash,
+            }.items():
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(character not in "0123456789abcdef" for character in value)
+                ):
+                    raise ValueError(f"scheduled mixture stream has invalid {name}")
         expected_shape = (len(self.p_values), self.samples_per_step)
         if (
             len(self.observation_indices) != expected_shape[0]
@@ -284,11 +336,21 @@ def generate_mixture_stream(
     if targets.numel() != partitions.train_size:
         raise ValueError("train targets do not match partition metadata")
 
+    schedule = resolve_schedule(config)
+    p_values = schedule.p_values
+    if config.schedule is not None:
+        return _generate_scheduled_mixture_stream(
+            targets,
+            partitions,
+            config,
+            seed=seed,
+            p_values=p_values,
+            schedule_name=schedule.name,
+            schedule_hash=schedule.content_hash,
+        )
+
+    # Preserve the historical generator and its exact RNG consumption.
     generator = torch.Generator().manual_seed(seed)
-    p_values = tuple(
-        step / (config.num_p_steps - 1)
-        for step in range(config.num_p_steps)
-    )
     observation_rows = []
     label_rows = []
     for p_value in p_values:
@@ -312,6 +374,108 @@ def generate_mixture_stream(
         non_nine_sampling=config.non_nine_sampling,
         seed=seed,
         partition_hash=partitions.content_hash,
+    )
+    plan.validate()
+    return plan
+
+
+def _generate_scheduled_mixture_stream(
+    targets: Tensor,
+    partitions: DatasetPartitions,
+    config: DataConfig,
+    *,
+    seed: int,
+    p_values: tuple[float, ...],
+    schedule_name: str,
+    schedule_hash: str,
+) -> MixtureStreamPlan:
+    """Select schedule-specific classes from common random-number streams."""
+
+    pool = torch.tensor(partitions.online, dtype=torch.long)
+    pool_targets = targets[pool]
+    nine_candidates = pool[pool_targets == 9]
+    non_nine_candidates = pool[pool_targets != 9]
+    per_class_candidates = {
+        label: pool[pool_targets == label] for label in range(9)
+    }
+    if nine_candidates.numel() == 0 or non_nine_candidates.numel() == 0:
+        raise ValueError("sampling pool must contain nine and non-nine observations")
+    if config.non_nine_sampling == "balanced" and any(
+        candidates.numel() == 0 for candidates in per_class_candidates.values()
+    ):
+        raise ValueError("balanced sampling requires every non-nine class")
+
+    shape = (config.num_p_steps, config.samples_per_step)
+    count = shape[0] * shape[1]
+    uniform_seed = derive_component_seed(seed, "scheduled_mixture_uniforms")
+    uniform_generator = torch.Generator().manual_seed(uniform_seed)
+    uniforms = torch.rand(shape, generator=uniform_generator, dtype=torch.float64)
+    uniform_stream_hash = _canonical_hash(
+        {
+            "schema_version": 1,
+            "seed": uniform_seed,
+            "shape": shape,
+            "values": uniforms.tolist(),
+        }
+    )
+
+    nine_generator = torch.Generator().manual_seed(
+        derive_component_seed(seed, "scheduled_nine_candidates")
+    )
+    nine_proposals = nine_candidates[
+        torch.randint(nine_candidates.numel(), (count,), generator=nine_generator)
+    ].reshape(shape)
+
+    non_nine_generator = torch.Generator().manual_seed(
+        derive_component_seed(seed, "scheduled_non_nine_candidates")
+    )
+    if config.non_nine_sampling == "empirical":
+        non_nine_proposals = non_nine_candidates[
+            torch.randint(
+                non_nine_candidates.numel(),
+                (count,),
+                generator=non_nine_generator,
+            )
+        ].reshape(shape)
+    else:
+        proposed_labels = torch.randint(9, (count,), generator=non_nine_generator)
+        flat_proposals = torch.empty(count, dtype=torch.long)
+        for label, candidates in per_class_candidates.items():
+            mask = proposed_labels == label
+            label_count = int(mask.sum())
+            flat_proposals[mask] = candidates[
+                torch.randint(
+                    candidates.numel(),
+                    (label_count,),
+                    generator=non_nine_generator,
+                )
+            ]
+        non_nine_proposals = flat_proposals.reshape(shape)
+
+    observation_rows = []
+    label_rows = []
+    for step, p_value in enumerate(p_values):
+        observations = torch.where(
+            uniforms[step] < p_value,
+            nine_proposals[step],
+            non_nine_proposals[step],
+        )
+        labels = targets[observations]
+        observation_rows.append(tuple(observations.tolist()))
+        label_rows.append(tuple(labels.tolist()))
+
+    plan = MixtureStreamPlan(
+        p_values=p_values,
+        observation_indices=tuple(observation_rows),
+        class_labels=tuple(label_rows),
+        samples_per_step=config.samples_per_step,
+        non_nine_sampling=config.non_nine_sampling,
+        seed=seed,
+        partition_hash=partitions.content_hash,
+        schema_version=STREAM_PLAN_SCHEMA_VERSION,
+        schedule_name=schedule_name,
+        schedule_hash=schedule_hash,
+        uniform_stream_hash=uniform_stream_hash,
     )
     plan.validate()
     return plan

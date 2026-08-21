@@ -46,11 +46,19 @@ The original learning process estimates $\theta^\star(p)$ with $\widehat\theta_t
 
 ## Data trajectory
 
-Each replica traverses a complete deterministic grid from $p=0$ to $p=1$:
+Historical configurations traverse a complete deterministic grid from $p=0$
+to $p=1$:
 
 $$
 p_t=\frac{t}{K-1},\qquad t=0,\ldots,K-1.
 $$
+
+An experiment may instead provide an explicit, versioned schedule with
+configured endpoints in $[0,1]$. Store its resolved $p_t$ values and schedule
+hash in the immutable stream artifact; do not reconstruct them in a notebook.
+Plan 4 uses range-matched linear and normalized-logistic schedules on
+$p\in[0,.2]$. An explicit schedule changes the environmental timing contract,
+not the likelihood Fisher estimand.
 
 Expose both of these as required configuration or command-line arguments:
 
@@ -64,7 +72,7 @@ Treat `num_p_steps` and `samples_per_step` as experimental variables. Analyze:
 - a factorial grid that estimates their separate and interacting effects;
 - compute-matched slices where `num_p_steps * samples_per_step` is approximately constant.
 
-All estimator conditions in one paired replica must receive the same sampled class sequence and same selected MNIST observations whenever their paths are intentionally shared. Preserve the full trajectory, including $p=0$ and $p=1$, but exclude endpoints from finite-difference stencils and primary interior geometric summaries.
+All estimator conditions in one paired replica must receive the same sampled class sequence and same selected MNIST observations whenever their paths are intentionally shared. Preserve the full configured trajectory, including both configured endpoints, but exclude endpoints from finite-difference stencils and primary interior geometric summaries.
 
 ## Model
 

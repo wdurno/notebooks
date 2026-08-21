@@ -362,7 +362,7 @@ def _phase4_design_mapping(config: ExperimentConfig) -> dict[str, Any]:
     return {
         "replica_id": config.replica_id,
         "replica_seed": config.replica_seed,
-        "data": dataclasses.asdict(config.data),
+        "data": config.data.to_mapping(),
         "runtime": dataclasses.asdict(config.runtime),
         "reference": dataclasses.asdict(config.reference),
         "initialization": dataclasses.asdict(config.initialization),

@@ -60,6 +60,7 @@ from src.reference_optimum import (
     build_reference_optimum_path,
 )
 from src.representations import DiagonalFisher, LowRankDiagonalFisher
+from src.schedules import resolve_schedule, schedule_trajectory_mapping
 from src.seeding import derive_component_seed
 from src.structured_trajectory import (
     DiagonalFisherTracker,
@@ -380,7 +381,7 @@ def _run_condition(
             derivative_targets,
             lagged_displacement.to(device=device, dtype=derivative_dtype),
             matrix_dtype=matrix_dtype,
-            include_hvp=step > 0,
+            include_hvp=(config.estimator.method != "ema" and step > 0),
             device=device,
         )
         statistics = _statistics_to_device(
@@ -1237,6 +1238,24 @@ def main() -> None:
             ),
             "environment_accuracy": "multiclass_prevalence_adjusted_at_row_p",
         }
+    schedule_path = None
+    if config.data.schedule is not None:
+        schedule = resolve_schedule(config.data)
+        if schedule.p_values != loaded.stream_plan.p_values:
+            raise RuntimeError("resolved schedule differs from the immutable stream")
+        if schedule.content_hash != loaded.stream_plan.schedule_hash:
+            raise RuntimeError("resolved schedule hash differs from the stream")
+        schedule_path = session.write_json(
+            "schedule_trajectory.json",
+            schedule_trajectory_mapping(
+                schedule,
+                loaded.stream_plan.class_labels,
+                samples_per_step=config.data.samples_per_step,
+                stream_plan_hash=loaded.stream_plan.content_hash,
+                uniform_stream_hash=loaded.stream_plan.uniform_stream_hash,
+            ),
+        )
+
     trajectory_path = session.write_torch(
         "phase8_trajectories.pt", _cpu_tree(trajectory_artifact)
     )
@@ -1254,16 +1273,21 @@ def main() -> None:
         "phase8_checkpoints.pt": checkpoint_path.stat().st_size,
         "phase8_reference_optimum.pt": oracle_path_file.stat().st_size,
     }
+    if schedule_path is not None:
+        metrics["artifact_files_bytes"]["schedule_trajectory.json"] = (
+            schedule_path.stat().st_size
+        )
     session.write_json("phase8_metrics.json", metrics)
-    destination = session.complete(
-        [
+    required_artifacts = [
             "phase8_metrics.json",
             "phase8_trajectories.pt",
             "phase8_controller_states.pt",
             "phase8_checkpoints.pt",
             "phase8_reference_optimum.pt",
         ]
-    )
+    if schedule_path is not None:
+        required_artifacts.append("schedule_trajectory.json")
+    destination = session.complete(required_artifacts)
     print(
         json.dumps(
             {

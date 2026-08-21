@@ -94,6 +94,9 @@ def _tiny_fixture():
 
 def test_replica_design_identity_excludes_fisher_treatment() -> None:
     config = load_config(SMOKE_CONFIG)
+    assert replica_design_hash(config) == (
+        "7527ae76131c4c07bf52a14cdd1d181dbe9cbe108e97dd75d813df808d61736a"
+    )
     other_estimator = EstimatorConfig(
         method="ema",
         representation="dense",

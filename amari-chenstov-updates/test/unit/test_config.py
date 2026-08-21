@@ -87,6 +87,9 @@ def test_smoke_config_loads_and_has_stable_hash() -> None:
     assert config == same_config
     assert config.config_hash == same_config.config_hash
     assert config.run_id.endswith(config.config_hash[:16])
+    assert config.config_hash == (
+        "072faff78d1bf6cd2c1c395f9eae47a55f5aca0e4b536ebbfce6d3c75e10871d"
+    )
     assert config.data.num_p_steps == 3
     assert config.to_mapping() == raw
     assert config.estimator.ridge_half_life_steps is None
@@ -119,6 +122,40 @@ def test_unknown_configuration_keys_are_rejected() -> None:
     raw["surprise"] = True
 
     with pytest.raises(ConfigError, match="unknown"):
+        ExperimentConfig.from_mapping(raw)
+
+
+def test_explicit_schedule_round_trips_without_changing_legacy_hash() -> None:
+    legacy = load_config(CONTROLLER_CONFIG)
+    legacy_hash = legacy.config_hash
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    raw["data"]["schedule"] = {
+        "kind": "normalized_logistic",
+        "p_start": 0.0,
+        "p_end": 0.2,
+        "center_fraction": 0.5,
+        "steepness": 16.0,
+    }
+
+    scheduled = ExperimentConfig.from_mapping(raw)
+
+    assert scheduled.to_mapping() == raw
+    assert scheduled.config_hash != legacy_hash
+    assert load_config(CONTROLLER_CONFIG).config_hash == legacy_hash
+
+
+def test_explicit_schedule_is_strictly_parsed() -> None:
+    raw = json.loads(CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    raw["data"]["schedule"] = {
+        "kind": "normalized_logistic",
+        "p_start": 0.0,
+        "p_end": 0.2,
+        "center_fraction": 0.5,
+        "steepness": 16.0,
+        "surprise": True,
+    }
+
+    with pytest.raises(ConfigError, match="data.schedule.*unknown"):
         ExperimentConfig.from_mapping(raw)
 
 

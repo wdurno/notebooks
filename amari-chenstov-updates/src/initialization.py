@@ -26,6 +26,7 @@ from .artifacts import collect_runtime_metadata
 from .classification_metrics import nine_environment_metrics
 from .config import ExperimentConfig, InitializationConfig
 from .mnist_data import (
+    LEGACY_STREAM_PLAN_SCHEMA_VERSION,
     MNIST_DATA_SCHEMA_VERSION,
     STREAM_PLAN_SCHEMA_VERSION,
     DatasetPartitions,
@@ -88,10 +89,14 @@ def replica_design_mapping(config: ExperimentConfig) -> dict[str, Any]:
         "bundle_schema_version": REPLICA_BUNDLE_SCHEMA_VERSION,
         "model_schema_version": MNIST_MODEL_SCHEMA_VERSION,
         "data_schema_version": MNIST_DATA_SCHEMA_VERSION,
-        "stream_plan_schema_version": STREAM_PLAN_SCHEMA_VERSION,
+        "stream_plan_schema_version": (
+            LEGACY_STREAM_PLAN_SCHEMA_VERSION
+            if config.data.schedule is None
+            else STREAM_PLAN_SCHEMA_VERSION
+        ),
         "replica_id": config.replica_id,
         "replica_seed": config.replica_seed,
-        "data": dataclasses.asdict(config.data),
+        "data": config.data.to_mapping(),
         "initialization": dataclasses.asdict(config.initialization),
         "training_dtype": config.runtime.training_dtype,
         "deterministic_algorithms": config.runtime.deterministic_algorithms,

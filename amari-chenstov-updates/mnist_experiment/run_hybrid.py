@@ -59,6 +59,7 @@ from src.mnist_model import (
 from src.parameters import ParameterLayout
 from src.replay import FifoReplayBuffer, ReplayEvent, stream_events
 from src.seeding import derive_component_seed
+from src.schedules import resolve_schedule, schedule_trajectory_mapping
 
 
 PLAN3_HYBRID_ARTIFACT_SCHEMA_VERSION = 6
@@ -905,6 +906,24 @@ def main() -> None:
         trajectory_artifact["final_controller_state"] = _controller_state_mapping(
             controller_state
         )
+    schedule_path = None
+    if config.data.schedule is not None:
+        schedule = resolve_schedule(config.data)
+        if schedule.p_values != p_values:
+            raise RuntimeError("resolved schedule differs from the immutable stream")
+        if schedule.content_hash != loaded.stream_plan.schedule_hash:
+            raise RuntimeError("resolved schedule hash differs from the stream")
+        schedule_path = session.write_json(
+            "schedule_trajectory.json",
+            schedule_trajectory_mapping(
+                schedule,
+                loaded.stream_plan.class_labels,
+                samples_per_step=config.data.samples_per_step,
+                stream_plan_hash=loaded.stream_plan.content_hash,
+                uniform_stream_hash=loaded.stream_plan.uniform_stream_hash,
+            ),
+        )
+
     trajectory_path = session.write_torch(
         "plan3_hybrid_trajectory.pt",
         trajectory_artifact,
@@ -1074,6 +1093,10 @@ def main() -> None:
             "plan3_hybrid_checkpoint.pt": checkpoint_bytes,
         },
     }
+    if schedule_path is not None:
+        metrics["artifact_files_bytes"]["schedule_trajectory.json"] = (
+            schedule_path.stat().st_size
+        )
     if config.schema_version >= 16:
         applied_pis = [
             float(row["controller_decision"]["applied_pi"])
@@ -1148,13 +1171,14 @@ def main() -> None:
             }
         )
     session.write_json("plan3_hybrid_metrics.json", metrics)
-    destination = session.complete(
-        [
+    required_artifacts = [
             "plan3_hybrid_metrics.json",
             "plan3_hybrid_trajectory.pt",
             "plan3_hybrid_checkpoint.pt",
         ]
-    )
+    if schedule_path is not None:
+        required_artifacts.append("schedule_trajectory.json")
+    destination = session.complete(required_artifacts)
     print(
         json.dumps(
             {
