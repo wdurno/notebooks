@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeVar
 
-CONFIG_SCHEMA_VERSION = 16
+CONFIG_SCHEMA_VERSION = 20
 SUPPORTED_CONFIG_SCHEMA_VERSIONS = (
     4,
     5,
@@ -24,12 +24,22 @@ SUPPORTED_CONFIG_SCHEMA_VERSIONS = (
     13,
     14,
     15,
+    16,
+    17,
+    18,
+    19,
     CONFIG_SCHEMA_VERSION,
 )
 ARTIFACT_SCHEMA_VERSION = 1
 METRIC_SCHEMA_VERSION = 1
 CONTROLLER_ARTIFACT_SCHEMA_VERSION = 4
 CONTROLLER_METRIC_SCHEMA_VERSION = 8
+FISHER_CONTROLLER_ARTIFACT_SCHEMA_VERSION = 9
+FISHER_CONTROLLER_METRIC_SCHEMA_VERSION = 13
+FISHER_HYBRID_ARTIFACT_SCHEMA_VERSION = 10
+FISHER_HYBRID_METRIC_SCHEMA_VERSION = 14
+EDR_HYBRID_ARTIFACT_SCHEMA_VERSION = 11
+EDR_HYBRID_METRIC_SCHEMA_VERSION = 15
 REPLAY_ARTIFACT_SCHEMA_VERSION = 5
 REPLAY_METRIC_SCHEMA_VERSION = 9
 HYBRID_ARTIFACT_SCHEMA_VERSION = 6
@@ -38,7 +48,16 @@ HYBRID_LFU_ARTIFACT_SCHEMA_VERSION = 7
 HYBRID_LFU_METRIC_SCHEMA_VERSION = 11
 DEPLOYMENT_HYBRID_ARTIFACT_SCHEMA_VERSION = 8
 DEPLOYMENT_HYBRID_METRIC_SCHEMA_VERSION = 12
-SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (2, 3, 4, 5, 6, 7, 8)
+SUPPORTED_CONTROLLER_METRIC_SCHEMA_VERSIONS = (
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    FISHER_CONTROLLER_METRIC_SCHEMA_VERSION,
+)
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _T = TypeVar("_T")
@@ -58,6 +77,10 @@ def _is_finite_number(value: Any) -> bool:
         and not isinstance(value, bool)
         and math.isfinite(float(value))
     )
+
+
+def _uses_replay_schema(schema_version: int) -> bool:
+    return 13 <= schema_version <= 16 or schema_version >= 18
 
 
 def _construct_dataclass(
@@ -581,6 +604,8 @@ class ControllerConfig:
     trace_epsilon: float | None = None
     oracle_mode: str | None = None
     reference_optimum_artifact: str | None = None
+    risk_metric: str = "euclidean"
+    action_half_life_steps: float | None = None
 
     def validate(self) -> None:
         if self.policy not in {
@@ -590,6 +615,7 @@ class ControllerConfig:
             "optimal_capped",
             "optimal_oracle",
             "fixed_unified",
+            "discounted_risk",
             "freeze",
         }:
             raise ConfigError(f"unsupported controller.policy: {self.policy}")
@@ -642,6 +668,17 @@ class ControllerConfig:
             raise ConfigError(
                 "controller.reference_optimum_artifact must be null or a "
                 "nonempty path"
+            )
+        if self.risk_metric not in {"euclidean", "fisher"}:
+            raise ConfigError(
+                "controller.risk_metric must be 'euclidean' or 'fisher'"
+            )
+        if self.action_half_life_steps is not None and (
+            not _is_finite_number(self.action_half_life_steps)
+            or float(self.action_half_life_steps) <= 0.0
+        ):
+            raise ConfigError(
+                "controller.action_half_life_steps must be positive"
             )
 
 
@@ -711,7 +748,9 @@ class ExperimentConfig:
 
         schema_version = value.get("schema_version")
         expected = {field.name for field in dataclasses.fields(cls)}
-        if not _is_integer(schema_version) or schema_version < 13:
+        if not _is_integer(schema_version) or not _uses_replay_schema(
+            schema_version
+        ):
             expected.remove("replay")
         supplied = set(value)
         missing = sorted(expected - supplied)
@@ -757,6 +796,10 @@ class ExperimentConfig:
                     controller_mapping[obsolete] = None
             if schema_version < 9:
                 controller_mapping["reference_optimum_artifact"] = None
+            if schema_version < 17:
+                controller_mapping["risk_metric"] = "euclidean"
+            if schema_version < 20:
+                controller_mapping["action_half_life_steps"] = None
 
         optimizer_mapping = value["optimizer"]
         if isinstance(optimizer_mapping, Mapping) and schema_version < 10:
@@ -820,7 +863,7 @@ class ExperimentConfig:
             ),
             replay=(
                 None
-                if schema_version < 13
+                if not _uses_replay_schema(schema_version)
                 else _construct_dataclass(
                     ReplayConfig,
                     value["replay"],
@@ -840,6 +883,15 @@ class ExperimentConfig:
                 f"got {self.schema_version}"
             )
         expected_artifact_schema = (
+            EDR_HYBRID_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version >= 20
+            else
+            FISHER_HYBRID_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version >= 18
+            else
+            FISHER_CONTROLLER_ARTIFACT_SCHEMA_VERSION
+            if self.schema_version == 17
+            else
             DEPLOYMENT_HYBRID_ARTIFACT_SCHEMA_VERSION
             if self.schema_version >= 16
             else
@@ -861,6 +913,15 @@ class ExperimentConfig:
                 f"got {self.artifact_schema_version}"
             )
         expected_metric_schema = (
+            EDR_HYBRID_METRIC_SCHEMA_VERSION
+            if self.schema_version >= 20
+            else
+            FISHER_HYBRID_METRIC_SCHEMA_VERSION
+            if self.schema_version >= 18
+            else
+            FISHER_CONTROLLER_METRIC_SCHEMA_VERSION
+            if self.schema_version == 17
+            else
             DEPLOYMENT_HYBRID_METRIC_SCHEMA_VERSION
             if self.schema_version >= 16
             else
@@ -880,6 +941,15 @@ class ExperimentConfig:
             else METRIC_SCHEMA_VERSION
         )
         valid_metric_schemas = (
+            (EDR_HYBRID_METRIC_SCHEMA_VERSION,)
+            if self.schema_version >= 20
+            else
+            (FISHER_HYBRID_METRIC_SCHEMA_VERSION,)
+            if self.schema_version >= 18
+            else
+            (FISHER_CONTROLLER_METRIC_SCHEMA_VERSION,)
+            if self.schema_version == 17
+            else
             (DEPLOYMENT_HYBRID_METRIC_SCHEMA_VERSION,)
             if self.schema_version >= 16
             else
@@ -919,7 +989,7 @@ class ExperimentConfig:
         self.initialization.validate()
         self.optimizer.validate()
         self.controller.validate()
-        if self.schema_version >= 13:
+        if _uses_replay_schema(self.schema_version):
             if self.replay is None:
                 raise ConfigError("schema-v13 replay configuration is required")
             self.replay.validate()
@@ -941,7 +1011,9 @@ class ExperimentConfig:
             if self.schema_version >= 14 and self.replay.mode != "hybrid":
                 raise ConfigError("schema-v14 replay mode must be hybrid")
         elif self.replay is not None:
-            raise ConfigError("replay configuration requires schema version 13")
+            raise ConfigError(
+                "replay configuration requires schema version 13-16 or 18+"
+            )
 
         if self.schema_version < 7:
             if self.estimator.ema_gain is None:
@@ -964,6 +1036,7 @@ class ExperimentConfig:
             "fixed_unified",
             "optimal_plugin",
             "optimal_oracle",
+            "discounted_risk",
             "freeze",
         }:
             raise ConfigError(
@@ -992,12 +1065,28 @@ class ExperimentConfig:
                 "schema-v9 optimal_oracle requires "
                 "controller.reference_optimum_artifact"
             )
+        if self.schema_version < 20:
+            if self.controller.policy == "discounted_risk":
+                raise ConfigError("discounted_risk requires schema version 20")
+            if self.controller.action_half_life_steps is not None:
+                raise ConfigError(
+                    "controller.action_half_life_steps requires schema version 20"
+                )
+        elif (
+            self.controller.policy != "discounted_risk"
+            or self.controller.risk_metric != "fisher"
+            or self.controller.action_half_life_steps is None
+        ):
+            raise ConfigError(
+                "schema-v20 requires Fisher discounted_risk control with an "
+                "action half-life"
+            )
 
     def to_mapping(self) -> dict[str, Any]:
         mapping = dataclasses.asdict(self)
         if self.data.schedule is None:
             mapping["data"].pop("schedule")
-        if self.schema_version < 13:
+        if not _uses_replay_schema(self.schema_version):
             mapping.pop("replay")
         elif self.schema_version < 14:
             mapping["replay"].pop("mode")
@@ -1028,6 +1117,10 @@ class ExperimentConfig:
                 mapping["controller"].pop(name)
         if self.schema_version < 9:
             mapping["controller"].pop("reference_optimum_artifact")
+        if self.schema_version < 17:
+            mapping["controller"].pop("risk_metric")
+        if self.schema_version < 20:
+            mapping["controller"].pop("action_half_life_steps")
         if self.schema_version < 8:
             for name in (
                 "convergence_min_chunks",

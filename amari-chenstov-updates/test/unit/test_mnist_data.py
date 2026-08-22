@@ -302,3 +302,38 @@ def test_explicit_schedules_share_common_uniform_and_candidate_streams() -> None
     assert first.class_labels[0] == second.class_labels[0]
     assert first.class_labels[-1] == second.class_labels[-1]
     assert MixtureStreamPlan.from_mapping(first.to_mapping()) == first
+
+
+def test_scheduled_stream_accepts_recorded_zero_speed_tail_transitions() -> None:
+    train_targets, test_targets = _targets()
+    config = _data_config(
+        num_p_steps=100,
+        samples_per_step=1,
+        schedule=ScheduleConfig(
+            kind="normalized_logistic",
+            p_start=0.0,
+            p_end=0.2,
+            center_fraction=0.5,
+            steepness=256.0,
+        ),
+    )
+    partitions = partition_mnist(
+        train_targets,
+        test_targets,
+        config,
+        replica_seed=1729,
+    )
+
+    plan = generate_mixture_stream(
+        train_targets,
+        partitions,
+        config,
+        seed=derive_seed_map(1729)["online_stream"],
+    )
+
+    assert any(
+        right == left
+        for left, right in zip(plan.p_values, plan.p_values[1:])
+    )
+    assert plan.p_values[0] == 0.0
+    assert plan.p_values[-1] == 0.2

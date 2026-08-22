@@ -24,6 +24,11 @@ DEFAULT_CONFIGS = (
     Path(__file__).with_name("configs") / "plan4_phase1_fixed_smoke.json",
     Path(__file__).with_name("configs") / "plan4_phase1_adaptive_smoke.json",
 )
+PHASE3_CONFIGS = (
+    Path(__file__).with_name("configs") / "plan4_phase3_fixed_smoke.json",
+    Path(__file__).with_name("configs") / "plan4_phase3_euclidean_smoke.json",
+    Path(__file__).with_name("configs") / "plan4_phase3_fisher_smoke.json",
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -133,6 +138,7 @@ def status_rows(
             {
                 "config": str(path),
                 "policy": config.controller.policy,
+                "risk_metric": config.controller.risk_metric,
                 "config_hash": config.config_hash,
                 "run_id": config.run_id,
                 "run_state": state,

@@ -36,7 +36,12 @@ from mnist_experiment.run_experiment import (
 from mnist_experiment.run_representations import _fixed_probes
 from mnist_experiment.run_structured_coupled import _structured_tracking_metrics
 from src.artifacts import RunStore
-from src.config import ExperimentConfig, load_config
+from src.config import (
+    FISHER_CONTROLLER_ARTIFACT_SCHEMA_VERSION,
+    FISHER_CONTROLLER_METRIC_SCHEMA_VERSION,
+    ExperimentConfig,
+    load_config,
+)
 from src.controller import (
     ControllerState,
     OracleControllerInput,
@@ -59,7 +64,12 @@ from src.reference_optimum import (
     ReferenceOptimumPath,
     build_reference_optimum_path,
 )
-from src.representations import DiagonalFisher, LowRankDiagonalFisher
+from src.representations import (
+    DenseFisher,
+    DiagonalFisher,
+    FisherRepresentation,
+    LowRankDiagonalFisher,
+)
 from src.schedules import resolve_schedule, schedule_trajectory_mapping
 from src.seeding import derive_component_seed
 from src.structured_trajectory import (
@@ -84,12 +94,14 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def _validate_config(config: ExperimentConfig) -> int:
-    if config.schema_version not in {9, 10, 11, 12}:
+    if config.schema_version not in {9, 10, 11, 12, 17}:
         raise ValueError(
-            "corrected Phase 8 controller runs require schema version 9-12"
+            "corrected controller runs require schema version 9-12 or 17"
         )
     expected_metric_schema = (
-        8
+        FISHER_CONTROLLER_METRIC_SCHEMA_VERSION
+        if config.schema_version == 17
+        else 8
         if config.schema_version >= 12
         else 7
         if config.schema_version == 11
@@ -100,8 +112,16 @@ def _validate_config(config: ExperimentConfig) -> int:
             "corrected Phase 8 metric schema must be version "
             f"{expected_metric_schema}"
         )
-    if config.artifact_schema_version != PHASE8_ARTIFACT_SCHEMA_VERSION:
-        raise ValueError("corrected Phase 8 artifact schema must be version 4")
+    expected_artifact_schema = (
+        FISHER_CONTROLLER_ARTIFACT_SCHEMA_VERSION
+        if config.schema_version == 17
+        else PHASE8_ARTIFACT_SCHEMA_VERSION
+    )
+    if config.artifact_schema_version != expected_artifact_schema:
+        raise ValueError(
+            "corrected controller artifact schema must be version "
+            f"{expected_artifact_schema}"
+        )
     if config.estimator.ema_gain is not None:
         raise ValueError("Phase 8 forbids an independent estimator.ema_gain")
     if config.estimator.representation != "low_rank_diagonal":
@@ -127,6 +147,8 @@ def _validate_config(config: ExperimentConfig) -> int:
         )
     if config.controller.oracle_mode not in {"reference_path", "diagnostic"}:
         raise ValueError("Phase 8 requires reference-path oracle diagnostics")
+    if config.schema_version < 17 and config.controller.risk_metric != "euclidean":
+        raise ValueError("legacy controller schemas require Euclidean risk")
     return config.estimator.low_rank
 
 
@@ -253,6 +275,31 @@ def _make_tracker(
     raise ValueError(f"unsupported Phase 8 method: {method}")
 
 
+def _predictable_fisher(
+    tracker: DenseFisherTracker | DiagonalFisherTracker | LowRankDiagonalFisherTracker,
+    initial_fisher: Tensor,
+) -> FisherRepresentation:
+    """Expose the summary available before the current tracker update."""
+
+    if isinstance(tracker, DenseFisherTracker):
+        return DenseFisher(tracker.previous)
+    if isinstance(tracker, DiagonalFisherTracker):
+        return tracker.previous
+    if tracker.previous is None:
+        return DenseFisher(initial_fisher)
+    return tracker.previous
+
+
+def _fisher_kind(fisher: FisherRepresentation) -> str:
+    if isinstance(fisher, DenseFisher):
+        return "dense"
+    if isinstance(fisher, DiagonalFisher):
+        return "diagonal"
+    if isinstance(fisher, LowRankDiagonalFisher):
+        return "low_rank_diagonal"
+    raise TypeError("unsupported predictable Fisher representation")
+
+
 def _oracle_inputs(
     path: ReferenceOptimumPath,
     *,
@@ -335,6 +382,10 @@ def _run_condition(
     calibration_bins = (
         CALIBRATION_BINS if config.metric_schema_version >= 7 else None
     )
+    extended_controller_schema = config.schema_version == 17
+    state_risk_metric = (
+        config.controller.risk_metric if extended_controller_schema else None
+    )
     started = time.perf_counter()
 
     progress = tqdm(
@@ -345,11 +396,13 @@ def _run_condition(
     )
     for step, p_value in enumerate(progress):
         state_before = controller_state
+        predictable_fisher = _predictable_fisher(tracker, initial_fisher)
         decision = decide_controller(
             state_before,
             config.controller,
             batch_size=config.data.samples_per_step,
             oracle=oracle_inputs[step],
+            fisher=predictable_fisher,
         )
         parameter_before = layout.flatten_module(model, detach=True)
         parameters.append(parameter_before.cpu())
@@ -553,6 +606,7 @@ def _run_condition(
                 delta_p=delta_p,
                 half_life_p=config.controller.trend_half_life_p,
                 oracle_displacement=oracle_inputs[step].displacement,
+                fisher=predictable_fisher,
             )
             controller_state = acceptance.state
             state_after = controller_state
@@ -581,13 +635,32 @@ def _run_condition(
                     else float(torch.linalg.vector_norm(acceptance.oracle_residual))
                 ),
                 "oracle_residual_to_scale_ratio": (
-                    float(acceptance.oracle_residual.square().sum())
+                    acceptance.oracle_residual_energy
                     / acceptance.scale_observation
                     if acceptance.scale_observation > 0.0
-                    and acceptance.oracle_residual is not None
+                    and acceptance.oracle_residual_energy is not None
                     else None
                 ),
             }
+            if extended_controller_schema:
+                acceptance_mapping.update(
+                    {
+                        "risk_metric": config.controller.risk_metric,
+                        "residual_risk_energy": acceptance.residual_squared,
+                        "residual_euclidean_norm": math.sqrt(
+                            acceptance.residual_euclidean_squared
+                        ),
+                        "residual_euclidean_squared": (
+                            acceptance.residual_euclidean_squared
+                        ),
+                        "oracle_residual_risk_energy": (
+                            acceptance.oracle_residual_energy
+                        ),
+                        "oracle_residual_euclidean_squared": (
+                            acceptance.oracle_residual_euclidean_squared
+                        ),
+                    }
+                )
             after_evaluation = evaluate_classifier(
                 model,
                 evaluation_dataset,
@@ -607,14 +680,20 @@ def _run_condition(
         parameter_error = parameter_before.cpu().to(dtype=matrix_dtype) - (
             oracle_path.parameters[step].to(dtype=matrix_dtype)
         )
-        controller_states[str(step)] = {
+        controller_state_mapping = {
             "pre": {
-                **state_before.scalar_mapping(config.controller.trace_epsilon),
+                **state_before.scalar_mapping(
+                    config.controller.trace_epsilon,
+                    risk_metric=state_risk_metric,
+                ),
                 "trend": state_before.trend,
             },
-            "decision": decision.mapping(),
+            "decision": decision.mapping(extended=extended_controller_schema),
             "post": {
-                **state_after.scalar_mapping(config.controller.trace_epsilon),
+                **state_after.scalar_mapping(
+                    config.controller.trace_epsilon,
+                    risk_metric=state_risk_metric,
+                ),
                 "trend": state_after.trend,
             },
             "accepted_displacement": accepted_displacement,
@@ -634,6 +713,18 @@ def _run_condition(
             "oracle_displacement": oracle_displacement,
             "parameter_error_to_oracle": parameter_error,
         }
+        if extended_controller_schema:
+            controller_state_mapping["predictable_fisher"] = {
+                "kind": _fisher_kind(predictable_fisher),
+                "source": (
+                    "initial_high_sample_summary"
+                    if step == 0
+                    else "previous_accepted_auxiliary_update"
+                ),
+                "source_step": None if step == 0 else step - 1,
+                "storage_bytes": predictable_fisher.storage_bytes(),
+            }
+        controller_states[str(step)] = controller_state_mapping
         online = _online_metrics(
             statistics, reference, direction, previous_reference
         )
@@ -652,12 +743,16 @@ def _run_condition(
                 "parameter_norm": float(torch.linalg.vector_norm(parameter_before)),
                 "reference_cache_digest": record.cache_digest,
                 "reference_plan_hash": record.plan.content_hash,
-                "controller": decision.mapping(),
+                "controller": decision.mapping(
+                    extended=extended_controller_schema
+                ),
                 "controller_state_pre": state_before.scalar_mapping(
-                    config.controller.trace_epsilon
+                    config.controller.trace_epsilon,
+                    risk_metric=state_risk_metric,
                 ),
                 "controller_state_post": state_after.scalar_mapping(
-                    config.controller.trace_epsilon
+                    config.controller.trace_epsilon,
+                    risk_metric=state_risk_metric,
                 ),
                 "acceptance": acceptance_mapping,
                 "proposal": proposal_mapping,
@@ -720,7 +815,9 @@ def _run_condition(
                 "accepted_displacement": accepted_displacement,
                 "ridge_state": ridge_state,
                 "update_diagnostics": update_diagnostics,
-                "controller_decision": decision.mapping(),
+                "controller_decision": decision.mapping(
+                    extended=extended_controller_schema
+                ),
                 "parameter_hash": parameter_hash,
             }
         previous_reference = reference
@@ -1132,6 +1229,14 @@ def main() -> None:
             row.method: row.controller_states for row in conditions
         },
     }
+    if config.schema_version == 17:
+        controller_artifact.update(
+            {
+                "risk_metric": config.controller.risk_metric,
+                "metric_timing": "pre_decision_previous_auxiliary_summary",
+                "state_schema_version": 2,
+            }
+        )
     checkpoint_artifact = {
         "schema_version": artifact_version,
         "checkpoint_policy": "initial, midpoint, and final indices",
@@ -1146,11 +1251,15 @@ def main() -> None:
         "methods": list(methods),
         "fisher_update_method": config.estimator.method,
         "policy": config.controller.policy,
-        "controller_config": dataclasses.asdict(config.controller),
+        "controller_config": config.to_mapping()["controller"],
         "unified_pi_contract": True,
         "post_optimization_scaling": False,
         "fisher_inverse_used": False,
-        "trace_estimator": "accepted_displacement_residual_moments",
+        "trace_estimator": (
+            "accepted_displacement_residual_moments"
+            if config.controller.risk_metric == "euclidean"
+            else "predictable_fisher_weighted_residual_moments"
+        ),
         "controller_displacement_law": "u_approx_pi_times_drift_plus_noise",
         "trend_estimand": "environmental_parameter_displacement",
         "trend_observation": "accepted_displacement_divided_by_pi",
@@ -1208,6 +1317,22 @@ def main() -> None:
             resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
         ),
     }
+    if config.schema_version == 17:
+        metrics.update(
+            {
+                "controller_risk_metric": config.controller.risk_metric,
+                "controller_metric_timing": (
+                    "Fisher summary available before the current action and batch update"
+                ),
+                "controller_uncertainty_scale": (
+                    "trace_inverse_fisher"
+                    if config.controller.risk_metric == "euclidean"
+                    else "fisher_weighted_covariance_dimension"
+                ),
+                "controller_metric_inversion_used": False,
+                "controller_state_schema_version": 2,
+            }
+        )
     if config.metric_schema_version >= 7:
         metrics.update(
             {

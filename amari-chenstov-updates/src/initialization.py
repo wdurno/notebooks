@@ -11,7 +11,7 @@ import random
 import shutil
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from functools import partial
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +31,7 @@ from .mnist_data import (
     STREAM_PLAN_SCHEMA_VERSION,
     DatasetPartitions,
     MixtureStreamPlan,
+    generate_mixture_stream,
 )
 from .mnist_model import (
     MNIST_MODEL_SCHEMA_VERSION,
@@ -43,6 +44,7 @@ from .seeding import derive_seed_map
 
 REPLICA_BUNDLE_SCHEMA_VERSION = 2
 DERIVED_STREAM_SCHEMA_VERSION = 1
+DERIVED_SCHEDULE_STREAM_SCHEMA_VERSION = 2
 
 
 class ReplicaBundleError(RuntimeError):
@@ -593,39 +595,62 @@ def load_replica_bundle(
     if derivation is not None:
         if not isinstance(derivation, Mapping):
             raise ReplicaBundleError("stream derivation metadata must be an object")
-        expected_fields = {
-            "schema_version",
-            "parent_bundle_id",
-            "parent_replica_design_hash",
-            "parent_model_state_hash",
-            "parent_partition_hash",
-            "parent_stream_plan_hash",
-            "parent_samples_per_step",
-            "requested_samples_per_step",
-            "prefix_rule",
-            "derived_stream_plan_hash",
-        }
+        schema_version = derivation.get("schema_version")
+        if schema_version == DERIVED_STREAM_SCHEMA_VERSION:
+            expected_fields = {
+                "schema_version",
+                "parent_bundle_id",
+                "parent_replica_design_hash",
+                "parent_model_state_hash",
+                "parent_partition_hash",
+                "parent_stream_plan_hash",
+                "parent_samples_per_step",
+                "requested_samples_per_step",
+                "prefix_rule",
+                "derived_stream_plan_hash",
+            }
+        elif schema_version == DERIVED_SCHEDULE_STREAM_SCHEMA_VERSION:
+            expected_fields = {
+                "schema_version",
+                "derivation_kind",
+                "parent_bundle_id",
+                "parent_replica_design_hash",
+                "parent_model_state_hash",
+                "parent_partition_hash",
+                "parent_stream_plan_hash",
+                "derived_stream_plan_hash",
+                "derived_schedule_hash",
+                "uniform_stream_hash",
+            }
+        else:
+            raise ReplicaBundleError("unsupported stream derivation schema")
         if set(derivation) != expected_fields:
             raise ReplicaBundleError("stream derivation metadata has invalid fields")
-        if derivation["schema_version"] != DERIVED_STREAM_SCHEMA_VERSION:
-            raise ReplicaBundleError("unsupported stream derivation schema")
-        if derivation["prefix_rule"] != (
-            "first_m_ordered_observations_at_each_p_step"
-        ):
-            raise ReplicaBundleError("unsupported stream derivation prefix rule")
         if derivation["derived_stream_plan_hash"] != stream_plan.content_hash:
             raise ReplicaBundleError("derived stream hash does not match metadata")
-        if derivation["requested_samples_per_step"] != (
-            stream_plan.samples_per_step
-        ):
-            raise ReplicaBundleError("derived stream sample size does not match")
-        parent_size = derivation["parent_samples_per_step"]
-        if (
-            not isinstance(parent_size, int)
-            or isinstance(parent_size, bool)
-            or parent_size <= stream_plan.samples_per_step
-        ):
-            raise ReplicaBundleError("derived stream parent sample size is invalid")
+        if schema_version == DERIVED_STREAM_SCHEMA_VERSION:
+            if derivation["prefix_rule"] != (
+                "first_m_ordered_observations_at_each_p_step"
+            ):
+                raise ReplicaBundleError("unsupported stream derivation prefix rule")
+            if derivation["requested_samples_per_step"] != (
+                stream_plan.samples_per_step
+            ):
+                raise ReplicaBundleError("derived stream sample size does not match")
+            parent_size = derivation["parent_samples_per_step"]
+            if (
+                not isinstance(parent_size, int)
+                or isinstance(parent_size, bool)
+                or parent_size <= stream_plan.samples_per_step
+            ):
+                raise ReplicaBundleError("derived stream parent sample size is invalid")
+        else:
+            if derivation["derivation_kind"] != "scheduled_stream_from_parent":
+                raise ReplicaBundleError("unsupported scheduled-stream derivation")
+            if derivation["derived_schedule_hash"] != stream_plan.schedule_hash:
+                raise ReplicaBundleError("derived schedule hash does not match")
+            if derivation["uniform_stream_hash"] != stream_plan.uniform_stream_hash:
+                raise ReplicaBundleError("derived uniform stream hash does not match")
     initialization_value = _read_json(
         bundle_path / "initialization_metrics.json"
     )
@@ -721,6 +746,68 @@ def derive_replica_bundle(
             )
         return destination
 
+    return save_replica_bundle(
+        root,
+        config,
+        parent.model,
+        parent.layout,
+        parent.partitions,
+        stream_plan,
+        parent.initialization,
+        device=torch.device("cpu"),
+        repo_root=repo_root,
+        derivation=derivation,
+    )
+
+
+def derive_scheduled_replica_bundle(
+    parent_path: str | Path,
+    root: str | Path,
+    config: ExperimentConfig,
+    train_targets: Tensor | Sequence[int],
+    *,
+    repo_root: str | Path,
+) -> Path:
+    """Reuse an initialized replica while deriving one explicit schedule."""
+
+    config.validate()
+    if config.data.schedule is None:
+        raise ReplicaBundleError("scheduled derivation requires an explicit schedule")
+    parent = load_replica_bundle(parent_path, device="cpu")
+    parent_config = dataclasses.replace(
+        config,
+        data=dataclasses.replace(config.data, schedule=None),
+    )
+    if parent.metadata.get("replica_design") != replica_design_mapping(parent_config):
+        raise ReplicaBundleError(
+            "parent bundle differs from the scheduled design outside its schedule"
+        )
+    stream_plan = generate_mixture_stream(
+        train_targets,
+        parent.partitions,
+        config.data,
+        seed=derive_seed_map(config.replica_seed)["online_stream"],
+    )
+    derivation = {
+        "schema_version": DERIVED_SCHEDULE_STREAM_SCHEMA_VERSION,
+        "derivation_kind": "scheduled_stream_from_parent",
+        "parent_bundle_id": parent.metadata["bundle_id"],
+        "parent_replica_design_hash": parent.metadata["replica_design_hash"],
+        "parent_model_state_hash": parent.metadata["model_state_hash"],
+        "parent_partition_hash": parent.metadata["partition_hash"],
+        "parent_stream_plan_hash": parent.metadata["stream_plan_hash"],
+        "derived_stream_plan_hash": stream_plan.content_hash,
+        "derived_schedule_hash": stream_plan.schedule_hash,
+        "uniform_stream_hash": stream_plan.uniform_stream_hash,
+    }
+    destination = Path(root) / replica_bundle_id(config)
+    if destination.exists():
+        loaded = load_replica_bundle_for_config(root, config, device="cpu")
+        if loaded.metadata.get("stream_derivation") != derivation:
+            raise ReplicaBundleError(
+                "existing scheduled bundle has incompatible provenance"
+            )
+        return destination
     return save_replica_bundle(
         root,
         config,

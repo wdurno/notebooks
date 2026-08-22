@@ -9,6 +9,7 @@ import torch
 from torch import Tensor
 
 from .config import ControllerConfig
+from .representations import FisherRepresentation
 
 
 def half_life_gain(delta_p: float, half_life_p: float) -> float:
@@ -31,6 +32,14 @@ def effective_size_update(q: float, pi: float, batch_size: int) -> float:
     if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
     return (1.0 - pi) ** 2 * q + pi**2 / batch_size
+
+
+def update_step_half_life_gain(half_life_steps: float) -> float:
+    """Return the constant EMA gain for a half-life in accepted updates."""
+
+    if not math.isfinite(half_life_steps) or half_life_steps <= 0.0:
+        raise ValueError("half_life_steps must be finite and positive")
+    return 1.0 - 2.0 ** (-1.0 / half_life_steps)
 
 
 def fixed_batch_optimal_pi(
@@ -147,8 +156,13 @@ class ControllerState:
             self.oracle_scale_moment + epsilon
         )
 
-    def scalar_mapping(self, epsilon: float) -> dict[str, float | int | None]:
-        return {
+    def scalar_mapping(
+        self,
+        epsilon: float,
+        *,
+        risk_metric: str | None = None,
+    ) -> dict[str, float | int | str | None]:
+        mapping: dict[str, float | int | str | None] = {
             "q": self.q,
             "effective_size": self.effective_size,
             "residual_moment": self.residual_moment,
@@ -161,6 +175,79 @@ class ControllerState:
             "previous_pi": self.previous_pi,
             "accepted_steps": self.accepted_steps,
             "trend_norm": float(torch.linalg.vector_norm(self.trend)),
+        }
+        if risk_metric is not None:
+            mapping.update(
+                {
+                    "risk_metric": risk_metric,
+                    "uncertainty_scale_estimate": self.trace_estimate(epsilon),
+                    "uncertainty_scale_semantics": (
+                        "trace_inverse_fisher"
+                        if risk_metric == "euclidean"
+                        else "fisher_weighted_covariance_dimension"
+                    ),
+                }
+            )
+        return mapping
+
+
+@dataclasses.dataclass(frozen=True)
+class DiscountedRiskState:
+    old_risk_moment: float = 0.0
+    new_risk_moment: float = 0.0
+    updates: int = 0
+
+    def validate(self) -> None:
+        if (
+            not math.isfinite(self.old_risk_moment)
+            or not math.isfinite(self.new_risk_moment)
+            or self.old_risk_moment < 0.0
+            or self.new_risk_moment < 0.0
+        ):
+            raise ValueError("discounted risk moments must be finite and nonnegative")
+        if (
+            not isinstance(self.updates, int)
+            or isinstance(self.updates, bool)
+            or self.updates < 0
+        ):
+            raise ValueError("discounted risk updates must be a nonnegative integer")
+
+    def mapping(self) -> dict[str, float | int]:
+        self.validate()
+        denominator = self.old_risk_moment + self.new_risk_moment
+        return {
+            "old_risk_moment": self.old_risk_moment,
+            "new_risk_moment": self.new_risk_moment,
+            "risk_moment_denominator": denominator,
+            "unclipped_pi": (
+                self.old_risk_moment / denominator
+                if denominator > 0.0
+                else 0.0
+            ),
+            "updates": self.updates,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class DiscountedRiskDecision:
+    controller: "ControllerDecision"
+    state: DiscountedRiskState
+    gain: float
+    instantaneous_old_risk: float
+    instantaneous_new_risk: float
+    unclipped_pi: float | None
+    zero_denominator_fallback: bool
+
+    def mapping(self) -> dict[str, float | int | bool | None]:
+        return {
+            "edr_gain": self.gain,
+            "edr_instantaneous_old_risk": self.instantaneous_old_risk,
+            "edr_instantaneous_new_risk": self.instantaneous_new_risk,
+            "edr_old_risk_moment": self.state.old_risk_moment,
+            "edr_new_risk_moment": self.state.new_risk_moment,
+            "edr_updates": self.state.updates,
+            "edr_unclipped_pi": self.unclipped_pi,
+            "edr_zero_denominator_fallback": self.zero_denominator_fallback,
         }
 
 
@@ -183,9 +270,39 @@ class ControllerDecision:
     old_covariance_trace: float
     new_covariance_trace: float
     effective_size: float
+    risk_metric: str
+    uncertainty_scale_semantics: str
+    zero_information_fallback: bool
 
-    def mapping(self) -> dict[str, float | str | bool | None]:
-        return dataclasses.asdict(self)
+    def mapping(
+        self, *, extended: bool = False
+    ) -> dict[str, float | str | bool | None]:
+        mapping = dataclasses.asdict(self)
+        if extended:
+            mapping.update(
+                {
+                    "signal_energy": self.signal_squared,
+                    "uncertainty_scale_estimate": self.trace_estimate,
+                    "old_covariance_risk": self.old_covariance_trace,
+                    "new_covariance_risk": self.new_covariance_trace,
+                    "risk_numerator": (
+                        self.signal_squared + self.old_covariance_trace
+                    ),
+                    "risk_denominator": (
+                        self.signal_squared
+                        + self.old_covariance_trace
+                        + self.new_covariance_trace
+                    ),
+                }
+            )
+        else:
+            for name in (
+                "risk_metric",
+                "uncertainty_scale_semantics",
+                "zero_information_fallback",
+            ):
+                mapping.pop(name)
+        return mapping
 
 
 @dataclasses.dataclass(frozen=True)
@@ -197,11 +314,42 @@ class ControllerAcceptance:
     scale_observation: float
     normalized_displacement: Tensor | None
     oracle_residual: Tensor | None
+    residual_euclidean_squared: float
+    oracle_residual_energy: float | None
+    oracle_residual_euclidean_squared: float | None
 
 
 def _bounded(value: float, lower: float, upper: float) -> tuple[float, bool, bool]:
     applied = min(upper, max(lower, value))
     return applied, value < lower, value > upper
+
+
+def _quadratic_energy(
+    vector: Tensor,
+    risk_metric: str,
+    fisher: FisherRepresentation | None,
+) -> float:
+    if risk_metric == "euclidean":
+        return float(vector @ vector)
+    if risk_metric != "fisher":
+        raise ValueError(f"unsupported controller risk metric: {risk_metric}")
+    if fisher is None:
+        raise ValueError("fisher-risk controller requires a predictable Fisher")
+    if fisher.shape != (vector.numel(), vector.numel()):
+        raise ValueError("predictable Fisher has an invalid shape")
+    metric_vector = vector.to(device=fisher.device, dtype=fisher.dtype)
+    value = float(fisher.quadratic(metric_vector))
+    if not math.isfinite(value):
+        raise ValueError("Fisher quadratic must be finite")
+    scale = max(
+        float(fisher.diagonal_vector().abs().max())
+        * float(metric_vector.square().sum()),
+        1.0,
+    )
+    tolerance = 100.0 * torch.finfo(fisher.dtype).eps * scale
+    if value < -tolerance:
+        raise ValueError("Fisher quadratic is materially negative")
+    return max(value, 0.0)
 
 
 def decide_controller(
@@ -210,6 +358,7 @@ def decide_controller(
     *,
     batch_size: int,
     oracle: OracleControllerInput | None = None,
+    fisher: FisherRepresentation | None = None,
 ) -> ControllerDecision:
     """Choose pi using only state produced by previously accepted steps."""
 
@@ -224,7 +373,11 @@ def decide_controller(
         oracle.validate(state.trend.numel())
 
     trace = state.trace_estimate(config.trace_epsilon)
-    signal_squared = float(state.trend @ state.trend)
+    signal_squared = _quadratic_energy(
+        state.trend,
+        config.risk_metric,
+        fisher,
+    )
     plugin_pi = fixed_batch_optimal_pi(
         signal_squared,
         trace,
@@ -234,12 +387,28 @@ def decide_controller(
     )
     cold_pi = batch_size / (state.effective_size + batch_size)
     cold_start = state.environment_distance < config.trend_half_life_p
+    zero_information = (
+        config.risk_metric == "fisher"
+        and signal_squared == 0.0
+        and state.residual_moment == 0.0
+    )
+    if zero_information:
+        plugin_pi = float(config.pi_min)
+    zero_information_fallback = (
+        zero_information
+        and not cold_start
+        and config.policy == "optimal_plugin"
+    )
 
     oracle_pi = None
     theory_pi = None
     oracle_trace = state.oracle_trace_estimate(config.trace_epsilon)
     if oracle is not None:
-        oracle_signal_squared = float(oracle.displacement @ oracle.displacement)
+        oracle_signal_squared = _quadratic_energy(
+            oracle.displacement,
+            config.risk_metric,
+            fisher,
+        )
         if oracle_trace is not None:
             oracle_pi = fixed_batch_optimal_pi(
                 oracle_signal_squared,
@@ -300,6 +469,132 @@ def decide_controller(
         old_covariance_trace=trace * state.q,
         new_covariance_trace=trace / batch_size,
         effective_size=state.effective_size,
+        risk_metric=config.risk_metric,
+        uncertainty_scale_semantics=(
+            "trace_inverse_fisher"
+            if config.risk_metric == "euclidean"
+            else "fisher_weighted_covariance_dimension"
+        ),
+        zero_information_fallback=zero_information_fallback,
+    )
+
+
+def advance_discounted_risk(
+    state: DiscountedRiskState,
+    old_risk: float,
+    new_risk: float,
+    *,
+    half_life_steps: float,
+) -> tuple[DiscountedRiskState, float]:
+    """Accumulate coefficients of an exponentially discounted quadratic risk."""
+
+    state.validate()
+    if (
+        not math.isfinite(old_risk)
+        or not math.isfinite(new_risk)
+        or old_risk < 0.0
+        or new_risk < 0.0
+    ):
+        raise ValueError("risk coefficients must be finite and nonnegative")
+    gain = update_step_half_life_gain(half_life_steps)
+    updated = DiscountedRiskState(
+        old_risk_moment=(1.0 - gain) * state.old_risk_moment + gain * old_risk,
+        new_risk_moment=(1.0 - gain) * state.new_risk_moment + gain * new_risk,
+        updates=state.updates + 1,
+    )
+    updated.validate()
+    return updated, gain
+
+
+def decide_discounted_risk_controller(
+    state: ControllerState,
+    discounted_state: DiscountedRiskState,
+    config: ControllerConfig,
+    *,
+    batch_size: int,
+    fisher: FisherRepresentation,
+) -> DiscountedRiskDecision:
+    """Choose a predictable action from discounted Fisher-risk coefficients."""
+
+    config.validate()
+    if config.policy != "discounted_risk":
+        raise ValueError("discounted risk decision requires its named policy")
+    if config.action_half_life_steps is None:
+        raise ValueError("discounted risk decision requires an action half-life")
+    if config.pi_min is None or config.trend_half_life_p is None:
+        raise ValueError("discounted risk decision requires unified bounds")
+    if config.trace_epsilon is None:
+        raise ValueError("discounted risk decision requires trace_epsilon")
+    if config.risk_metric != "fisher":
+        raise ValueError("discounted risk decision requires Fisher risk")
+    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
+        raise ValueError("batch_size must be a positive integer")
+
+    trace = state.trace_estimate(config.trace_epsilon)
+    signal = _quadratic_energy(state.trend, "fisher", fisher)
+    old_covariance = trace * state.q
+    new_covariance = trace / batch_size
+    old_risk = signal + old_covariance
+    new_risk = new_covariance
+    instantaneous_pi = fixed_batch_optimal_pi(
+        signal,
+        trace,
+        state.q,
+        batch_size,
+        epsilon=config.trace_epsilon,
+    )
+    updated, gain = advance_discounted_risk(
+        discounted_state,
+        old_risk,
+        new_risk,
+        half_life_steps=config.action_half_life_steps,
+    )
+    denominator = updated.old_risk_moment + updated.new_risk_moment
+    zero_denominator = denominator == 0.0
+    unclipped_pi = (
+        None if zero_denominator else updated.old_risk_moment / denominator
+    )
+    cold_start = state.environment_distance < config.trend_half_life_p
+    raw_pi = (
+        float(config.fixed_pi)
+        if cold_start or zero_denominator
+        else float(unclipped_pi)
+    )
+    applied_pi, lower_active, upper_active = _bounded(
+        raw_pi,
+        float(config.pi_min),
+        float(config.pi_max),
+    )
+    controller = ControllerDecision(
+        policy=config.policy,
+        raw_pi=raw_pi,
+        applied_pi=applied_pi,
+        plugin_pi=instantaneous_pi,
+        cold_start_pi=float(config.fixed_pi),
+        oracle_pi=None,
+        theory_oracle_pi=None,
+        lower_bound_active=lower_active,
+        upper_bound_active=upper_active,
+        cold_start_active=cold_start,
+        ewc_odds=(1.0 - applied_pi) / applied_pi,
+        signal_squared=signal,
+        trace_estimate=trace,
+        oracle_trace_estimate=None,
+        old_covariance_trace=old_covariance,
+        new_covariance_trace=new_covariance,
+        effective_size=state.effective_size,
+        risk_metric="fisher",
+        uncertainty_scale_semantics="fisher_weighted_covariance_dimension",
+        zero_information_fallback=zero_denominator,
+    )
+    return DiscountedRiskDecision(
+        controller=controller,
+        state=updated,
+        gain=gain,
+        instantaneous_old_risk=old_risk,
+        instantaneous_new_risk=new_risk,
+        unclipped_pi=unclipped_pi,
+        zero_denominator_fallback=zero_denominator,
     )
 
 
@@ -312,6 +607,7 @@ def accept_controller_step(
     delta_p: float,
     half_life_p: float,
     oracle_displacement: Tensor | None = None,
+    fisher: FisherRepresentation | None = None,
 ) -> ControllerAcceptance:
     """Update trend, trace moments, and effective size after accepting a step."""
 
@@ -335,9 +631,12 @@ def accept_controller_step(
     if pi == 0.0:
         residual = torch.zeros_like(displacement)
         residual_squared = 0.0
+        residual_euclidean_squared = 0.0
         scale = 0.0
         normalized_displacement = None
         oracle_residual = None
+        oracle_residual_energy = None
+        oracle_residual_euclidean_squared = None
         residual_moment = state.residual_moment
         scale_moment = state.scale_moment
         oracle_residual_moment = state.oracle_residual_moment
@@ -347,7 +646,12 @@ def accept_controller_step(
         # Locally, the EWC minimizer moves by pi times the unregularized drift.
         normalized_displacement = displacement / pi
         residual = displacement - pi * state.trend
-        residual_squared = float(residual @ residual)
+        residual_euclidean_squared = float(residual @ residual)
+        residual_squared = _quadratic_energy(
+            residual,
+            decision.risk_metric,
+            fisher,
+        )
         scale = pi**2 * (state.q + 1.0 / batch_size)
         residual_moment = (
             (1.0 - gain) * state.residual_moment + gain * residual_squared
@@ -355,14 +659,23 @@ def accept_controller_step(
         scale_moment = (1.0 - gain) * state.scale_moment + gain * scale
         if oracle_displacement is None:
             oracle_residual = None
+            oracle_residual_energy = None
+            oracle_residual_euclidean_squared = None
             oracle_residual_moment = state.oracle_residual_moment
             oracle_scale_moment = state.oracle_scale_moment
         else:
             oracle_residual = displacement - pi * oracle_displacement
-            oracle_residual_squared = float(oracle_residual @ oracle_residual)
+            oracle_residual_euclidean_squared = float(
+                oracle_residual @ oracle_residual
+            )
+            oracle_residual_energy = _quadratic_energy(
+                oracle_residual,
+                decision.risk_metric,
+                fisher,
+            )
             oracle_residual_moment = (
                 (1.0 - gain) * state.oracle_residual_moment
-                + gain * oracle_residual_squared
+                + gain * oracle_residual_energy
             )
             oracle_scale_moment = (
                 (1.0 - gain) * state.oracle_scale_moment + gain * scale
@@ -391,4 +704,9 @@ def accept_controller_step(
         scale_observation=scale,
         normalized_displacement=normalized_displacement,
         oracle_residual=oracle_residual,
+        residual_euclidean_squared=residual_euclidean_squared,
+        oracle_residual_energy=oracle_residual_energy,
+        oracle_residual_euclidean_squared=(
+            oracle_residual_euclidean_squared
+        ),
     )

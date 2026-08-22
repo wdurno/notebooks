@@ -1,0 +1,106 @@
+{
+  "artifact_schema_version": 9,
+  "cache_root": "cache/mnist_experiment/plan4_fisher_smoke_runs",
+  "controller": {
+    "fixed_pi": 0.5,
+    "oracle_mode": "reference_path",
+    "pi_max": 0.95,
+    "pi_min": 0.05,
+    "policy": "optimal_plugin",
+    "reference_optimum_artifact": null,
+    "risk_metric": "fisher",
+    "trace_epsilon": 1e-12,
+    "trend_half_life_p": 0.2
+  },
+  "data": {
+    "evaluation_size": 128,
+    "initialization_size": 96,
+    "non_nine_sampling": "empirical",
+    "num_p_steps": 5,
+    "online_pool_size": 100,
+    "reference_pool_size": 100,
+    "samples_per_step": 2,
+    "schedule": {
+      "center_fraction": 0.5,
+      "kind": "normalized_logistic",
+      "p_end": 0.2,
+      "p_start": 0.0,
+      "steepness": 16.0
+    }
+  },
+  "estimator": {
+    "controller_methods": [
+      "low_rank_diagonal"
+    ],
+    "fresh_fisher_cadence": 2,
+    "low_rank": 4,
+    "low_rank_grid": [
+      0,
+      4
+    ],
+    "method": "ema",
+    "representation": "low_rank_diagonal",
+    "ridge_amplitude_epsilon": 1e-6,
+    "ridge_coherence_threshold": 0.75,
+    "ridge_half_life_steps": 2.0
+  },
+  "experiment": "mnist_plan4_phase3_fisher_smoke_v2",
+  "initialization": {
+    "batch_size": 32,
+    "learning_rate": 0.01,
+    "max_epochs": 1,
+    "num_workers": 0,
+    "optimizer": "adam",
+    "target_non_nine_accuracy": null,
+    "weight_decay": 0.0
+  },
+  "metric_schema_version": 13,
+  "optimizer": {
+    "ewc_strength": 1.0,
+    "inner_steps": 2,
+    "lbfgs_history_size": null,
+    "lbfgs_line_search_fn": null,
+    "lbfgs_max_eval_factor": null,
+    "lbfgs_tolerance_change": null,
+    "lbfgs_tolerance_grad": null,
+    "learning_rate": 0.01,
+    "name": "sgd"
+  },
+  "reference": {
+    "calibration_batch_size": 4,
+    "calibration_learning_rate": 0.01,
+    "calibration_max_fits": 2,
+    "calibration_min_fits": 2,
+    "calibration_steps": 2,
+    "calibration_validation_chunks": 2,
+    "chunk_size": 2,
+    "convergence_absolute_epsilon": 1e-8,
+    "convergence_min_chunks": 2,
+    "convergence_relative_epsilon": 0.01,
+    "convergence_sample_sizes": [
+      4,
+      8,
+      16
+    ],
+    "convergence_sigma": 6.0,
+    "derivative_dtype": "float64",
+    "sample_size": 16,
+    "stencil_direction_count": 1,
+    "stencil_epsilons": [
+      0.001,
+      0.01
+    ],
+    "stencil_p_values": [
+      0.1
+    ]
+  },
+  "replica_id": "replica-plan4-smoke",
+  "replica_seed": 41729,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "matrix_dtype": "float64",
+    "training_dtype": "float64"
+  },
+  "schema_version": 17
+}

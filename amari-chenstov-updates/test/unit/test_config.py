@@ -22,6 +22,12 @@ CONTROLLER_CONFIG = (
     / "configs"
     / "phase8_controller_smoke.json"
 )
+PLAN4_CONTROLLER_CONFIG = (
+    Path(__file__).parents[2]
+    / "mnist_experiment"
+    / "configs"
+    / "plan4_phase1_adaptive_smoke.json"
+)
 CONVERGENCE_CONFIG = (
     Path(__file__).parents[2]
     / "mnist_experiment"
@@ -234,6 +240,35 @@ def test_schema_seven_unified_controller_round_trips_without_ema_gain() -> None:
     assert config.controller.pi_min == 0.05
     assert config.controller.trend_half_life_p == 0.2
     assert config.to_mapping() == raw
+
+
+def test_schema_seventeen_requires_explicit_versioned_controller_risk() -> None:
+    legacy_raw = json.loads(PLAN4_CONTROLLER_CONFIG.read_text(encoding="utf-8"))
+    legacy = ExperimentConfig.from_mapping(legacy_raw)
+    assert legacy.controller.risk_metric == "euclidean"
+    assert legacy.to_mapping() == legacy_raw
+    assert (
+        legacy.config_hash
+        == "f914ad42fa5c11779ce91ed07b23b70efb12a4efb6c92793a014d9818b8267b2"
+    )
+
+    raw = dict(legacy_raw)
+    raw["schema_version"] = 17
+    raw["artifact_schema_version"] = 9
+    raw["metric_schema_version"] = 13
+    raw["controller"] = {
+        **legacy_raw["controller"],
+        "risk_metric": "fisher",
+    }
+    config = ExperimentConfig.from_mapping(raw)
+
+    assert config.controller.risk_metric == "fisher"
+    assert config.replay is None
+    assert config.to_mapping() == raw
+
+    raw["controller"] = dict(legacy_raw["controller"])
+    with pytest.raises(ConfigError, match="risk_metric"):
+        ExperimentConfig.from_mapping(raw)
 
 
 def test_schema_seven_rejects_decoupled_and_legacy_controller_fields() -> None:

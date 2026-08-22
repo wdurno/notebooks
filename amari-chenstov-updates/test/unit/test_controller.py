@@ -7,14 +7,19 @@ import torch
 from src.config import ControllerConfig
 from src.controller import (
     ControllerState,
+    DiscountedRiskState,
     OracleControllerInput,
     accept_controller_step,
+    advance_discounted_risk,
     bernoulli_theory_optimal_pi,
     decide_controller,
+    decide_discounted_risk_controller,
     effective_size_update,
     fixed_batch_optimal_pi,
     half_life_gain,
+    update_step_half_life_gain,
 )
+from src.representations import DenseFisher, DiagonalFisher, LowRankDiagonalFisher
 
 
 def _config(policy: str = "optimal_plugin", **overrides: object) -> ControllerConfig:
@@ -64,6 +69,67 @@ def test_half_life_and_effective_size_recursions_match_hand_values() -> None:
     assert effective_size_update(0.1, 0.25, 4) == pytest.approx(
         0.75**2 * 0.1 + 0.25**2 / 4
     )
+
+
+def test_discounted_risk_half_life_and_minimizer() -> None:
+    state = DiscountedRiskState()
+    for _ in range(4):
+        state, gain = advance_discounted_risk(
+            state,
+            3.0,
+            1.0,
+            half_life_steps=4.0,
+        )
+
+    assert gain == pytest.approx(update_step_half_life_gain(4.0))
+    assert state.old_risk_moment == pytest.approx(1.5)
+    assert state.new_risk_moment == pytest.approx(0.5)
+    pi = state.old_risk_moment / (
+        state.old_risk_moment + state.new_risk_moment
+    )
+
+    def risk(value: float) -> float:
+        return (1.0 - value) ** 2 * state.old_risk_moment + (
+            value**2 * state.new_risk_moment
+        )
+
+    assert pi == pytest.approx(0.75)
+    assert risk(pi) < risk(pi - 0.05)
+    assert risk(pi) < risk(pi + 0.05)
+
+
+def test_discounted_risk_controller_accumulates_before_final_clipping() -> None:
+    state = ControllerState(
+        trend=torch.tensor([2.0, 0.0], dtype=torch.float64),
+        q=0.1,
+        residual_moment=2.0,
+        scale_moment=1.0,
+        environment_distance=0.2,
+        previous_pi=0.025,
+        accepted_steps=10,
+    )
+    config = _config(
+        "discounted_risk",
+        fixed_pi=0.025,
+        pi_min=0.01,
+        risk_metric="fisher",
+        trend_half_life_p=0.05,
+        action_half_life_steps=4.0,
+    )
+    result = decide_discounted_risk_controller(
+        state,
+        DiscountedRiskState(),
+        config,
+        batch_size=8,
+        fisher=DiagonalFisher(torch.ones(2, dtype=torch.float64)),
+    )
+
+    expected = (4.0 + 0.2) / (4.0 + 0.2 + 0.25)
+    assert result.unclipped_pi == pytest.approx(expected)
+    assert result.controller.applied_pi == pytest.approx(expected)
+    assert result.controller.plugin_pi == pytest.approx(expected)
+    assert result.state.old_risk_moment > 0.0
+    assert result.state.new_risk_moment > 0.0
 
 
 def test_cold_start_is_bounded_and_explicit_boundaries_bypass_clipping() -> None:
@@ -235,6 +301,164 @@ def test_variable_pi_residuals_remove_attenuated_drift() -> None:
         accepted.normalized_displacement,
         true_trend + noise / 0.25,
     )
+
+
+def test_fisher_risk_uses_one_metric_for_signal_and_covariance() -> None:
+    state = ControllerState(
+        trend=torch.tensor([2.0, 3.0], dtype=torch.float64),
+        q=0.1,
+        residual_moment=2.0,
+        scale_moment=1.0,
+        environment_distance=1.0,
+        previous_pi=0.5,
+        accepted_steps=10,
+    )
+    fisher = DiagonalFisher(torch.tensor([1.0, 0.0], dtype=torch.float64))
+
+    decision = decide_controller(
+        state,
+        _config(risk_metric="fisher"),
+        batch_size=4,
+        fisher=fisher,
+    )
+
+    assert decision.signal_squared == pytest.approx(4.0)
+    assert decision.trace_estimate == pytest.approx(2.0)
+    assert decision.old_covariance_trace == pytest.approx(0.2)
+    assert decision.new_covariance_trace == pytest.approx(0.5)
+    assert decision.raw_pi == pytest.approx(4.2 / 4.7)
+    assert decision.risk_metric == "fisher"
+    mapping = decision.mapping(extended=True)
+    assert mapping["signal_energy"] == pytest.approx(4.0)
+    assert mapping["risk_numerator"] == pytest.approx(4.2)
+    assert mapping["risk_denominator"] == pytest.approx(4.7)
+
+
+def test_fisher_acceptance_updates_weighted_and_euclidean_residuals() -> None:
+    state = dataclasses.replace(
+        ControllerState.initialize(2, initial_effective_size=10.0),
+        trend=torch.tensor([1.0, -1.0], dtype=torch.float64),
+        environment_distance=1.0,
+    )
+    fisher = LowRankDiagonalFisher(
+        factor=torch.tensor([[1.0], [0.0]], dtype=torch.float64),
+        residual_diagonal=torch.tensor([0.0, 2.0], dtype=torch.float64),
+    )
+    decision = decide_controller(
+        state,
+        _config("fixed_unified", fixed_pi=0.25, risk_metric="fisher"),
+        batch_size=4,
+        fisher=fisher,
+    )
+    residual = torch.tensor([2.0, 3.0], dtype=torch.float64)
+    displacement = 0.25 * state.trend + residual
+
+    accepted = accept_controller_step(
+        state,
+        decision,
+        displacement,
+        batch_size=4,
+        delta_p=0.2,
+        half_life_p=0.2,
+        fisher=fisher,
+    )
+
+    torch.testing.assert_close(accepted.residual, residual)
+    assert accepted.residual_euclidean_squared == pytest.approx(13.0)
+    assert accepted.residual_squared == pytest.approx(22.0)
+    assert accepted.state.residual_moment == pytest.approx(11.0)
+
+
+@pytest.mark.parametrize(
+    "fisher",
+    [
+        DenseFisher(torch.tensor([[2.0, 0.0], [0.0, 0.0]], dtype=torch.float64)),
+        DiagonalFisher(torch.tensor([2.0, 0.0], dtype=torch.float64)),
+        LowRankDiagonalFisher(
+            torch.tensor([[2.0**0.5], [0.0]], dtype=torch.float64),
+            torch.zeros(2, dtype=torch.float64),
+        ),
+    ],
+)
+def test_singular_fisher_representations_give_the_same_action(fisher) -> None:
+    state = ControllerState(
+        trend=torch.tensor([1.5, 100.0], dtype=torch.float64),
+        q=0.05,
+        residual_moment=3.0,
+        scale_moment=1.5,
+        environment_distance=1.0,
+        previous_pi=0.2,
+        accepted_steps=10,
+    )
+
+    decision = decide_controller(
+        state,
+        _config(risk_metric="fisher"),
+        batch_size=8,
+        fisher=fisher,
+    )
+
+    assert decision.signal_squared == pytest.approx(4.5)
+    assert decision.raw_pi == pytest.approx(4.6 / 4.85)
+
+
+def test_fisher_risk_is_invariant_to_common_metric_rescaling() -> None:
+    state = ControllerState(
+        trend=torch.tensor([0.5, -0.25], dtype=torch.float64),
+        q=0.1,
+        residual_moment=3.0,
+        scale_moment=1.0,
+        environment_distance=1.0,
+        previous_pi=0.2,
+        accepted_steps=10,
+    )
+    scaled_state = dataclasses.replace(state, residual_moment=15.0)
+    fisher = DiagonalFisher(torch.tensor([2.0, 1.0], dtype=torch.float64))
+    scaled_fisher = DiagonalFisher(
+        torch.tensor([10.0, 5.0], dtype=torch.float64)
+    )
+
+    original = decide_controller(
+        state,
+        _config(risk_metric="fisher", trace_epsilon=1e-15),
+        batch_size=8,
+        fisher=fisher,
+    )
+    scaled = decide_controller(
+        scaled_state,
+        _config(risk_metric="fisher", trace_epsilon=1e-15),
+        batch_size=8,
+        fisher=scaled_fisher,
+    )
+
+    assert scaled.raw_pi == pytest.approx(original.raw_pi)
+
+
+def test_zero_fisher_information_falls_back_to_pi_min() -> None:
+    state = dataclasses.replace(
+        ControllerState.initialize(2, initial_effective_size=20.0),
+        environment_distance=1.0,
+    )
+    decision = decide_controller(
+        state,
+        _config(risk_metric="fisher"),
+        batch_size=8,
+        fisher=DiagonalFisher(torch.zeros(2, dtype=torch.float64)),
+    )
+
+    assert decision.zero_information_fallback
+    assert decision.raw_pi == pytest.approx(0.05)
+    assert decision.applied_pi == pytest.approx(0.05)
+
+    cold_state = dataclasses.replace(state, environment_distance=0.0)
+    cold = decide_controller(
+        cold_state,
+        _config(risk_metric="fisher"),
+        batch_size=8,
+        fisher=DiagonalFisher(torch.zeros(2, dtype=torch.float64)),
+    )
+    assert cold.cold_start_active
+    assert not cold.zero_information_fallback
 
 
 def test_freeze_does_not_pollute_trend_or_residual_moments() -> None:

@@ -5,11 +5,12 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
-from src.config import EstimatorConfig, load_config
+from src.config import EstimatorConfig, ScheduleConfig, load_config
 from src.initialization import (
     InitializationResult,
     ReplicaBundleError,
     derive_replica_bundle,
+    derive_scheduled_replica_bundle,
     fit_p0_initialization,
     load_replica_bundle,
     load_replica_bundle_for_config,
@@ -302,6 +303,82 @@ def test_derived_bundle_rejects_non_stream_design_changes(tmp_path: Path) -> Non
             incompatible,
             repo_root=REPO_ROOT,
         )
+
+
+def test_scheduled_bundle_reuses_parent_initialization_and_common_uniforms(
+    tmp_path: Path,
+) -> None:
+    config, _, _, partitions, stream, model, layout = _tiny_fixture()
+    initialization = InitializationResult(
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:01+00:00",
+        wall_time_seconds=1.0,
+        epochs_completed=1,
+        stopped_on_target=False,
+        history=(),
+        final_metrics={"accuracy": 0.5},
+    )
+    parent_path = save_replica_bundle(
+        tmp_path,
+        config,
+        model,
+        layout,
+        partitions,
+        stream,
+        initialization,
+        device=torch.device("cpu"),
+        repo_root=REPO_ROOT,
+    )
+    schedules = (
+        ScheduleConfig(
+            kind="linear",
+            p_start=0.0,
+            p_end=0.2,
+            center_fraction=None,
+            steepness=None,
+        ),
+        ScheduleConfig(
+            kind="normalized_logistic",
+            p_start=0.0,
+            p_end=0.2,
+            center_fraction=0.5,
+            steepness=32.0,
+        ),
+    )
+    derived = []
+    for schedule in schedules:
+        scheduled_config = dataclasses.replace(
+            config,
+            data=dataclasses.replace(config.data, schedule=schedule),
+        )
+        path = derive_scheduled_replica_bundle(
+            parent_path,
+            tmp_path,
+            scheduled_config,
+            torch.arange(100) % 10,
+            repo_root=REPO_ROOT,
+        )
+        derived.append(load_replica_bundle_for_config(tmp_path, scheduled_config))
+        assert derive_scheduled_replica_bundle(
+            parent_path,
+            tmp_path,
+            scheduled_config,
+            torch.arange(100) % 10,
+            repo_root=REPO_ROOT,
+        ) == path
+
+    parent = load_replica_bundle(parent_path)
+    assert len({item.stream_plan.schedule_hash for item in derived}) == 2
+    assert len({item.stream_plan.uniform_stream_hash for item in derived}) == 1
+    for item in derived:
+        assert item.metadata["model_state_hash"] == parent.metadata["model_state_hash"]
+        assert item.metadata["partition_hash"] == parent.metadata["partition_hash"]
+        provenance = item.metadata["stream_derivation"]
+        assert provenance["parent_bundle_id"] == parent.metadata["bundle_id"]
+        assert provenance["derived_schedule_hash"] == item.stream_plan.schedule_hash
+        assert provenance["uniform_stream_hash"] == item.stream_plan.uniform_stream_hash
+        for name, tensor in item.model.state_dict().items():
+            assert torch.equal(tensor, parent.model.state_dict()[name])
 
 
 def test_tiny_initialization_is_deterministic() -> None:

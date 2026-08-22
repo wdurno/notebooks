@@ -273,12 +273,12 @@ class MixtureStreamPlan:
             if (
                 not 0.0 <= self.p_values[0] < self.p_values[-1] <= 1.0
                 or any(
-                    right <= left
+                    right < left
                     for left, right in zip(self.p_values, self.p_values[1:])
                 )
             ):
                 raise ValueError(
-                    "scheduled mixture stream requires increasing p in [0, 1]"
+                    "scheduled mixture stream requires nondecreasing p in [0, 1]"
                 )
             if not isinstance(self.schedule_name, str) or not self.schedule_name:
                 raise ValueError("scheduled mixture stream requires a schedule name")

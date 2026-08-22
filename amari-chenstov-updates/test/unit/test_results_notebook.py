@@ -24,6 +24,15 @@ DEPLOYMENT_NOTEBOOK = (
 PLAN4_ORACLE_NOTEBOOK = (
     REPO_ROOT / "mnist_experiment" / "plan4_oracle_results.ipynb"
 )
+PLAN4_FISHER_NOTEBOOK = (
+    REPO_ROOT / "mnist_experiment" / "plan4_fisher_results.ipynb"
+)
+PLAN4_CHALLENGE_NOTEBOOK = (
+    REPO_ROOT / "mnist_experiment" / "plan4_challenge_results.ipynb"
+)
+PLAN4_EDR_NOTEBOOK = (
+    REPO_ROOT / "mnist_experiment" / "plan4_edr_results.ipynb"
+)
 
 
 def test_results_notebook_is_valid_and_artifact_only() -> None:
@@ -127,6 +136,55 @@ def test_plan4_oracle_notebook_is_artifact_only() -> None:
     assert "phase2__*" in source
     assert "unbounded_raw_oracle_pi" in source
     assert "bounded_state_raw_oracle_pi" in source
+    assert "run_controller" not in source
+
+
+def test_plan4_fisher_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(PLAN4_FISHER_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "fisher_analysis" in source
+    assert "Ungated predictable" in source
+    assert "contemporaneous_pi" in source
+    assert "run_controller" not in source
+
+
+def test_plan4_challenge_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(PLAN4_CHALLENGE_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "phase5_actuation__266e6f391abb" in source
+    assert "floor_sensitivity__b022b149d154" in source
+    assert "Realized Fisher-risk actuation" in source
+    assert "Exploratory lower-floor sensitivity" in source
+    assert "classification" not in source
+    assert "run_controller" not in source
+
+
+def test_plan4_edr_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(PLAN4_EDR_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "edr_screen__014849bf996e" in source
+    assert "edr_predictive__f83d7cbf0459" in source
+    assert "edr_discovery__7b14c111ed7b" in source
+    assert "exponentially discounted risk control" in source
+    assert "Cold-start discovery amendment" in source
     assert "run_controller" not in source
 
 

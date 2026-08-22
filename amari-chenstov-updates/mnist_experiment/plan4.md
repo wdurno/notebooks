@@ -7,13 +7,19 @@ asks one narrow question:
 > moves at a nonconstant rate, without retuning one fixed $\pi$ for each
 > environment?
 
-This is a variable-speed experiment, not yet a claim about intrinsic manifold
-curvature. The schedule changes the parameterization in time of the same
-one-dimensional path
+This began as a variable-speed experiment, not a claim about intrinsic
+manifold curvature. The schedule changes the parameterization in time of the
+same one-dimensional path
 
 $$
 p\longmapsto\theta^\star(p).
 $$
+
+The completed Euclidean-risk design screen found no actionable controller
+signal, even under severe speed shocks. The plan now contains a separately
+identified Fisher-risk amendment: measure local movement and estimation error
+with the already maintained Fisher summary before deciding whether the
+adaptive controller itself lacks value.
 
 Every phase ends with a check-in. Do not begin a long predictive experiment
 until the preceding mathematical and software gates have passed.
@@ -106,9 +112,94 @@ controller mistakes nonstationarity for covariance.
 |---|---|---|
 | 0 | Mathematical and schedule contracts | Complete |
 | 1 | Variable-speed infrastructure | Complete |
-| 2 | Design-oracle feasibility screen | Complete |
-| 3 | Predictable-controller pilot | Not started - Phase 2 stop gate |
-| 4 | Applied confirmation and decision | Not started - Phase 2 stop gate |
+| 2 | Euclidean design-oracle feasibility screen | Complete - stop |
+| 3 | Fisher-risk controller contract and implementation | Complete |
+| 4 | Fisher-risk diagnostic screen | Complete - stop |
+| 5 | Final realized-actuation challenge | Complete |
+| 6 | Exponentially discounted Fisher-risk control | Complete - diagnostic only |
+| 7 | Theory integration and historical decision | Pending |
+
+## Fisher-Risk Amendment
+
+Phase 2 established that the Euclidean controller is behaving consistently
+with its stated objective: even very large coordinate displacement remains
+small relative to its estimated Euclidean covariance cost. It does not
+establish that Euclidean parameter error is the right loss for predictive
+adaptation.
+
+For a predictable Fisher summary $G_t=\widehat{\mathcal I}_{t\mid t-1}$,
+define the local Fisher quadratic
+
+$$
+\|v\|_{G_t}^2=v^TG_tv.
+$$
+
+This quantity is computable for positive-semidefinite and singular estimates;
+no inverse or factorization is required. For the true Fisher, it is the
+second-order term in local distributional divergence,
+
+$$
+2D_{\mathrm{KL}}(P_{\theta_t}\|P_{\theta_t+v})
+=v^T\mathcal I(\theta_t)v+O(\|v\|^3).
+$$
+
+The Fisher-risk controller therefore changes the controller's estimand from
+coordinate parameter MSE to local predictive divergence. It is an
+experimental treatment, not a silent algebraic substitution in the existing
+theory.
+
+Let
+
+$$
+S_t=\widehat d_t^TG_t\widehat d_t,
+\qquad
+V_{\mathrm{old},t}
+=\mathbb E[e_t^TG_te_t\mid\mathcal F_{t-1}],
+\qquad
+V_{\mathrm{new},t}
+=\mathbb E[\epsilon_t^TG_t\epsilon_t\mid\mathcal F_{t-1}].
+$$
+
+The applied one-step risk becomes
+
+$$
+R_{G,t}(\pi)
+=(1-\pi)^2(S_t+V_{\mathrm{old},t})
++\pi^2V_{\mathrm{new},t},
+$$
+
+with unconstrained action
+
+$$
+\pi_{G,t}^*
+=\frac{S_t+V_{\mathrm{old},t}}
+{S_t+V_{\mathrm{old},t}+V_{\mathrm{new},t}}.
+$$
+
+All three terms must use the same predictable metric. Replacing only
+$\|d\theta\|^2$ while retaining Euclidean trace variance would mix two loss
+functions and is prohibited.
+
+Under ideal covariance calibration,
+
+$$
+\operatorname{Cov}(e_t)\approx q_t\mathcal I_t^{-1},
+\qquad
+\operatorname{Cov}(\epsilon_t)\approx m_t^{-1}\mathcal I_t^{-1},
+$$
+
+the variance terms reduce to $q_td_{\mathrm{eff},t}$ and
+$d_{\mathrm{eff},t}/m_t$. Here $d_{\mathrm{eff},t}$ is only a theoretical
+interpretation of the Fisher-weighted covariance. The implementation must
+estimate the Fisher-weighted residual energy directly and must not invert,
+pseudoinvert, or numerically rank the Fisher to obtain it.
+
+The amendment does not replace Euclidean norms used for LFU Taylor control,
+optimizer diagnostics, or numerical step limits. It does not change the EWC
+objective, original/auxiliary-process distinction, likelihood Fisher
+estimand, or direct-EMA Fisher update. The existing rank-8-plus-diagonal EWC
+summary supplies $G_tv$ and $v^TG_tv$ cheaply in the network's ordinary
+Euclidean parameter chart.
 
 ## Frozen Handoff
 
@@ -121,7 +212,8 @@ Unless a phase check-in explicitly reopens one item, preserve:
 - rank-8-plus-diagonal Fisher summaries;
 - direct EMA Fisher updates with no LFU or HVP calculation;
 - fixed $\pi=.05$ as the deployment baseline;
-- plug-in $h=.20$, $\pi_{\min}=.05$, and $\pi_{\max}=.95$ initially;
+- scale-adjusted plug-in $h=.05$, $\pi_{\min}=.05$, and
+  $\pi_{\max}=.95$ for the Fisher-risk amendment;
 - Hybrid B32 as the principal applied learner after controller feasibility;
 - pre-update evaluation and the exposure semantics established in Plan 3.
 
@@ -139,6 +231,15 @@ $$
 Do not silently replace it with a step-based EMA. A faster schedule therefore
 changes both the displacement signal and the amount of trend updating per
 step, while preserving the accepted half-life interpretation.
+
+The historical $h=.20$ was selected on $p\in[0,1]$. Plan 4 observes only
+$p\in[0,.2]$, for which the exact range-scaled value is $.04$. Use the nearest
+previously tested value $h=.05$ as the primary Fisher-risk setting and retain
+$h=.10$ only as a labeled sensitivity. This is a predeclared scale adjustment,
+not predictive-outcome tuning. At $\kappa=256$, the principal jump may begin
+just before the $.05$ cold-start boundary; report that timing explicitly and
+do not let this extreme stress schedule overrule coherent results from
+$\kappa\in\{32,64,128\}$.
 
 ## Experimental Contracts
 
@@ -351,13 +452,14 @@ An adaptive policy earns practical value only if it:
 Movement of $\pi_t$ alone is not success. If the controller actuates only
 after predictive degradation, treat it as a diagnostic rather than a policy.
 
-EWC-only provides the principal theoretically matched controller test. If it
-passes Phase 3, fixed and adaptive Hybrid B32 are required in Phase 4 rather
-than optional. For that transfer test, $m_t=8$ continues to count only the
-independent current arrivals in the controller covariance model. Do not count
-the 32 reused replay observations as independent new samples. Until a
-replay-aware covariance derivation exists, describe adaptive Hybrid B32 as an
-applied transfer test rather than an optimal hybrid controller.
+EWC-only provides the principal theoretically matched controller test. If the
+Fisher-risk EWC pilot passes the first part of Phase 5, fixed and adaptive
+Hybrid B32 are required in the second part rather than optional. For that
+transfer test, $m_t=8$ continues to count only the independent current
+arrivals in the controller covariance model. Do not count the 32 reused replay
+observations as independent new samples. Until a replay-aware covariance
+derivation exists, describe adaptive Hybrid B32 as an applied transfer test
+rather than an optimal hybrid controller.
 
 ### Outcomes
 
@@ -656,110 +758,797 @@ bracket for a predictable-controller pilot.
 
 **Gate recommendation:** `stop`. Under the frozen Plan 4 design, changing only
 the speed of this $p\in[0,.2]$ path does not create enough ideal controller
-opportunity to justify Phase 3 predictive training. Retain fixed $\pi=.05$ for
-the practical baseline. Any future adaptive experiment should begin with a
-new mathematical treatment that creates materially larger signal relative to
-covariance, rather than escalating the present sigmoid screen.
+opportunity to justify the original Euclidean predictive pilot. Retain fixed
+$\pi=.05$ for the practical baseline. The Fisher-risk amendment beginning in
+Phase 3 is the approved new mathematical treatment; it must pass its own cheap
+diagnostic gate rather than reopening or reinterpreting this completed result.
 
-## Phase 3: Predictable-Controller Pilot
+## Phase 3: Fisher-Risk Controller Contract and Implementation
 
 ### Goal
 
-Test whether the deployable plug-in controller can recover the oracle
-opportunity before spending compute on the Hybrid B32 application.
+Implement a second, explicitly named controller-risk model without changing
+the completed Euclidean controller, immutable artifacts, or learner update
+semantics.
 
 ### Scope
 
-1. Run paired EWC-only development replicas on linear and selected logistic
-   schedules.
-2. Compare adaptive $h=.20$ with the frozen `.05` policy and the Phase 2 fixed
-   bracket.
-3. Begin with three paired replicas. Add two only if actuation diagnostics are
-   coherent but predictive uncertainty prevents a gate decision.
-4. Compare plug-in and oracle $\pi_t$ trajectories for lag, RMSE, correlation,
-   bound occupancy, and response around maximum schedule speed.
-5. If oracle opportunity exists but $h=.20$ fails only through identifiable
-   lag, run one predeclared half-life sensitivity set
-   $h\in\{.05,.10,.20\}$. Do not cross it with additional schedule shapes.
+1. Audit the controller timing and stored state before choosing estimator
+   indices. Freeze $G_t$ from the Fisher summary available before the action
+   at step $t$; neither the current observations nor their resulting Fisher
+   update may influence the metric used to choose their own $\pi_t$.
+2. Add an explicit controller-risk mode with at least:
+   - `euclidean`, reproducing the existing controller exactly; and
+   - `fisher`, using the normalized per-observation EWC Fisher summary rather
+     than its accumulated precision-mass scaling.
+3. Compute $v^TG_tv$ through each representation's existing matrix-vector or
+   quadratic-form operation. Do not densify the rank-8-plus-diagonal summary
+   and do not require positive definiteness.
+4. Replace the trend signal by
+   $S_t=\widehat d_t^TG_t\widehat d_t$. Preserve the accepted environmental
+   half-life $h=.20$ and predictable vector-EMA trend construction.
+5. Extend the existing detrended covariance-calibration recursion to
+   Fisher-weighted residual energy. If the current scalar recursion identifies
+   only a common covariance scale, estimate that scale first and derive
+   $V_{\mathrm{old},t}$ and $V_{\mathrm{new},t}$ through the recorded $q_t$
+   and $m_t$ factors. Record every intermediate scalar so the action can be
+   reconstructed offline.
+6. Keep all zero-information cases explicit. When Fisher energy and estimated
+   uncertainty are both numerically zero, fall back to the frozen
+   $\pi_{\min}$ policy and record the reason; do not create a hidden ridge in
+   the scientific formula.
+7. Introduce new controller-state, trajectory-metric, and artifact-schema
+   versions. Existing completed artifacts and legacy configuration hashes must
+   remain readable and unchanged.
+8. Add a tiny paired CPU smoke containing fixed `.05`, Euclidean adaptive,
+   and Fisher adaptive EWC on one scheduled stream.
 
-### Pilot gate
-
-Promote the controller only if:
-
-- it leaves the lower bound no later than the second accepted update in the
-  high-speed window, allowing the unavoidable lag of a predictable policy;
-- its actuation direction agrees with the design oracle;
-- adaptive environmental-accuracy AUC exceeds fixed `.05` in mean paired
-  results on the logistic schedule; and
-- no fixed bracket member clearly dominates it on both linear and logistic
-  schedules.
-
-Failure with no oracle opportunity invalidates the schedule, not the
-controller. Failure despite robust oracle opportunity classifies the current
-plug-in controller as `diagnostic-only` and ends predictive escalation.
+The implementation may use a small numerical floor only for division and
+finite-value protection. Such a floor must be recorded and must not be
+presented as Fisher damping or as part of the estimand.
 
 ### Verification
 
-- Pilot artifacts reproduce every decision from prior state.
-- Linear-path behavior remains consistent with Plan 3.
-- No result is pooled with Plan 3's completed confirmation.
-- The pilot notebook shows individual and mean trajectories, not only AUCs.
+- Unit tests evaluate Fisher quadratics for dense, diagonal, singular, and
+  low-rank-plus-diagonal positive-semidefinite matrices.
+- Rescaling or factoring a structured representation without changing its
+  represented matrix leaves the controller action unchanged.
+- `euclidean` mode reproduces an existing deterministic smoke trajectory and
+  artifact hash under the legacy schema path.
+- Fisher actions use only predictable state and can be reconstructed from
+  trajectory artifacts.
+- No Fisher inverse, pseudoinverse, eigendecomposition, or numerical-rank
+  estimate is introduced.
+- The full unit suite and the new CPU integration smoke pass.
 
 ### Check-in
 
-Decide whether to stop, revise only the estimator, or promote one frozen
-adaptive configuration into the applied Hybrid B32 confirmation.
+Review estimator timing, Fisher-energy scales, zero-information behavior, and
+the paired smoke before running a design screen. No predictive GPU run is
+authorized by this phase.
 
-## Phase 4: Applied Confirmation and Decision
+### Completion Record
+
+**Status:** Complete (2026-08-21)
+
+- Added explicit `euclidean` and `fisher` controller-risk modes under config
+  schema 17, controller artifact schema 9, and metric schema 13. Schemas 4
+  through 16 continue to resolve implicitly to Euclidean risk and omit the new
+  field from canonical serialization; the prior Plan 4 adaptive smoke retained
+  its exact configuration hash
+  `f914ad42fa5c11779ce91ed07b23b70efb12a4efb6c92793a014d9818b8267b2`.
+- Exposed the normalized auxiliary Fisher available before each action. The
+  current observations and their Fisher update cannot affect the metric used
+  to choose their own $\pi_t$.
+- Reused the accepted residual calibration with
+  $r_t^TG_tr_t$ as its numerator and
+  $\pi_t^2(q_t+1/m_t)$ as its scale observation. Stored the resulting signal
+  energy, uncertainty scale, old/new covariance risks, and complete risk
+  numerator and denominator for offline reconstruction.
+- Evaluated dense, diagonal, singular, and low-rank-plus-diagonal Fisher
+  quadratics through representation-native operations. No dense conversion,
+  inversion, pseudoinversion, eigendecomposition, damping, or numerical-rank
+  calculation was added to the controller.
+- Added an explicit lower-bound fallback only when a deployable Fisher plug-in
+  decision has exactly zero movement and residual information after cold
+  start. Numerical floors remain limited to finite division protection and
+  are recorded separately from the estimand.
+- Completed paired five-step CPU smoke runs for fixed `.05`, Euclidean
+  adaptive, and Fisher adaptive policies. They shared schedule hash
+  `7daa46d19115904ee8bd97930029a8c868488af0071a4ec24fd3cf318b2fd0a7`
+  and uniform-stream hash
+  `bd42fdaabb185819510a09b15f53cb8d8348ff3087e0c1ac965eb5bd06e8fb0e`,
+  and calculated exactly zero HVPs.
+- Reconstructed all 15 smoke decisions from stored scalar state. At the final
+  smoke point, after the intentionally short cold start, the Euclidean and
+  Fisher plug-ins produced finite distinct raw actions of approximately
+  `.1033` and `.1315`. This verifies treatment actuation only; it is not a
+  predictive or scientific comparison.
+- Passed the complete unit suite: 290 tests passed and 2 were skipped.
+
+**Gate recommendation:** proceed to the Phase 4 artifact and diagnostic-state
+audit. Existing artifacts may be reused only when they store the predictable
+Fisher state required by the new risk. No predictive GPU run is authorized.
+
+## Phase 4: Fisher-Risk Diagnostic Screen
 
 ### Goal
 
-Decide whether adaptive $\pi$ is a useful deployment policy rather than merely
-an oracle construction or instability indicator.
+Determine cheaply whether the Fisher-risk objective creates coherent adaptive
+signal on the same linear and variable-speed paths that defeated the
+Euclidean objective.
 
 ### Scope
 
-1. Freeze the schedule, controller half-life, bounds, and fixed comparison
-   grid selected before confirmation.
-2. Run fresh paired replicas for:
-   - fixed and adaptive EWC;
-   - fixed and adaptive Hybrid B32; and
-   - only the fixed bracket needed to identify best-fixed regret.
-3. Use blocks of five independent replicas with a predeclared minimum of ten
-   and maximum of twenty. Stop on CI precision, not first significance.
-4. Treat adaptive-minus-fixed Hybrid B32 event-window
-   environmental-accuracy AUC on the selected logistic schedule as primary.
-   Full-$p\in[0,.2]$ environmental-accuracy AUC is the principal broader
-   secondary outcome. Report digit-9 OvR accuracy, precision, recall, NLL,
-   ECE, retention, and resource costs as additional required outcomes.
-5. Report two fixed-policy references:
-   - frozen `.05`, representing no retuning from the gentle path; and
-   - the best fixed policy in hindsight, representing schedule-specific
-     tuning unavailable to a portable agent.
-6. Build `adaptive_results.ipynb` as an artifact-only notebook with no more
-   than four conditions per panel, clear confidence bands, event-centered
-   views, and exposure-based low-data plots.
+1. Reuse completed immutable reference, EWC, and schedule artifacts whenever
+   they contain the predictable Fisher state required by the new estimator.
+   Record any missing state explicitly. Never reconstruct a quantity from an
+   incompatible artifact merely to avoid a small diagnostic run.
+2. If existing artifacts are insufficient, run only the minimum diagnostic
+   trajectories needed to produce the Fisher summary, trend, residual energy,
+   and $q_t$ recursion. Do not launch a replica grid or Hybrid learner.
+3. Screen the linear schedule and the existing logistic stress family. Begin
+   with $\kappa\in\{32,64,128,256\}$; do not add new schedules unless all
+   retained cases fail for a diagnosed resolution reason.
+4. Use $h=.05$ for the principal diagnostic and $h=.10$ only as a sensitivity.
+   Report the ungated predictable plug-in and the operational cold-start
+   action separately. A signal visible only before the cold-start gate is
+   `diagnostic-only`, not a failure of Fisher geometry and not eligible for a
+   predictive pilot.
+5. Compare, at every step:
+   - Euclidean and Fisher movement energies;
+   - Euclidean trace and Fisher-weighted uncertainty terms;
+   - unbounded and clipped controller actions;
+   - lower-bound occupancy and action range;
+   - event-window response timing; and
+   - closed-loop one-step risk against fixed `.05` and the best fixed action
+     under the same Fisher-risk state recursion.
+6. Check estimator dependence by comparing the predictable lagged Fisher
+   metric with a separately labeled contemporaneous diagnostic. Only the
+   predictable version is eligible for promotion.
+7. Write an immutable diagnostic artifact and an artifact-only notebook panel
+   that exposes the numerator and denominator of $\pi_{G,t}^*$ rather than
+   showing only its clipped output.
 
-### Decision rule
+### Gate
 
-- **Promote:** adaptive Hybrid B32 improves on frozen `.05`, remains close to
-  the best fixed policy across both schedules, and introduces no material
-  secondary-metric failure.
-- **Diagnostic only:** $\pi_t$ detects the speed change but does not improve
-  predictive outcomes or reacts too late.
-- **Stop:** the oracle opportunity is absent, the plug-in estimate is unstable,
-  or one fixed policy is robustly as good with lower complexity.
+- **Promote:** Fisher-risk $\pi_t$ leaves `.05` coherently in at least one
+  predeclared event window, the action responds in the expected direction,
+  and its bounded closed-loop Fisher risk improves by at least 5% over fixed
+  `.05` without numerical-floor dependence.
+- **Diagnostic only:** the action tracks Fisher movement but is too late,
+  dominated by uncertainty, or offers less than 5% conditional opportunity.
+- **Stop:** the action remains pinned, becomes unstable, depends materially on
+  self-coupled contemporaneous information, or obtains apparent signal only
+  from numerical safeguards.
+
+These thresholds screen controller signal, not predictive effectiveness. A
+passing result authorizes only the small paired pilot in Phase 5.
 
 ### Verification
 
-- Confirmation uses fresh independent replicas and immutable run directories.
-- Every claim is visible in a trajectory plot with uncertainty.
-- Schedule, data, memory, and compute effects remain separate.
-- Fixed and adaptive conditions share initialization, uniforms, data order,
-  optimizer settings, and all non-treatment seeds within each replica.
+- Every diagnostic identifies its source artifact, metric timing, and Fisher
+  representation.
+- Singular and low-rank summaries produce finite energies without special
+  rank handling.
+- The Euclidean columns reproduce the completed Phase 2 conclusion.
+- The notebook performs no training or Fisher estimation.
+
+### Check-in
+
+Choose `stop`, retain the controller as a diagnostic, or freeze one Fisher-risk
+configuration and one schedule for a paired predictive pilot.
+
+### Completion Record
+
+**Status:** Complete (2026-08-21)
+
+- Audited the completed Plan 2 artifacts before adding compute. They retain
+  full reference-optimum parameter paths, learner displacements, oracle
+  residual vectors, and the high-sample initial Fisher, but only three
+  auxiliary-Fisher checkpoints. They cannot reconstruct a predictable
+  per-step Fisher metric without new score observations.
+- Implemented an immutable score-only diagnostic replay. It interpolates each
+  source's high-sample reference path onto the linear and
+  $\kappa\in\{32,64,128,256\}$ schedules, regenerates paired arrivals from the
+  recorded partitions and seeds, calculates exact per-sample scores, and
+  maintains the rank-8-plus-diagonal Fisher by direct EMA using the
+  operational $\pi_t$. It performs no learner optimization, HVP, LFU,
+  Fisher inverse, pseudoinverse, or dense numerical-rank calculation.
+- Used three independent fixed-$.05$ source trajectories, $m=8$, $K=100$,
+  primary $h=.05$, and sensitivity $h=.10$. The expected controller-state
+  recursion propagates the interpolated true displacement and separately
+  accounts for source-calibrated learner covariance; this is a diagnostic
+  expectation calculation, not a predictive learner trajectory.
+- Corrected the scheduled-stream validator to admit explicitly recorded
+  zero-speed tail transitions. It now matches the nondecreasing schedule
+  contract used by the numerically saturated $\kappa=128$ and $256$ tails;
+  no artificial movement was injected.
+- The operational Fisher controller remained exactly at $\pi_{\min}=.05$ for
+  every source, schedule, and half-life. Removing cold start did not reveal a
+  hidden response: across nonlinear event windows, the largest within-source
+  ungated action range was approximately `.00209`, far below the `.05` gate.
+- The bounded Fisher design oracle and the Euclidean control also remained at
+  `.05`, yielding zero operational risk reduction against fixed `.05`.
+  On the selected $\kappa=32$ summary, even the most favorable transition had
+  Fisher movement energy only about `.00067` times the new-observation
+  covariance risk. Fisher reweighting therefore did not repair the
+  signal-to-uncertainty imbalance.
+- A deliberately self-coupled current-batch Fisher diagnostic was noisy
+  rather than coherently shock-responsive. Its nonlinear maxima stayed near
+  `.025` to `.032`; one linear-path source spiked to approximately `.156`.
+  This does not justify allowing current observations to select their own
+  weight.
+- Wrote immutable schema-v1 artifact
+  `cache/mnist_experiment/plan4/fisher_analysis/phase4__571e2543d083` and the
+  artifact-only [plan4_fisher_results.ipynb](plan4_fisher_results.ipynb). The
+  three-source diagnostic consumed 12,000 score gradients and completed in
+  approximately 13 seconds of measured schedule time.
+- Passed the complete unit suite: 296 tests passed and 2 were skipped. The
+  results notebook also passed the artifact-only validator in under 2 seconds.
+
+**Gate recommendation:** `stop`. Retain fixed $\pi=.05$ for the practical
+baseline. The Fisher-risk controller remains mathematically coherent and may
+be useful as an offline diagnostic, but this path supplies no evidence that a
+predictive adaptive-policy experiment would justify its compute cost.
+
+## Phase 5: Final Realized-Actuation Challenge
+
+### Goal
+
+Give adaptive $\pi$ one direct, oracle-free challenge on realized stochastic
+learner trajectories. First establish that a predictable controller actually
+actuates under at least one frozen speed treatment; inspect predictive outcomes
+only after schedule selection is complete.
+
+### Scope
+
+1. Run one paired EWC-only development replica on each of `linear` and
+   $\kappa\in\{32,64,128,256\}$. Compare exactly:
+   - fixed $\pi=.05$;
+   - the unchanged Euclidean adaptive controller; and
+   - Fisher-risk adaptive control with $h=.05$.
+   Conditions within one schedule share initialization, arrivals, optimizer
+   settings, and every non-treatment seed. Schedule streams use common random
+   numbers under the existing threshold coupling.
+2. Select a schedule using controller behavior only. Predictive accuracy,
+   NLL, calibration, and resource outcomes are sealed until the actuation
+   artifact and selected schedule are immutable. A schedule passes only when,
+   in its predeclared event window, the predictable Fisher controller:
+   - exceeds `.07` on at least ten transitions;
+   - has action range at least `.05`;
+   - has positive movement/action correlation; and
+   - reduces its own summed one-step Fisher-risk estimate by at least 5%
+     relative to applying fixed `.05` at the same pre-decision states.
+   Rank passing schedules by estimated risk reduction, then action range, then
+   lower $\kappa$. The linear schedule is a control and cannot win a tie over
+   a passing nonlinear schedule.
+3. Stop immediately when no schedule passes. This is the final
+   realized-actuation falsification; noise-driven action movement or a
+   predictive accident does not reopen schedule tuning.
+4. If one schedule passes, freeze it and run three fresh paired EWC-only
+   replicas using source replicas 2 through 4. Only then unseal and report
+   predictive outcomes.
+5. Preserve $m=8$, $K=100$, $p\in[0,.2]$, 50 L-BFGS iterations, direct-EMA
+   Fisher updates, and rank-8-plus-diagonal summaries.
+6. Use the oracle-free capacity-zero EWC recursion established in Plan 3.
+   The controller metric is the archive Fisher available before its action;
+   the current observations and resulting Fisher update cannot choose their
+   own $\pi_t$. No reference-optimum fit is generated or consumed.
+7. Report action timing and decomposition alongside environmental accuracy,
+   digit-9 OvR accuracy, precision, recall, NLL, ECE, non-nine accuracy,
+   optimizer evaluations, time, and memory.
+8. If Fisher adaptive improves over fixed `.05` without a material secondary
+   failure, run the same three-condition comparison for Hybrid B32. Replay
+   observations remain excluded from $m_t$ under the existing clean-recursion
+   semantics.
+
+### Implementation Checkpoint
+
+- Added schema 18 for oracle-free hybrid/EWC runs whose controller may use the
+  predictable rank-8-plus-diagonal archive Fisher. Schema 17 remains the
+  non-replay Fisher-controller schema; all earlier schema identities remain
+  readable and unchanged.
+- Froze immutable 15-run development bundle
+  `cache/mnist_experiment/plan4/challenge/bundles/plan4-actuation-screen__r0001__b9918dae8a95`.
+  It crosses five schedules with fixed `.05`, historical Euclidean adaptive
+  $h=.20$, and Fisher adaptive $h=.05$ on one common outer replica.
+- The selection analysis reads only controller state, controller decisions,
+  acceptance diagnostics, schedule values, and provenance hashes. Predictive
+  classification and resource fields remain sealed until a schedule passes.
+- A five-step CPU integration run verified that the pre-update Fisher chooses
+  the action and that the identical action is consumed by learner EWC and
+  archive EMA. Its Fisher action reached approximately `.401`; HVP count was
+  zero. This demonstrates plumbing, not scientific efficacy.
+- Passed the complete unit suite before launch: 298 tests passed and 2 were
+  skipped.
+
+### Pilot Gate
+
+- **Promote:** after passing the actuation screen, Fisher adaptive improves mean paired event-window environmental
+  accuracy AUC over fixed `.05`, is not clearly dominated by Euclidean
+  adaptive, and introduces no material digit-9, retention, calibration, or
+  resource regression.
+- **Diagnostic only:** it actuates coherently but does not improve predictive
+  outcomes or transfers poorly to Hybrid B32.
+- **Stop:** it is pinned, unstable, predictively worse, or reproducibly
+  dominated by fixed `.05`.
+
+### Verification
+
+- Pilot runs use new immutable identities and are never pooled silently with
+  Plan 3 or the completed Euclidean Plan 4 screen.
+- The schedule-selection artifact contains no predictive metrics and records
+  the hash of every still-sealed run artifact used to calculate actuation.
+- Fixed, Euclidean, and Fisher decisions all identify their risk metric;
+  Fisher decisions use the pre-update rank-8-plus-diagonal archive summary.
+- Every predictive comparison is paired and displays individual trajectories
+  as well as mean differences.
+- No panel contains more than four conditions.
+- The result notebook cannot train, repair, or complete artifacts.
+
+### Check-in
+
+Decide whether the Fisher-risk controller merits confirmatory replication,
+remains a useful diagnostic, or should be retired without changing the
+mathematical overview.
+
+### Completion Record
+
+**Status:** Complete (2026-08-21)
+
+- Ran the immutable 15-condition CPU screen
+  `cache/mnist_experiment/plan4/challenge/bundles/plan4-actuation-screen__r0001__12f3d0ce3ac9`.
+  The five schedules share initialization hash
+  `b6c3bd6ae8b0006527b4675b8ba362c81e26fff7860c35d6422b2b62c9569aae`
+  and common-uniform hash
+  `366b4acc92406093f81a246a7f21429989b5ad3eed247cc4fbd744efa394b4a5`.
+- Derived each scheduled stream from the exact archived Plan 2 model and
+  partitions. This avoided a device-dependent initialization refit while
+  retaining immutable schedule-specific replica provenance.
+- The Fisher-risk controller did actuate predictably. Its maximum action rose
+  from `.128` on the linear path to `.353` at $\kappa=256$; event-window
+  signal/action correlations ranged from `.49` to `.83`, with no missing-Fisher
+  fallback.
+- Sharper schedules produced material same-state Fisher-risk reductions versus
+  fixed `.05`: `9.1%` at $\kappa=128$ and `18.4%` at $\kappa=256$. They did not
+  sustain actions above `.07` for the required ten event transitions: the
+  counts were 7 of 13 and 5 of 11, respectively.
+- Gentler schedules supplied enough transitions but too little risk advantage.
+  Linear and $\kappa=32$ reached 19 and 11 qualifying transitions, but reduced
+  same-state risk by only `1.9%` and `1.5%`.
+- The historical Euclidean controller remained at `.05` throughout linear,
+  $\kappa=32$, and $\kappa=64$. It moved only outside the predeclared event
+  window for the two sharpest schedules and supplied no passing event signal.
+- Wrote immutable controller-only schema-v1 analysis
+  `cache/mnist_experiment/plan4/challenge/analysis/phase5_actuation__266e6f391abb`
+  and the artifact-only
+  [plan4_challenge_results.ipynb](plan4_challenge_results.ipynb). Predictive
+  outcomes remained sealed because schedule selection failed.
+- Passed the complete unit suite before launch: 299 tests passed and 2 were
+  skipped.
+
+**Gate recommendation:** `stop`. Fisher-risk adaptation is a coherent and
+responsive diagnostic under abrupt movement, but no schedule passed the
+predeclared duration-and-value gate. Do not spend confirmatory or Hybrid B32
+compute; retain fixed $\pi=.05$ as the practical baseline.
+
+### Exploratory Floor Sensitivity
+
+**Status:** Complete (2026-08-21)
+
+After closing the confirmatory gate, run one explicitly exploratory sensitivity
+study at $\pi_{\min}=.025$. This value is motivated by the realized controller:
+the nonlinear schedules' ungated event minima were approximately `.0247` to
+`.0253`, while the `.05` floor clipped 56% to 75% of their decisions.
+
+Reuse the exact five schedules, initialization, common-random streams, and
+fixed-`.05` incumbent. Add only fixed $\pi=.025$ and Fisher adaptive
+$\pi_{\min}=.025$, $h=.05$. Report controller behavior and paired predictive
+trajectories for environmental accuracy, digit-9 OvR accuracy, precision,
+recall, non-nine accuracy, NLL, ECE, optimizer work, and time. One development
+replica supplies descriptive evidence only; it cannot reopen the completed
+promotion gate or support a confirmatory claim.
+
+- Ran immutable bundle
+  `cache/mnist_experiment/plan4/challenge/bundles/plan4-floor-sensitivity__e3757c2ac286`.
+  It reused all five completed fixed-`.05` controls and added ten paired CPU
+  trajectories without refitting initialization or regenerating streams.
+- Lowering the floor caused material actuation. Adaptive maximum $\pi$ ranged
+  from `.205` to `.422`, and its internal event-risk reduction versus fixed
+  `.025` ranged from `5.1%` to `27.4%`.
+- Those internal gains did not predict learner quality. Relative to fixed
+  `.025`, adaptive control reduced mean environmental accuracy in every
+  schedule by `1.8` to `8.6` percentage points, increased mean NLL by `.97` to
+  `3.06`, and increased ECE by `4.6` to `15.7` percentage points. Digit-9 OvR
+  accuracy, precision, and recall were also lower on every complete-trajectory
+  mean.
+- Fixed `.025` descriptively outperformed fixed `.05` across the five paired
+  schedules: its schedule-averaged mean differences were `+3.86` points in
+  environmental accuracy, `+0.69` in digit-9 OvR accuracy, `+5.26` in
+  precision, `+2.56` in recall, and `+3.69` in non-nine accuracy. Mean NLL was
+  lower by `1.53` and ECE by `9.04` percentage points. Schedules are coupled
+  sensitivity treatments, not five independent replicas, so these averages
+  are descriptive rather than inferential.
+- Optimizer budgets and measured resource use remained effectively matched.
+  Every learner performed 4,950 L-BFGS iterations; total wall time stayed near
+  65 to 67 seconds per trajectory.
+- Wrote immutable schema-v1 analysis
+  `cache/mnist_experiment/plan4/challenge/floor_analysis/floor_sensitivity__b022b149d154`
+  and extended
+  [plan4_challenge_results.ipynb](plan4_challenge_results.ipynb) with paired
+  action and predictive plots.
+
+**Exploratory recommendation:** retain fixed $\pi=.025$ as a promising applied
+candidate for future independent replication. Do not promote the Fisher-risk
+adaptive policy: its optimized internal risk is empirically misaligned with
+the predictive objective on this path.
+
+## Phase 6: Exponentially Discounted Fisher-Risk Control
+
+### Goal
+
+Determine whether the Fisher-risk controller contains a useful slowly varying
+signal that was obscured by harmful instantaneous action noise. Replace the
+instantaneous minimizer by the minimizer of an exponentially discounted
+history of estimated one-step risks, then compare it directly with historical
+fixed $\pi=.05$, incumbent fixed $\pi=.025$, and the completed unsmoothed
+controller.
+
+This phase tests a new regularized adaptive controller. It does not reopen the
+completed Phase 5 promotion gate or reinterpret its exploratory floor study as
+confirmatory evidence.
+
+### Motivation And Estimand
+
+Write the predictable Fisher-risk estimate as
+
+$$
+\widehat R_t(\pi)=(1-\pi)^2A_t+\pi^2B_t,
+\qquad
+A_t=\widehat S_t+\widehat D_tq_t,
+\qquad
+B_t=\widehat D_t/m_t.
+$$
+
+The instantaneous controller uses
+
+$$
+\widetilde\pi_t=\frac{A_t}{A_t+B_t}.
+$$
+
+A plain EMA of $\widetilde\pi_t$ gives equal influence to ratios calculated at
+states where the action is consequential and states where the estimated risk
+is nearly flat. Instead, for an action half-life $H_\pi$ measured in accepted
+updates, let
+
+$$
+\gamma_\pi=1-2^{-1/H_\pi},
+$$
+
+$$
+\bar A_t=(1-\gamma_\pi)\bar A_{t-1}+\gamma_\pi A_t,
+\qquad
+\bar B_t=(1-\gamma_\pi)\bar B_{t-1}+\gamma_\pi B_t,
+$$
+
+and apply
+
+$$
+\pi_t^{\mathrm{EDR}}
+=\operatorname{clip}\left(
+\frac{\bar A_t}{\bar A_t+\bar B_t},
+\pi_{\min},\pi_{\max}
+\right).
+$$
+
+Conditional on the predictable coefficient history, this action minimizes the
+exponentially discounted frozen-coefficient objective
+
+$$
+J_t(\pi)=\sum_{k\leq t}(1-\gamma_\pi)^{t-k}\widehat R_k(\pi).
+$$
+
+This is not an exact closed-loop optimum: applied actions change later $q_t$,
+learner parameters, and Fisher summaries. The predictive experiment tests
+whether the conditional approximation remains useful after that feedback is
+restored.
+
+Call this policy **exponentially discounted risk control** (`edr`). The action
+half-life is distinct from the existing trend-estimation half-life: the latter
+estimates $\widehat d_t$ and $\widehat D_t$, whereas $H_\pi$ controls how much
+historical estimated risk informs the operational action.
+
+### Frozen Design
+
+- Use Fisher risk, EDR $\pi_{\min}=.01$, $\pi_{\max}=.95$, controller trend
+  half-life $h=.05$, $m=8$, $K=100$, and $p\in[0,.2]$.
+- Preserve no LFU, direct-EMA rank-8-plus-diagonal Fisher summaries, 50
+  L-BFGS iterations, and the oracle-free capacity-zero EWC recursion.
+- Use EWC-only for this mechanism test. Hybrid B32 is not authorized unless
+  independent EWC confirmation later demonstrates dynamic value.
+- Use $H_\pi=4$ accepted updates and $\pi_{\min}=.01$ as the predeclared
+  primary treatment. $H_\pi\in\{2,8\}$ and
+  $\pi_{\min}\in\{.02,.03\}$ are artifact-only sensitivity calculations and
+  cannot replace the primary values using predictive outcomes.
+- Reuse completed fixed-$.05$, fixed-$.025$, and unsmoothed Fisher-adaptive
+  $\pi_{\min}=.025$ trajectories from the exact five Phase 5 schedules. Fixed
+  `.05` is the historical baseline from before adaptive $\pi$ nominated a
+  lower operating region; fixed `.025` is the best presently observed fixed
+  policy. Add only the primary EDR treatment after its implementation and
+  smoke gate passes.
+
+### Scope
+
+1. Reconstruct the available $A_t$, $B_t$, instantaneous action, and event
+   windows from completed Phase 5 artifacts. Apply EDR with
+   $H_\pi\in\{2,4,8\}$ and final-action floors
+   $\pi_{\min}\in\{.01,.02,.03\}$ without learner training. Report unclipped
+   and clipped action range, total variation, peak attenuation, event response
+   area, peak delay, lower-bound occupancy, and same-state estimated risk.
+2. Treat that artifact replay only as an assumption check. Filtered actions do
+   not alter the archived learner, $q_t$, Fisher, or later controller states,
+   so they are not counterfactual predictive trajectories and cannot establish
+   treatment value.
+3. Proceed with primary $H_\pi=4$, $\pi_{\min}=.01$ unless it fails to
+   attenuate raw action variation, erases the sustained event response, or
+   remains pathologically bound at `.01`. If any occurs, stop for a check-in
+   rather than selecting another half-life or floor from predictive
+   performance.
+4. Add explicit EDR controller state containing $\bar A_t$ and $\bar B_t$.
+   Accumulate the unbounded, nonnegative predictable coefficients without
+   clipping them. During the existing cold start, apply fixed $\pi=.025$ while
+   accumulating those coefficients. After cold start, clip only the final EDR
+   action to $[.01,.95]$. If the accumulated denominator is exactly zero,
+   apply $\pi=.025$ and record the fallback; do not introduce a pseudo-count
+   or hidden prior mass.
+5. Freeze $G_t$, $A_t$, and $B_t$ before the current observations. The action
+   must remain predictable, and the same realized $\pi_t$ must be consumed by
+   learner EWC, archive consolidation, Fisher EMA, and the $q_t$ recursion.
+6. Introduce new configuration, metric, controller-state, and artifact-schema
+   versions. Preserve all prior configuration hashes and immutable artifacts.
+   Record instantaneous and smoothed coefficients, instantaneous proposal,
+   applied EDR action, cold-start state, and numerical fallback reason at each
+   transition.
+7. Run a tiny paired CPU smoke before scientific compute. Fixed `.05`, fixed
+   `.025`, raw adaptive, and EDR conditions must share initialization,
+   observations, schedule, and all non-treatment seeds.
+8. Run only the five new EDR development trajectories, one on each existing
+   linear and $\kappa\in\{32,64,128,256\}$ schedule. Reuse the completed
+   fixed-$.05$, fixed-$.025$, and raw-adaptive artifacts for paired
+   comparisons.
+9. Report complete and event-window trajectories for environmental accuracy,
+   digit-9 OvR accuracy, precision, recall, non-nine accuracy, NLL, ECE,
+   optimizer evaluations, learner time, persistent memory, and every action
+   diagnostic. NLL is the primary predictive outcome because the Fisher-risk
+   estimand is local KL divergence.
+
+### Interpretation Gate
+
+- **Dynamic success:** EDR moves materially and coherently around its local
+  operating level, improves predictive NLL over both fixed `.025` and `.05`,
+  introduces no material secondary predictive or calibration regression, and
+  outperforms the unsmoothed policy. This authorizes a separately specified
+  fresh-replica confirmation.
+- **Automatic-calibration result:** the unclipped EDR proposal stabilizes near
+  `.025` without material `.01` floor occupancy, improves over fixed `.05`,
+  approximately matches fixed `.025`, and avoids the raw controller's damage.
+  This supports automatic operating-level calibration but not dynamic
+  adaptation.
+- **Failure or floor-driven result:** EDR follows the imposed floor, retains
+  harmful excursions, responds principally after the event, becomes
+  numerically or feedback unstable, or predictively underperforms fixed
+  `.025`. Retire the applied controller and retain only fixed `.025` for future
+  independent confirmation.
+
+The five schedules share one outer development replica and are not independent
+statistical units. No outcome from this phase alone supports a confirmatory
+claim.
+
+### Verification
+
+- Unit tests prove that coefficient EMA minimizes the explicitly accumulated
+  discounted quadratic risks and that $H_\pi$ maps to the intended update-step
+  half-life.
+- Decision reconstruction from stored coefficients exactly reproduces every
+  EDR action, including cold-start and zero-denominator behavior.
+- Changing $\pi_{\min}$ changes only final action clipping; instantaneous and
+  accumulated risk coefficients remain identical under artifact-only floor
+  sensitivities.
+- Legacy fixed and unsmoothed controller tests retain their exact outputs and
+  configuration identities.
+- The EDR smoke records no current-batch leakage, Fisher inversion,
+  pseudoinversion, eigendecomposition, HVP, or LFU operation.
+- The artifact-only notebook cannot train, resume, repair, or mutate a run and
+  never presents the filter-only replay as a predictive counterfactual.
+
+### Check-in
+
+Review the artifact-only smoothing screen before implementing or running the
+five predictive trajectories. After those trajectories, classify the result
+as dynamic success, automatic calibration, or failure/floor-driven before
+considering fresh replicas or theory changes.
+
+### Completion Record
+
+**Status:** Complete - stop (2026-08-22)
+
+- The immutable coefficient-replay screen
+  `cache/mnist_experiment/plan4/edr/screen/edr_screen__014849bf996e`
+  passed its assumption gate. Primary $H_\pi=4$, $\pi_{\min}=.01$ reduced
+  mean nonlinear action total variation to `34.1%` of the raw controller while
+  retaining `48.5%` of its event-response area. Post-cold floor occupancy was
+  zero.
+- Added schema-v20 EDR configuration and schema-v11/v15 hybrid artifacts and
+  metrics. The accepted transaction stores separate $\bar A_t,\bar B_t$ state
+  and applies exactly one predictable $\pi_t$ to learner EWC, archive
+  consolidation, Fisher EMA, and the $q_t$ recursion. Legacy schemas retain
+  their prior hashes.
+- The paired CPU smoke completed without current-batch leakage, inversion,
+  eigendecomposition, HVP, or LFU work. Cold-start accumulation, final-action
+  clipping, checkpoint state, and exact cross-consumer actuation were checked
+  directly.
+- Ran immutable bundle
+  `cache/mnist_experiment/plan4/edr/bundles/plan4-edr__48f8dc7a8f6b` in a
+  detached `tmux` session. It reused 15 completed controls and added the five
+  EDR trajectories. All 20 entries validate as complete; each new 100-step
+  trajectory required approximately 64 seconds.
+- EDR was not floor-driven, but its operating level remained too high. Mean
+  applied $\pi$ ranged from `.043` to `.088` by schedule, with maxima from
+  `.074` to `.277`; post-cold `.01` floor occupancy was zero everywhere.
+  Exact-zero denominator fallbacks occurred only before meaningful exposure
+  (`p` no larger than $5.5\times10^{-18}$), including the long numerically
+  flat prefixes of the two sharpest sigmoid schedules.
+- Relative to fixed $\pi=.025$, EDR increased complete-trajectory mean NLL on
+  every schedule (`+.46` to `+1.95`; schedule average `+1.45`). It also reduced
+  schedule-averaged environmental accuracy by `2.93` percentage points and
+  digit-9 OvR accuracy by `.82` points, while increasing ECE by `6.52` points.
+- Smoothing recovered limited signal relative to the raw adaptive policy:
+  schedule-averaged NLL was `.14` lower and environmental accuracy `.54`
+  points higher. Those gains were path-dependent and did not overcome the
+  much larger deficit to fixed `.025`.
+- Wrote immutable schema-v2 analysis
+  `cache/mnist_experiment/plan4/edr/analysis/edr_predictive__f83d7cbf0459`
+  and artifact-only
+  [plan4_edr_results.ipynb](plan4_edr_results.ipynb). The notebook executes in
+  under two seconds and labels all schedule averages as descriptive evidence
+  from one outer replica.
+- The complete unit suite passed before launch (`307 passed`, `2 skipped`) and
+  after analysis (`308 passed`, `2 skipped`). The notebook's artifact-only
+  execution validator also passed in under two seconds.
+
+**Original gate decision:** predictive failure, not floor-driven failure. EDR
+is a better-behaved diagnostic than instantaneous Fisher-risk control, but it
+does not merit fresh-replica or Hybrid B32 confirmation against the strong
+fixed `.025` incumbent. Because that EDR treatment also used `.025` during
+cold start, it did not answer automatic calibration from the historical `.05`
+starting point; the amendment below supersedes only that discovery
+interpretation.
+
+### Cold-Start Discovery Amendment
+
+**Status:** Complete - mechanical discovery only (2026-08-22)
+
+The original EDR treatment applied fixed $\pi=.025$ throughout its trend
+cold start. That design remains a valid comparison against the best known
+fixed policy, but it cannot answer whether EDR would have discovered a useful
+action below the historically available fixed $\pi=.05$: the candidate value
+was already embedded in the treatment.
+
+Run one explicitly exploratory, paired amendment on the linear schedule, whose
+EDR action trajectory was the most interpretable:
+
+- change only the EDR cold-start and exact-zero fallback action from `.025` to
+  `.05`;
+- retain $H_\pi=4$, $\pi_{\min}=.01$, $\pi_{\max}=.95$, trend half-life
+  $h=.05$, $m=8$, $K=100$, $p\in[0,.2]$, EWC-only, no LFU, rank-8-plus-
+  diagonal Fisher summaries, and 50 L-BFGS iterations;
+- reuse the exact linear initialization, observation stream, schedule, and
+  non-treatment seeds;
+- use fixed $\pi=.05$ as the primary discovery comparator;
+- use the completed EDR cold-`.025` treatment as a cold-start sensitivity and
+  fixed $\pi=.025$ only as a clearly labelled hindsight benchmark. Neither may
+  determine whether discovery occurred.
+
+The cold-start EDR and fixed-`.05` learners must be identical through the last
+cold transition. After EDR becomes live, report its action trajectory and
+paired predictive outcomes separately from the cold prefix. Define
+**mechanical discovery** as a sustained, unclipped action below `.05` near the
+end of the path. Define **predictive discovery** as lower post-cold NLL than
+fixed `.05` without a material regression in environmental accuracy, digit-9
+OvR accuracy, precision, recall, non-nine accuracy, or ECE. NLL remains primary
+because it matches the local-KL motivation. For this one-replica development
+gate, call an absolute secondary change larger than two percentage points
+material; report the unthresholded differences as well.
+
+This is a post-hoc mechanism clarification on one development replica. Even a
+positive result would justify a fresh-replica confirmation, not an applied
+promotion claim.
+
+#### Amendment Completion Record
+
+- Added the immutable paired bundle
+  `cache/mnist_experiment/plan4/edr/discovery/bundles/plan4-edr-discovery__c7e7ed9d8438`.
+  It reuses fixed `.05`, fixed `.025`, and EDR cold-`.025`, and adds exactly one
+  linear EDR cold-`.05` treatment. The generated scientific configuration
+  differs from the original EDR configuration only in experiment identity and
+  cold-start action.
+- The new EDR learner and fixed-`.05` learner have identical parameter hashes
+  and predictive outcomes through all 25 cold transitions. The 100-step
+  treatment completed in `63.7` seconds in a detached `tmux` session.
+- **Mechanical discovery passed.** The first live action was `.0572`, the
+  trajectory peaked at `.0923`, and `51.4%` of live actions were below `.05`.
+  Its final ten actions ranged from `.02412` to `.02641` and averaged
+  `.02501`, with no `.01` floor clipping.
+- **Predictive discovery failed.** Across the 74 live outcomes, EDR minus fixed
+  `.05` was `+1.488` NLL, `-4.25` percentage points environmental accuracy,
+  `-1.48` points digit-9 OvR accuracy, `-5.23` points precision, `-3.99`
+  points recall, `-4.30` points non-nine accuracy, and `+5.68` points ECE.
+  The transient controller excursion therefore caused material closed-loop
+  damage even though the coefficient recursion eventually identified the
+  useful `.025` neighborhood.
+- Wrote immutable analysis
+  `cache/mnist_experiment/plan4/edr/discovery/analysis/edr_discovery__7b14c111ed7b`
+  and extended [plan4_edr_results.ipynb](plan4_edr_results.ipynb) with paired
+  action, cold/live outcome, NLL, and environmental-accuracy panels.
+- The complete unit suite passed (`310 passed`, `2 skipped`), and the extended
+  artifact-only notebook executed in under one second.
+
+**Amended decision:** EDR contains a meaningful offline action-calibration
+signal on the linear path: it rediscovers approximately `.025` from a `.05`
+cold start. Its present online actuation is not predictively useful because
+the transient actions alter an irreversible optimization trajectory. Preserve
+the diagnostic for theory development, but do not promote the controller or
+authorize fresh predictive replication in its current form.
+
+## Phase 7: Theory Integration and Historical Decision
+
+### Goal
+
+Integrate only experimentally supported changes into the mathematical account
+and decide whether any older controller experiments warrant repetition.
+
+### Scope
+
+1. Integrate the completed Phase 5 and Phase 6 evidence without rewriting the
+   mathematical overview around an unsuccessful treatment. Distinguish the
+   instantaneous Fisher-risk controller, EDR controller, and accepted fixed
+   policy explicitly.
+2. If Phase 6 demonstrates dynamic or automatic-calibration value worth
+   preserving,
+   update `mathematical_overview.ipynb` to present:
+   - Euclidean parameter-MSE and Fisher/local-KL risk as distinct objectives;
+   - the consistently Fisher-weighted signal and covariance terms;
+   - predictable metric freezing and the direct residual-energy estimator;
+   - the assumed nonsingularity of the theoretical Fisher separately from
+     possible singularity of finite-sample estimates; and
+   - the fact that LFU remainder control and numerical optimization remain in
+     the fixed Euclidean parameter chart.
+3. Do not introduce intrinsic Brownian motion, geodesic optimization,
+   connection corrections, or natural-gradient updates unless a later result
+   specifically requires them. The local quadratic experiment does not need
+   those constructions.
+4. Evaluate historical reruns by decision value. Revisit only comparisons for
+   which Fisher-risk actuation could change an applied conclusion; preserve
+   all existing artifacts and label cross-schema comparisons explicitly.
+5. If confirmation is justified, specify fresh replica counts, precision
+   stopping, and Hybrid B32 as a separate follow-up plan rather than silently
+   extending the development pilot.
+
+### Verification
+
+- Mathematical notation distinguishes the true Fisher from its stored EWC
+  estimate and parameter displacement from local predictive divergence.
+- No claimed invariance relies on damping, numerical rank, or an unrecorded
+  coordinate transformation.
+- Documentation states clearly whether instantaneous and EDR Fisher-risk
+  adaptation are promoted, automatic-calibration-only, floor-driven, or
+  retired.
+- Historical experimental conclusions remain reproducible from their original
+  immutable artifacts.
 
 ### Final Check-in
 
-Decide whether adaptive $\pi$ belongs in the practical baseline, remains a
-research diagnostic, or should be revisited only after a genuinely turning
-multi-coordinate task path is derived.
+Decide whether EDR adaptive $\pi$ belongs in the practical baseline, deserves
+a larger confirmation plan, remains only an automatic-calibration diagnostic,
+or closes Plan 4 as a scientifically useful negative result.

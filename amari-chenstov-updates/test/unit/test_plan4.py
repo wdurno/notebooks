@@ -3,6 +3,7 @@ from pathlib import Path
 
 from mnist_experiment.plan4_command_center import (
     DEFAULT_CONFIGS,
+    PHASE3_CONFIGS,
     _audit_completed,
     _load_configs,
     _run_state,
@@ -26,6 +27,35 @@ def test_plan4_smoke_configs_are_paired_and_explicit() -> None:
     assert schedule.p_values[0] == 0.0
     assert schedule.p_values[-1] == 0.2
     assert fixed.data.samples_per_step * sum(schedule.p_values) == 1.0
+
+
+def test_plan4_phase3_smoke_is_paired_and_varies_only_controller_treatment() -> None:
+    loaded = _load_configs(list(PHASE3_CONFIGS))
+    configs = [config for _, config in loaded]
+
+    assert {config.schema_version for config in configs} == {17}
+    assert {config.artifact_schema_version for config in configs} == {9}
+    assert {config.metric_schema_version for config in configs} == {13}
+    assert {config.estimator.method for config in configs} == {"ema"}
+    assert {
+        tuple(config.estimator.controller_methods or []) for config in configs
+    } == {("low_rank_diagonal",)}
+    assert {replica_design_hash(config) for config in configs} == {
+        replica_design_hash(configs[0])
+    }
+    assert {replica_bundle_id(config) for config in configs} == {
+        replica_bundle_id(configs[0])
+    }
+    assert [config.controller.policy for config in configs] == [
+        "fixed_unified",
+        "optimal_plugin",
+        "optimal_plugin",
+    ]
+    assert [config.controller.risk_metric for config in configs] == [
+        "euclidean",
+        "euclidean",
+        "fisher",
+    ]
 
 
 def test_plan4_run_state_checks_stored_configuration(tmp_path: Path) -> None:

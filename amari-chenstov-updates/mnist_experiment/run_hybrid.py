@@ -34,8 +34,11 @@ from src.controller import (
     ControllerAcceptance,
     ControllerDecision,
     ControllerState,
+    DiscountedRiskDecision,
+    DiscountedRiskState,
     accept_controller_step,
     decide_controller,
+    decide_discounted_risk_controller,
 )
 from src.derivatives import per_sample_derivatives
 from src.directional_ridge import DirectionalRidgeLFUState
@@ -68,6 +71,10 @@ PLAN3_HYBRID_LFU_ARTIFACT_SCHEMA_VERSION = 7
 PLAN3_HYBRID_LFU_METRIC_SCHEMA_VERSION = 11
 PLAN3_DEPLOYMENT_ARTIFACT_SCHEMA_VERSION = 8
 PLAN3_DEPLOYMENT_METRIC_SCHEMA_VERSION = 12
+PLAN4_FISHER_HYBRID_ARTIFACT_SCHEMA_VERSION = 10
+PLAN4_FISHER_HYBRID_METRIC_SCHEMA_VERSION = 14
+PLAN4_EDR_HYBRID_ARTIFACT_SCHEMA_VERSION = 11
+PLAN4_EDR_HYBRID_METRIC_SCHEMA_VERSION = 15
 CANONICAL_SCALAR_BYTES = 4
 
 
@@ -98,9 +105,26 @@ def _validate_config(config: ExperimentConfig) -> None:
             PLAN3_DEPLOYMENT_METRIC_SCHEMA_VERSION,
             {"ema"},
         ),
+        18: (
+            PLAN4_FISHER_HYBRID_ARTIFACT_SCHEMA_VERSION,
+            PLAN4_FISHER_HYBRID_METRIC_SCHEMA_VERSION,
+            {"ema"},
+        ),
+        19: (
+            PLAN4_FISHER_HYBRID_ARTIFACT_SCHEMA_VERSION,
+            PLAN4_FISHER_HYBRID_METRIC_SCHEMA_VERSION,
+            {"ema"},
+        ),
+        20: (
+            PLAN4_EDR_HYBRID_ARTIFACT_SCHEMA_VERSION,
+            PLAN4_EDR_HYBRID_METRIC_SCHEMA_VERSION,
+            {"ema"},
+        ),
     }.get(config.schema_version)
     if expected is None:
-        raise ValueError("Plan 3 hybrid runs require schema version 14, 15, or 16")
+        raise ValueError(
+            "hybrid runs require schema version 14, 15, 16, 18, 19, or 20"
+        )
     artifact_schema, metric_schema, methods = expected
     if config.artifact_schema_version != artifact_schema:
         raise ValueError(
@@ -126,6 +150,25 @@ def _validate_config(config: ExperimentConfig) -> None:
             and config.controller.pi_max >= 0.05
         ):
             raise ValueError("Plan 3 hybrid runs require fixed pi=.05")
+    elif config.schema_version == 20:
+        if (
+            config.controller.policy != "discounted_risk"
+            or config.controller.fixed_pi not in {0.025, 0.05}
+            or config.controller.pi_min != 0.01
+            or config.controller.pi_max != 0.95
+            or config.controller.trend_half_life_p != 0.05
+            or config.controller.action_half_life_steps != 4.0
+            or config.controller.risk_metric != "fisher"
+        ):
+            raise ValueError(
+                "schema-v20 requires the frozen H=4 Fisher EDR treatment "
+                "with cold-start pi=.025 or .05"
+            )
+        if (
+            config.controller.oracle_mode != "none"
+            or config.controller.reference_optimum_artifact is not None
+        ):
+            raise ValueError("EDR hybrid must not depend on an oracle path")
     else:
         if config.controller.policy not in {"fixed_unified", "optimal_plugin"}:
             raise ValueError("deployment hybrid requires fixed or plug-in control")
@@ -134,20 +177,34 @@ def _validate_config(config: ExperimentConfig) -> None:
             or config.controller.reference_optimum_artifact is not None
         ):
             raise ValueError("deployment hybrid must not depend on an oracle path")
-        if config.controller.pi_min != 0.05:
-            raise ValueError("deployment hybrid requires pi_min=.05")
+        expected_pi_min = 0.025 if config.schema_version >= 19 else 0.05
+        if config.controller.pi_min != expected_pi_min:
+            raise ValueError(
+                f"schema-v{config.schema_version} hybrid requires "
+                f"pi_min={expected_pi_min}"
+            )
         if config.controller.policy == "fixed_unified" and not (
-            config.controller.fixed_pi == 0.05
-            and config.controller.pi_max == 0.05
-        ):
-            raise ValueError("fixed deployment hybrid requires pi=.05")
-        if config.controller.policy == "optimal_plugin" and not (
-            config.controller.trend_half_life_p == 0.2
-            and config.controller.pi_max == 0.95
+            config.controller.fixed_pi == expected_pi_min
+            and config.controller.pi_max == expected_pi_min
         ):
             raise ValueError(
-                "adaptive deployment hybrid requires h=.20 and pi_max=.95"
+                f"fixed schema-v{config.schema_version} hybrid requires "
+                f"pi={expected_pi_min}"
             )
+        if config.controller.policy == "optimal_plugin":
+            expected_half_life = (
+                0.05
+                if config.schema_version >= 18
+                and config.controller.risk_metric == "fisher"
+                else 0.2
+            )
+            if not (
+                config.controller.trend_half_life_p == expected_half_life
+                and config.controller.pi_max == 0.95
+            ):
+                raise ValueError(
+                    "adaptive hybrid uses the predeclared half-life and pi_max=.95"
+                )
     if config.estimator.method not in methods:
         raise ValueError(
             f"schema-v{config.schema_version} does not support hybrid "
@@ -210,12 +267,27 @@ def _controller_state_from_mapping(
     return ControllerState(**values)
 
 
+def _discounted_risk_state_mapping(
+    state: DiscountedRiskState | None,
+) -> dict[str, Any] | None:
+    return None if state is None else dataclasses.asdict(state)
+
+
+def _discounted_risk_state_from_mapping(
+    mapping: dict[str, Any],
+) -> DiscountedRiskState:
+    state = DiscountedRiskState(**mapping)
+    state.validate()
+    return state
+
+
 def _controller_acceptance_mapping(
     acceptance: ControllerAcceptance,
 ) -> dict[str, Any]:
     return {
         "gain": acceptance.gain,
         "residual_squared": acceptance.residual_squared,
+        "residual_euclidean_squared": acceptance.residual_euclidean_squared,
         "scale_observation": acceptance.scale_observation,
         "normalized_displacement_norm": (
             None
@@ -244,6 +316,7 @@ def _checkpoint_mapping(
     archive_source_sha256: str,
     directional_ridge: DirectionalRidgeLFUState | None,
     controller_state: ControllerState | None,
+    discounted_risk_state: DiscountedRiskState | None,
     artifact_schema_version: int,
 ) -> dict[str, Any]:
     mapping = {
@@ -276,6 +349,10 @@ def _checkpoint_mapping(
         )
     if artifact_schema_version >= PLAN3_DEPLOYMENT_ARTIFACT_SCHEMA_VERSION:
         mapping["controller_state"] = _controller_state_mapping(controller_state)
+    if artifact_schema_version >= PLAN4_EDR_HYBRID_ARTIFACT_SCHEMA_VERSION:
+        mapping["discounted_risk_state"] = _discounted_risk_state_mapping(
+            discounted_risk_state
+        )
     return mapping
 
 
@@ -340,7 +417,12 @@ def main() -> None:
             dtype=matrix_dtype,
             device="cpu",
         )
-        if config.controller.policy == "optimal_plugin"
+        if config.controller.policy in {"optimal_plugin", "discounted_risk"}
+        else None
+    )
+    discounted_risk_state = (
+        DiscountedRiskState()
+        if config.controller.policy == "discounted_risk"
         else None
     )
     directional_ridge = (
@@ -427,6 +509,18 @@ def main() -> None:
                 controller_mapping,
                 dtype=matrix_dtype,
             )
+        discounted_mapping = checkpoint.get("discounted_risk_state")
+        if discounted_risk_state is None:
+            if discounted_mapping is not None:
+                raise RuntimeError(
+                    "non-EDR checkpoint unexpectedly contains discounted risk state"
+                )
+        elif not isinstance(discounted_mapping, dict):
+            raise RuntimeError("EDR checkpoint is missing discounted risk state")
+        else:
+            discounted_risk_state = _discounted_risk_state_from_mapping(
+                discounted_mapping
+            )
         start_step = int(checkpoint["next_step"])
         print(f"resumed Plan 3 hybrid at step {start_step}", flush=True)
 
@@ -473,10 +567,18 @@ def main() -> None:
             row["controller_state_before"] = (
                 None
                 if controller_state is None
-                else controller_state.scalar_mapping(config.controller.trace_epsilon)
+                else controller_state.scalar_mapping(
+                    config.controller.trace_epsilon,
+                    risk_metric=config.controller.risk_metric,
+                )
             )
             row["controller_decision"] = None
             row["controller_acceptance"] = None
+        if config.schema_version >= 20:
+            row["discounted_risk_state_before"] = _discounted_risk_state_mapping(
+                discounted_risk_state
+            )
+            row["discounted_risk_state_after"] = None
         if step + 1 < effective_steps:
             current_events = stream_events(
                 step,
@@ -512,13 +614,31 @@ def main() -> None:
                 raise RuntimeError("hybrid active labels do not match the dataset")
 
             controller_decision: ControllerDecision | None = None
+            controller_fisher = (
+                archive.fisher
+                if config.controller.risk_metric == "fisher"
+                else None
+            )
             adaptation_weight = float(config.controller.fixed_pi)
+            discounted_decision: DiscountedRiskDecision | None = None
             if controller_state is not None:
-                controller_decision = decide_controller(
-                    controller_state,
-                    config.controller,
-                    batch_size=len(active_indices),
-                )
+                if discounted_risk_state is not None:
+                    assert controller_fisher is not None
+                    discounted_decision = decide_discounted_risk_controller(
+                        controller_state,
+                        discounted_risk_state,
+                        config.controller,
+                        batch_size=len(active_indices),
+                        fisher=controller_fisher,
+                    )
+                    controller_decision = discounted_decision.controller
+                else:
+                    controller_decision = decide_controller(
+                        controller_state,
+                        config.controller,
+                        batch_size=len(active_indices),
+                        fisher=controller_fisher,
+                    )
                 adaptation_weight = controller_decision.applied_pi
             if config.schema_version >= 16:
                 row["controller_decision"] = (
@@ -529,9 +649,19 @@ def main() -> None:
                         "lower_bound_active": False,
                         "upper_bound_active": False,
                         "cold_start_active": False,
+                        "risk_metric": config.controller.risk_metric,
                     }
                     if controller_decision is None
-                    else controller_decision.mapping()
+                    else {
+                        **controller_decision.mapping(
+                            extended=config.schema_version >= 18
+                        ),
+                        **(
+                            {}
+                            if discounted_decision is None
+                            else discounted_decision.mapping()
+                        ),
+                    }
                 )
 
             learner_state_before = _state_dict_cpu(model)
@@ -731,16 +861,26 @@ def main() -> None:
                     batch_size=len(active_indices),
                     delta_p=delta_p,
                     half_life_p=config.controller.trend_half_life_p,
+                    fisher=controller_fisher,
                 )
                 controller_state = acceptance.state
                 row["controller_acceptance"] = _controller_acceptance_mapping(
                     acceptance
                 )
+                if discounted_decision is not None:
+                    discounted_risk_state = discounted_decision.state
             if config.schema_version >= 16:
                 row["controller_state_after"] = (
                     None
                     if controller_state is None
-                    else controller_state.scalar_mapping(config.controller.trace_epsilon)
+                    else controller_state.scalar_mapping(
+                        config.controller.trace_epsilon,
+                        risk_metric=config.controller.risk_metric,
+                    )
+                )
+            if config.schema_version >= 20:
+                row["discounted_risk_state_after"] = (
+                    _discounted_risk_state_mapping(discounted_risk_state)
                 )
             displacements.append(displacement)
             learner_evaluations = learner_proposal.optimizer_function_evaluations
@@ -872,6 +1012,7 @@ def main() -> None:
                 archive_source_sha256=initial_source.artifact_sha256,
                 directional_ridge=directional_ridge,
                 controller_state=controller_state,
+                discounted_risk_state=discounted_risk_state,
                 artifact_schema_version=config.artifact_schema_version,
             ),
         )
@@ -905,6 +1046,10 @@ def main() -> None:
     if config.schema_version >= 16:
         trajectory_artifact["final_controller_state"] = _controller_state_mapping(
             controller_state
+        )
+    if config.schema_version >= 20:
+        trajectory_artifact["final_discounted_risk_state"] = (
+            _discounted_risk_state_mapping(discounted_risk_state)
         )
     schedule_path = None
     if config.data.schedule is not None:
@@ -943,6 +1088,9 @@ def main() -> None:
         0
         if controller_state is None
         else (layout.total_numel + 8) * CANONICAL_SCALAR_BYTES
+    )
+    logical_discounted_risk_bytes = (
+        0 if discounted_risk_state is None else 3 * CANONICAL_SCALAR_BYTES
     )
     archive_mapping = archive.to_mapping()
     operation_totals = _operation_totals(rows)
@@ -1137,12 +1285,19 @@ def main() -> None:
         )
         metrics["controller_summary"] = {
             "policy": config.controller.policy,
+            "risk_metric": config.controller.risk_metric,
             "pi_min": config.controller.pi_min,
             "pi_max": config.controller.pi_max,
             "trend_half_life_p": config.controller.trend_half_life_p,
+            "action_half_life_steps": config.controller.action_half_life_steps,
             "applied_pi_min": min(applied_pis),
             "applied_pi_mean": sum(applied_pis) / len(applied_pis),
             "applied_pi_max": max(applied_pis),
+            "raw_pi_max": max(
+                float(row["controller_decision"]["raw_pi"])
+                for row in rows
+                if isinstance(row.get("controller_decision"), dict)
+            ),
             "lower_bound_fraction": sum(
                 bool(row["controller_decision"]["lower_bound_active"])
                 for row in rows
@@ -1156,17 +1311,54 @@ def main() -> None:
             )
             / len(applied_pis),
         }
+        if config.schema_version >= 20:
+            edr_rows = [
+                row["controller_decision"]
+                for row in rows
+                if isinstance(row.get("controller_decision"), dict)
+            ]
+            finite_unclipped = [
+                float(row["edr_unclipped_pi"])
+                for row in edr_rows
+                if row.get("edr_unclipped_pi") is not None
+            ]
+            metrics["controller_summary"].update(
+                {
+                    "edr_unclipped_pi_min": (
+                        min(finite_unclipped) if finite_unclipped else None
+                    ),
+                    "edr_unclipped_pi_mean": (
+                        sum(finite_unclipped) / len(finite_unclipped)
+                        if finite_unclipped
+                        else None
+                    ),
+                    "edr_unclipped_pi_max": (
+                        max(finite_unclipped) if finite_unclipped else None
+                    ),
+                    "edr_zero_denominator_count": sum(
+                        bool(row["edr_zero_denominator_fallback"])
+                        for row in edr_rows
+                    ),
+                }
+            )
         metrics["resource_ledger"].update(
             {
                 "learner_wall_seconds_excluding_evaluation": learner_wall,
                 "offline_evaluation_wall_seconds": evaluation_wall,
                 "logical_controller_persistent_bytes_final": (
-                    logical_controller_bytes
+                    logical_controller_bytes + logical_discounted_risk_bytes
                 ),
                 "serialized_controller_state_bytes_final": (
                     0
                     if controller_state is None
                     else _serialized_bytes(_controller_state_mapping(controller_state))
+                ),
+                "serialized_discounted_risk_state_bytes_final": (
+                    0
+                    if discounted_risk_state is None
+                    else _serialized_bytes(
+                        _discounted_risk_state_mapping(discounted_risk_state)
+                    )
                 ),
             }
         )
