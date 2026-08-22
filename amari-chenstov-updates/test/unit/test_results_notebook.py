@@ -183,8 +183,10 @@ def test_plan4_edr_notebook_is_artifact_only() -> None:
     assert "edr_screen__014849bf996e" in source
     assert "edr_predictive__f83d7cbf0459" in source
     assert "edr_discovery__7b14c111ed7b" in source
+    assert "edr_stress__0782e586b53d" in source
     assert "exponentially discounted risk control" in source
     assert "Cold-start discovery amendment" in source
+    assert "Sigmoid stress diagnostics" in source
     assert "run_controller" not in source
 
 

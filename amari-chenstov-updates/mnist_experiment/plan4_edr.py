@@ -15,6 +15,7 @@ from src.plan4_edr_discovery import (
     write_discovery_analysis,
     write_discovery_bundle,
 )
+from src.plan4_edr_stress import write_stress_analysis, write_stress_bundle
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -32,11 +33,14 @@ def parse_arguments() -> argparse.Namespace:
             "analyze",
             "prepare-discovery",
             "analyze-discovery",
+            "prepare-stress",
+            "analyze-stress",
         ),
     )
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--floor-bundle", type=Path)
     parser.add_argument("--screen", type=Path)
+    parser.add_argument("--discovery-bundle", type=Path)
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
 
@@ -111,6 +115,19 @@ def main() -> None:
             "new_runs": manifest["new_run_count"],
             "estimated_seconds": manifest["estimated_seconds"],
         }
+    elif arguments.command == "prepare-stress":
+        destination = write_stress_bundle(
+            _resolve(arguments.bundle, "--bundle"),
+            _resolve(arguments.discovery_bundle, "--discovery-bundle"),
+            REPO_ROOT,
+        )
+        _, manifest = load_screen_bundle(destination)
+        value = {
+            "bundle": str(destination.relative_to(REPO_ROOT)),
+            "entries": manifest["entry_count"],
+            "new_runs": manifest["new_run_count"],
+            "estimated_seconds": manifest["estimated_seconds"],
+        }
     elif arguments.command == "status":
         value = {
             "conditions": status_rows(
@@ -134,7 +151,7 @@ def main() -> None:
                 "aggregate_descriptive_comparisons"
             ],
         }
-    else:
+    elif arguments.command == "analyze-discovery":
         destination = write_discovery_analysis(
             _resolve(arguments.bundle, "--bundle"), REPO_ROOT
         )
@@ -144,6 +161,17 @@ def main() -> None:
         value = {
             "analysis": str(destination.relative_to(REPO_ROOT)),
             "interpretation_gate": summary["interpretation_gate"],
+        }
+    else:
+        destination = write_stress_analysis(
+            _resolve(arguments.bundle, "--bundle"), REPO_ROOT
+        )
+        summary = json.loads(
+            (destination / "summary.json").read_text(encoding="utf-8")
+        )
+        value = {
+            "analysis": str(destination.relative_to(REPO_ROOT)),
+            "schedules": list(summary["schedules"]),
         }
     print(json.dumps(value, indent=2, sort_keys=True))
 

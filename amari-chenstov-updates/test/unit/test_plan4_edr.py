@@ -16,6 +16,12 @@ from src.plan4_edr_discovery import (
     _discovery_config,
     _discovery_controller_summary,
 )
+from src.plan4_edr_stress import (
+    _controller_diagnostics,
+    _hysteresis,
+    _lag_profile,
+    _stress_config,
+)
 
 
 REPO_ROOT = Path(__file__).parents[2]
@@ -63,6 +69,18 @@ def test_edr_discovery_changes_only_the_named_cold_start_treatment() -> None:
     assert discovery.experiment == "mnist_plan4-phase6-edr-discovery_linear"
     assert replica_design_hash(discovery) == replica_design_hash(source)
     _validate_config(discovery)
+
+
+def test_edr_stress_preserves_pairing_and_uses_cold_005() -> None:
+    source = _edr_config(_raw_floor_config().to_mapping(), schedule="logistic-k64")
+    stress = _stress_config(source.to_mapping(), schedule="logistic-k64")
+
+    assert stress.controller.fixed_pi == 0.05
+    assert stress.controller.pi_min == 0.01
+    assert stress.runtime.device == "cpu"
+    assert stress.experiment == "mnist_plan4-phase6-edr-stress_logistic-k64"
+    assert replica_design_hash(stress) == replica_design_hash(source)
+    _validate_config(stress)
 
 
 def test_edr_filter_clips_only_the_final_action() -> None:
@@ -169,3 +187,66 @@ def test_discovery_summary_requires_sustained_unclipped_tail() -> None:
     assert summary["last_ten_all_below_005"] is True
     assert summary["last_ten_floor_fraction"] == 0.0
     assert summary["mechanical_discovery"] is True
+
+
+def test_stress_lag_profile_recovers_delayed_response() -> None:
+    driver = np.asarray([0.0, 1.0, 0.0, 0.0, 0.0, 0.0])
+    response = np.asarray([0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+
+    result = _lag_profile(driver, response, maximum_lag=3)
+
+    assert result["best_lag"] == 2
+    assert result["best_correlation"] == pytest.approx(1.0)
+
+
+def test_stress_hysteresis_uses_shared_nonzero_speed_support() -> None:
+    speed = np.asarray([0.0, 0.25, 0.5, 1.0, 0.5, 0.25, 0.0])
+    action = np.asarray([0.02, 0.03, 0.04, 0.06, 0.07, 0.06, 0.04])
+
+    result = _hysteresis(speed, action, np.ones(speed.size, dtype=bool))
+
+    assert result["available"] is True
+    assert result["common_speed_min"] == pytest.approx(0.25)
+    assert result["common_speed_max"] == pytest.approx(1.0)
+    assert result["mean_signed_branch_gap"] > 0.0
+    assert result["mean_absolute_branch_gap"] >= result["mean_signed_branch_gap"]
+
+
+def test_stress_risk_opportunity_uses_direct_quadratic_subtraction() -> None:
+    rows = []
+    applied_values = [0.05, 0.05, *([0.2] * 10), 0.01]
+    for step, applied in enumerate(applied_values):
+        old_risk, new_risk = (0.001, 0.999) if step == 12 else (0.2, 0.8)
+        rows.append(
+            {
+                "step": step,
+                "p": 0.01 * step,
+                "controller_decision": {
+                    "applied_pi": applied,
+                    "plugin_pi": 0.2,
+                    "edr_unclipped_pi": 0.2,
+                    "edr_old_risk_moment": old_risk,
+                    "edr_new_risk_moment": new_risk,
+                    "signal_energy": float(step),
+                    "cold_start_active": step < 2,
+                    "lower_bound_active": False,
+                },
+            }
+        )
+
+    result = _controller_diagnostics(rows, [0.01] * len(rows))
+    trajectory = result["trajectory"]
+
+    assert trajectory[0]["estimated_risk_opportunity_vs_fixed_005"] == pytest.approx(0.0)
+    assert trajectory[-2]["unconstrained_risk_minimizer"] == pytest.approx(0.2)
+    expected = (0.95**2 * 0.2 + 0.05**2 * 0.8) - (
+        0.8**2 * 0.2 + 0.2**2 * 0.8
+    )
+    assert trajectory[-2]["estimated_risk_opportunity_vs_fixed_005"] == pytest.approx(expected)
+    clipped_expected = (0.95**2 * 0.001 + 0.05**2 * 0.999) - (
+        0.99**2 * 0.001 + 0.01**2 * 0.999
+    )
+    assert trajectory[-1]["unconstrained_risk_minimizer"] == pytest.approx(0.001)
+    assert trajectory[-1]["estimated_risk_opportunity_vs_fixed_005"] == pytest.approx(
+        clipped_expected
+    )

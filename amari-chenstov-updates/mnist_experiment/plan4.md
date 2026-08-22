@@ -116,7 +116,7 @@ controller mistakes nonstationarity for covariance.
 | 3 | Fisher-risk controller contract and implementation | Complete |
 | 4 | Fisher-risk diagnostic screen | Complete - stop |
 | 5 | Final realized-actuation challenge | Complete |
-| 6 | Exponentially discounted Fisher-risk control | Complete - diagnostic only |
+| 6 | Exponentially discounted Fisher-risk control | Complete - diagnostic characterization |
 | 7 | Theory integration and historical decision | Pending |
 
 ## Fisher-Risk Amendment
@@ -1500,6 +1500,219 @@ cold start. Its present online actuation is not predictively useful because
 the transient actions alter an irreversible optimization trajectory. Preserve
 the diagnostic for theory development, but do not promote the controller or
 authorize fresh predictive replication in its current form.
+
+### Sigmoid Stress And Health-Diagnostic Amendment
+
+**Status:** Complete - diagnostic characterization (2026-08-22)
+
+#### Goal
+
+Determine how the cold-`.05` EDR signal changes as the progression path bends
+more sharply, and develop continuous diagnostics that distinguish a useful
+but unfinished local-risk estimator from noisy, delayed, clipped, or
+predictively misaligned actuation. This amendment does not classify EDR as a
+generally failed controller. The completed MNIST result rejects only the
+current closed-loop treatment against its predictive gate.
+
+#### Frozen Design
+
+- Reuse the completed linear cold-`.05` EDR trajectory and add cold-`.05` EDR
+  trajectories for logistic schedules with
+  $\kappa\in\{32,64,128,256\}$.
+- Retain $H_\pi=4$, $\pi_{\min}=.01$, $\pi_{\max}=.95$, controller trend
+  half-life $h=.05$, $m=8$, $K=100$, $p\in[0,.2]$, EWC-only, no LFU,
+  direct-EMA rank-8-plus-diagonal Fisher summaries, and 50 L-BFGS iterations.
+- Keep the CPU runtime used by the completed Plan 4 controls and EDR
+  trajectories. Reuse each schedule's exact initialization, observation
+  stream, schedule, and non-treatment seeds.
+- Use fixed $\pi=.05$ as the prospective comparator available before EDR
+  nominated a lower operating region. Show fixed $\pi=.025$ only as a clearly
+  labelled hindsight reference; it must not determine whether EDR discovers
+  useful information.
+- Preserve all completed artifacts. Every added trajectory and analysis is a
+  new immutable run with a distinct configuration identity.
+
+#### Continuous Diagnostics
+
+For the accumulated EDR coefficients, define the normalized discounted risk
+
+$$
+\overline J_t(\pi)
+=(1-\pi)^2\bar A_t+\pi^2\bar B_t,
+$$
+
+the risk curvature
+
+$$
+c_t=\bar A_t+\bar B_t,
+$$
+
+and the controller's claimed risk opportunity against the prospective fixed
+baseline
+
+$$
+G_t^{\mathrm{risk}}
+=\overline J_t(.05)-\overline J_t(\pi_t^{\mathrm{EDR}}).
+$$
+
+Writing the unconstrained minimizer as
+$\pi_t^\star=\bar A_t/c_t$, the equivalent form is
+
+$$
+G_t^{\mathrm{risk}}
+=c_t\left[
+(.05-\pi_t^\star)^2
+-(\pi_t^{\mathrm{EDR}}-\pi_t^\star)^2
+\right].
+$$
+
+For an interior live action, this reduces to
+$c_t(.05-\pi_t^{\mathrm{EDR}})^2$. Direct risk subtraction is used in the
+analysis so the identity remains correct during cold start and clipping.
+
+$G_t^{\mathrm{risk}}$ is an internal, same-state estimated Fisher-risk
+advantage. It is nonnegative by construction and must never be presented as a
+realized predictive improvement.
+
+Analyze each schedule with the following unthresholded diagnostics:
+
+1. **Risk identifiability and consequence:** plot $c_t$, the decomposition
+   $(\bar A_t,\bar B_t)$, and $G_t^{\mathrm{risk}}$. Action movement where
+   $c_t$ is nearly zero is weak evidence because the estimated objective is
+   locally flat.
+2. **Input-noise attenuation:** compare the instantaneous proposal
+   $\widetilde\pi_t$ with $\pi_t^{\mathrm{EDR}}$ using their difference,
+   total variations, and
+   $\operatorname{TV}(\pi^{\mathrm{EDR}})/
+   \operatorname{TV}(\widetilde\pi)$. This separates smoothing from delayed
+   transmission of genuine signal.
+3. **Response lag:** report lagged association and peak delay between EDR
+   action and both the controlled forcing $|\Delta p_t|$ and the deployable
+   geometric movement proxy
+   $\widehat d_t^T\widehat{\mathcal I}_t\widehat d_t$ recorded as
+   `signal_energy`. The latter is primary because $p_t$ is unavailable in a
+   real application. Report the unclipped EDR recommendation separately from
+   realized post-cold actuation so a cold-start gate cannot hide whether the
+   estimator recognized the event.
+4. **Hysteresis:** on logistic schedules, match rising- and falling-speed
+   branches around the sigmoid center and report
+   $\pi_{\mathrm{exit}}(v)-\pi_{\mathrm{entry}}(v)$ over matched progression
+   speed $v=|\Delta p|$, together with the signed and absolute loop areas in
+   the $(v,\pi)$ plane. This measures retained action after the forcing event
+   has passed. Calculate separate loops for the unclipped recommendation and
+   the live applied action; mark the latter unavailable when cold start leaves
+   no shared entry/exit speed support.
+5. **Settling and boundary pressure:** report the final-ten action mean,
+   slope, and standard deviation; peak action; integrated action area above
+   and below `.05`; and mean post-cold clipping pressure
+   $T^{-1}\sum_t(\pi_{\min}-\pi_{t,\mathrm{unclipped}}^{\mathrm{EDR}})_+$.
+   Keep bound occupancy as context, but do not use it alone to diagnose a
+   floor-driven result.
+6. **Realized alignment:** against the paired fixed-`.05` learner, plot
+   $G_t^{\mathrm{risk}}$ beside the predictive gain
+   produced after that action,
+   $G_{t+1}^{\mathrm{NLL}}=\mathrm{NLL}_{.05,t+1}-
+   \mathrm{NLL}_{\mathrm{EDR},t+1}$, and their cumulative trajectories. Also
+   report environmental accuracy, digit-9 OvR accuracy, precision, recall,
+   non-nine accuracy, and ECE. Treat agreement as descriptive alignment, not
+   proof that the same-state local risk causes later path-dependent outcomes.
+
+#### Scope
+
+1. Add only the scientific configurations and immutable bundle entries needed
+   for the four new sigmoid cold-`.05` EDR trajectories. Confirm exact
+   cold-prefix parameter and prediction parity with each fixed-`.05` control.
+2. Extend the artifact-only EDR analysis and notebook with small-multiple
+   plots indexed by $\kappa$. Keep each predictive contrast to EDR and fixed
+   `.05`; place fixed `.025` in separate hindsight panels where useful.
+3. Calculate diagnostics from stored predictable coefficients, actions,
+   schedule values, movement summaries, and paired classification outcomes.
+   Do not train, repair artifacts, or reconstruct unavailable quantities in
+   the notebook.
+4. Compare diagnostic profiles across $\kappa$ without selecting a preferred
+   steepness from predictive performance. Report the linear schedule beside
+   the sigmoid family as a low-curvature reference.
+5. Do not define a binary healthy-controller score or tune thresholds in this
+   amendment. First identify which continuous diagnostics are stable,
+   interpretable, and concordant across the schedule family.
+
+#### Verification
+
+- New and reused pairs share schedule, stream, initialization, and all
+  non-treatment seeds; cold-`.05` trajectories are identical through the last
+  cold transition.
+- Recomputed actions and discounted risks agree exactly with stored
+  coefficients, and $G_t^{\mathrm{risk}}$ agrees with direct quadratic-risk
+  subtraction within numerical tolerance.
+- Linear-path diagnostics reproduce the completed cold-`.05` discovery
+  artifact without mutation.
+- The analysis notebook remains artifact-only and labels the five schedules
+  as one paired development replica, not five independent statistical units.
+- Full continuous trajectories and unthresholded scalar summaries are
+  retained so later diagnostic criteria can be predeclared rather than fitted
+  to these outcomes.
+
+#### Check-in
+
+Review which diagnostics distinguish the linear mechanical-discovery profile
+from the sigmoid profiles. Decide whether the evidence motivates a
+predeclared health criterion, a redesigned two-timescale actuation rule, or
+retaining EDR solely as an open local-risk diagnostic before beginning Phase
+7.
+
+#### Completion Record
+
+- Added an immutable 15-entry paired bundle at
+  `cache/mnist_experiment/plan4/edr/stress/bundles/plan4-edr-stress__76be1ac9375a`.
+  It reuses 11 completed controls and the linear cold-`.05` discovery run and
+  adds exactly four sigmoid cold-`.05` EDR trajectories. All entries validate
+  as complete with exact schedule-specific replica pairing and CPU runtime.
+- The four new trajectories completed in a detached `tmux` session in
+  `61.3`, `61.3`, `61.9`, and `62.1` seconds. Every schedule retained exact
+  parameter and predictive parity with fixed `.05` through the outcome after
+  its last cold-start action.
+- Corrected the risk-opportunity shortcut used during planning. The direct
+  difference $\overline J_t(.05)-\overline J_t(\pi_t^{\mathrm{EDR}})$ is used
+  so cold-start and clipped actions remain valid; the simpler squared-distance
+  expression applies only to an interior unconstrained minimizer. The
+  post-action predictive outcome at $t+1$, rather than the pre-action outcome
+  at $t$, is paired with decision $t$.
+- EDR attenuated instantaneous proposal variation on every schedule. The
+  live-action total-variation ratios were `.571` on the linear path and
+  `.360`, `.236`, `.367`, and `.418` for
+  $\kappa=32,64,128,256$, respectively. No schedule had lower-bound occupancy
+  or positive clipping pressure after cold start.
+- The unclipped recommendation recognized every sigmoid event but retained a
+  delayed response after speed fell. Mean matched-speed hysteresis gaps rose
+  from `.0416` and `.0616` at $\kappa=32,64$ to `.0671` and `.1225` at
+  $\kappa=128,256$. Live applied-action hysteresis is intentionally marked
+  unavailable for the two sharpest schedules because cold start covers the
+  rising branch; recommendation hysteresis remains observable.
+- Only the linear treatment settled cleanly near the hindsight `.025`
+  neighborhood (`.02501` final-ten mean). The sigmoid final-ten means were
+  `.0363`, `.0584`, `.0523`, and `.0430`, and peak actions grew as high as
+  `.2261` for $\kappa=256$.
+- Estimated same-state Fisher-risk opportunity was positive on every path,
+  but realized cumulative NLL gain against fixed `.05` was negative on every
+  path. Mean EDR-minus-fixed-`.05` NLL ranged from `+.300` at $\kappa=32$ to
+  `+1.284` at $\kappa=256$; cumulative risk/outcome correlations ranged from
+  `-.77` to `-.88`. This is evidence of structured but predictively misaligned
+  transient actuation, not floor-driven or purely random controller behavior.
+- Wrote immutable schema-v1 analysis
+  `cache/mnist_experiment/plan4/edr/stress/analysis/edr_stress__0782e586b53d`
+  and extended [plan4_edr_results.ipynb](plan4_edr_results.ipynb) with action,
+  risk, response-lag, hysteresis, settling, boundary, and predictive-alignment
+  views. The artifact-only notebook executes in approximately two seconds.
+- Focused tests and the notebook validator pass. The completed schedule family
+  is one paired development replica and supplies no independent-replica
+  inference or post-hoc binary health threshold.
+
+**Diagnostic decision:** EDR remains a work-in-progress local Fisher-risk
+estimator with useful offline action-calibration signal. The most informative
+health checks in this pilot are recommendation hysteresis, tail settling, and
+the divergence between accumulated internal risk opportunity and post-action
+predictive gain. Do not promote the present MNIST closed-loop actuation rule;
+retain the continuous diagnostics for a future predeclared controller redesign.
 
 ## Phase 7: Theory Integration and Historical Decision
 
