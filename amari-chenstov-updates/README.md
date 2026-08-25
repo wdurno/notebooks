@@ -1,47 +1,76 @@
+# Linearized Fisher Updates for Continual Learning
 
-# Amari-Chenstov Updates in Reinforcement Learning (RL) 
+This project studies continual fine-tuning when new data, memory, and compute
+are scarce. The motivating application is a pretrained model that must learn a
+new task online while retaining useful information from its prior training.
 
-Elastic Weight Consolidation (EWC) and Low Rank Adapters (LoRA) technology [1] show great potential for tuning AIs toward specialization, 
-which would be useful in personalization, remote autonomy, and reducing overall compute burdens while updating models. 
-These methods ultimately work by estimating the model's Fisher Information Matrix (FIM), 
-which is often done in a continual or moving average fashion. 
-A moving average has a solid chance to remain sufficiently up-to-date. 
-However, this work explores whether or not additional first-order Taylor series adjustments can help keep the FIM estimate more-accurate. 
-Provided updates occur in batches of data, we may invoke the Central Limit Theorem (CLT) to enjoy approximately Gaussian-distributed steps over the statistical manifold. 
-In this case, the first-order Taylor Series adjustment is done by estimating the Amari-Chentsov tensor [2] or its derivatives. 
-See [mathematical_overview](mathematical_overview.ipynb) for more detail and a frequentist construction of EWC. 
+Elastic Weight Consolidation (EWC) compresses old likelihood information into
+an anchor and a Fisher information estimate. As the model moves, that Fisher
+estimate also changes. The project therefore asks two related questions:
 
-## Conclusion: Halting progress
+1. Can a linearized Fisher update (LFU), including the Amari-Chentsov and
+   residual tensors, improve a recursively maintained Fisher summary?
+2. Can the new-information weight $\pi_t$ be recommended online when repeated
+   tuning trials are unavailable?
 
-There's a math snag: Amari-Chentsov updates require prohibitively expensive numerical operations. 
-See [mathematical_overview](mathematical_overview.ipynb) for details. 
+The mathematical construction, assumptions, and terminology are developed in
+[mathematical_overview.ipynb](mathematical_overview.ipynb).
 
-## Why are experiments needed? 
+## Experimental setting
 
-Despite rigorous mathematical argument, this work explores the applied value of Amari-Chentsov updates. 
-The big question: in applied contexts, when do Amari-Chentsov updates add value to RL? 
-It is entirely possible a moving average Fisher Information Matrix (FIM) estimate is sufficient and fully effective. 
+The controlled experiment gradually changes the proportion of digit 9 in an
+MNIST stream. This moves the population solution along an implicit path
 
-## Experimental design 
+$$
+p\longmapsto\theta^\star(p)\longmapsto
+\mathcal I(\theta^\star(p)).
+$$
 
-A series of experiments will be run, 
-improving our understanding of Amari-Chentsov updates complicating science with applied rigor. 
-1. **numerical_experiment**: is an abstract numerical experiment studying how tracking different sufficient statistics can most-optimally guide SDEs according to the theory derived in [mathematical_overview](mathematical_overview.ipynb). It'll help us understand numerical & statistical viability.
-2. **mnist_experiment**: is an RL-equivalent, simple experiment helping us understand when Amari-Chentsov updates are most-useful. 
-The primary task: correctly classify 9s as the sample proportion of 9s increases from 0% to 50%. 
-To see how RL can be equivalent to an MNIST experiment, see [mathematical_overview](mathematical_overview.ipynb). 
-Small models will be used. 
-Approximations will be avoided when possible. 
-Both online and batch fitting will be tested. 
-3. **demo**: An RL and robotics demo will illustrate the applied benefits as discovered in experiments 1 and 2. 
-Only online fitting will be illustrated because batch fitting user experience is poor - it's _no fun_ to wait for fitting. 
+Small neural networks, low per-step sample counts, bounded replay, and
+rank-8-plus-diagonal Fisher summaries model the intended hardware- and
+data-constrained regime. Computational work runs in immutable Python entry
+points; notebooks only read completed artifacts and render analyses.
 
-## Software architecture 
+## Current evidence
 
-See [AGENTS.md](AGENTS.md) to understand how code and directories are organized. 
+- A direct exponentially moving averaged Fisher summary without LFUs is the
+  practical baseline. The tested LFU corrections were noisy, frequently
+  indefinite before projection, and did not justify their additional cost.
+- Fixed $\pi=.05$ is the incumbent on the tested MNIST paths, not a general
+  theorem favoring fixed composition. Hybrid EWC with a replay buffer of 32
+  observations is the strongest tested constrained-memory strategy.
+- Exponentially discounted risk (EDR) produces a structured online
+  recommendation and can move away from its cold-start value. Its current
+  closed-loop application underperforms the fixed MNIST comparators.
+- The prequential statistic $C_t$ provides a useful single-trajectory alarm
+  for stale residual-risk calibration. It does not certify predictive policy
+  value.
 
-## Citations 
+Whether adaptive $\pi_t$ helps in applications where the locally appropriate
+composition changes materially and repeated tuning trials are unavailable
+remains open.
 
-[1] Y. Zheng, Y. Zhang, J. van de Weijer, G. M. van de Ven, S. Du, X. Zhang, and Z. Tian, [*Revisiting Weight Regularization for Low-Rank Continual Learning*](https://arxiv.org/abs/2602.17559), arXiv:2602.17559, 2026.
+## Repository map
 
-[2] S. Amari and H. Nagaoka, *Methods of Information Geometry*, American Mathematical Society, 2000. 
+- `mathematical_overview.ipynb`: concise theory with rigorous appendices.
+- `mnist_experiment/`: controlled experiments, plans, conditions, and results
+  notebooks.
+- `src/`: shared estimators, matrix representations, controllers, and artifact
+  handling.
+- `test/`: deterministic unit and integration tests.
+- `demo/`: applied demonstrations built only from findings that survive the
+  controlled experiments.
+- `cache/`: generated datasets and immutable run artifacts; excluded from git.
+
+See [AGENTS.md](AGENTS.md) and
+[mnist_experiment/AGENTS.md](mnist_experiment/AGENTS.md) for the scientific and
+software contracts.
+
+## Citations
+
+[1] Y. Zheng, Y. Zhang, J. van de Weijer, G. M. van de Ven, S. Du, X. Zhang,
+and Z. Tian, [*Revisiting Weight Regularization for Low-Rank Continual
+Learning*](https://arxiv.org/abs/2602.17559), arXiv:2602.17559, 2026.
+
+[2] S. Amari and H. Nagaoka, *Methods of Information Geometry*, American
+Mathematical Society, 2000.

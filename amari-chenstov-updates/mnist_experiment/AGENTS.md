@@ -412,9 +412,14 @@ trajectory comparison in which different budgets alter future states.
 The LFU on the following iteration uses the realized optimizer displacement
 $u_t=\theta_{t+1}-\theta_t$.
 
-## Optimal-controller experiment
+## Local-composition recommendation experiments
 
-Run controller experiments only after the main dense and representation experiments identify a manageable set of Fisher conditions.
+Run recommendation and policy experiments only after the main dense and
+representation experiments identify a manageable set of Fisher conditions.
+Historical configuration values such as `optimal_plugin` and `optimal_oracle`
+are immutable schema names. In current mathematical language they estimate a
+local one-step surrogate minimizer; they do not assert global or empirical
+optimality.
 
 Keep these quantities distinct:
 
@@ -425,38 +430,46 @@ Keep these quantities distinct:
 - $N_{\mathrm{eff},t}=q_t^{-1}$: the effective size implied by the accepted
   sequence of controller weights.
 
-For the applied fixed-batch model, use the local risk
+For a predictable local metric $G_t$, use the fixed-batch risk
 
 $$
-R_t(\pi)
+R_t^{(G)}(\pi)
 =
 (1-\pi)^2
-\left(\|d\theta_t\|^2+\tau_{\mathrm{old},t}\right)
-+\pi^2\tau_{\mathrm{new},t},
+\left(
+d\theta_t^TG_td\theta_t
++\operatorname{tr}(G_t\Sigma_{\mathrm{old},t})
+\right)
++\pi^2\operatorname{tr}(G_t\Sigma_{\mathrm{new},t}),
 $$
 
-with
+where $G_t=I_{\dim\Theta}$ gives Euclidean parameter MSE and
+$G_t=\mathcal I(\theta_t)$ gives population Fisher, or local-KL, risk. Under
+the ideal calibrated MLE covariance model, define
 
 $$
-\tau_{\mathrm{old},t}=\frac{T_t}{N_{\mathrm{eff},t-1}},
+D_t^{(G)}=\operatorname{tr}\left(G_t\mathcal I(\theta_t)^{-1}\right),
 \qquad
-\tau_{\mathrm{new},t}=\frac{T_t}{m_t},
+\tau_{\mathrm{old},t}^{(G)}=q_{t-1}D_t^{(G)},
 \qquad
-T_t=\operatorname{tr}\mathcal I(\theta_t)^{-1}.
+\tau_{\mathrm{new},t}^{(G)}=\frac{D_t^{(G)}}{m_t}.
 $$
 
-Its locally optimal fixed-batch controller is
+The exact minimizer of this assumed conditional surrogate is
 
 $$
-\widehat\pi_t^\star
+\pi_t^{\mathrm{loc}}
 =
 \frac{
-\|\widehat d\theta_t\|^2+\widehat\tau_{\mathrm{old},t}
+d\theta_t^TG_td\theta_t+\tau_{\mathrm{old},t}^{(G)}
 }{
-\|\widehat d\theta_t\|^2+\widehat\tau_{\mathrm{old},t}
-+\widehat\tau_{\mathrm{new},t}
+d\theta_t^TG_td\theta_t+\tau_{\mathrm{old},t}^{(G)}
++\tau_{\mathrm{new},t}^{(G)}
 }.
 $$
+
+This is a local conditional recommendation, not a globally optimal
+continual-learning policy.
 
 Under locally matched quadratic curvature, the accepted EWC displacement obeys
 
@@ -465,13 +478,10 @@ u_t\approx\pi_t(d\theta_t+\xi_t-e_t).
 $$
 
 Estimate the local trend with a vector EMA of normalized accepted
-displacements $z_t=u_t/\pi_t$ for $\pi_t>0$, and
-estimate $T_t$ with the scalar residual moment described in
-`mathematical_overview.ipynb`. The principal defaults are a trend half-life of
-$0.20$ in environmental $p$-distance, $\pi_{\min}=0.05$, and
-$\pi_{\max}=0.95$. During the first trend half-life, use the bounded cold-start
-composition $m_t/(N_{\mathrm{eff},t-1}+m_t)$. Never use the current batch to
-choose its own $\pi_t$.
+displacements $z_t=u_t/\pi_t$ for $\pi_t>0$. Historical plug-in experiments
+used a trend half-life of $0.20$ in environmental $p$-distance,
+$\pi_{\min}=0.05$, and $\pi_{\max}=0.95$. Never use the current batch to choose
+its own $\pi_t$.
 
 After accepting the step, update
 
@@ -480,27 +490,73 @@ q_t=(1-\pi_t)^2q_{t-1}+\frac{\pi_t^2}{m_t},
 \qquad N_{\mathrm{eff},t}=q_t^{-1}.
 $$
 
-The trace moment uses
+For the predictable metric $G_t=\widehat{\mathcal I}_{t\mid t-1}$ or
+$I_{\dim\Theta}$,
+the residual moment uses
 
 $$
 r_t=u_t-\pi_t\widehat d\theta_{t|t-1},
 \qquad
 a_t=\pi_t^2\left(q_{t-1}+m_t^{-1}\right),
 \qquad
-\widehat T_t=\frac{\operatorname{EMA}(\|r_t\|^2)}
+E_t=r_t^TG_tr_t,
+\qquad
+\widehat D_t=\frac{\operatorname{EMA}(E_t)}
 {\operatorname{EMA}(a_t)+\varepsilon}.
 $$
+
+This is inversion-free. At decision time, the instantaneous predictable
+coefficients and recommendation are
+
+$$
+\widehat A_{t\mid t-1}
+=
+\widehat d\theta_{t\mid t-1}^TG_t\widehat d\theta_{t\mid t-1}
++q_{t-1}\widehat D_{t\mid t-1},
+\qquad
+\widehat B_{t\mid t-1}=\frac{\widehat D_{t\mid t-1}}{m_t},
+$$
+
+$$
+\widetilde\pi_t^{\mathrm{rec}}
+=
+\frac{\widehat A_{t\mid t-1}}
+{\widehat A_{t\mid t-1}+\widehat B_{t\mid t-1}}.
+$$
+
+Exponentially discounted risk (EDR) uses an accepted-update gain
+$\eta=1-2^{-1/H_\pi}$:
+
+$$
+\overline A_t=(1-\eta)\overline A_{t-1}+\eta\widehat A_{t\mid t-1},
+\qquad
+\overline B_t=(1-\eta)\overline B_{t-1}+\eta\widehat B_{t\mid t-1},
+$$
+
+$$
+\pi_t^{\mathrm{EDR,rec}}
+=
+\frac{\overline A_t}{\overline A_t+\overline B_t}.
+$$
+
+Under nonstationarity, EDR targets a temporally weighted surrogate rather than
+the instantaneous coefficients. Record that lag explicitly; do not describe
+EDR as a consistent estimate of the instantaneous local minimizer without an
+additional timescale argument.
 
 Implement these controller policies:
 
 - `uncontrolled`: $\pi_t=1$, a diagnostic new-data-only boundary with no EWC
   penalty;
 - `fixed`: $\pi_t=\pi_0$, used for unified fixed-weight baselines;
-- `optimal_plugin`: $\pi_t=\widehat\pi_t^\star$;
+- `optimal_plugin`: the historical name for the instantaneous plug-in
+  recommendation;
 - `optimal_oracle`: substitute high-sample reference-path displacements and
   an oracle-trend residual moment based on
   $u_t-\pi_td\theta_t$ from the accepted parameter series to
   diagnose trend error without inverting a Fisher matrix;
+- `discounted_risk`: apply the EDR recommendation after its configured cold
+  start and bounds;
 - `freeze`: $\pi_t=0$, an explicit diagnostic boundary that bypasses ordinary
   controller clipping.
 
@@ -511,13 +567,35 @@ after selecting the principal Fisher conditions.
 
 Record the raw and applied value, both bound activations, EWC odds, normalized
 displacement, trend and oracle displacement norms, plug-in and oracle-residual
-trace estimates, $q_t$, effective size, cold-start
-status, and intervention outcome at every step. Choosing $\pi_t$ adaptively
-generally targets a tempered objective and may bias the estimate relative to
-the instantaneous MLE. Treat that bias as an explicit
-variance-retention-tracking trade-off. Also report the old fixed-$N$ Bernoulli
-oracle from the theoretical model as a diagnostic only; it is not the applied
-controller.
+scale estimates, risk coefficients, $q_t$, effective size, cold-start status,
+and intervention outcome at every step. Distinguish a recorded recommendation
+from closed-loop application. Choosing $\pi_t$ adaptively targets a tempered
+objective and may bias the estimate relative to the instantaneous MLE. Treat
+that bias as an explicit variance-retention-tracking trade-off. Also report the
+old fixed-$N$ Bernoulli oracle from the theoretical model as a diagnostic only;
+it is not the applied recommendation.
+
+For a single-trajectory calibration diagnostic, record
+
+$$
+P_t=a_t\widehat D_{t\mid t-1},
+\qquad
+C_t=
+\frac{\operatorname{EMA}_{H_C}(E_t)}
+{\operatorname{EMA}_{H_C}(P_t)}.
+$$
+
+$C_t$ near one indicates local residual-risk calibration; values above one
+mean underprediction and values below one mean overprediction. Because
+$\widehat D$ is learned from older residuals, $C_t$ is a short-horizon
+staleness monitor rather than an independent fit test or evidence of
+predictive policy value.
+
+Current evidence is conditional: fixed $\pi=.05$ is the incumbent on the
+tested MNIST paths, while EDR remains an unconfirmed online recommendation
+mechanism. Do not generalize the MNIST comparison into a theorem favoring fixed
+composition. Adaptive composition remains open for applications in which the
+locally appropriate $\pi_t$ varies and repeated tuning trials are unavailable.
 
 ## Experimental factors
 

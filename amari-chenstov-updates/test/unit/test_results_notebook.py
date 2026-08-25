@@ -33,6 +33,9 @@ PLAN4_CHALLENGE_NOTEBOOK = (
 PLAN4_EDR_NOTEBOOK = (
     REPO_ROOT / "mnist_experiment" / "plan4_edr_results.ipynb"
 )
+MATHEMATICAL_OVERVIEW = REPO_ROOT / "mathematical_overview.ipynb"
+README = REPO_ROOT / "README.md"
+MNIST_AGENTS = REPO_ROOT / "mnist_experiment" / "AGENTS.md"
 
 
 def test_results_notebook_is_valid_and_artifact_only() -> None:
@@ -190,6 +193,42 @@ def test_plan4_edr_notebook_is_artifact_only() -> None:
     assert "Single-trajectory prequential calibration" in source
     assert "ema_log_calibration_ratio" in source
     assert "run_controller" not in source
+
+
+def test_mathematical_overview_separates_ideal_risk_from_realization() -> None:
+    notebook = load_notebook(MATHEMATICAL_OVERVIEW)
+    validate_notebook_source(notebook)
+
+    main = "".join(notebook["cells"][2].get("source", []))
+    interpretation = "".join(notebook["cells"][3].get("source", []))
+    realization = "".join(notebook["cells"][6].get("source", []))
+
+    assert "Euclidean parameter error and Fisher risk" in main
+    assert r"\mathsf M_t=I_{\dim\Theta}" in main
+    assert r"\pi_{B,t}^{\mathrm{loc}}" in main
+    assert "globally optimal continual-learning policy" in main
+    assert "Plug-in trend and covariance estimation" not in main
+    assert "fixed composition is generally preferable" in interpretation
+    assert "Appendix B: Statistical and numerical realization" in realization
+    assert r"G_t:=\widehat{\mathcal I}_{t\mid t-1}" in realization
+    assert "Exponentially discounted recommendation" in realization
+    assert "Recommendation and closed-loop application" in realization
+    assert "Single-trajectory prequential calibration" in realization
+    assert "`optimal_plugin`" in realization
+
+
+def test_phase7_human_documentation_states_conditional_evidence() -> None:
+    readme = README.read_text(encoding="utf-8")
+    agents = MNIST_AGENTS.read_text(encoding="utf-8")
+
+    assert "Conclusion: Halting progress" not in readme
+    assert "numerical_experiment" not in readme
+    assert "Fixed $\\pi=.05$ is the incumbent" in readme
+    assert "remains open" in readme
+    assert "Local-composition recommendation experiments" in agents
+    assert "Historical configuration values" in agents
+    assert "short-horizon" in agents
+    assert "staleness monitor" in agents
 
 
 def test_results_notebook_validator_rejects_training_imports(

@@ -568,3 +568,41 @@ criterion. Every replica used all 32,768 scores; the mean relative six-sigma
 Frobenius radius was .230 versus a .01 target. Mean lag-one correlation was
 near zero, and every Lanczos projection realized rank 8. These are therefore
 maximum-budget high-sample estimates, not numerically exact Fisher controls.
+
+## Plan 4 adaptive-composition study
+
+Plan 4 asks whether an online Fisher-risk recommendation can adjust $\pi_t$
+when the population path moves at a nonconstant rate. It retains the Plan 3
+rank-8-plus-diagonal direct-EMA Fisher, $m=8$, no LFU, and the same EWC
+objective semantics.
+
+| Condition | Meaning | Evidentiary role |
+|---|---|---|
+| Fixed $.05$ | Constant composition available before Plan 4 | Prospective MNIST incumbent |
+| Fixed $.025$ | Constant value identified during earlier analysis | Hindsight context only |
+| Instantaneous Fisher risk | One-step plug-in local-surrogate recommendation | Noisy diagnostic; not promoted |
+| EDR | Four-update EMA of the estimated Fisher-risk coefficients | Online recommendation under development |
+
+The EDR experiments use a fixed `.05` cold start and $\pi_{\min}=.01$. On the
+linear path, the recommendation eventually approaches the hindsight-useful
+`.025` region. On logistic paths with $\kappa\in\{32,64,128,256\}$ it responds
+to the speed event but becomes increasingly delayed and hysteretic. Applying
+the recommendation closed loop underperforms fixed `.05` on all five
+development paths.
+
+The prequential ratio
+
+$$
+C_t=
+\frac{\operatorname{EMA}_4(r_t^TG_tr_t)}
+{\operatorname{EMA}_4\!\left[
+\pi_t^2(q_{t-1}+m_t^{-1})\widehat D_{t\mid t-1}
+\right]}
+$$
+
+is computable from one trajectory. It detects stale residual-risk forecasts
+but does not establish predictive benefit. Plan 4 therefore rejects only the
+tested EDR closed-loop treatment. Fixed $\pi$ is the incumbent for these MNIST
+experiments, while adaptive composition remains open for applications in
+which the locally appropriate weight changes and repeated tuning trials are
+unavailable.

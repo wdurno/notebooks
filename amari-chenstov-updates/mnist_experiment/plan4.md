@@ -51,21 +51,21 @@ the applied fixed-batch risk and minimizer are
 $$
 R_t(\pi)=(1-\pi)^2A_t+\pi^2B_t,
 \qquad
-\pi_t^\star=\frac{A_t}{A_t+B_t}.
+\pi_t^{\mathrm{loc}}=\frac{A_t}{A_t+B_t}.
 $$
 
 For any candidate action $\pi$ at the same fixed controller state,
 
 $$
-R_t(\pi)-R_t(\pi_t^\star)
-=(A_t+B_t)(\pi-\pi_t^\star)^2.
+R_t(\pi)-R_t(\pi_t^{\mathrm{loc}})
+=(A_t+B_t)(\pi-\pi_t^{\mathrm{loc}})^2.
 $$
 
 If the local coefficients $A_t$ and $B_t$ are frozen independently of the
 candidate policy, their conditional best constant action is
 
 $$
-\pi_{\mathrm{fixed}}^\star
+\pi_{\mathrm{fixed}}^{\mathrm{loc}}
 =\frac{\sum_t A_t}{\sum_t(A_t+B_t)}.
 $$
 
@@ -75,10 +75,10 @@ $$
 G_{\mathrm{oracle}}
 =
 \frac{
-\sum_t R_t(\pi_{\mathrm{fixed}}^\star)
--\sum_t R_t(\pi_t^\star)
+\sum_t R_t(\pi_{\mathrm{fixed}}^{\mathrm{loc}})
+-\sum_t R_t(\pi_t^{\mathrm{loc}})
 }{
-\sum_t R_t(\pi_{\mathrm{fixed}}^\star)
+\sum_t R_t(\pi_{\mathrm{fixed}}^{\mathrm{loc}})
 }.
 $$
 
@@ -102,7 +102,7 @@ as diagnostics so lower-bound clipping or a frozen state cannot masquerade as
 adaptation.
 
 Variable speed therefore creates an ideal opportunity for adaptation exactly
-when it makes $\pi_t^\star$ vary. It may still fail in practice if movement is
+when it makes $\pi_t^{\mathrm{loc}}$ vary. It may still fail in practice if movement is
 noise-dominated, the predictable plug-in estimate reacts too late, or the
 controller mistakes nonstationarity for covariance.
 
@@ -117,7 +117,7 @@ controller mistakes nonstationarity for covariance.
 | 4 | Fisher-risk diagnostic screen | Complete - stop |
 | 5 | Final realized-actuation challenge | Complete |
 | 6 | Exponentially discounted Fisher-risk control | Complete - diagnostic characterization |
-| 7 | Theory integration and historical decision | Pending |
+| 7 | Theory integration and historical decision | Complete |
 
 ## Fisher-Risk Amendment
 
@@ -1768,9 +1768,9 @@ historical estimate still predicts residual risk at the action timescale.
   and added the causal trajectories, scalar table, and half-life sensitivity to
   [plan4_edr_results.ipynb](plan4_edr_results.ipynb). No learner was rerun.
 
-**Diagnostic decision:** EDR remains a work-in-progress local Fisher-risk
-estimator with useful offline action-calibration signal. The most informative
-health checks in this pilot are the deployable prequential calibration ratio,
+**Diagnostic decision:** EDR remains an unconfirmed online Fisher-risk
+recommendation mechanism with useful single-trajectory calibration signal. The
+most informative health checks in this pilot are the deployable prequential calibration ratio,
 recommendation hysteresis, tail settling, and the divergence between
 accumulated internal risk opportunity and post-action predictive gain. Do not
 promote the present MNIST closed-loop actuation rule; retain the continuous
@@ -1787,8 +1787,8 @@ and decide whether any older controller experiments warrant repetition.
 
 1. Integrate the completed Phase 5 and Phase 6 evidence without rewriting the
    mathematical overview around an unsuccessful treatment. Distinguish the
-   instantaneous Fisher-risk controller, EDR controller, and accepted fixed
-   policy explicitly.
+   instantaneous Fisher-risk recommendation, EDR recommendation, their
+   closed-loop treatments, and the accepted fixed policy explicitly.
 2. If Phase 6 demonstrates dynamic or automatic-calibration value worth
    preserving,
    update `mathematical_overview.ipynb` to present:
@@ -1817,8 +1817,8 @@ and decide whether any older controller experiments warrant repetition.
 - No claimed invariance relies on damping, numerical rank, or an unrecorded
   coordinate transformation.
 - Documentation states clearly whether instantaneous and EDR Fisher-risk
-  adaptation are promoted, automatic-calibration-only, floor-driven, or
-  retired.
+  recommendations or their closed-loop policies are promoted,
+  calibration-only, floor-driven, or retired.
 - Historical experimental conclusions remain reproducible from their original
   immutable artifacts.
 
@@ -1827,3 +1827,52 @@ and decide whether any older controller experiments warrant repetition.
 Decide whether EDR adaptive $\pi$ belongs in the practical baseline, deserves
 a larger confirmation plan, remains only an automatic-calibration diagnostic,
 or closes Plan 4 as a scientifically useful negative result.
+
+### Completion Record
+
+**Status:** Complete (2026-08-24)
+
+- Reworked the main stochastic-control section of
+  [mathematical_overview.ipynb](../mathematical_overview.ipynb) around one
+  metric-aware quadratic. It now distinguishes Euclidean parameter MSE from
+  Fisher/local-KL risk and denotes the exact conditional surrogate minimizer
+  by $\pi_t^{\mathrm{loc}}$. It explicitly rejects an interpretation as a
+  globally optimal continual-learning policy.
+- Moved accepted-trajectory trend estimation, predictable Fisher
+  representation, inversion-free residual-risk estimation, EDR, action
+  bounds, recommendation-versus-policy semantics, and $C_t$ into Appendix B.
+  Appendix A retains the LAN and controlled small-noise details. The main body
+  contains only a short operational signpost.
+- Distinguished the assumed nonsingular population Fisher from the possibly
+  singular finite-sample $G_t=\widehat{\mathcal I}_{t\mid t-1}$. The applied
+  Fisher-risk construction uses quadratic products and never relies on an
+  inverse, pseudoinverse, damping-induced invariance, or an unrecorded change
+  of parameter chart.
+- Updated [AGENTS.md](AGENTS.md) so historical schema names such as
+  `optimal_plugin` mean plug-in minimization of the local surrogate. Added EDR
+  recommendation, closed-loop application, and single-trajectory calibration
+  contracts without renaming immutable fields.
+- Replaced the stale repository README and added a concise Plan 4 section to
+  [EXPERIMENTAL_CONDITIONS.md](EXPERIMENTAL_CONDITIONS.md). Both documents call
+  fixed $\pi=.05$ the incumbent on the tested MNIST paths rather than a
+  universally superior policy. Adaptive composition remains open when the
+  locally appropriate weight varies and repeated tuning trials are
+  unavailable.
+- **Historical rerun decision:** no older experiment warrants repetition.
+  The present Fisher-risk closed-loop treatments were not promoted, so
+  cross-schema reruns cannot change the accepted direct-EMA, fixed-$\pi$, or
+  Hybrid B32 deployment conclusions. Preserve every historical artifact. A
+  future adaptive confirmation requires a redesigned policy and a separate
+  predeclared plan with independent replicas.
+- Added documentation-contract tests. The full suite passes with `317 passed,
+  2 skipped`; [plan4_edr_results.ipynb](plan4_edr_results.ipynb) remains
+  artifact-only and executes in under two seconds. The environment does not
+  include `jupyter-nbconvert`, so no rendered conversion was produced; the
+  mathematical notebook is valid JSON, contains no executable cells, and its
+  section and terminology contracts are tested directly.
+
+**Final decision:** close Plan 4. Fixed $\pi$ remains the practical MNIST
+incumbent. The current EDR closed-loop treatment is rejected for these paths,
+but EDR remains an unconfirmed online recommendation mechanism with useful
+single-trajectory calibration signal. This is neither a promotion nor a
+general negative result about adaptive composition.
