@@ -1707,12 +1707,74 @@ retaining EDR solely as an open local-risk diagnostic before beginning Phase
   is one paired development replica and supplies no independent-replica
   inference or post-hoc binary health threshold.
 
+#### Single-Trajectory Prequential Calibration Amendment
+
+**Status:** Complete (2026-08-23)
+
+To determine whether any useful health signal survives without a paired fixed
+learner, use the decision-time uncertainty estimate to predict the next
+accepted residual's Fisher-risk energy. Define
+
+$$
+r_t=u_t-\pi_t\widehat d_{t|t-1},\qquad
+a_t=\pi_t^2\left(q_{t-1}+m_t^{-1}\right),
+$$
+
+$$
+E_t=r_t^T\widehat{\mathcal I}_{t|t-1}r_t,qquad
+P_t=a_t\widehat D_{t|t-1},
+$$
+
+and the causal calibration monitor
+
+$$
+C_t=
+\frac{\operatorname{EMA}_{H=4}(E_t)}
+     {\operatorname{EMA}_{H=4}(P_t)}.
+$$
+
+Both $\widehat{\mathcal I}_{t|t-1}$ and $\widehat D_{t|t-1}$ are frozen before
+$u_t$ is observed. Thus $C_t$ is reconstructible from, and deployable on, one
+trajectory. Values near one indicate residual-risk calibration; $C_t>1$ means
+the realized residual risk exceeded its forecast, while $C_t<1$ means the
+forecast was too large. Use $\log C_t$ for symmetric visualization. Update the
+monitor during cold start, but exclude cold-start actions from scalar health
+summaries.
+
+This is a short-horizon staleness check, not an independent goodness-of-fit
+test: $\widehat D$ is itself learned from earlier residual energies. Under a
+stationary process and a sufficiently long common window, the ratio should
+self-calibrate toward one. The four-update monitor asks whether that slower
+historical estimate still predicts residual risk at the action timescale.
+
+- The last-ten mean $C_t$ was `.746` on the linear path and `.167`, `.0537`,
+  `.0343`, and `.0172` for $\kappa=32,64,128,256`. Sharper sigmoid events
+  therefore leave increasingly stale, overpredictive uncertainty scales after
+  the event.
+- Mean absolute $\log C_t$ ranked the four sigmoid paths in steepness order
+  for monitor half-lives of 2, 4, and 8 accepted updates. The conclusion is not
+  an artifact of the chosen four-update display timescale.
+- As a retrospective validation only, mean absolute $\log C_t$ correlated
+  `.969` with recommendation hysteresis and `.981` with mean NLL regression
+  against fixed `.05` across the four sigmoid paths. Those correlations use one
+  development replica and are descriptive, not inferential thresholds.
+- The linear path is the important counterexample. Its residual-risk forecast
+  was substantially better calibrated than the sigmoid forecasts, yet its EDR
+  learner still underperformed fixed `.05`. The monitor diagnoses stale local
+  risk coefficients; it cannot certify predictive benefit or account for the
+  irreversible consequences of earlier actions.
+- Wrote immutable schema-v2 analysis
+  `cache/mnist_experiment/plan4/edr/stress/analysis/edr_stress__8f56773be109`
+  and added the causal trajectories, scalar table, and half-life sensitivity to
+  [plan4_edr_results.ipynb](plan4_edr_results.ipynb). No learner was rerun.
+
 **Diagnostic decision:** EDR remains a work-in-progress local Fisher-risk
 estimator with useful offline action-calibration signal. The most informative
-health checks in this pilot are recommendation hysteresis, tail settling, and
-the divergence between accumulated internal risk opportunity and post-action
-predictive gain. Do not promote the present MNIST closed-loop actuation rule;
-retain the continuous diagnostics for a future predeclared controller redesign.
+health checks in this pilot are the deployable prequential calibration ratio,
+recommendation hysteresis, tail settling, and the divergence between
+accumulated internal risk opportunity and post-action predictive gain. Do not
+promote the present MNIST closed-loop actuation rule; retain the continuous
+diagnostics for a future predeclared controller redesign.
 
 ## Phase 7: Theory Integration and Historical Decision
 

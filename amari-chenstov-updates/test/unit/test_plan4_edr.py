@@ -20,6 +20,7 @@ from src.plan4_edr_stress import (
     _controller_diagnostics,
     _hysteresis,
     _lag_profile,
+    _prequential_calibration,
     _stress_config,
 )
 
@@ -210,6 +211,37 @@ def test_stress_hysteresis_uses_shared_nonzero_speed_support() -> None:
     assert result["common_speed_max"] == pytest.approx(1.0)
     assert result["mean_signed_branch_gap"] > 0.0
     assert result["mean_absolute_branch_gap"] >= result["mean_signed_branch_gap"]
+
+
+def test_prequential_calibration_uses_lagged_forecast_and_current_residual() -> None:
+    rows = []
+    for step in range(12):
+        rows.append(
+            {
+                "step": step,
+                "p": 0.01 * step,
+                "controller_decision": {
+                    "cold_start_active": step < 2,
+                    "risk_metric": "fisher",
+                    "trace_estimate": 2.0,
+                },
+                "controller_acceptance": {
+                    "residual_squared": 12.0 if step == 11 else 6.0,
+                    "scale_observation": 3.0,
+                },
+            }
+        )
+
+    result = _prequential_calibration(rows, half_life_steps=1.0)
+    trajectory = result["trajectory"]
+
+    assert result["strictly_prequential"] is True
+    assert result["paired_comparator_used"] is False
+    assert trajectory[0]["predicted_residual_risk_energy"] == pytest.approx(6.0)
+    assert trajectory[0]["raw_observed_to_predicted_ratio"] == pytest.approx(1.0)
+    assert trajectory[-1]["raw_observed_to_predicted_ratio"] == pytest.approx(2.0)
+    assert trajectory[-1]["ema_observed_to_predicted_ratio"] > 1.0
+    assert result["raw_ratio_median_live"] == pytest.approx(1.0)
 
 
 def test_stress_risk_opportunity_uses_direct_quadratic_subtraction() -> None:

@@ -30,7 +30,7 @@ from .schedules import resolve_schedule
 
 
 PLAN4_EDR_STRESS_BUNDLE_SCHEMA_VERSION = 1
-PLAN4_EDR_STRESS_ANALYSIS_SCHEMA_VERSION = 1
+PLAN4_EDR_STRESS_ANALYSIS_SCHEMA_VERSION = 2
 STRESS_CONDITION = DISCOVERY_CONDITION
 STRESS_CONDITIONS = ("fixed-pi005", "fixed-pi0025", STRESS_CONDITION)
 PRIMARY_COMPARATOR = "fixed-pi005"
@@ -38,6 +38,8 @@ PI_BASELINE = 0.05
 PI_MIN = 0.01
 MAX_RESPONSE_LAG = 20
 HYSTERESIS_GRID_SIZE = 64
+PREQUENTIAL_HALF_LIFE_STEPS = 4.0
+PREQUENTIAL_SENSITIVITY_HALF_LIVES = (2.0, 4.0, 8.0)
 
 
 def _canonical_json(value: Any) -> str:
@@ -400,6 +402,125 @@ def _tail_summary(action: np.ndarray, steps: np.ndarray, live: np.ndarray) -> di
     }
 
 
+def _prequential_calibration(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    half_life_steps: float = PREQUENTIAL_HALF_LIFE_STEPS,
+) -> dict[str, Any]:
+    """Compare each lagged Fisher-risk forecast with its realized residual energy."""
+
+    if not math.isfinite(half_life_steps) or half_life_steps <= 0.0:
+        raise ValueError("prequential half-life must be finite and positive")
+    updates = [
+        row
+        for row in rows
+        if isinstance(row.get("controller_decision"), Mapping)
+    ]
+    if not updates:
+        raise Plan4ChallengeError("prequential calibration requires controller updates")
+
+    gain = 1.0 - 2.0 ** (-1.0 / half_life_steps)
+    observed_moment = 0.0
+    predicted_moment = 0.0
+    trajectory = []
+    for row in updates:
+        decision = row["controller_decision"]
+        acceptance = row.get("controller_acceptance")
+        if not isinstance(acceptance, Mapping):
+            raise Plan4ChallengeError(
+                "prequential calibration requires controller acceptances"
+            )
+        if decision.get("risk_metric") != "fisher":
+            raise Plan4ChallengeError(
+                "prequential calibration requires Fisher-risk artifacts"
+            )
+        observed = float(acceptance["residual_squared"])
+        scale = float(acceptance["scale_observation"])
+        lagged_scale = float(decision["trace_estimate"])
+        predicted = scale * lagged_scale
+        if (
+            not all(math.isfinite(value) for value in (observed, scale, lagged_scale))
+            or min(observed, scale, lagged_scale) < 0.0
+        ):
+            raise Plan4ChallengeError(
+                "prequential calibration inputs must be finite and nonnegative"
+            )
+
+        observed_moment = (1.0 - gain) * observed_moment + gain * observed
+        predicted_moment = (1.0 - gain) * predicted_moment + gain * predicted
+        raw_ratio = observed / predicted if predicted > 0.0 else None
+        ema_ratio = (
+            observed_moment / predicted_moment
+            if predicted_moment > 0.0
+            else None
+        )
+        trajectory.append(
+            {
+                "step": int(row["step"]),
+                "p": float(row["p"]),
+                "cold_start_active": bool(decision["cold_start_active"]),
+                "observed_residual_risk_energy": observed,
+                "residual_scale_coefficient": scale,
+                "lagged_uncertainty_scale_estimate": lagged_scale,
+                "predicted_residual_risk_energy": predicted,
+                "raw_observed_to_predicted_ratio": raw_ratio,
+                "ema_observed_risk_energy": observed_moment,
+                "ema_predicted_risk_energy": predicted_moment,
+                "ema_observed_to_predicted_ratio": ema_ratio,
+                "ema_log_calibration_ratio": (
+                    math.log(ema_ratio)
+                    if ema_ratio is not None and ema_ratio > 0.0
+                    else None
+                ),
+            }
+        )
+
+    live = [row for row in trajectory if not row["cold_start_active"]]
+    if len(live) < 10:
+        raise Plan4ChallengeError(
+            "prequential calibration has fewer than ten live transitions"
+        )
+    raw = np.asarray(
+        [
+            math.nan
+            if row["raw_observed_to_predicted_ratio"] is None
+            else row["raw_observed_to_predicted_ratio"]
+            for row in live
+        ],
+        dtype=np.float64,
+    )
+    ema = np.asarray(
+        [row["ema_observed_to_predicted_ratio"] for row in live],
+        dtype=np.float64,
+    )
+    if not np.isfinite(ema).all() or np.any(ema <= 0.0):
+        raise Plan4ChallengeError("live prequential calibration ratios must be positive")
+    log_ema = np.log(ema)
+    return {
+        "strictly_prequential": True,
+        "paired_comparator_used": False,
+        "forecast_semantics": (
+            "scale_observation_times_lagged_fisher_weighted_covariance_dimension"
+        ),
+        "observed_semantics": "accepted_residual_fisher_risk_energy",
+        "ema_half_life_accepted_updates": half_life_steps,
+        "ema_gain": gain,
+        "cold_transition_count": len(trajectory) - len(live),
+        "live_transition_count": len(live),
+        "raw_ratio_median_live": float(np.nanmedian(raw)),
+        "raw_ratio_90th_percentile_live": float(np.nanquantile(raw, 0.9)),
+        "ema_ratio_mean_live": float(ema.mean()),
+        "ema_ratio_minimum_live": float(ema.min()),
+        "ema_ratio_maximum_live": float(ema.max()),
+        "ema_ratio_last_ten_mean": float(ema[-10:].mean()),
+        "mean_absolute_log_ema_ratio_live": float(np.abs(log_ema).mean()),
+        "last_ten_absolute_log_ema_ratio_mean": float(
+            np.abs(log_ema[-10:]).mean()
+        ),
+        "trajectory": trajectory,
+    }
+
+
 def _controller_diagnostics(
     rows: Sequence[Mapping[str, Any]],
     delta_p: Sequence[float],
@@ -638,6 +759,63 @@ def _predictive_alignment(
     }
 
 
+def _prequential_validation(schedules: Mapping[str, Any]) -> dict[str, Any]:
+    rows = []
+    for schedule in SCHEDULES:
+        result = schedules[schedule]
+        calibration = result["prequential_calibration"]
+        hysteresis = result["controller"]["hysteresis"][
+            "unclipped_recommendation"
+        ]
+        rows.append(
+            {
+                "schedule": schedule,
+                "mean_absolute_log_ema_ratio_live": calibration[
+                    "mean_absolute_log_ema_ratio_live"
+                ],
+                "last_ten_absolute_log_ema_ratio_mean": calibration[
+                    "last_ten_absolute_log_ema_ratio_mean"
+                ],
+                "recommendation_mean_absolute_hysteresis_gap": (
+                    hysteresis.get("mean_absolute_branch_gap")
+                ),
+                "mean_nll_regression_vs_fixed_005": result["comparisons"][
+                    "edr_minus_fixed_005"
+                ]["nll"]["full_mean_difference"],
+            }
+        )
+
+    sigmoid = [row for row in rows if row["schedule"] != "linear"]
+    calibration = np.asarray(
+        [row["mean_absolute_log_ema_ratio_live"] for row in sigmoid]
+    )
+    tail = np.asarray(
+        [row["last_ten_absolute_log_ema_ratio_mean"] for row in sigmoid]
+    )
+    hysteresis = np.asarray(
+        [row["recommendation_mean_absolute_hysteresis_gap"] for row in sigmoid]
+    )
+    nll = np.asarray(
+        [row["mean_nll_regression_vs_fixed_005"] for row in sigmoid]
+    )
+    return {
+        "diagnostic_construction_uses_one_trajectory": True,
+        "paired_fixed_005_used_only_for_retrospective_validation": True,
+        "schedule_level_correlations_are_descriptive": True,
+        "sigmoid_schedule_count": len(sigmoid),
+        "sigmoid_mean_log_miscalibration_hysteresis_correlation": _correlation(
+            calibration, hysteresis
+        ),
+        "sigmoid_mean_log_miscalibration_nll_regression_correlation": _correlation(
+            calibration, nll
+        ),
+        "sigmoid_tail_log_miscalibration_nll_regression_correlation": _correlation(
+            tail, nll
+        ),
+        "rows": rows,
+    }
+
+
 def build_stress_analysis(
     bundle_path: str | Path,
     repo_root: str | Path,
@@ -697,6 +875,19 @@ def build_stress_analysis(
             resolved.delta_p_values[1:],
             speed_has_bend=resolved.kind != "linear",
         )
+        calibration = _prequential_calibration(edr_rows)
+        calibration_sensitivity = {}
+        for half_life in PREQUENTIAL_SENSITIVITY_HALF_LIVES:
+            value = (
+                calibration
+                if half_life == PREQUENTIAL_HALF_LIFE_STEPS
+                else _prequential_calibration(
+                    edr_rows, half_life_steps=half_life
+                )
+            )
+            calibration_sensitivity[str(int(half_life))] = {
+                key: item for key, item in value.items() if key != "trajectory"
+            }
         cold_steps = [
             row["step"]
             for row in controller["trajectory"]
@@ -724,6 +915,10 @@ def build_stress_analysis(
             "cold_prefix_parameter_parity_with_fixed_005": parameter_parity,
             "cold_prefix_prediction_parity_with_fixed_005": prediction_parity,
             "controller": controller,
+            "prequential_calibration": calibration,
+            "prequential_calibration_half_life_sensitivity": (
+                calibration_sensitivity
+            ),
             "alignment": _predictive_alignment(edr_rows, fixed_rows, controller),
             "conditions": {
                 name: {"predictive_trajectory": _predictive_trajectory(value)}
@@ -758,6 +953,7 @@ def build_stress_analysis(
         "common_uniform_stream_hash": next(iter(common_uniform_hashes)),
         "input_provenance": provenance,
         "schedules": schedules,
+        "prequential_validation": _prequential_validation(schedules),
     }
 
 
