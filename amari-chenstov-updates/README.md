@@ -52,6 +52,8 @@ remains open.
 
 ## Repository map
 
+- `mnist-findings.ipynb`: concise experimental synthesis with artifact-backed
+  figures and evidence strength.
 - `mathematical_overview.ipynb`: concise theory with rigorous appendices.
 - `mnist_experiment/`: controlled experiments, plans, conditions, and results
   notebooks.

@@ -33,6 +33,7 @@ PLAN4_CHALLENGE_NOTEBOOK = (
 PLAN4_EDR_NOTEBOOK = (
     REPO_ROOT / "mnist_experiment" / "plan4_edr_results.ipynb"
 )
+FINDINGS_NOTEBOOK = REPO_ROOT / "mnist-findings.ipynb"
 MATHEMATICAL_OVERVIEW = REPO_ROOT / "mathematical_overview.ipynb"
 README = REPO_ROOT / "README.md"
 MNIST_AGENTS = REPO_ROOT / "mnist_experiment" / "AGENTS.md"
@@ -192,6 +193,26 @@ def test_plan4_edr_notebook_is_artifact_only() -> None:
     assert "Sigmoid stress diagnostics" in source
     assert "Single-trajectory prequential calibration" in source
     assert "ema_log_calibration_ratio" in source
+    assert "run_controller" not in source
+
+
+def test_findings_notebook_is_artifact_only_and_prioritizes_ewc() -> None:
+    notebook = load_notebook(FINDINGS_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "Primary conclusion" in source
+    assert "EWC makes low-data continual learning materially better" in source
+    assert "Lanczos makes a high-value Fisher representation practical" in source
+    assert "The LFU identity survives, but its small-data estimator does not" in source
+    assert "Small replay and compressed Fisher memory are complementary" in source
+    assert "Local-risk recommendations for" in source
+    assert "phase7__plan3-fresh-confirmation" in source
+    assert "edr_stress__8f56773be109" in source
     assert "run_controller" not in source
 
 
