@@ -1,0 +1,74 @@
+{
+  "artifact_schema_version": 1,
+  "conditions": [
+    "current_only",
+    "fixed_pi0025",
+    "fixed_pi005",
+    "edr_slowtrend_slowaction"
+  ],
+  "controller": {
+    "action_half_life_steps": 8.0,
+    "cold_start_pi": 0.05,
+    "cold_start_steps": 8,
+    "pi_max": 0.95,
+    "pi_min": 0.01,
+    "risk_metric": "fisher",
+    "trace_epsilon": 1e-12,
+    "trend_half_life_degrees": 7.5
+  },
+  "data": {
+    "evaluation_size": 1000,
+    "initialization_size": 512,
+    "online_pool_size": 1024,
+    "reference_pool_size": 256,
+    "samples_per_step": 4,
+    "stream_width": 4
+  },
+  "experiment": "rotated_mnist_phase5_slow_single_lap_smoke",
+  "fisher": {
+    "chunk_size": 32,
+    "fixed_pi": 0.05,
+    "initial_sample_size": 64,
+    "matrix_dtype": "float64",
+    "method": "ema",
+    "rank": 8,
+    "representation": "low_rank_diagonal"
+  },
+  "initialization": {
+    "batch_size": 256,
+    "learning_rate": 0.01,
+    "max_epochs": 1,
+    "optimizer": "adam",
+    "target_accuracy": null,
+    "weight_decay": 0.0
+  },
+  "learner": {
+    "inner_steps": 2,
+    "lbfgs_history_size": 10,
+    "lbfgs_line_search_fn": "strong_wolfe",
+    "lbfgs_max_eval_factor": 1.5,
+    "lbfgs_tolerance_change": 1e-9,
+    "lbfgs_tolerance_grad": 1e-5,
+    "learning_rate": 1.0,
+    "optimizer": "lbfgs"
+  },
+  "metric_schema_version": 1,
+  "replica_id": "replica-0001",
+  "replica_seed": 530201,
+  "rotation": {
+    "expand": false,
+    "fill": 0.0,
+    "interpolation": "bilinear",
+    "knots_degrees": [0.0, 30.0, 0.0],
+    "transitions_per_arrow": 2
+  },
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cuda",
+    "dtype": "float32",
+    "num_workers": 2
+  },
+  "schedule_kinds": ["linear", "sigmoid"],
+  "schema_version": 1,
+  "sigmoid_kappa": 8.0
+}

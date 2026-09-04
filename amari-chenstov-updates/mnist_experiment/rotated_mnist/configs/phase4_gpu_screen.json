@@ -1,0 +1,75 @@
+{
+  "artifact_schema_version": 1,
+  "conditions": [
+    "current_only",
+    "ewc_fixed_pi005",
+    "replay_b032",
+    "hybrid_b032_fixed_pi005",
+    "replay_unbounded"
+  ],
+  "data": {
+    "evaluation_size": 10000,
+    "initialization_size": 30000,
+    "online_pool_size": 10000,
+    "reference_pool_size": 20000,
+    "samples_per_step": 8,
+    "stream_width": 8
+  },
+  "experiment": "rotated_mnist_phase4_repeated_path_memory_screen",
+  "fisher": {
+    "chunk_size": 512,
+    "fixed_pi": 0.05,
+    "initial_sample_size": 20000,
+    "matrix_dtype": "float64",
+    "method": "ema",
+    "rank": 8,
+    "representation": "low_rank_diagonal"
+  },
+  "initialization": {
+    "batch_size": 256,
+    "learning_rate": 0.01,
+    "max_epochs": 15,
+    "optimizer": "adam",
+    "target_accuracy": 0.85,
+    "weight_decay": 0.0
+  },
+  "learner": {
+    "inner_steps": 50,
+    "lbfgs_history_size": 20,
+    "lbfgs_line_search_fn": "strong_wolfe",
+    "lbfgs_max_eval_factor": 1.5,
+    "lbfgs_tolerance_change": 1e-09,
+    "lbfgs_tolerance_grad": 1e-05,
+    "learning_rate": 1.0,
+    "optimizer": "lbfgs"
+  },
+  "metric_schema_version": 1,
+  "replay": {
+    "bounded_capacity": 32,
+    "logical_pixel_dtype": "float32",
+    "policy": "fifo"
+  },
+  "replica_id": "replica-0001",
+  "replica_seed": 530201,
+  "rotation": {
+    "expand": false,
+    "fill": 0.0,
+    "interpolation": "bilinear",
+    "knots_degrees": [
+      0.0,
+      15.0,
+      30.0,
+      0.0,
+      15.0,
+      30.0
+    ],
+    "transitions_per_arrow": 20
+  },
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cuda",
+    "dtype": "float32",
+    "num_workers": 2
+  },
+  "schema_version": 1
+}

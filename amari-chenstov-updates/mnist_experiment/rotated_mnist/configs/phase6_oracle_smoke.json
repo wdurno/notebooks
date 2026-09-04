@@ -1,0 +1,56 @@
+{
+  "artifact_schema_version": 1,
+  "condition": "edr_slowtrend_slowaction",
+  "deployed_batch_size": 4,
+  "experiment": "rotated_mnist_phase6_oracle_smoke",
+  "fisher": {
+    "chunk_size": 64,
+    "matrix_dtype": "float64",
+    "ranks": [2, 4],
+    "sample_size": 128
+  },
+  "local_mle": {
+    "batch_size": 32,
+    "bootstrap_replicates": 20,
+    "learning_rate": 0.001,
+    "max_epochs": 1,
+    "maximum_replicates": 2,
+    "pi_half_width_tolerance": 1.0,
+    "replicate_checkpoints": [2],
+    "sample_sizes": [32],
+    "sigma_multiple": 6.0,
+    "weight_decay": 0.0
+  },
+  "max_wall_time_seconds": 300.0,
+  "metric_schema_version": 1,
+  "mode": "smoke",
+  "reference": {
+    "batch_size": 64,
+    "fit_pool_size": 256,
+    "fit_sample_size": 128,
+    "learning_rate": 0.001,
+    "initial_max_epochs": 1,
+    "max_epochs": 1,
+    "minimum_delta": 0.0,
+    "patience": 1,
+    "validation_size": 128,
+    "weight_decay": 0.0
+  },
+  "reference_run_path": null,
+  "replica_id": "replica-0001",
+  "replica_seed": 560102,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "dtype": "float32",
+    "num_workers": 0
+  },
+  "schedule_kinds": ["linear", "sigmoid"],
+  "schema_version": 1,
+  "source_run_id": "rotated_mnist_phase5_slow_single_lap_development__replica-0001__30f2161a06eb8d50",
+  "source_run_path": "cache/mnist_experiment/rotated_mnist/phase5/single_lap/rotated_mnist_phase5_slow_single_lap_development__replica-0001__30f2161a06eb8d50",
+  "transition_steps": {
+    "linear": [8],
+    "sigmoid": [8]
+  }
+}

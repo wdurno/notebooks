@@ -1,0 +1,32 @@
+{
+  "artifact_schema_version": 1,
+  "conditions": [
+    "fixed_pi001",
+    "fixed_pi0025",
+    "fixed_pi005",
+    "fixed_pi010",
+    "edr_cold005"
+  ],
+  "controller": {
+    "action_half_life_steps": 4.0,
+    "cold_start_pi": 0.05,
+    "pi_max": 0.95,
+    "pi_min": 0.01,
+    "risk_metric": "fisher",
+    "trace_epsilon": 1e-12,
+    "trend_half_life_degrees": 7.5
+  },
+  "experiment": "rotated_mnist_phase5_edr_challenge",
+  "fixed_pis": [
+    0.01,
+    0.025,
+    0.05,
+    0.1
+  ],
+  "metric_schema_version": 1,
+  "replica_id": "replica-0001",
+  "schema_version": 1,
+  "source_phase4_config_hash": "b85ea66a5617ad67ba704de6ad1f461ba2109f8bf38188a6560dcaa057d1aec8",
+  "source_phase4_run": "cache/mnist_experiment/rotated_mnist/phase4/rotated_mnist_phase4_repeated_path_memory_screen__replica-0001__b85ea66a5617ad67",
+  "source_phase4_run_id": "rotated_mnist_phase4_repeated_path_memory_screen__replica-0001__b85ea66a5617ad67"
+}

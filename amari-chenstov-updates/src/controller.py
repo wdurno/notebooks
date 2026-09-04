@@ -513,6 +513,7 @@ def decide_discounted_risk_controller(
     *,
     batch_size: int,
     fisher: FisherRepresentation,
+    cold_start_steps: int | None = None,
 ) -> DiscountedRiskDecision:
     """Choose a predictable action from discounted Fisher-risk coefficients."""
 
@@ -529,6 +530,12 @@ def decide_discounted_risk_controller(
         raise ValueError("discounted risk decision requires Fisher risk")
     if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
+    if cold_start_steps is not None and (
+        not isinstance(cold_start_steps, int)
+        or isinstance(cold_start_steps, bool)
+        or cold_start_steps < 0
+    ):
+        raise ValueError("cold_start_steps must be null or a nonnegative integer")
 
     trace = state.trace_estimate(config.trace_epsilon)
     signal = _quadratic_energy(state.trend, "fisher", fisher)
@@ -554,7 +561,11 @@ def decide_discounted_risk_controller(
     unclipped_pi = (
         None if zero_denominator else updated.old_risk_moment / denominator
     )
-    cold_start = state.environment_distance < config.trend_half_life_p
+    cold_start = (
+        state.environment_distance < config.trend_half_life_p
+        if cold_start_steps is None
+        else state.accepted_steps < cold_start_steps
+    )
     raw_pi = (
         float(config.fixed_pi)
         if cold_start or zero_denominator

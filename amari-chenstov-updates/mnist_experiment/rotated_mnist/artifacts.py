@@ -19,6 +19,7 @@ import torch
 from src.seeding import SEED_SCHEMA_VERSION, derive_seed_map
 
 from .config import ARTIFACT_SCHEMA_VERSION, RotatedExperimentConfig
+from .audit_config import RotatedAuditConfig
 from .data import (
     RotatedPartitions,
     RotatedStreamPlan,
@@ -49,6 +50,25 @@ REQUIRED_ARTIFACTS = (
     "trajectory.pt",
     "model_states.pt",
     "run_summary.json",
+)
+AUDIT_REQUIRED_ARTIFACTS = (
+    "partitions.json",
+    "reference_plan.json",
+    "initialization_metrics.json",
+    "zero_shot_metrics.json",
+    "reference_metrics.json",
+    "path_metrics.json",
+    "reference_states.pt",
+    "reference_fishers.pt",
+    "transform_examples.pt",
+    "audit_summary.json",
+)
+PLAN5_AUDIT_SEED_COMPONENTS = (
+    *PLAN5_SEED_COMPONENTS,
+    "plan5_audit_primary_fit",
+    "plan5_audit_endpoint_repeats",
+    "plan5_audit_reference_optimizer",
+    "plan5_audit_fisher",
 )
 
 
@@ -124,7 +144,7 @@ def _git_metadata(repo_root: Path) -> dict[str, Any]:
 
 def runtime_metadata(
     repo_root: str | Path,
-    config: RotatedExperimentConfig,
+    config: RotatedExperimentConfig | RotatedAuditConfig,
 ) -> dict[str, Any]:
     cuda_available = torch.cuda.is_available()
     try:
@@ -275,6 +295,69 @@ class RotatedRunStore:
                 "completed_at": None,
                 "seeds": derive_seed_map(
                     config.replica_seed, PLAN5_SEED_COMPONENTS
+                ),
+                "runtime": runtime_metadata(repo_root, config),
+            },
+        )
+        return RotatedRunSession(config.run_id, working_path, final_path)
+
+
+class RotatedAuditRunStore:
+    """Immutable lifecycle isolated from ordinary Plan 5 learner runs."""
+
+    def __init__(self, root: str | Path):
+        self.root = Path(root)
+        self.incomplete_root = self.root / ".incomplete"
+
+    def begin(
+        self,
+        config: RotatedAuditConfig,
+        repo_root: str | Path,
+        *,
+        resume: bool = False,
+    ) -> RotatedRunSession:
+        config.validate()
+        final_path = self.root / config.run_id
+        working_path = self.incomplete_root / config.run_id
+        if final_path.exists():
+            if (final_path / "COMPLETED").is_file():
+                raise RotatedCompletedRunError(
+                    f"rotated audit already completed: {config.run_id}"
+                )
+            raise RotatedArtifactError(
+                f"final rotated audit exists without COMPLETED: {final_path}"
+            )
+        if working_path.exists():
+            if not resume:
+                raise RotatedIncompleteRunError(
+                    f"incomplete rotated audit exists; pass --resume: {config.run_id}"
+                )
+            if _read_json(working_path / "config.json") != config.to_mapping():
+                raise RotatedArtifactError("incomplete rotated audit config differs")
+            manifest = _read_json(working_path / "manifest.json")
+            if manifest.get("status") != "incomplete":
+                raise RotatedArtifactError("incomplete rotated audit manifest is invalid")
+            return RotatedRunSession(config.run_id, working_path, final_path)
+
+        working_path.mkdir(parents=True, exist_ok=False)
+        _write_json(working_path / "config.json", config.to_mapping())
+        _write_json(
+            working_path / "manifest.json",
+            {
+                "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+                "artifact_schema_version": config.artifact_schema_version,
+                "metric_schema_version": config.metric_schema_version,
+                "seed_schema_version": SEED_SCHEMA_VERSION,
+                "run_kind": "phase2_learnability_audit",
+                "run_id": config.run_id,
+                "experiment": config.experiment,
+                "replica_id": config.replica_id,
+                "config_hash": config.config_hash,
+                "status": "incomplete",
+                "started_at": _utc_now(),
+                "completed_at": None,
+                "seeds": derive_seed_map(
+                    config.replica_seed, PLAN5_AUDIT_SEED_COMPONENTS
                 ),
                 "runtime": runtime_metadata(repo_root, config),
             },

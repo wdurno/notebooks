@@ -132,6 +132,48 @@ def test_discounted_risk_controller_accumulates_before_final_clipping() -> None:
     assert result.state.new_risk_moment > 0.0
 
 
+def test_discounted_risk_controller_can_decouple_cold_start_from_distance() -> None:
+    fisher = DiagonalFisher(torch.ones(2, dtype=torch.float64))
+    config = _config(
+        "discounted_risk",
+        fixed_pi=0.05,
+        pi_min=0.01,
+        risk_metric="fisher",
+        trend_half_life_p=0.25,
+        action_half_life_steps=4.0,
+    )
+    state = dataclasses.replace(
+        ControllerState.initialize(2, 100.0),
+        environment_distance=10.0,
+        accepted_steps=3,
+        trend=torch.ones(2, dtype=torch.float64),
+        residual_moment=1.0,
+        scale_moment=1.0,
+    )
+
+    cold = decide_discounted_risk_controller(
+        state,
+        DiscountedRiskState(),
+        config,
+        batch_size=4,
+        fisher=fisher,
+        cold_start_steps=4,
+    )
+    released = decide_discounted_risk_controller(
+        dataclasses.replace(state, accepted_steps=4),
+        DiscountedRiskState(),
+        config,
+        batch_size=4,
+        fisher=fisher,
+        cold_start_steps=4,
+    )
+
+    assert cold.controller.cold_start_active is True
+    assert cold.controller.applied_pi == pytest.approx(0.05)
+    assert released.controller.cold_start_active is False
+    assert released.controller.applied_pi != pytest.approx(0.05)
+
+
 def test_cold_start_is_bounded_and_explicit_boundaries_bypass_clipping() -> None:
     state = ControllerState.initialize(2, initial_effective_size=100.0)
     plugin = decide_controller(state, _config(), batch_size=10)

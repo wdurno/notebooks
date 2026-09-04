@@ -1,0 +1,64 @@
+{
+  "artifact_schema_version": 1,
+  "conditions": [
+    "current_only",
+    "ewc_fixed_pi005"
+  ],
+  "data": {
+    "evaluation_size": 128,
+    "initialization_size": 512,
+    "online_pool_size": 1024,
+    "reference_pool_size": 256,
+    "samples_per_step": 8,
+    "stream_width": 8
+  },
+  "experiment": "rotated_mnist_phase3_smoke",
+  "fisher": {
+    "chunk_size": 32,
+    "fixed_pi": 0.05,
+    "initial_sample_size": 64,
+    "matrix_dtype": "float64",
+    "method": "ema",
+    "rank": 8,
+    "representation": "low_rank_diagonal"
+  },
+  "initialization": {
+    "batch_size": 128,
+    "learning_rate": 0.01,
+    "max_epochs": 1,
+    "optimizer": "adam",
+    "target_accuracy": null,
+    "weight_decay": 0.0
+  },
+  "learner": {
+    "inner_steps": 2,
+    "lbfgs_history_size": 10,
+    "lbfgs_line_search_fn": "strong_wolfe",
+    "lbfgs_max_eval_factor": 1.5,
+    "lbfgs_tolerance_change": 1e-09,
+    "lbfgs_tolerance_grad": 1e-05,
+    "learning_rate": 1.0,
+    "optimizer": "lbfgs"
+  },
+  "metric_schema_version": 1,
+  "replica_id": "replica-0001",
+  "replica_seed": 530001,
+  "rotation": {
+    "expand": false,
+    "fill": 0.0,
+    "interpolation": "bilinear",
+    "knots_degrees": [
+      0.0,
+      15.0,
+      30.0
+    ],
+    "transitions_per_arrow": 1
+  },
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "dtype": "float32",
+    "num_workers": 0
+  },
+  "schema_version": 1
+}

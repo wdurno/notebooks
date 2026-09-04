@@ -57,3 +57,39 @@ def rotate_mnist_tensor(
     if not bool(torch.isfinite(result).all()):
         raise RuntimeError("rotation produced non-finite pixels")
     return result.contiguous()
+
+
+def rotate_mnist_batch(
+    images: Tensor,
+    angle_degrees: float,
+    config: RotationConfig,
+) -> Tensor:
+    """Apply the versioned transform to a CPU batch without changing semantics."""
+
+    config.validate()
+    if images.ndim != 4 or images.shape[1:] != (1, 28, 28):
+        raise ValueError("MNIST image batch must have shape (batch, 1, 28, 28)")
+    if images.shape[0] == 0:
+        raise ValueError("MNIST image batch cannot be empty")
+    if not images.is_floating_point() or not bool(torch.isfinite(images).all()):
+        raise ValueError("MNIST image batch must be finite and floating point")
+    if images.device.type != "cpu":
+        raise ValueError("rotation materialization requires CPU tensors")
+    if (
+        isinstance(angle_degrees, bool)
+        or not isinstance(angle_degrees, (int, float))
+        or not math.isfinite(float(angle_degrees))
+    ):
+        raise ValueError("rotation angle must be finite")
+    result = rotate(
+        images,
+        float(angle_degrees),
+        interpolation=InterpolationMode.BILINEAR,
+        expand=config.expand,
+        fill=[config.fill],
+    )
+    if result.shape != images.shape or result.dtype != images.dtype:
+        raise RuntimeError("rotation changed MNIST batch shape or dtype")
+    if not bool(torch.isfinite(result).all()):
+        raise RuntimeError("rotation produced non-finite pixels")
+    return result.contiguous()

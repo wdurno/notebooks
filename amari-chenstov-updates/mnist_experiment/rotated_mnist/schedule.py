@@ -163,3 +163,68 @@ def resolve_rotation_schedule(config: RotationConfig) -> RotationSchedule:
     )
     schedule.validate()
     return schedule
+
+
+def resolve_shaped_rotation_schedule(
+    config: RotationConfig,
+    *,
+    kind: str,
+    sigmoid_kappa: float,
+) -> RotationSchedule:
+    """Resolve linear or endpoint-normalized sigmoid progress within each leg."""
+
+    config.validate()
+    if kind not in {"linear", "sigmoid"}:
+        raise ValueError("rotation schedule kind must be linear or sigmoid")
+    if not math.isfinite(sigmoid_kappa) or sigmoid_kappa <= 0.0:
+        raise ValueError("sigmoid_kappa must be finite and positive")
+    if kind == "linear":
+        return resolve_rotation_schedule(config)
+
+    lower = 1.0 / (1.0 + math.exp(sigmoid_kappa / 2.0))
+    upper = 1.0 / (1.0 + math.exp(-sigmoid_kappa / 2.0))
+
+    def progress(offset: int) -> float:
+        unit = offset / config.transitions_per_arrow
+        value = 1.0 / (
+            1.0 + math.exp(-sigmoid_kappa * (unit - 0.5))
+        )
+        return (value - lower) / (upper - lower)
+
+    angles: list[float] = []
+    leg_ids: list[int] = []
+    transitions = config.transitions_per_arrow
+    for leg, (left, right) in enumerate(
+        zip(config.knots_degrees[:-1], config.knots_degrees[1:], strict=True)
+    ):
+        count = (
+            transitions
+            if leg + 1 < len(config.knots_degrees) - 1
+            else transitions + 1
+        )
+        for offset in range(count):
+            fraction = progress(offset)
+            angles.append(left + fraction * (right - left))
+            leg_ids.append(leg)
+
+    directions = []
+    cumulative = [0.0]
+    for left, right in zip(angles[:-1], angles[1:], strict=True):
+        difference = right - left
+        directions.append(1 if difference > 0.0 else -1 if difference < 0.0 else 0)
+        cumulative.append(cumulative[-1] + abs(difference))
+    directions.append(0)
+    knot_indices = {
+        index * transitions for index in range(len(config.knots_degrees))
+    }
+    schedule = RotationSchedule(
+        angles_degrees=tuple(angles),
+        leg_ids=tuple(leg_ids),
+        directions_to_next=tuple(directions),
+        knot_flags=tuple(step in knot_indices for step in range(len(angles))),
+        cumulative_degrees=tuple(cumulative),
+        knots_degrees=config.knots_degrees,
+        transitions_per_arrow=transitions,
+    )
+    schedule.validate()
+    return schedule

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "metric_schema_version": 1,
+  "artifact_schema_version": 1,
+  "experiment": "rotated_mnist_phase7_anchor_audit_primary_v3",
+  "replica_id": "replica-0001",
+  "replica_seed": 7001,
+  "source_run_path": "cache/mnist_experiment/rotated_mnist/phase5/single_lap/rotated_mnist_phase5_slow_single_lap_development__replica-0001__30f2161a06eb8d50",
+  "source_run_id": "rotated_mnist_phase5_slow_single_lap_development__replica-0001__30f2161a06eb8d50",
+  "debias_run_path": "cache/mnist_experiment/rotated_mnist/phase6/debias/rotated_mnist_phase6_debias_primary__replica-0001__e1c9d975a0351e2e",
+  "debias_run_id": "rotated_mnist_phase6_debias_primary__replica-0001__e1c9d975a0351e2e",
+  "oracle_run_path": "cache/mnist_experiment/rotated_mnist/phase6/oracle/rotated_mnist_phase6_oracle_full_path__replica-0001__7c7dc5936d08fb91",
+  "oracle_run_id": "rotated_mnist_phase6_oracle_full_path__replica-0001__7c7dc5936d08fb91",
+  "schedule_kinds": [
+    "linear",
+    "sigmoid"
+  ],
+  "primary_condition": "edr_slowtrend_slowaction",
+  "control_conditions": [
+    "fixed_pi0025",
+    "fixed_pi005"
+  ],
+  "deployed_batch_size": 4,
+  "oracle_sample_size": 2048,
+  "oracle_replicate_count": 64,
+  "primary_rank": 16,
+  "sensitivity_ranks": [
+    8
+  ],
+  "variance_scale": 1.0,
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float64",
+    "deterministic_algorithms": true,
+    "num_workers": 0
+  }
+}

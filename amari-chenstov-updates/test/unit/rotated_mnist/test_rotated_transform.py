@@ -3,6 +3,7 @@ from pathlib import Path
 
 from mnist_experiment.rotated_mnist.config import load_config
 from mnist_experiment.rotated_mnist.transform import (
+    rotate_mnist_batch,
     rotate_mnist_tensor,
     tensor_content_hash,
 )
@@ -42,3 +43,15 @@ def test_rotation_rejects_noncanonical_inputs() -> None:
         assert "shape" in str(error)
     else:
         raise AssertionError("noncanonical image shape was accepted")
+
+
+def test_batch_rotation_matches_individual_rotation() -> None:
+    config = load_config(SMOKE_CONFIG).rotation
+    images = torch.rand(3, 1, 28, 28)
+
+    batched = rotate_mnist_batch(images, 17.5, config)
+    individual = torch.stack(
+        [rotate_mnist_tensor(image, 17.5, config) for image in images]
+    )
+
+    torch.testing.assert_close(batched, individual, rtol=0.0, atol=0.0)

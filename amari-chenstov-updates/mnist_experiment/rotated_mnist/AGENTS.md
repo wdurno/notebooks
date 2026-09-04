@@ -1,7 +1,9 @@
 # Rotated-MNIST agent notes
 
 This directory is the detachable implementation boundary for
-[../plan5.md](../plan5.md). Follow the repository and MNIST experiment
+[../plan5.md](../plan5.md), its oracle-calibration follow-up
+[../plan6.md](../plan6.md), and the artifact-only anchor audit in
+[../plan7.md](../plan7.md). Follow the repository and MNIST experiment
 instructions, with these additional constraints:
 
 - Rotation angle is the only changing environmental coordinate. Do not reuse
