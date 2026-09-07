@@ -33,6 +33,30 @@ PLAN4_CHALLENGE_NOTEBOOK = (
 PLAN4_EDR_NOTEBOOK = (
     REPO_ROOT / "mnist_experiment" / "plan4_edr_results.ipynb"
 )
+DECOMPOSED_EDR_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "decomposed_edr_results.ipynb"
+)
+MOVEMENT_PREMIUM_AUDIT_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "movement_premium_audit.ipynb"
+)
+MARKOV_MOVEMENT_EXTENSIONS_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "markov_movement_extensions_results.ipynb"
+)
+MARKOV_GAIN_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "markov_gain_results.ipynb"
+)
 FINDINGS_NOTEBOOK = REPO_ROOT / "mnist-findings.ipynb"
 MATHEMATICAL_OVERVIEW = REPO_ROOT / "mathematical_overview.ipynb"
 README = REPO_ROOT / "README.md"
@@ -75,6 +99,18 @@ def test_results_notebook_is_valid_and_artifact_only() -> None:
     )
     assert any(
         "instantaneous empirical" in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+
+def test_markov_gain_notebook_is_valid_and_artifact_only() -> None:
+    notebook = load_notebook(MARKOV_GAIN_NOTEBOOK)
+
+    validate_notebook_source(notebook)
+
+    assert notebook["nbformat"] == 4
+    assert any(
+        "Plan 9 predictable-gain audit" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )
 
@@ -226,8 +262,8 @@ def test_mathematical_overview_separates_ideal_risk_from_realization() -> None:
 
     assert "Euclidean parameter error and Fisher risk" in main
     assert r"\mathsf M_t=I_{\dim\Theta}" in main
-    assert r"\pi_{B,t}^{\mathrm{loc}}" in main
-    assert "globally optimal continual-learning policy" in main
+    assert r"\pi_{B,t}^{\mathrm{marg}}" in main
+    assert "globally optimal policy" in main
     assert "Plug-in trend and covariance estimation" not in main
     assert "fixed composition is generally preferable" in interpretation
     assert "Appendix B: Statistical and numerical realization" in realization
@@ -236,6 +272,56 @@ def test_mathematical_overview_separates_ideal_risk_from_realization() -> None:
     assert "Recommendation and closed-loop application" in realization
     assert "Single-trajectory prequential calibration" in realization
     assert "`optimal_plugin`" in realization
+
+
+def test_decomposed_edr_notebook_is_artifact_only_and_states_gate_result() -> None:
+    notebook = load_notebook(DECOMPOSED_EDR_NOTEBOOK)
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert "Covariance result inherited from Plan 7" in source
+    assert "Predictive evidence" in source
+    assert "Upright-panel retention" in source
+    assert "Evidence ledger" in source
+    assert "validated covariance decomposition, failed tested movement controller" in source
+    assert "run_phase8" not in source
+
+
+def test_movement_premium_audit_notebook_is_artifact_only_and_attributive() -> None:
+    notebook = load_notebook(MOVEMENT_PREMIUM_AUDIT_NOTEBOOK)
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "Movement-premium calibration audit" in source
+    assert "One-coefficient counterfactual attribution" in source
+    assert "The discrepancy is numerator-dominated" in source
+    assert "single low-data trajectory is insufficient" in source
+    assert "for candidate in (Path.cwd(), *Path.cwd().parents)" in source
+    assert "sys.path.insert(0, str(REPO_ROOT))" in source
+    assert "run_phase7_movement_audit" not in source
+
+
+def test_markov_movement_extensions_notebook_is_artifact_only_and_gated() -> None:
+    notebook = load_notebook(MARKOV_MOVEMENT_EXTENSIONS_NOTEBOOK)
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "E9.7: Is there enough population opportunity?" in source
+    assert "E9.8: Do lag-separated cross-moments recover movement?" in source
+    assert "E9.9: What term was missing?" in source
+    assert "E9.10: Can faster rotation create a valid challenge?" in source
+    assert "E9.11 remains **Blocked**" in source
+    assert "run_extensions" not in source
+    assert "run_attribution" not in source
+    assert "run_path_screen" not in source
 
 
 def test_phase7_human_documentation_states_conditional_evidence() -> None:

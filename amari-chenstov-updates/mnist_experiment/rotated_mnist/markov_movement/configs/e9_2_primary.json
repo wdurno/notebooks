@@ -1,0 +1,45 @@
+{
+  "artifact_schema_version": 1,
+  "cold_start_steps": 8,
+  "condition": "decomposed_edr",
+  "deployed_batch_size": 4,
+  "double_lap_run_id": "rotated_mnist_phase8_double_lap_reversal_stress__replica-0001__f035d4b8cdf6d894",
+  "double_lap_run_path": "cache/mnist_experiment/rotated_mnist/phase8/double_lap/rotated_mnist_phase8_double_lap_reversal_stress__replica-0001__f035d4b8cdf6d894",
+  "experiment": "rotated_mnist_plan9_e9_2_smooth_drift",
+  "metric_schema_version": 1,
+  "oracle_rank": 16,
+  "oracle_replicate_count": 64,
+  "oracle_run_id": "rotated_mnist_phase6_oracle_full_path__replica-0001__7c7dc5936d08fb91",
+  "oracle_run_path": "cache/mnist_experiment/rotated_mnist/phase6/oracle/rotated_mnist_phase6_oracle_full_path__replica-0001__7c7dc5936d08fb91",
+  "oracle_sample_size": 2048,
+  "ratio_floor": 1e-12,
+  "replica_id": "replica-0001",
+  "replica_seed": 590102,
+  "reversal_window_steps": 8,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "dtype": "float64",
+    "num_workers": 0
+  },
+  "schedule_kinds": [
+    "linear",
+    "sigmoid"
+  ],
+  "schema_version": 1,
+  "single_lap_run_id": "rotated_mnist_phase8_single_lap_rechallenge__replica-0001__6445ab53bb10cd25",
+  "single_lap_run_path": "cache/mnist_experiment/rotated_mnist/phase8/single_lap/rotated_mnist_phase8_single_lap_rechallenge__replica-0001__6445ab53bb10cd25",
+  "smoothing_half_lives_degrees": {
+    "double_lap": [
+      0.9375,
+      1.875,
+      3.75
+    ],
+    "single_lap": [
+      3.75,
+      7.5,
+      15.0
+    ]
+  },
+  "study": "e9_2"
+}

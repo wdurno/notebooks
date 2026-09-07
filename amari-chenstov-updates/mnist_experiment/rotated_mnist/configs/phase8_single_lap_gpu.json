@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "metric_schema_version": 1,
+  "artifact_schema_version": 1,
+  "experiment": "rotated_mnist_phase8_single_lap_rechallenge",
+  "replica_id": "replica-0001",
+  "replica_seed": 530201,
+  "source_kind": "single_lap",
+  "source_artifact": "cache/mnist_experiment/rotated_mnist/phase5/single_lap/rotated_mnist_phase5_slow_single_lap_development__replica-0001__30f2161a06eb8d50",
+  "conditions": [
+    "fixed_pi005_sentinel",
+    "tracked_q_covariance",
+    "decomposed_edr"
+  ],
+  "transition_limit": null,
+  "controller": {
+    "pi_min": 0.01,
+    "pi_max": 0.95,
+    "cold_start_pi": 0.05,
+    "cold_start_steps": 8,
+    "trend_half_life_degrees": 7.5,
+    "movement_half_life_steps": 8.0,
+    "trace_epsilon": 1e-12
+  },
+  "compatibility": {
+    "accuracy_auc_tolerance": 0.01,
+    "nll_auc_tolerance": 0.1,
+    "final_accuracy_tolerance": 0.02
+  },
+  "runtime": {
+    "device": "cuda",
+    "dtype": "float32",
+    "deterministic_algorithms": true,
+    "num_workers": 2
+  }
+}

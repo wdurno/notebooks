@@ -1,0 +1,32 @@
+{
+  "artifact_schema_version": 1,
+  "cross_half_lives_degrees": {
+    "double_lap": [1.875, 3.75, 7.5],
+    "single_lap": [7.5, 15.0, 30.0]
+  },
+  "e9_1_run_id": "rotated_mnist_plan9_e9_1_anchor_cancellation__replica-0001__b1234a5779ce2e42",
+  "e9_1_run_path": "cache/mnist_experiment/rotated_mnist/plan9/e9_1/rotated_mnist_plan9_e9_1_anchor_cancellation__replica-0001__b1234a5779ce2e42",
+  "e9_2_run_id": "rotated_mnist_plan9_e9_2_smooth_drift_v2__replica-0001__b4c838dcc0b327bf",
+  "e9_2_run_path": "cache/mnist_experiment/rotated_mnist/plan9/e9_2/rotated_mnist_plan9_e9_2_smooth_drift_v2__replica-0001__b4c838dcc0b327bf",
+  "experiment": "rotated_mnist_plan9_e9_7_movement_opportunity",
+  "lag_exclusions": [1, 2, 4],
+  "metric_schema_version": 1,
+  "opportunity_thresholds": [0.01, 0.02, 0.05],
+  "primary_cross_half_lives_degrees": {
+    "double_lap": 3.75,
+    "single_lap": 15.0
+  },
+  "primary_lag_exclusion": 1,
+  "primary_opportunity_threshold": 0.02,
+  "replica_id": "replica-0001",
+  "replica_seed": 590107,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "dtype": "float64",
+    "num_workers": 0
+  },
+  "schema_version": 1,
+  "study": "e9_7",
+  "sustained_steps": 8
+}

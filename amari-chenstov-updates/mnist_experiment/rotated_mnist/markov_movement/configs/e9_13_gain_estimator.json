@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "metric_schema_version": 1,
+  "artifact_schema_version": 1,
+  "study": "e9_13",
+  "experiment": "rotated_mnist_plan9_e9_13_dual_timescale_gain",
+  "replica_id": "replica-0001",
+  "replica_seed": 590113,
+  "e9_12_run_path": "cache/mnist_experiment/rotated_mnist/plan9/e9_12/rotated_mnist_plan9_e9_12_predictable_gain_contract__replica-0001__1a7d0f76ca07aefe",
+  "e9_12_run_id": "rotated_mnist_plan9_e9_12_predictable_gain_contract__replica-0001__1a7d0f76ca07aefe",
+  "fast_half_lives_steps": [4.0, 8.0, 16.0],
+  "primary_half_life_steps": 8.0,
+  "fisher_rank": 8,
+  "relative_damping": 1e-8,
+  "solver_residual_tolerance": 1e-6,
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float64",
+    "num_workers": 0,
+    "deterministic_algorithms": true
+  }
+}

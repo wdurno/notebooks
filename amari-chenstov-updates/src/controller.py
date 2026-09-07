@@ -66,6 +66,33 @@ def fixed_batch_optimal_pi(
     return old_risk / (old_risk + new_risk + epsilon)
 
 
+def tracked_q_covariance_pi(q: float, batch_size: int) -> float:
+    """Return the equal-shape covariance-only fixed-batch recommendation."""
+
+    if not math.isfinite(q) or q <= 0.0:
+        raise ValueError("q must be finite and positive")
+    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
+        raise ValueError("batch_size must be a positive integer")
+    mass = batch_size * q
+    return mass / (1.0 + mass)
+
+
+def decomposed_fixed_batch_pi(
+    movement_premium: float,
+    q: float,
+    batch_size: int,
+) -> float:
+    """Combine normalized movement with the tracked covariance contribution."""
+
+    if not math.isfinite(movement_premium) or movement_premium < 0.0:
+        raise ValueError("movement_premium must be finite and nonnegative")
+    covariance_mass = batch_size * q
+    if not math.isfinite(covariance_mass) or covariance_mass <= 0.0:
+        raise ValueError("q must be finite and positive")
+    numerator = movement_premium + covariance_mass
+    return numerator / (numerator + 1.0)
+
+
 def bernoulli_theory_optimal_pi(
     signal_squared: float,
     trace_inverse_fisher: float,
@@ -248,6 +275,55 @@ class DiscountedRiskDecision:
             "edr_updates": self.state.updates,
             "edr_unclipped_pi": self.unclipped_pi,
             "edr_zero_denominator_fallback": self.zero_denominator_fallback,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class DiscountedMovementState:
+    movement_premium_moment: float = 0.0
+    updates: int = 0
+
+    def validate(self) -> None:
+        if (
+            not math.isfinite(self.movement_premium_moment)
+            or self.movement_premium_moment < 0.0
+        ):
+            raise ValueError("movement premium moment must be finite and nonnegative")
+        if (
+            not isinstance(self.updates, int)
+            or isinstance(self.updates, bool)
+            or self.updates < 0
+        ):
+            raise ValueError("movement updates must be a nonnegative integer")
+
+    def mapping(self) -> dict[str, float | int]:
+        self.validate()
+        return {
+            "movement_premium_moment": self.movement_premium_moment,
+            "updates": self.updates,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class DecomposedRiskDecision:
+    controller: "ControllerDecision"
+    state: DiscountedMovementState
+    gain: float
+    covariance_only_pi: float
+    instantaneous_movement_premium: float | None
+    discounted_movement_premium: float
+    unsupported_scale_fallback: bool
+
+    def mapping(self) -> dict[str, float | int | bool | None]:
+        return {
+            "decomposed_gain": self.gain,
+            "covariance_only_pi": self.covariance_only_pi,
+            "instantaneous_movement_premium": (
+                self.instantaneous_movement_premium
+            ),
+            "discounted_movement_premium": self.discounted_movement_premium,
+            "movement_updates": self.state.updates,
+            "unsupported_scale_fallback": self.unsupported_scale_fallback,
         }
 
 
@@ -504,6 +580,171 @@ def advance_discounted_risk(
     )
     updated.validate()
     return updated, gain
+
+
+def advance_discounted_movement(
+    state: DiscountedMovementState,
+    movement_premium: float,
+    *,
+    half_life_steps: float,
+) -> tuple[DiscountedMovementState, float]:
+    """Accumulate only the uncertain normalized movement contribution."""
+
+    state.validate()
+    if not math.isfinite(movement_premium) or movement_premium < 0.0:
+        raise ValueError("movement_premium must be finite and nonnegative")
+    gain = update_step_half_life_gain(half_life_steps)
+    updated = DiscountedMovementState(
+        movement_premium_moment=(
+            (1.0 - gain) * state.movement_premium_moment
+            + gain * movement_premium
+        ),
+        updates=state.updates + 1,
+    )
+    updated.validate()
+    return updated, gain
+
+
+def decide_tracked_q_covariance_controller(
+    state: ControllerState,
+    *,
+    batch_size: int,
+    pi_min: float,
+    pi_max: float,
+    cold_start_pi: float,
+    cold_start_steps: int,
+) -> ControllerDecision:
+    """Choose the predictable covariance-only action from exact weight state."""
+
+    values = (pi_min, pi_max, cold_start_pi)
+    if any(not math.isfinite(value) or not 0.0 <= value <= 1.0 for value in values):
+        raise ValueError("controller bounds and cold start must be in [0, 1]")
+    if pi_min > pi_max:
+        raise ValueError("pi_min cannot exceed pi_max")
+    if (
+        not isinstance(cold_start_steps, int)
+        or isinstance(cold_start_steps, bool)
+        or cold_start_steps < 0
+    ):
+        raise ValueError("cold_start_steps must be a nonnegative integer")
+    covariance_pi = tracked_q_covariance_pi(state.q, batch_size)
+    cold_start = state.accepted_steps < cold_start_steps
+    raw_pi = cold_start_pi if cold_start else covariance_pi
+    applied_pi, lower_active, upper_active = _bounded(raw_pi, pi_min, pi_max)
+    return ControllerDecision(
+        policy="tracked_q_covariance",
+        raw_pi=raw_pi,
+        applied_pi=applied_pi,
+        plugin_pi=covariance_pi,
+        cold_start_pi=cold_start_pi,
+        oracle_pi=None,
+        theory_oracle_pi=None,
+        lower_bound_active=lower_active,
+        upper_bound_active=upper_active,
+        cold_start_active=cold_start,
+        ewc_odds=(1.0 - applied_pi) / applied_pi,
+        signal_squared=0.0,
+        trace_estimate=0.0,
+        oracle_trace_estimate=None,
+        old_covariance_trace=state.q,
+        new_covariance_trace=1.0 / batch_size,
+        effective_size=state.effective_size,
+        risk_metric="fisher",
+        uncertainty_scale_semantics="equal_shape_scale_cancels",
+        zero_information_fallback=False,
+    )
+
+
+def decide_decomposed_risk_controller(
+    state: ControllerState,
+    movement_state: DiscountedMovementState,
+    *,
+    batch_size: int,
+    fisher: FisherRepresentation,
+    pi_min: float,
+    pi_max: float,
+    cold_start_pi: float,
+    cold_start_steps: int,
+    movement_half_life_steps: float,
+    trace_epsilon: float,
+) -> DecomposedRiskDecision:
+    """Choose pi from exact covariance state and discounted movement only."""
+
+    movement_state.validate()
+    covariance_decision = decide_tracked_q_covariance_controller(
+        state,
+        batch_size=batch_size,
+        pi_min=pi_min,
+        pi_max=pi_max,
+        cold_start_pi=cold_start_pi,
+        cold_start_steps=cold_start_steps,
+    )
+    signal = _quadratic_energy(state.trend, "fisher", fisher)
+    trace = state.trace_estimate(trace_epsilon)
+    unsupported = not math.isfinite(trace) or trace <= trace_epsilon
+    gain = update_step_half_life_gain(movement_half_life_steps)
+    instantaneous = None
+    updated = movement_state
+    if not unsupported:
+        instantaneous = batch_size * signal / trace
+        updated, gain = advance_discounted_movement(
+            movement_state,
+            instantaneous,
+            half_life_steps=movement_half_life_steps,
+        )
+
+    covariance_pi = tracked_q_covariance_pi(state.q, batch_size)
+    decomposed_pi = decomposed_fixed_batch_pi(
+        updated.movement_premium_moment,
+        state.q,
+        batch_size,
+    )
+    cold_start = state.accepted_steps < cold_start_steps
+    raw_pi = (
+        cold_start_pi
+        if cold_start
+        else covariance_pi
+        if unsupported
+        else decomposed_pi
+    )
+    applied_pi, lower_active, upper_active = _bounded(raw_pi, pi_min, pi_max)
+    old_covariance = trace * state.q
+    new_covariance = trace / batch_size
+    controller = ControllerDecision(
+        policy="decomposed_edr",
+        raw_pi=raw_pi,
+        applied_pi=applied_pi,
+        plugin_pi=(
+            covariance_pi
+            if unsupported
+            else decomposed_fixed_batch_pi(instantaneous, state.q, batch_size)
+        ),
+        cold_start_pi=cold_start_pi,
+        oracle_pi=None,
+        theory_oracle_pi=None,
+        lower_bound_active=lower_active,
+        upper_bound_active=upper_active,
+        cold_start_active=cold_start,
+        ewc_odds=(1.0 - applied_pi) / applied_pi,
+        signal_squared=signal,
+        trace_estimate=trace,
+        oracle_trace_estimate=None,
+        old_covariance_trace=old_covariance,
+        new_covariance_trace=new_covariance,
+        effective_size=state.effective_size,
+        risk_metric="fisher",
+        uncertainty_scale_semantics="fisher_weighted_covariance_dimension",
+        zero_information_fallback=unsupported,
+    )
+    return DecomposedRiskDecision(
+        controller=controller,
+        state=updated,
+        gain=gain,
+        covariance_only_pi=covariance_pi,
+        instantaneous_movement_premium=instantaneous,
+        discounted_movement_premium=updated.movement_premium_moment,
+        unsupported_scale_fallback=unsupported,
+    )
 
 
 def decide_discounted_risk_controller(

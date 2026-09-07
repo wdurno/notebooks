@@ -7,16 +7,22 @@ import torch
 from src.config import ControllerConfig
 from src.controller import (
     ControllerState,
+    DiscountedMovementState,
     DiscountedRiskState,
     OracleControllerInput,
     accept_controller_step,
+    advance_discounted_movement,
     advance_discounted_risk,
     bernoulli_theory_optimal_pi,
+    decide_decomposed_risk_controller,
     decide_controller,
     decide_discounted_risk_controller,
+    decide_tracked_q_covariance_controller,
+    decomposed_fixed_batch_pi,
     effective_size_update,
     fixed_batch_optimal_pi,
     half_life_gain,
+    tracked_q_covariance_pi,
     update_step_half_life_gain,
 )
 from src.representations import DenseFisher, DiagonalFisher, LowRankDiagonalFisher
@@ -96,6 +102,127 @@ def test_discounted_risk_half_life_and_minimizer() -> None:
     assert pi == pytest.approx(0.75)
     assert risk(pi) < risk(pi - 0.05)
     assert risk(pi) < risk(pi + 0.05)
+
+
+def test_tracked_q_covariance_matches_stationary_half_action() -> None:
+    batch_size = 4
+    action = 0.2
+    stationary_q = action / (batch_size * (2.0 - action))
+
+    assert tracked_q_covariance_pi(stationary_q, batch_size) == pytest.approx(
+        action / 2.0
+    )
+    assert decomposed_fixed_batch_pi(0.0, stationary_q, batch_size) == pytest.approx(
+        action / 2.0
+    )
+
+
+def test_decomposed_recommendation_increases_with_movement() -> None:
+    baseline = decomposed_fixed_batch_pi(0.0, q=0.02, batch_size=4)
+    moving = decomposed_fixed_batch_pi(0.5, q=0.02, batch_size=4)
+
+    assert baseline == pytest.approx(tracked_q_covariance_pi(0.02, 4))
+    assert moving > baseline
+
+
+def test_discounted_movement_half_life() -> None:
+    state = DiscountedMovementState()
+    for _ in range(4):
+        state, gain = advance_discounted_movement(
+            state,
+            2.0,
+            half_life_steps=4.0,
+        )
+
+    assert gain == pytest.approx(update_step_half_life_gain(4.0))
+    assert state.movement_premium_moment == pytest.approx(1.0)
+
+
+def test_tracked_q_controller_uses_pretransition_state_and_cold_start() -> None:
+    state = ControllerState.initialize(2, initial_effective_size=100.0)
+    cold = decide_tracked_q_covariance_controller(
+        state,
+        batch_size=4,
+        pi_min=0.01,
+        pi_max=0.95,
+        cold_start_pi=0.05,
+        cold_start_steps=1,
+    )
+    released = decide_tracked_q_covariance_controller(
+        dataclasses.replace(state, accepted_steps=1),
+        batch_size=4,
+        pi_min=0.01,
+        pi_max=0.95,
+        cold_start_pi=0.05,
+        cold_start_steps=1,
+    )
+
+    assert cold.applied_pi == pytest.approx(0.05)
+    assert cold.cold_start_active is True
+    assert released.raw_pi == pytest.approx(tracked_q_covariance_pi(state.q, 4))
+    assert released.applied_pi == pytest.approx(0.04 / 1.04)
+
+
+def test_decomposed_controller_smooths_only_movement() -> None:
+    state = ControllerState(
+        trend=torch.tensor([1.0, 0.0], dtype=torch.float64),
+        q=0.02,
+        residual_moment=2.0,
+        scale_moment=1.0,
+        environment_distance=1.0,
+        previous_pi=0.05,
+        accepted_steps=8,
+    )
+    result = decide_decomposed_risk_controller(
+        state,
+        DiscountedMovementState(),
+        batch_size=4,
+        fisher=DiagonalFisher(torch.ones(2, dtype=torch.float64)),
+        pi_min=0.01,
+        pi_max=0.95,
+        cold_start_pi=0.05,
+        cold_start_steps=8,
+        movement_half_life_steps=1.0,
+        trace_epsilon=1e-12,
+    )
+
+    instantaneous = 4.0 * 1.0 / 2.0
+    discounted = 0.5 * instantaneous
+    assert result.instantaneous_movement_premium == pytest.approx(instantaneous)
+    assert result.discounted_movement_premium == pytest.approx(discounted)
+    assert result.covariance_only_pi == pytest.approx(
+        tracked_q_covariance_pi(state.q, 4)
+    )
+    assert result.controller.raw_pi == pytest.approx(
+        decomposed_fixed_batch_pi(discounted, state.q, 4)
+    )
+    assert result.unsupported_scale_fallback is False
+
+
+def test_decomposed_controller_falls_back_to_covariance_when_scale_missing() -> None:
+    state = dataclasses.replace(
+        ControllerState.initialize(2, initial_effective_size=100.0),
+        accepted_steps=8,
+        trend=torch.ones(2, dtype=torch.float64),
+    )
+    result = decide_decomposed_risk_controller(
+        state,
+        DiscountedMovementState(),
+        batch_size=4,
+        fisher=DiagonalFisher(torch.ones(2, dtype=torch.float64)),
+        pi_min=0.01,
+        pi_max=0.95,
+        cold_start_pi=0.05,
+        cold_start_steps=8,
+        movement_half_life_steps=8.0,
+        trace_epsilon=1e-12,
+    )
+
+    assert result.unsupported_scale_fallback is True
+    assert result.instantaneous_movement_premium is None
+    assert result.controller.raw_pi == pytest.approx(
+        tracked_q_covariance_pi(state.q, 4)
+    )
 
 
 def test_discounted_risk_controller_accumulates_before_final_clipping() -> None:

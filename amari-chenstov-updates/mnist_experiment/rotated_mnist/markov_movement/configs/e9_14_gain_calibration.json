@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "metric_schema_version": 1,
+  "artifact_schema_version": 1,
+  "study": "e9_14",
+  "experiment": "rotated_mnist_plan9_e9_14_structured_gain_calibration",
+  "replica_id": "replica-0001",
+  "replica_seed": 590114,
+  "e9_13_run_path": "cache/mnist_experiment/rotated_mnist/plan9/e9_13/rotated_mnist_plan9_e9_13_dual_timescale_gain__replica-0001__6fe2754caee9fc0e",
+  "e9_13_run_id": "rotated_mnist_plan9_e9_13_dual_timescale_gain__replica-0001__6fe2754caee9fc0e",
+  "mean_energy_reduction_threshold": 0.25,
+  "minimum_passing_groups": 3,
+  "reversal_ratio_limit": 1.25,
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float64",
+    "num_workers": 0,
+    "deterministic_algorithms": true
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "bundle_id": "plan9-extension-e9-7-through-e9-10-v2",
+  "schema_version": 1,
+  "units": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_extensions",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_7_opportunity.json",
+        "--resume"
+      ],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_7/rotated_mnist_plan9_e9_7_movement_opportunity__replica-0001__6109e38ad6876642/COMPLETED",
+      "dependencies": [],
+      "unit_id": "e9.7-movement-opportunity"
+    },
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_extensions",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_8_cross_moment.json",
+        "--resume"
+      ],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_8/rotated_mnist_plan9_e9_8_lagged_cross_moment__replica-0001__3a5f6c720b52b9f4/COMPLETED",
+      "dependencies": ["e9.7-movement-opportunity"],
+      "unit_id": "e9.8-lagged-cross-moment"
+    },
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_attribution",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_9_affinity_attribution.json",
+        "--resume"
+      ],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_9/rotated_mnist_plan9_e9_9_affinity_attribution_v2__replica-0001__c40471e46aa06d8f/COMPLETED",
+      "dependencies": ["e9.8-lagged-cross-moment"],
+      "unit_id": "e9.9-affinity-attribution-v2"
+    },
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_path_screen",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_10_path_screen.json",
+        "--resume"
+      ],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_10/rotated_mnist_plan9_e9_10_opportunity_path_screen__replica-0001__2051e6774c0e6333/COMPLETED",
+      "dependencies": ["e9.7-movement-opportunity"],
+      "unit_id": "e9.10-opportunity-path-screen"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "bundle_id": "plan9-retrospective-primary-v2",
+  "schema_version": 1,
+  "units": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_retrospective",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_1_primary.json",
+        "--resume"
+      ],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_1/rotated_mnist_plan9_e9_1_anchor_cancellation__replica-0001__b1234a5779ce2e42/COMPLETED",
+      "dependencies": [],
+      "unit_id": "e9.1-anchor-cancellation"
+    },
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_retrospective",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_2_primary_v2.json",
+        "--resume"
+      ],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_2/rotated_mnist_plan9_e9_2_smooth_drift_v2__replica-0001__b4c838dcc0b327bf/COMPLETED",
+      "dependencies": [
+        "e9.1-anchor-cancellation"
+      ],
+      "unit_id": "e9.2-smooth-drift-v2"
+    }
+  ]
+}

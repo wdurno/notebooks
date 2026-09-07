@@ -1,0 +1,24 @@
+{
+  "action_lift_threshold": 0.02,
+  "artifact_schema_version": 1,
+  "deployed_batch_size": 4,
+  "e9_7_run_id": "rotated_mnist_plan9_e9_7_movement_opportunity__replica-0001__6109e38ad6876642",
+  "e9_7_run_path": "cache/mnist_experiment/rotated_mnist/plan9/e9_7/rotated_mnist_plan9_e9_7_movement_opportunity__replica-0001__6109e38ad6876642",
+  "experiment": "rotated_mnist_plan9_e9_10_opportunity_path_screen",
+  "fixed_pi": 0.05,
+  "initial_effective_size": 30000,
+  "maximum_mean_drift_variation_ratio": 0.25,
+  "metric_schema_version": 1,
+  "replica_id": "replica-0001",
+  "replica_seed": 590110,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "dtype": "float64",
+    "num_workers": 0
+  },
+  "schema_version": 1,
+  "study": "e9_10",
+  "sustained_steps": 8,
+  "transitions_per_arrow": [20, 10, 5, 2]
+}

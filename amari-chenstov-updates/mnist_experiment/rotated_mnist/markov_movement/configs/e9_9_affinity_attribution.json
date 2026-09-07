@@ -1,0 +1,21 @@
+{
+  "artifact_schema_version": 1,
+  "condition": "decomposed_edr",
+  "e9_1_run_id": "rotated_mnist_plan9_e9_1_anchor_cancellation__replica-0001__b1234a5779ce2e42",
+  "e9_1_run_path": "cache/mnist_experiment/rotated_mnist/plan9/e9_1/rotated_mnist_plan9_e9_1_anchor_cancellation__replica-0001__b1234a5779ce2e42",
+  "experiment": "rotated_mnist_plan9_e9_9_affinity_attribution_v2",
+  "metric_schema_version": 1,
+  "optimizer_step_budgets": [50, 100],
+  "primary_optimizer_step_budget": 50,
+  "replica_id": "replica-0001",
+  "replica_seed": 590109,
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cuda",
+    "dtype": "float32",
+    "num_workers": 0
+  },
+  "schema_version": 1,
+  "sensitivity_transitions_per_group": 12,
+  "study": "e9_9"
+}

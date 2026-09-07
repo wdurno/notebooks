@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "bundle_id": "plan9-gain-e9-12-through-e9-14",
+  "units": [
+    {
+      "unit_id": "e9.12-predictable-gain-contract",
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_gain_contract",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_12_gain_contract.json",
+        "--resume"
+      ],
+      "dependencies": [],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_12/rotated_mnist_plan9_e9_12_predictable_gain_contract__replica-0001__1a7d0f76ca07aefe/COMPLETED"
+    },
+    {
+      "unit_id": "e9.13-dual-timescale-gain",
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_gain_estimator",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_13_gain_estimator.json",
+        "--resume"
+      ],
+      "dependencies": ["e9.12-predictable-gain-contract"],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_13/rotated_mnist_plan9_e9_13_dual_timescale_gain__replica-0001__6fe2754caee9fc0e/COMPLETED"
+    },
+    {
+      "unit_id": "e9.14-structured-gain-calibration",
+      "command": [
+        "{python}",
+        "-m",
+        "mnist_experiment.rotated_mnist.markov_movement.run_gain_calibration",
+        "--config",
+        "mnist_experiment/rotated_mnist/markov_movement/configs/e9_14_gain_calibration.json",
+        "--resume"
+      ],
+      "dependencies": ["e9.13-dual-timescale-gain"],
+      "completed_marker": "cache/mnist_experiment/rotated_mnist/plan9/e9_14/rotated_mnist_plan9_e9_14_structured_gain_calibration__replica-0001__b97ed267c1bc27da/COMPLETED"
+    }
+  ]
+}

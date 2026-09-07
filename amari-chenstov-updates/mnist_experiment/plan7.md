@@ -11,6 +11,13 @@ one narrower question:
 The audit is artifact-only. It must not train a model, calculate scores, update
 a Fisher matrix, download data, or alter a completed artifact.
 
+Phase 5 reopens the audit after Plan 8's decomposed-controller stress test.
+Plan 8 confirmed that the tracked-$q_t$ covariance component behaves as Plan 7
+predicted, but found that the online movement premium remains severely
+inflated. The new phase treats this as unfinished Plan 7 estimation work. It
+uses Plan 8 only as immutable diagnostic evidence and does not revise or
+repair that experiment.
+
 ## Motivation
 
 Plan 6 compared an online trend statistic with the centered marginal target
@@ -48,6 +55,7 @@ artifacts can distinguish much of this ambiguity without another compute run.
 | 2 | Artifact-only audit execution | Complete |
 | 3 | Audit notebook and evidence classification | Complete |
 | 4 | Mathematical reintegration | Complete |
+| 5 | Movement-premium calibration audit | Complete |
 
 ## Scientific Contract
 
@@ -527,3 +535,207 @@ pre-decision $q_t\to q_{t+1}$ timeline. It defines $c$ at the same point as the
 constant historical action that generates $q_\infty(c)$, not as another
 controller parameter. Appendix B now references these definitions instead of
 reintroducing them.
+
+## Phase 5: Movement-Premium Calibration Audit
+
+### Goal
+
+Determine why the predictable online movement premium used by Plan 8 is much
+larger than the population movement premium, separating numerator error,
+covariance-scale error, smoothing lag, and closed-loop state feedback before
+designing another controller.
+
+### Motivation
+
+Plan 7 established the covariance-only recommendation
+
+$$
+\pi_t^{\mathrm{cov},q}=\frac{m_tq_t}{1+m_tq_t}
+$$
+
+and its stationary $c/2$ approximation. Plan 8 preserved that exact scalar
+state and estimated only the unknown movement premium:
+
+$$
+\widehat\rho_t
+=\frac{m_t\widehat S_t}{\widehat D_t},
+\qquad
+\widehat S_t=\widehat d_t^TG_t\widehat d_t,
+\qquad
+\widehat D_t
+=\frac{\overline{\|r_t\|_{G_t}^2}}
+{\overline{\pi_t^2(q_t+1/m_t)}}.
+$$
+
+It then applied
+
+$$
+\widehat\pi_t
+=\frac{\overline\rho_t+m_tq_t}
+{\overline\rho_t+m_tq_t+1}.
+$$
+
+For the Plan 8 single-lap decomposed path, the mean tracked-$q_t$ components
+were `.0808` on linear and `.0664` on sigmoid. Substituting the same endogenous
+$q_t$ values into the Plan 6 population coefficients gives mean instantaneous
+marginal recommendations `.0835` and `.0692`. The covariance component is
+therefore close to its intended target. The complete deployed means were
+instead `.1706` and `.1448`, so the remaining inflation is carried by
+$\widehat\rho_t$, not by the factor-of-two covariance correction.
+
+The population equal-shape target is
+
+$$
+\rho_t^\star=\frac{m_tS_t}{D_t},
+\qquad
+S_t=\|d\theta_t^\star\|_{\mathcal I_t}^2,
+\qquad
+D_t=\operatorname{tr}(\mathcal I_tK_t).
+$$
+
+When the old and new covariance shapes differ, retain the more general
+instantaneous marginal recommendation
+
+$$
+\pi_{B,t}^{\mathrm{marg}}
+=\frac{S_t+q_tD_t^{\mathrm{old}}}
+{S_t+q_tD_t^{\mathrm{old}}+D_t^{\mathrm{new}}/m_t}
+$$
+
+rather than forcing the discrepancy into one scalar $D_t$. This population
+quantity is a one-step Fisher-risk estimand, not a path-optimal policy.
+
+### Scope
+
+1. Load the completed Plan 6 full-path oracle, Plan 7 coefficient audit, and
+   Plan 8 single- and double-lap rechallenges as read-only artifacts. Validate
+   completion markers, source IDs, schedule hashes, parameter layout, batch
+   size, and exact transition identity before combining any scalar.
+2. Match Plan 8 transitions to Plan 6 population quantities by schedule,
+   current angle, next angle, and direction. The double-lap audit may reuse a
+   repeated angle-direction pair only when the exogenous population state is
+   identical. Never interpolate a missing oracle transition.
+3. Recalculate the instantaneous marginal oracle using each Plan 8
+   trajectory's own pre-transition $q_t$. Never reuse the historical Plan 5
+   EDR $q_t$ stored inside the Plan 6 oracle estimate.
+4. For every post-cold transition, record
+   $\widehat S_t$, $S_t$, $\widehat D_t$, $D_t^{\mathrm{old}}$,
+   $D_t^{\mathrm{new}}$, $\widehat\rho_t$, $\rho_t^\star$, the discounted
+   movement premium, covariance-only action, complete action, and population
+   marginal recommendation.
+5. Quantify numerator, denominator, ratio, and action errors using signed
+   error, absolute error, robust log ratio, schedule/leg means, reversal
+   windows, and cold-start-separated summaries. Report undefined ratios
+   explicitly when population movement is numerically negligible.
+6. Construct two counterfactual recommendations without changing a learner:
+
+   - online $\widehat S_t$ with population covariance scale; and
+   - population $S_t$ with online $\widehat D_t$.
+
+   Compare both with the all-population recommendation to identify whether
+   numerator or denominator replacement removes the action inflation.
+7. Decompose the quadratic trend bias using
+
+   $$
+   \mathbb E\|\widehat d_t\|_{\mathcal I_t}^2
+   =\|\mathbb E\widehat d_t\|_{\mathcal I_t}^2
+   +\operatorname{tr}\!\left(
+   \mathcal I_t\operatorname{Cov}(\widehat d_t)
+   \right).
+   $$
+
+   Identify which terms could arise from finite-batch optimizer variation,
+   realized anchor catch-up, temporal curvature, and imperfect Fisher or
+   covariance calibration. Do not label any unidentifiable term as sampling
+   variance from a single trajectory.
+8. Test whether movement-premium smoothing reduces variance while preserving
+   systematic bias. Keep instantaneous error, discounted error, and
+   closed-loop $q_t$ feedback separate; smoothing cannot be credited with
+   removing a biased level.
+9. Write a new immutable audit artifact under
+   `cache/mnist_experiment/rotated_mnist/phase7/movement_premium_audit/` and an
+   artifact-only notebook
+   `mnist_experiment/rotated_mnist/movement_premium_audit.ipynb`. Preserve all
+   Plan 6--8 artifacts unchanged.
+10. End with a feasibility decision for estimating $\rho_t^\star$ from one
+    low-data trajectory. Do not implement a corrected controller, run another
+    learner trajectory, or change `mathematical_overview.ipynb` in this phase.
+
+### Evidence Classification
+
+- **Numerator-dominated:** substituting population $S_t$ removes the material
+  recommendation inflation while substituting population covariance scale
+  does not.
+- **Scale-dominated:** substituting the population covariance scale removes
+  the inflation while substituting population movement does not.
+- **Mixed and calibratable:** both substitutions remove material, separately
+  identifiable portions of the error and suggest an estimable correction.
+- **Structurally underidentified:** the required trend variance, anchor mean,
+  or covariance shape cannot be estimated from one trajectory without an
+  additional assumption or repeated local probes.
+- **Estimand mismatch:** $\widehat d_t$ primarily follows realized anchor
+  catch-up rather than population movement, so variance reduction alone cannot
+  make it estimate $S_t$.
+
+These labels concern estimation of the instantaneous movement premium. They do
+not establish path-optimality or predictive value for an actuated policy.
+
+### Verification
+
+- All calculations are artifact-only and reproduce each stored Plan 8 action
+  from pre-transition state to floating-point precision.
+- The tracked-$q_t$ component agrees with the Plan 7 covariance result before
+  movement is analyzed.
+- Exact transition matching covers every included single- and double-lap
+  point; unmatched points fail clearly rather than being dropped.
+- Counterfactuals change exactly one coefficient family at a time.
+- Cold-start actions, clipping, and unsupported-scale fallbacks are excluded
+  from estimator-error means and reported separately.
+- No inverse or pseudoinverse of an empirical Fisher is introduced.
+- The notebook contains no training, score calculation, Fisher update,
+  download, or artifact repair.
+- Focused unit tests cover transition matching, coefficient substitution,
+  zero-movement behavior, and numerator/denominator attribution.
+
+### Check-in
+
+Review whether $\widehat\rho_t$ fails because of a correctable coefficient
+calibration problem or because population movement is not identifiable from a
+single low-data learner path. Decide only after that review whether to derive a
+new estimator, collect repeated local probes, test a closed-loop population
+oracle, or leave movement-aware adaptive composition unresolved.
+
+### Execution Record
+
+Phase 5 is complete. The artifact-only audit is stored at
+`cache/mnist_experiment/rotated_mnist/phase7/movement_premium_audit/rotated_mnist_phase7_movement_audit_primary_v2__replica-0001__c24262eac6ec1625`.
+It combines 400 Plan 8 transitions with 160 unique Plan 6 population
+transitions; 240 repeated double-lap uses are explicit. Every transition
+matched exactly. Maximum action, plug-in, population-coefficient, and $q_t$
+reconstruction errors were all below $1.2\times10^{-16}$.
+
+The evidence classification is **numerator-dominated**. Across single- and
+double-lap linear and sigmoid paths, the median
+$\widehat S_t/S_t$ ratio ranged from about `299` to `1276`, while the median
+$\widehat D_t/D_t^{\mathrm{new}}$ ratio ranged from about `26` to `123`.
+Substituting population $S_t$ alone reduced recommendation MAE to
+`.00285`--`.00310`. Substituting population covariance shapes alone instead
+produced MAE from `.541` to `.773`: the inflated online covariance scale was
+partially masking the much larger movement-energy inflation.
+
+Discounting did not remove the systematic level error. Applied-action MAE was
+`.0764`--`.0871` on the single lap and `.0601`--`.1414` on the double lap.
+The first eight transitions after each reversal retain positive action error,
+with smoothing sometimes reducing and sometimes increasing it. The result is
+therefore consistent with an estimand mismatch: the online trend contains
+realized-anchor catch-up and optimizer motion in addition to population
+movement. Their separate contributions remain structurally underidentified
+from one low-data trajectory.
+
+The reader-facing result is
+`mnist_experiment/rotated_mnist/movement_premium_audit.ipynb`. It loads only
+the completed audit artifact, presents realized actions, coefficient ratios,
+one-coefficient counterfactuals, and reversal-window diagnostics, and executes
+in under three seconds. No learner trajectory, completed source artifact,
+controller rule, or mathematical theory was changed. Verification completed
+with `440 passed, 2 skipped` unit tests.
