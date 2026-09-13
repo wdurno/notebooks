@@ -5,7 +5,11 @@
 > action $\bar\pi$ and control the rate at which the encountered population
 > moves through Fisher distance so that $\bar\pi$ is locally risk-consistent.
 
-**Status:** Draft phased plan. No phase has been executed.  
+**Status:** Stopped at the Phase 1d gate. Multi-start refinement in Phase 1c
+did not identify a credible local population-risk path, and the post-gate
+direct finite-EWC response surface then rejected the oracle mechanism without
+using that path. The 128-replicate expansion and Phase 2 were not run.
+
 **Dependency:** Satisfied by the rejected Plan 9 E9.14 structured-gain gate
 and the subsequent user-approved pivot.  
 **Scope:** A modular theoretical alternative, not a reinterpretation of the
@@ -306,9 +310,12 @@ large predictive experiments.
 
 | Phase | Name | Status | Check-in decision |
 |---|---|---|---|
-| 0 | Mathematical and comparison contract | Pending | Is pace genuinely distinct from adaptive composition? |
-| 1 | Oracle Fisher-speed feasibility map | Pending | Is the inverted target attainable on rotated MNIST? |
-| 2 | Finite-EWC one-step fidelity pilot | Pending | Does the surrogate survive the actual optimizer? |
+| 0 | Mathematical and comparison contract | Complete | Yes: pace changes $P_{t+1}$; fixed composition remains unchanged. |
+| 1 | Oracle Fisher-speed feasibility map | Complete; gate rejected | No: the retained local population path does not identify stable Fisher speed. |
+| 1b | Finite excess-risk pace map | Complete; gate rejected | The metric is globally coherent, but the retained checkpoints are not credible local population optima. |
+| 1c | Multi-start population-reference repair | Complete; gate rejected | No: refinement lowers NLL but does not identify angle-specific local optima. |
+| 1d | Direct finite-EWC response surface | Complete; gate rejected | No: the empirical optimum remains below `.05` throughout the pace range. |
+| 2 | Finite-EWC one-step fidelity pilot | Not run | The repaired finite-risk prerequisite failed. |
 | 3 | Pace scheduler and immutable pipeline | Pending | Is the implementation causal and exactly paired? |
 | 4 | Oracle-paced development trajectories | Pending | Does information pacing improve allocation? |
 | 5 | Deployable information-source decision | Pending | What may an application know before acting? |
@@ -386,6 +393,20 @@ unchanged in both EWC and $q_t$, and the comparison cannot reward stalling. The
 check-in reviews the mathematical contract and may close Plan 10 without any
 learner computation.
 
+### Execution Record
+
+**Complete.** The detachable contract is implemented in
+`rotated_mnist/pace_control/theory.py` and summarized in
+`rotated_mnist/pace_control/CONTRACT.md`. The exact risk minimizer, inverse
+target, closed-form $q_t$ transient and equilibrium, centered and noncentered
+pace roots, and causal action target are covered by deterministic tests.
+
+The gate passes. Pace is defined only on the next encountered distribution;
+$\bar\pi$ enters the EWC objective and concentration recursion unchanged; and
+the paired comparison contract counts non-completion as failure. The
+small-noise displays remain candidate limits subject to the seven-item proof
+checklist in the contract rather than being promoted prematurely.
+
 ## Phase 1: Oracle Fisher-Speed Feasibility Map
 
 ### Goal
@@ -428,6 +449,423 @@ approximation is useful at the proposed increments, and the route finishes
 without spending most updates at a pace bound. Failure means this rotated-MNIST
 mechanism cannot test Plan 10; it does not justify tuning bounds until it passes.
 
+### Execution Record
+
+**Complete; gate rejected.** The artifact-only audit is implemented under
+`rotated_mnist/pace_control/` and recorded immutably at
+`cache/mnist_experiment/rotated_mnist/plan10/phase1/rotated_mnist_plan10_phase1_fisher_speed_feasibility__replica-0001__34f1eda2cc232ef6`.
+The companion `rotated_mnist/pace_control_feasibility.ipynb` loads only that
+completed artifact.
+
+The 79-angle Plan 6 source is dense enough to contain the complete uniform
+$.75^\circ$ grid, but its fitted Euclidean population path is not locally
+smooth enough for the pace estimand. On the 41-point uniform map:
+
+- 9 debiased Fisher-speed estimates are exactly zero because the neighboring
+  retained reference parameter vectors are identical;
+- only `0.731` of the larger finite secants have energy at least as large as
+  their nested smaller secants, below the frozen `.95` monotonicity gate;
+- median relative error of $J(\varphi)\delta^2$ is `0.506`, just beyond the
+  frozen `.50` gate;
+- the implied 86-update route is on a predeclared pace bound for `0.965` of
+  updates, including 32 infeasible zero-speed steps; and
+- route completion itself succeeds in 344 observations only because clipping
+  supplies nearly every action.
+
+The failure is not caused by Fisher inversion: all calculations use rank-16
+quadratic forms. Paired local-MLE clouds debias finite-reference movement, and
+no parameter interpolation is used. The gate therefore rejects this retained
+rotated-MNIST population path as a basis for local pace control. It does not
+falsify the algebraic inversion.
+
+## Phase 1b: Finite Excess-Risk Pace Map
+
+### Goal
+
+Replace the unstable derivative of approximate neural-network optima with a
+finite, functionally meaningful population-risk quantity while preserving the
+same local Fisher-risk estimand to second order.
+
+### Frozen Estimand And Design
+
+For retained reference fits at angles $\varphi$ and $\varphi+\delta$, define
+
+$$
+S_{\mathrm{NLL}}(\varphi,\delta)
+=2\left[
+\mathcal L_{\varphi+\delta}(\theta^\star(\varphi))
+-\mathcal L_{\varphi+\delta}(\theta^\star(\varphi+\delta))
+\right].
+$$
+
+At an interior optimum under the information identity,
+$S_{\mathrm{NLL}}=\|d\theta\|_{\mathcal I}^2+O(\|d\theta\|^3)$. Estimate both
+losses on the same 8,000-observation test panel excluded from the Plan 6
+reference checkpoint selection. This common random panel controls comparison
+noise and avoids validation-selection optimism.
+
+Use every retained angle on the uniform $.75^\circ$ grid. At each route state,
+evaluate all grid-aligned candidate endpoints remaining in the current leg and
+choose the smallest increment whose finite energy attains its corresponding
+$S_t^\dagger$. If none attains the target, advance to the leg endpoint and
+record the miss. Do not interpolate parameter vectors, smooth energies, impose
+an outcome-selected pace cap, or clamp negative excess risk.
+
+Before execution, freeze these gates:
+
+1. at least `.80` of directed finite energies are nonnegative;
+2. at least `.80` of nested candidate increments are energy-monotone;
+3. at least `.80` of route updates attain their movement target;
+4. median relative target error among selected updates is at most `.50`;
+5. every target is nonnegative and the full double-lap route completes within
+   400 updates; and
+6. the finite energy has positive rank correlation with the rank-16 Fisher
+   quadratic where that quadratic is nonzero.
+
+### Gate And Check-In
+
+Proceed to Phase 2 only if all six checks pass. A failure means neither the
+derivative nor this finite-risk measurement can support pace control on the
+retained rotated-MNIST reference path. Passing supports a finite-step applied
+controller, not an infinitesimal Fisher-speed theorem.
+
+### Execution Record
+
+**Complete; gate rejected.** The immutable artifact is
+`cache/mnist_experiment/rotated_mnist/plan10/phase1b/rotated_mnist_plan10_phase1b_finite_excess_risk__replica-0001__6c442a2a4d3dad03`.
+It cross-evaluates all 41 retained uniform-grid reference states on 8,000
+paired test observations excluded from Plan 6 checkpoint selection, producing
+1,640 directed finite-risk comparisons in 15.75 seconds on CUDA.
+
+The finite measurement improves global coherence but not the required local
+identification:
+
+- global finite excess risk and debiased Fisher energy have Spearman
+  correlation `0.699`, and `0.853` of nested finite energies are monotone;
+- local correlation for increments at most $3^\circ$ is only `0.088`;
+- `0.770` of directed excess risks are nonnegative, below the frozen `.80`
+  gate, and the local nonnegative fraction is only `0.617`;
+- only 2 of 41 nominal target-angle reference states minimize held-out NLL
+  among the retained checkpoints at their own angle; median regret to the best
+  retained state is `0.0149` NLL; and
+- the discrete route uses 12 large moves with median pace $6.375^\circ$, but
+  only `0.583` attain their movement target. Its median selected-target error
+  is nevertheless a reasonable `0.121`.
+
+The negative risks are not clamped, and no smoothing or parameter
+interpolation is used. These results support finite excess NLL as a more robust
+global movement diagnostic, while showing that the inherited continuation
+checkpoints are not sufficiently optimized local estimates of
+$\theta^\star(\varphi)$ for pace control. Repair now requires a new reference-
+estimation protocol, not threshold or pace-bound tuning.
+
+## Phase 1c: Multi-Start Population-Reference Repair
+
+### Goal
+
+Test whether the Phase 1b failure belongs to its finite-risk measurement or to
+the inherited early-stopped continuation checkpoints. Preserve the finite-risk
+estimand and all earlier artifacts.
+
+### Frozen Reference Protocol
+
+1. Use the same 41-angle uniform $.75^\circ$ grid, 10,000-observation Plan 6
+   fitting sample, 2,000-observation checkpoint-selection panel, and disjoint
+   8,000-observation held-out panel.
+2. At each target angle, cross-evaluate the retained states on the selection
+   panel and choose the three lowest-NLL states with distinct state hashes.
+   These are starting points only; selection-panel outcomes never enter the
+   held-out audit.
+3. Independently refine all three starts on the target-angle fitting sample for
+   exactly 12 Adam epochs at the inherited learning rate. Run every epoch even
+   when validation stops improving, retain each start's best selection-panel
+   epoch including epoch zero, then select the candidate with the lowest
+   selection-panel NLL.
+4. Pair shuffle order across the three starts at an angle, reset model and
+   optimizer state for every fit, and record all start identities, seeds,
+   histories, selected epochs, and parameter hashes.
+5. Cross-evaluate the 41 selected states only after selection is complete.
+   Construct finite excess risks on held-out observations without clamping,
+   smoothing, parameter interpolation, or Fisher recomputation.
+
+Before execution, freeze the inexpensive screen gates:
+
+- at least `.80` of selected angle-specific references are best among the 41
+  repaired states on their own held-out angle;
+- median held-out regret to the best repaired state is at most `.002` NLL;
+- at least `.80` of all directed and `.80` of at-most-$3^\circ$ finite excess
+  risks are nonnegative; and
+- at least `.80` of nested finite energies are monotone.
+
+### Conditional Expensive Work
+
+Only after the screen passes, recompute rank-8 and rank-16 score Fishers and 64
+paired local-MLE clouds of size 2,048 around the selected states. Re-run the
+Phase 1b route with the same target-attainment and target-error gates. Only a
+passing rebuilt route may unlock Phase 2.
+
+### Gate And Check-In
+
+Failure of the inexpensive screen stops before Fisher and covariance work.
+Failure after rebuilding those quantities stops before Phase 2. Do not rescue
+the result by adding starts, epochs, smoothing, or relaxed gates after observing
+the outcome; those would be new experiments requiring review.
+
+### Execution Record
+
+**Complete; inexpensive gate rejected.** The immutable artifact is
+`cache/mnist_experiment/rotated_mnist/plan10/phase1c/screen/rotated_mnist_plan10_phase1c_reference_repair_screen__replica-0001__26787e9eeaccf60d`.
+It contains 123 complete 12-epoch refinements, all selection histories, the 41
+selected states, and a disjoint 8,000-observation held-out cross-evaluation.
+The screen finished in 197.8 seconds on CUDA.
+
+Refinement materially lowered each state's own-angle loss: median held-out NLL
+improvement over the inherited references is `0.0221`, and no selected fit used
+epoch zero. That optimization gain does not recover the needed local estimand:
+
+- only 4 of 41 (`0.0976`) selected states minimize held-out NLL at their own
+  angle, far below the frozen `.80` gate;
+- median held-out regret is `0.00353` NLL, above the frozen `.002` limit, with
+  maximum regret `0.0238`;
+- `0.901` of all directed finite energies are nonnegative and `0.917` of
+  nested energies are monotone, so their global structure improves; but
+- for increments at most $3^\circ$, only `0.614` of finite energies are
+  nonnegative, essentially unchanged from Phase 1b's `0.617` and below the
+  frozen `.80` local gate.
+
+The selected held-out minimizer is typically offset from the nominal angle and
+only 16 selected states minimize any of the 41 held-out angle losses. The
+failure therefore survives substantially better optimization: rotated MNIST's
+loss surface does not identify the required fine angle-indexed population path
+at this model and data resolution. The conditional Fisher and local-MLE rebuild
+was not run, preserving the predeclared compute gate.
+
+## Amendment: Phase 1d Direct Finite-EWC Response Surface
+
+### Rationale And Scope
+
+This amendment was written after observing the Phase 1--1c failures. It is a
+new, explicitly post-gate experiment rather than a reinterpretation of those
+results. The earlier phases asked whether retained neural-network references
+identify a sufficiently smooth map from angular pace to local Fisher movement.
+They do not. Phase 1d asks the narrower decision-level question that remains:
+
+> As the next-distribution angular increment increases, does the empirical
+> finite-EWC risk-minimizing composition move through
+> $\bar\pi=.05$ at an attainable pace?
+
+The screen evaluates actual finite-EWC updates and their next-distribution
+predictive NLL. It does not estimate $\theta^\star(\varphi)$, differentiate a
+reference path, fit a Fisher-speed map, or use a reference Fisher to define
+parameter error. Predictive NLL is used here to test the finite learner's
+decision consequence directly; it does not replace the Fisher-risk estimand in
+the inverted theory or establish the formula for $S_t^\dagger$.
+
+### Empirical Object
+
+Let
+
+$$
+\mathcal A_j=
+(\widehat\theta_j,\widehat{\mathcal I}_j,q_j,\varphi_j,h_j)
+$$
+
+be a frozen deployed anchor state, including its route history $h_j$ and next
+travel direction $\sigma_j\in\{-1,+1\}$. For candidate pace magnitude
+$\delta\geq0$, paired batch replicate $r$, and diagnostic composition $\pi$,
+define
+
+$$
+\widehat\theta^+_{j,r}(\delta,\pi)
+=\operatorname{EWC}\!\left(
+\mathcal A_j,
+B_{j,r}^{(m=4)}(\varphi_j+\sigma_j\delta);
+\pi
+\right).
+$$
+
+Every value of $\pi$ receives the same four observations, initialization,
+Fisher summary, optimizer budget, and random state within a paired
+$(j,r,\delta)$ block. The population decision risk is
+
+$$
+\mathcal R_j(\delta,\pi)
+=\mathbb E_{B^{(m=4)}}\mathbb E_{Z\sim
+P_{\varphi_j+\sigma_j\delta}}
+L\!\left(Z;\widehat\theta^+_j(\delta,\pi)\right),
+$$
+
+estimated on a common high-sample panel excluded from anchor selection and
+all four-observation update batches. Define the diagnostic discrete optimum
+and regret of the proposed fixed action by
+
+$$
+\widehat\pi_j^\star(\delta)
+\in\arg\min_{\pi\in\Pi}\widehat{\mathcal R}_j(\delta,\pi),
+\qquad
+\Delta_j(\delta)
+=\max_{\pi\in\Pi}
+\left[
+\mathcal R_j(\delta,.05)-\mathcal R_j(\delta,\pi)
+\right].
+$$
+
+Offline variation of $\pi$ is a diagnostic intervention only. A successful
+screen would still deploy `.05` unchanged; it would not authorize an adaptive
+$\pi$ controller.
+
+### Frozen Screen Design
+
+1. Freeze the `linear/fixed_pi005` states from the immutable Plan 5 double-lap
+   development run at accepted steps 20, 40, 60, and 100. These are,
+   respectively, the first $15^\circ$ ascent with next direction positive, the
+   $30^\circ$ reversal with next direction negative, the $15^\circ$ return leg
+   with next direction negative, and the matched second-ascent $15^\circ$
+   revisitation with next direction positive. The source run is
+   `rotated_mnist_phase5_double_lap_development__replica-0001__e8d49d4599638493`.
+   Record the model, Fisher, concentration, and source hashes before fitting;
+   no predictive outcome selects an anchor.
+2. Use pace magnitudes
+   $\delta\in\{0,.375,.75,1.125,1.5,3.0\}$ degrees. Zero is a no-movement
+   diagnostic. Only `.375` through `1.5` degrees belong to the original
+   physical action range and may satisfy the viability gate. The `3.0` degree
+   point characterizes a missed crossing but can never rescue the gate.
+3. Use the diagnostic grid
+   $\Pi=\{.0125,.025,.0375,.05,.075,.10,.15\}$. This brackets the frozen
+   action and its original `.025` and `.10` sensitivities without searching a
+   dense outcome-adapted grid.
+4. Draw exactly $m=4$ fresh observations for every update replicate. Pair each
+   batch across all values of $\pi$ and keep batches independent across
+   replicates. Name and record separate anchor, batch, optimizer, and
+   evaluation seeds.
+5. Reset model and optimizer state for every fit. Use the historical EWC
+   objective and optimizer budget unchanged except for the diagnostic value of
+   $\pi$. Do not warm-start neighboring response-surface cells.
+6. Make next-distribution mean NLL the sole gate metric. Report accuracy,
+   old-angle NLL, parameter displacement, optimizer convergence, and compute
+   only as diagnostics. No downstream trajectory metric may select an anchor,
+   pace, action, or threshold.
+7. Use a fixed high-sample evaluation panel that was not used to fit or select
+   the anchor states. If no existing panel satisfies that contract, create and
+   hash a deterministic panel in the new Phase 1d namespace before any EWC
+   fit. Reuse the same endpoint panel across $\pi$ values.
+8. Do not use repaired reference states, local-MLE clouds, Fisher inversion,
+   parameter interpolation, or smoothing across angles. The direct surface is
+   the artifact; a fitted curve may be shown only as a visual aid.
+
+### Fail-Fast Execution
+
+Run a tiny schema smoke first. Then run a coarse screen with 16 paired batch
+replicates at one predeclared anchor in each direction. Proceed to the full
+four-anchor pilot only if each direction has at least one in-bound pace at
+which `.05` is not already demonstrably worse than the best diagnostic action.
+A one-sided paired simultaneous interval whose lower endpoint exceeds `.002`
+NLL at every in-bound pace is an immediate rejection for that direction.
+
+The full pilot uses 32 new paired batch replicates per
+$(\text{anchor},\delta)$ block; coarse-screen replicates are excluded from its
+confirmatory summaries. Bootstrap whole four-observation batch replicates and
+form simultaneous intervals over $\Pi$ within an anchor and pace. A
+deterministic expansion to 128 new replicates is permitted only when all
+qualitative gates below pass but the `.002`-NLL equivalence decision remains
+uncertain. The expansion rule, seeds, and work-unit identities must be in the
+configuration before the coarse screen begins.
+
+The `.002` threshold is inherited as the predeclared practically meaningful
+local NLL scale from Phase 1c. It must not be changed after inspecting this
+response surface.
+
+### Gate And Interpretation
+
+Phase 1d passes only if all of the following hold:
+
+1. Every anchor has at least one pace in the original `.375`--`1.5` degree
+   range for which the simultaneous 95% upper confidence bound for
+   $\Delta_j(\delta)$ is at most `.002` NLL.
+2. The response surface contains a resolved low-to-high composition shift as
+   pace increases in both travel directions. A surface on which every tested
+   $\pi$ is practically indistinguishable does not validate the inversion.
+3. The empirical minimizing action is nondecreasing with pace in at least
+   `.80` of adjacent in-bound comparisons after ties within `.002` NLL are
+   treated as ties rather than ordered evidence.
+4. At least three of the four anchor-specific `.05`-competitive paces are
+   strictly inside the physical pace interval. A crossing found only at zero,
+   `3.0` degrees, or a physical bound is a failure, not a clipping policy.
+5. The result does not collapse by travel direction or revisitation history,
+   and numerical or optimizer failures affect fewer than `.01` of fits.
+
+Failure means the current inverted optimal-$\pi$ pace strategy is not viable
+for this Rotated-MNIST learner, even as an oracle mechanism, and Plans 2--8
+remain closed. A mixed, flat, boundary-only, or direction-specific result is
+also a rejection; it is not a prompt to tune the action or pace grids.
+
+Passing establishes only the existence of an empirical finite-EWC crossing.
+It does not rehabilitate the rejected Fisher-speed map, validate
+$S_t^\dagger$, identify a causal pace estimator, or demonstrate trajectory
+benefit. A passing artifact therefore requires a new check-in to decide
+whether to replace the blocked reference-based Phase 2 with an explicitly
+empirical calibration problem. It does not automatically authorize Phase 3.
+
+### Artifact Contract
+
+Any implementation belongs under `rotated_mnist/pace_control/` and writes only
+to a new immutable `cache/mnist_experiment/rotated_mnist/plan10/phase1d/`
+namespace. Store the resolved configuration, source anchor hashes, all seeds,
+per-fit optimizer diagnostics, per-replicate NLLs, paired contrasts,
+simultaneous intervals, compute counts, completion status, and the predeclared
+gate decision. The results notebook remains artifact-only. No Phase 1--1c
+artifact or historical learner run may be modified.
+
+### Execution Record
+
+**Complete; gate rejected.** The implementation, frozen stage configurations,
+paired-bootstrap analysis, resumable work units, and immutable artifact writer
+live under `rotated_mnist/pace_control/`. Source reconstruction checks every
+stored parameter hash and pre-update Fisher trace through the latest requested
+anchor before running a disposable fit.
+
+The schema smoke completed 168 fits in 49.4 seconds with no failures. The
+16-replicate coarse screen then completed 1,344 fits in 356.7 seconds. It
+formally opened the full pilot because the simultaneous lower regret bounds
+did not reject `.05` at every pace in either direction, even though `.05` was
+not point-competitive at either anchor. The completed coarse artifact is
+`rotated_mnist_plan10_phase1d_coarse_response_surface__replica-0001__8eaf26f3187d51b9`.
+
+The decisive full artifact is
+`rotated_mnist_plan10_phase1d_full_response_surface__replica-0001__2917fd3e4ea0fb0b`.
+It ran 5,376 fresh finite-EWC fits at four anchors and 32 paired batch
+replicates per anchor and pace. All fits succeeded, and the run completed in
+1,390.5 seconds on CUDA. The direct response surface rejects the mechanism:
+
+- among the 16 in-bound anchor/pace cells, the empirical minimizing action was
+  `.0125` in 10 cells, `.025` in 5, and `.0375` in 1; it was never `.05` or
+  larger;
+- `.05` was not point-competitive within `.002` NLL at any anchor or pace. Its
+  in-bound point regret ranged from `0.0113` to `0.1447` NLL, with median
+  `0.0612`;
+- no anchor had an in-bound pace whose simultaneous 95% upper regret bound was
+  at most `.002`, and therefore no interior crossing satisfied the equivalence
+  gate;
+- the contrast
+  $\mathcal R(.025)-\mathcal R(.075)$ remained negative over the complete
+  in-bound grid. On the negative direction its simultaneous upper bounds were
+  below zero at every pace; on the positive direction `.075` was never
+  significantly preferred. Thus neither direction exhibited the required
+  low-to-high composition crossing; and
+- the tie-aware empirical minimizer was nondecreasing in `0.917` of adjacent
+  comparisons, but this weak ordering cannot rescue a surface that remains
+  entirely below `.05`. Even the diagnostic `3.0`-degree points selected only
+  `.0125` or `.025`.
+
+The frozen gate fails fixed-action competitiveness, a resolved crossing in
+both directions, and sufficient interior crossings. Numerical reliability and
+the `.80` monotonicity check pass. Because the failure is qualitative rather
+than equivalence uncertainty, the predeclared 128-replicate expansion is not
+authorized. This result bypasses the disputed population-reference path and
+shows that the current inverted optimal-$\pi$ pace strategy is not viable for
+this Rotated-MNIST learner even as an oracle mechanism. It does not falsify the
+algebraic inversion in a model where the scalar-affine assumptions hold.
+
 ## Phase 2: Finite-EWC One-Step Fidelity Pilot
 
 ### Goal
@@ -456,6 +894,16 @@ Continue if `.05` is competitive with the paired empirical optimum across the
 representative anchors and the affine prediction has useful rank correlation
 with realized risk. A clear optimum elsewhere or direction-dependent collapse
 rejects the current inversion before trajectory experiments.
+
+### Execution Record
+
+**Not run.** Phases 1 and 1b rejected the inherited population-geometry
+prerequisite. Phase 1c then improved the references' held-out NLL but failed
+the frozen local-identification screen. Phase 1d subsequently tested fresh EWC
+fits over pace and composition directly and found no empirical crossing at
+`.05`, so this phase remains closed for a second, reference-independent reason.
+No Phase 2 learner artifact was created and no historical artifact was
+modified.
 
 ## Phase 3: Pace Scheduler and Immutable Pipeline
 

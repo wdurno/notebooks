@@ -1,0 +1,31 @@
+{
+  "artifact_schema_version": 2,
+  "batch_size": 4,
+  "experiment": "rotated_mnist_plan10_phase1_fisher_speed_feasibility",
+  "fisher_rank": 16,
+  "fixed_pi": 0.05,
+  "initial_q": 0.000033333333333333335,
+  "local_mle_replicates": 64,
+  "local_mle_sample_size": 2048,
+  "map_increment_degrees": 0.75,
+  "maximum_bound_fraction": 0.5,
+  "maximum_median_relative_error": 0.5,
+  "maximum_pace_degrees": 1.5,
+  "maximum_route_steps": 400,
+  "metric_schema_version": 1,
+  "minimum_monotone_fraction": 0.95,
+  "minimum_pace_degrees": 0.375,
+  "oracle_run_id": "rotated_mnist_phase6_oracle_full_path__replica-0001__7c7dc5936d08fb91",
+  "oracle_run_path": "cache/mnist_experiment/rotated_mnist/phase6/oracle/rotated_mnist_phase6_oracle_full_path__replica-0001__7c7dc5936d08fb91",
+  "replica_id": "replica-0001",
+  "replica_seed": 101001,
+  "route_knots_degrees": [0.0, 15.0, 30.0, 0.0, 15.0, 30.0],
+  "runtime": {
+    "deterministic_algorithms": true,
+    "device": "cpu",
+    "dtype": "float64",
+    "num_workers": 0
+  },
+  "schema_version": 1,
+  "validation_increments_degrees": [0.75, 1.5]
+}

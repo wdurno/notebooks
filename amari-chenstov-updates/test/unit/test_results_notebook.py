@@ -57,6 +57,18 @@ MARKOV_GAIN_NOTEBOOK = (
     / "rotated_mnist"
     / "markov_gain_results.ipynb"
 )
+PACE_CONTROL_FEASIBILITY_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "pace_control_feasibility.ipynb"
+)
+PACE_CONTROL_RESPONSE_SURFACE_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "pace_control_response_surface_results.ipynb"
+)
 FINDINGS_NOTEBOOK = REPO_ROOT / "mnist-findings.ipynb"
 MATHEMATICAL_OVERVIEW = REPO_ROOT / "mathematical_overview.ipynb"
 README = REPO_ROOT / "README.md"
@@ -322,6 +334,48 @@ def test_markov_movement_extensions_notebook_is_artifact_only_and_gated() -> Non
     assert "run_extensions" not in source
     assert "run_attribution" not in source
     assert "run_path_screen" not in source
+
+
+def test_pace_control_feasibility_notebook_is_artifact_only_and_gated() -> None:
+    notebook = load_notebook(PACE_CONTROL_FEASIBILITY_NOTEBOOK)
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "Fisher-speed feasibility" in source
+    assert "Finite-step check" in source
+    assert "Phase 1 is rejected under its frozen gate" in source
+    assert "Phase 1b: finite excess risk" in source
+    assert "only 2 of 41 nominal target checkpoints" in source
+    assert "Phase 1c: multi-start reference repair" in source
+    assert "only 4 of 41 repaired states" in source
+    assert "Phase 1d: direct finite-EWC response surface" in source
+    assert "The empirical optimum stays below `.05`" in source
+    assert "No Fisher/cloud rebuild, 128-replicate expansion" in source
+    assert "run_feasibility" not in source
+    assert "run_finite_risk" not in source
+    assert "run_reference_repair" not in source
+    assert "run_response_surface" not in source
+
+
+def test_pace_control_response_surface_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(PACE_CONTROL_RESPONSE_SURFACE_NOTEBOOK)
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "Finite-EWC response paths" in source
+    assert "not online controller trajectories" in source
+    assert "Profile optimum" in source
+    assert "Average batchwise optimum" in source
+    assert "Full risk landscape" in source
+    assert "No low-to-high crossing" in source
+    assert "does not produce a crossing through fixed `.05`" in source
+    assert "run_response_surface" not in source
 
 
 def test_phase7_human_documentation_states_conditional_evidence() -> None:

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "protocol_file": "mnist_experiment/rotated_mnist/configs/phase5_double_lap_smoke.json",
+  "seed_root": 20260912,
+  "development_replicas": 12,
+  "smoke": true
+}
