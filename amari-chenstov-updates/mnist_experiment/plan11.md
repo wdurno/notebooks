@@ -1,8 +1,15 @@
 # Implementation Plan 11: Shrunk Local-Pi Recommendations
 
 **Status:** Phases 0--2 completed; the original Phase 3 precision gate did
-not open. The focused own-anchor follow-up below is specified, implemented,
-and smoke-tested; no full confirmation replica has started. See
+not open. The focused own-anchor Phase 3 follow-up below completed all 352
+fresh paired replicas on both schedules. It found no favorable mean NLL-AUC
+effect; see [the Phase 3 findings](rotated_mnist/plan11/PHASE3_FINDINGS.md).
+The post-Phase 3 artifact-only mechanistic audit is complete; see
+[the Phase 3A findings](rotated_mnist/plan11/PHASE3A_MECHANISM_AUDIT.md) and
+[the executed audit notebook](rotated_mnist/shrunk_pi_mechanism_audit.ipynb).
+A prioritized, fresh suboptimal-anchor follow-up is specified as Phase 3B
+but has not been implemented, smoke-tested, or launched. The $.01$ backup
+has not started. See also
 [the Phase 0--2 findings](rotated_mnist/plan11/PHASE0_2_FINDINGS.md).
 
 Plan 11 asks a deliberately practical question: can a small, predictable
@@ -126,6 +133,307 @@ artifact is an explicit incomplete/failure state, never a silently dropped
 replica. Keep the original Phase 2 discovery plots and stopped decision
 visually separate from the new confirmation results. The notebook only reads
 artifacts; it never trains, resumes, downloads, or repairs a run.
+
+### Phase 3A: Artifact-Only Mechanistic Audit
+
+**Status:** Completed 2026-09-16 using only the immutable Phase 2 and focused
+Phase 3 artifacts. No learner compute, artifact mutation, backup comparison,
+or Phase 3B work was started. The results and ranked explanations are recorded
+in [the audit report](rotated_mnist/plan11/PHASE3A_MECHANISM_AUDIT.md) and
+[the executed notebook](rotated_mnist/shrunk_pi_mechanism_audit.ipynb).
+
+Treat this phase as a versioned lab notebook for explaining the completed
+Phase 3 result, not as another opportunity to find a favorable endpoint. It
+may read only immutable Phase 2 and focused Phase 3 artifacts. It must not
+train, resume, download data, repair artifacts, mutate a completed run, or
+start the $.01$ backup. All analyses are explicitly post hoc and exploratory;
+they cannot change the Phase 3 estimands, $p$-values, classification, or
+conclusion. In particular, no outcome-selected exposure window, class subset,
+lag, or schedule may become a confirmatory success criterion.
+
+Create `rotated_mnist/shrunk_pi_mechanism_audit.ipynb` and a concise
+`rotated_mnist/plan11/PHASE3A_MECHANISM_AUDIT.md`. The notebook must validate
+the frozen ledgers and artifact hashes before calculating anything, use the
+same complete paired replicas for every contrast, keep linear and sigmoid
+separate, and record the exact analysis-code version. It should function as
+a readable scientific record with observations, candidate explanations,
+tests that discriminate among them, results, limitations, and prospective
+next experiments.
+
+At minimum, examine:
+
+1. The exposure-indexed paired NLL, accuracy, Brier, and calibration
+   differences alongside the raw recommendation, applied action, $q_t$,
+   discounted movement premium, and cold-start boundary. Running AUC is a
+   cumulative restatement of earlier differences, not independent evidence.
+2. Digit-9 versus non-9 NLL and available class-wise recall/confusion
+   diagnostics, asking whether probability calibration changes without an
+   accompanying argmax change. Do not promote a favorable class subgroup.
+3. Fisher-update summaries, optimizer events, accepted displacement norms,
+   and available EWC diagnostics around the first-ascent separation. State
+   clearly that the existing coupled treatment cannot identify whether an
+   effect came from the EWC weight, direct-EMA Fisher refresh, or their
+   interaction.
+4. Descriptive lead/lag and replica-heterogeneity relationships between
+   action excess and paired predictive differences. Label these endogenous
+   associations, not causal estimates, and do not attach inferential meaning
+   to a lag selected after viewing the curves.
+5. The numerical-pairing audit: same-action cold-start parameter equality,
+   policy-specific randomized-Lanczos seeds, pre-treatment predictive
+   differences, and their relationship with terminal effects. Quantify how
+   much this likely added noise and require common numerical-randomization
+   seeds in any prospective successor study.
+6. The development-to-confirmation reversal, including sign counts,
+   dispersion, and selection/winner's-curse as an explanation distinct from
+   a controller mechanism.
+
+Finish by ranking the surviving explanations by evidential support and
+specifying the smallest prospective experiment that would distinguish them.
+The principal candidate is a paired $2\times2$ intervention that separately
+fixes or adapts the EWC action and Fisher-refresh action, with common numerical
+randomness and fresh replicas. Any such intervention, any selected timing
+rule, and any cross-anchor or $.01$ comparison require a separately reviewed
+protocol and fresh data before execution. Phase 3A itself should require only
+local artifact parsing and plotting, ordinarily minutes of CPU time and no
+GPU learner compute.
+
+### Phase 3B: Prioritized Suboptimal-Anchor Follow-Up
+
+#### Motivation And Pilot Accounting
+
+This phase tests a weaker and more applied hypothesis than optimality: a
+strongly shrunk predictable recommendation may improve a purposefully
+imperfect fixed anchor. It does not claim to identify the best fixed action,
+prove that temporal variation is better than a matched constant action, or
+establish a generally optimal policy. The treatment is the complete
+closed-loop policy, including its effects on EWC, direct-EMA Fisher refresh,
+and $q_t$.
+
+For each development comparison, define the favorable paired whole-path
+NLL-AUC difference
+
+$$
+\Delta_r(c,\lambda,s)
+=\operatorname{NLLAUC}_{r,s}(\pi=c)
+-\operatorname{NLLAUC}_{r,s}(c,\lambda).
+$$
+
+Thus, a positive value favors the adaptive blend and a negative value favors
+the fixed anchor. The tables below record every completed same-anchor Plan 11
+pilot, not only favorable cells. The standardized effect $d$ is the paired
+mean divided by the paired sample standard deviation, and **Wins** counts
+positive replica differences out of 12.
+
+For context only, projected replica counts use the observed absolute pilot
+mean, two-sided $\alpha=.05$, power $.80$, and the one-sided 90% upper bound
+on the paired standard deviation,
+
+$$
+s_{\rm upper}
+=s\sqrt{\frac{11}{\chi^2_{.10,11}}},
+\qquad
+n
+=\left\lceil
+\frac{(z_{.975}+z_{.80})^2s_{\rm upper}^2}
+{\lvert\bar\Delta\rvert^2}
+\right\rceil,
+$$
+
+rounded up to a block of 16 with a minimum of 32 replicas. For a negative
+pilot mean, this projects significance in the harmful direction, not a
+successful adaptive treatment. The **Hours** column estimates one
+schedule-specific two-policy comparison from the measured Phase 3 rates of
+11.20 seconds for
+shared setup and approximately 59.90 seconds per full trajectory. These are
+selection-stage planning statistics subject to substantial winner's curse,
+not promises of significance.
+
+**Linear development pilots**
+
+| $(c,\lambda)$ | Mean $\Delta$ | $d$ | Wins | Projected replicas | Hours | Direction |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| $(.01,.025)$ | $-0.0046$ | $-0.037$ | 6/12 | 11,536 | 419.7 | Fixed |
+| $(.01,.05)$ | $-0.0077$ | $-0.054$ | 3/12 | 5,312 | 193.3 | Fixed |
+| $(.01,.10)$ | $-0.1025$ | $-0.998$ | 1/12 | 32 | 1.2 | Fixed |
+| $(.01,.20)$ | $-0.3728$ | $-0.787$ | 1/12 | 32 | 1.2 | Fixed |
+| $(.01,1)$ | $-58.3260$ | $-1.189$ | 0/12 | 32 | 1.2 | Fixed |
+| $(.025,.025)$ | $+0.1371$ | $+0.214$ | 6/12 | 352 | 12.8 | Blend |
+| $(.025,.05)$ | $-0.0187$ | $-0.019$ | 6/12 | 42,320 | 1,539.8 | Fixed |
+| $(.025,.10)$ | $+0.1195$ | $+0.164$ | 5/12 | 592 | 21.5 | Blend |
+| $(.025,.20)$ | $-0.5563$ | $-0.779$ | 2/12 | 32 | 1.2 | Fixed |
+| $(.025,1)$ | $-125.7724$ | $-0.523$ | 0/12 | 64 | 2.3 | Fixed |
+| $(.05,.025)$ | $+0.0548$ | $+0.037$ | 5/12 | 11,168 | 406.4 | Blend |
+| $(.05,.05)$ | $+0.1683$ | $+0.164$ | 5/12 | 576 | 21.0 | Blend |
+| $(.05,.10)$ | $-0.7140$ | $-0.471$ | 4/12 | 80 | 2.9 | Fixed |
+| $(.05,.20)$ | $-1.5178$ | $-0.585$ | 4/12 | 48 | 1.7 | Fixed |
+| $(.05,1)$ | $-47.6650$ | $-1.482$ | 0/12 | 32 | 1.2 | Fixed |
+
+**Sigmoid development pilots**
+
+Only the Phase 2 finalists and their same-anchor unshrunk controls received
+sigmoid pilots.
+
+| $(c,\lambda)$ | Mean $\Delta$ | $d$ | Wins | Projected replicas | Hours | Direction |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| $(.01,.025)$ | $+0.0066$ | $+0.049$ | 8/12 | 6,560 | 238.7 | Blend |
+| $(.01,1)$ | $-38.1810$ | $-1.305$ | 0/12 | 32 | 1.2 | Fixed |
+| $(.025,.025)$ | $+0.0357$ | $+0.074$ | 8/12 | 2,848 | 103.7 | Blend |
+| $(.025,1)$ | $-51.6982$ | $-1.365$ | 0/12 | 32 | 1.2 | Fixed |
+
+The completed independent Phase 3 confirmation is an explicit warning
+against taking these projections literally. Although $(.025,.025)$ looked
+favorable in both pilot schedules, its fresh 352-replica mean gains were
+$-0.06207$ on linear and $-0.01966$ on sigmoid. The linear interval narrowly
+excluded zero in favor of the fixed anchor, and sigmoid remained unresolved.
+
+The remaining computationally plausible positive linear leads are
+$(.05,.05)$ and $(.025,.10)$. Fixed $.01$ had the lowest development NLL AUC,
+so $.05$ and $.025$ are deliberately development-suboptimal anchors for this
+hypothesis. Both candidates nevertheless won only 5 of 12 linear replicas;
+their positive means are fragile, variance-sensitive selection statistics.
+
+#### Frozen Conditions And Estimands
+
+Run exactly the following four conditions in this priority order:
+
+| Priority | Blend versus fixed anchor | Schedule | Fresh replicas | Planning basis |
+| ---: | --- | --- | ---: | --- |
+| 1 | $(.05,.05)$ versus fixed $.05$ | Linear | 576 | Linear pilot projection |
+| 2 | $(.025,.10)$ versus fixed $.025$ | Linear | 592 | Linear pilot projection |
+| 3 | $(.05,.05)$ versus fixed $.05$ | Sigmoid | 576 | Opportunity-budget cohort |
+| 4 | $(.025,.10)$ versus fixed $.025$ | Sigmoid | 592 | Opportunity-budget cohort |
+
+The sigmoid candidates have no pilot data. Their counts deliberately mirror
+their candidates' linear cohorts to give both schedules a substantial chance
+within the available compute window; they are fixed budget allocations, not
+claims of 80% power. Do not substitute the $.01$ backup, $(.025,.025)$, a
+different gain, or a different schedule if an earlier condition disappoints.
+
+For each candidate and schedule, the estimand is the schedule-specific mean
+paired whole-path current-environment NLL-AUC gain $\mathbb E[\Delta_r]$.
+Use a two-sided 95% Student-$t$ interval and an unadjusted two-sided $p$-value
+over complete independent replica pairs. A favorable result has positive mean
+gain and $p<.05$. Also report median, win count, accuracy AUC, resource and
+safety diagnostics, but do not reinterpret a mean test as evidence that most
+replicas improve.
+
+These are four separate nominal 5% tests. Report every result and do not make
+an unadjusted familywise claim that at least one policy works. The queue must
+continue through its frozen order regardless of completed-condition outcomes.
+Do not stop early for significance, enlarge an exciting condition, reduce an
+unpromising condition, or transfer unused replicas between conditions. Any
+later extension requires an independently frozen cohort or a separately
+predeclared sequential design.
+
+#### Pairing And Freshness
+
+Freeze 592 new replica identities before the first trajectory, with all seeds
+disjoint from development, Phase 3, and every historical run. Conditions 1
+and 3 use identities 1 through 576; conditions 2 and 4 use identities 1
+through 592. A replica identity may share its fitted initialization, initial
+Fisher, evaluation panels, and appropriate schedule stream across conditions,
+but every policy must recompute its complete closed-loop trajectory.
+
+Within each fixed-versus-blend pair, share initialization, initial Fisher,
+arrivals, evaluation observations, and all named component seeds unrelated to
+the treatment. In particular, use common randomized-Lanczos probes or seeds
+within a pair. Verify exact same-action parameter and Fisher equality through
+the eight-update cold start before accepting the pair. After treatment actions
+separate, common numerical randomness remains paired even though its inputs
+and resulting states may differ. Record every seed and stream hash.
+
+The two candidates may share replica assets and same-schedule arrivals for
+efficiency, which correlates their estimates but does not merge their
+estimands or statistical units. Each candidate-schedule test still uses only
+its own complete fixed-versus-blend pairs. Historical or pilot replicas never
+enter a Phase 3B interval.
+
+#### Compute And Storage Budget
+
+The frozen ledger contains
+
+$$
+2(576)+2(592)+2(576)+2(592)=4{,}672
+$$
+
+full learner trajectories and 592 shared setup artifacts. At the measured
+Phase 3 rates, shared setup requires about 1.84 hours and trajectories about
+77.73 hours, for **79.6 compute hours**. Reserve **83.5 hours**, approximately
+3.5 days, after a 5% operational allowance. This is a scheduling estimate,
+not a deadline that may truncate a condition or alter inference.
+
+Projected new artifacts require approximately 45--50 GB. At planning time the
+node had 631 GB free. Preflight must require at least 75 GB free on the target
+filesystem and fail before creating the ledger if that reserve is unavailable.
+The data cache and environment must also be verified locally so execution has
+no network dependency.
+
+#### Prioritized Resumable Execution
+
+Implement a new versioned configuration, artifact namespace, immutable
+condition ledger, and entry point; do not reuse or mutate the completed Phase 3
+namespace. The proposed entry point is
+`python -m mnist_experiment.rotated_mnist.plan11.priority_followup`.
+It must support `--resume`, `--max-pairs`, and `--max-wall-seconds`, plus a
+status-only mode that performs no learner work.
+
+The default unattended executor must:
+
+1. Traverse the four conditions only in the frozen priority order and finish
+   each target before starting the next.
+2. Complete the fixed and blend trajectories for one replica before advancing
+   to the next replica, so at most one pair is incomplete at interruption.
+3. Generate shared assets just in time and reuse them without mutation across
+   eligible conditions.
+4. Key every unit by phase version, candidate, schedule, replica, and policy;
+   write through a temporary directory and expose `COMPLETED` only after all
+   required artifacts are flushed, hashed, and validated.
+5. Hold an exclusive process lock, emit an append-only local event log and
+   machine-readable heartbeat, and run under a detached local supervisor so
+   loss of an interactive or network session does not terminate compute.
+6. On `--resume`, validate the frozen contract, source hashes, completed-file
+   hashes, and pair membership; continue at the first missing pair. Never
+   overwrite a completed unit, replace a replica, or silently omit a failure.
+7. Retry only an incomplete unit with the same frozen inputs. Preserve its
+   failure diagnostics, bound automatic retries, and stop the queue on a
+   persistent failure rather than advancing past an unresolved pair.
+
+An unexpected halt leaves all completed units immutable. Resumption fills the
+same ledger. If a condition remains incomplete, its completed pairs may be
+shown descriptively and retained for later resumption, but no ordinary final
+$p$-value or success classification is unlocked. Completing one condition
+does unlock that condition's fixed-size analysis while the executor continues
+to later priorities; its result must not alter the queue.
+
+#### Analysis And Launch Gates
+
+Create `rotated_mnist/shrunk_pi_suboptimal_anchor_results.ipynb` and a concise
+`rotated_mnist/plan11/PHASE3B_FINDINGS.md`. The notebook is artifact-only: it
+must validate the contract, ledger, hashes, pairing, cold-start equality,
+finite metrics, action reconstruction, and terminal AUC reconstruction before
+analysis. It should show per-condition completion and integrity, paired gain
+distributions, mean NLL and accuracy trajectories, running NLL/accuracy AUC,
+actions and raw recommendations, uncertainty, safety, and resource summaries.
+Keep schedules and candidates separate, and label every incomplete view as
+descriptive.
+
+Before the full ledger may launch:
+
+1. Add fast tests for deterministic ledger order and counts, disjoint seeds,
+   common within-pair numerical randomness, immutable collisions, retry and
+   resume behavior, and final-inference locking.
+2. Complete a tiny four-condition smoke in the real priority order.
+3. Force an interruption during the smoke, resume it, verify that completed
+   units are byte-identical, and confirm that no pair is skipped or replaced.
+4. Pass dataset, environment, GPU, disk-reserve, source-hash, and detached-log
+   preflight checks.
+5. Record the exact launch command and frozen study hash before the first full
+   trajectory.
+
+Phase 3A may be completed before launch and may motivate canceling Phase 3B.
+It may not silently modify this design. Any change motivated by that audit
+requires a versioned amendment before the first Phase 3B trajectory; after
+launch, the ledger and analysis contract are immutable.
 
 ## Evidence And Scope
 

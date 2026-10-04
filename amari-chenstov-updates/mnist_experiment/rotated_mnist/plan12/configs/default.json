@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "protocol_file": "mnist_experiment/rotated_mnist/configs/phase5_double_lap_gpu.json",
+  "seed_root": 20260930,
+  "smoke": false,
+  "anchors_per_schedule": 4,
+  "local_batches_per_anchor": 32,
+  "local_target_samples": 1024,
+  "phase2_replicas": 64,
+  "phase3_checkpoints": 8,
+  "phase3_resamples": 512,
+  "phase4_replicas": 64,
+  "ridge_scale_ratios": [0.0, 0.0001, 0.001, 0.01, 0.1, 1.0]
+}

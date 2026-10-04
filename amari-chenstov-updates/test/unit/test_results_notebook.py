@@ -69,6 +69,18 @@ PACE_CONTROL_RESPONSE_SURFACE_NOTEBOOK = (
     / "rotated_mnist"
     / "pace_control_response_surface_results.ipynb"
 )
+SHRUNK_PI_MECHANISM_AUDIT_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "shrunk_pi_mechanism_audit.ipynb"
+)
+RIDGE_ESTIMATOR_HEALTH_NOTEBOOK = (
+    REPO_ROOT
+    / "mnist_experiment"
+    / "rotated_mnist"
+    / "ridge_estimator_health.ipynb"
+)
 FINDINGS_NOTEBOOK = REPO_ROOT / "mnist-findings.ipynb"
 MATHEMATICAL_OVERVIEW = REPO_ROOT / "mathematical_overview.ipynb"
 README = REPO_ROOT / "README.md"
@@ -125,6 +137,26 @@ def test_markov_gain_notebook_is_valid_and_artifact_only() -> None:
         "Plan 9 predictable-gain audit" in "".join(cell.get("source", []))
         for cell in notebook["cells"]
     )
+
+
+def test_ridge_estimator_health_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(RIDGE_ESTIMATOR_HEALTH_NOTEBOOK)
+    validate_notebook_source(notebook)
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    assert notebook["nbformat"] == 4
+    assert "Ridge regularization and estimator health" in source
+    assert "Partial views diagnose progression" in source
+    assert "Reader's glossary" in source
+    assert "A reduced QR factorization $A_t=U_{8,t}T_t$" in source
+    assert "Fixed-anchor repeated-batch ridge response" in source
+    assert "The propagated conditions differ through $R_t$" in source
+    assert "\\kappa_t=41.66\\,s_t" in source
+    assert "Exploratory MP $q_{.01}$ probe" in source
+    assert "\\kappa_t/s_t=11.818529434984821" in source
+    assert "post hoc and descriptive" in source
+    assert "does not retroactively validate" in source
+    assert "torch.load" not in source
+    assert "run_trajectory" not in source
 
 
 def test_coupled_results_notebook_is_valid_and_artifact_only() -> None:
@@ -376,6 +408,22 @@ def test_pace_control_response_surface_notebook_is_artifact_only() -> None:
     assert "No low-to-high crossing" in source
     assert "does not produce a crossing through fixed `.05`" in source
     assert "run_response_surface" not in source
+
+
+def test_shrunk_pi_mechanism_audit_notebook_is_artifact_only() -> None:
+    notebook = load_notebook(SHRUNK_PI_MECHANISM_AUDIT_NOTEBOOK)
+    validate_notebook_source(notebook)
+
+    source = "".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+    assert notebook["nbformat"] == 4
+    assert "Phase 3A mechanism audit" in source
+    assert "Numerical pairing audit" in source
+    assert "winner's curse" in source
+    assert "load_mechanism_audit" in source
+    assert "run_followup" not in source
+    assert "run_development" not in source
 
 
 def test_phase7_human_documentation_states_conditional_evidence() -> None:
