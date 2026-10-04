@@ -154,6 +154,14 @@ def test_ridge_estimator_health_notebook_is_artifact_only() -> None:
     assert "Exploratory MP $q_{.01}$ probe" in source
     assert "\\kappa_t/s_t=11.818529434984821" in source
     assert "post hoc and descriptive" in source
+    assert "## Conclusion" in source
+    assert "**Best balance:** `isotropic_ridge`" in source
+    assert "Isotropic $0.1s_t$" in source
+    assert "retained approximately 90% and 99%" in source
+    assert sum(
+        bool(cell.get("metadata", {}).get("plan12_conclusion"))
+        for cell in notebook["cells"]
+    ) == 1
     assert "does not retroactively validate" in source
     assert "torch.load" not in source
     assert "run_trajectory" not in source
