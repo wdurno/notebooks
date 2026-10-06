@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "protocol_file": "mnist_experiment/rotated_mnist/configs/phase5_double_lap_gpu.json",
+  "seed_root": 20261004,
+  "smoke": false,
+  "burn_in_candidates": [8, 16, 32],
+  "rank_candidates": [4, 8, 16],
+  "covariance_half_lives": [4.0, 8.0, 16.0],
+  "inner_steps": 12,
+  "learning_rate": 0.05,
+  "max_backtracks": 12,
+  "phase1_replicas": 4,
+  "phase2_replicas": 16,
+  "phase3_probe_replicas": 4,
+  "phase3_replicas": 16,
+  "phase4_replicas": 64,
+  "phase5_replicas": 16
+}
