@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "protocol": "plan15-v1",
+  "device": "cuda",
+  "compute_allocation_seconds": 0
+}

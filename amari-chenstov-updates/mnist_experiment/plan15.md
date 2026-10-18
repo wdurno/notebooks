@@ -899,15 +899,19 @@ Keep all scripts and small configurations in the codebase:
 - `mnist_experiment/PLAN15_HANDOFF.md`: short operator handoff, maintained during
   implementation and execution rather than embedded as a long plan status diary.
 - `test/unit/test_fisher_memory_*.py`: focused mathematical/execution tests.
-- `test/integration/test_fisher_memory_smoke.py`: explicit CPU/CUDA pipeline drills.
+- `test/integration/test_fisher_memory_resume.py`: explicit CPU/CUDA pipeline drills.
 
 Reuse tested local helpers without changing frozen Plan 14 scientific sources
-or reviving its costly orchestration. The proposed interface, not implemented
-by this draft, is:
+or reviving its costly orchestration. The implemented interface is:
 
 ```bash
-~/.venv/bin/python -m mnist_experiment.fisher_memory.run --config <config> --acceptance
-~/.venv/bin/python -u -m mnist_experiment.fisher_memory.run --config <config> --resume
+~/.venv/bin/python -m mnist_experiment.fisher_memory.run \
+  --config mnist_experiment/fisher_memory/configs/smoke.json \
+  --root cache/mnist_experiment/plan15/smoke_v1 --mode acceptance
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.run \
+  --config mnist_experiment/fisher_memory/configs/default.json \
+  --root cache/mnist_experiment/plan15/production_v1 \
+  --allocation-hours <cumulative-hours> --resume
 ~/.venv/bin/python -m mnist_experiment.fisher_memory.control status --root <study-root>
 ~/.venv/bin/python -m mnist_experiment.fisher_memory.control stop --root <study-root>
 ~/.venv/bin/python -m mnist_experiment.fisher_memory.report --root <study-root>
@@ -916,26 +920,33 @@ by this draft, is:
 Production commands use the tested CUDA environment in `~/.venv`; dataset and
 artifact paths remain arguments, not personal absolute paths in source files.
 Switching the assistant model does not itself start or authorize an experiment.
+Omit `--resume` on the first invocation. Add `--clear-stop` when deliberately
+resuming after a STOP request. The initial default allocation is zero, so a
+production run cannot start accidentally. See [PLAN15_HANDOFF.md](PLAN15_HANDOFF.md)
+for acceptance results, tested commands, and the current execution state.
 
 ## Provisional Wall-Clock Envelope
 
-These are planning ranges, not measurements of the new implementation. Account
+These are revised planning ranges informed by Phase 0's production-shaped
+timing probes, not measurements of complete production trajectories. Account
 for initialization, training, diagnostics, reports, validation, and restart
 overhead, not just time in optimization kernels. Publish revised forecasts
 after Phase 0 and Phase 1; the forecast is not permission to expand a budget.
 
 | Phase | Operator | Expected active compute | Deliverable |
 | --- | --- | --- | --- |
-| 0 | Astra | 0.5--1.5 h, plus roughly 3--6 h implementation/review effort | Tested runnable pipeline and handoff |
-| 1 | Sol | 1--3 h | Numerical/common-policy calibration and measured forecast |
-| 2 | Sol | 4--10 h | Fair A/B/C and distillation pilots in all environments |
-| 3 | Sol | 8--24 h | Fresh paired cohorts, including compute control |
-| 4 | Sol | 0.25--1 h | Artifact synthesis and concise conclusion |
+| 0 | Astra | Complete; final verification tasks total roughly 10 minutes of process time, partly overlapping, excluding implementation | Tested runnable pipeline and handoff |
+| 1 | Sol | 0.5--2 h | Numerical/common-policy calibration and measured forecast |
+| 2 | Sol | 4--8 h | Fair A/B/C and distillation pilots in all environments |
+| 3 | Sol | 5--13 h | Fresh paired cohorts, including compute control |
+| 4 | Sol | 0.1--0.5 h | Artifact synthesis and concise conclusion |
 | Optional 5 | Sol | Measured and allocated separately | Additional replicas/method or positive-count extension |
 
-The initial study is provisionally **14--40 active compute hours**, plus coding
-effort. Twenty hours remains the preferred scale, but neither a promised runtime
-nor a reason to skip eviction follow-up or give a method only a token trial.
+The remaining study is provisionally **10--24 active compute hours**, revised
+from the original 14--40-hour estimate. See the handoff for measured solve costs
+and the limits of this extrapolation. Twenty hours remains the preferred scale,
+but it is neither a promised runtime nor a reason to skip eviction follow-up
+or give a method only a token trial.
 Before production launch, record an explicit cumulative compute allocation with
 the user; this draft does not interpret the travel discussion as automatic
 authorization for four days. Once allocated, planned phases proceed without
@@ -945,6 +956,24 @@ outcomes, not significance-based extensions afterward.
 Most compute should occur under Sol: Phase 0 is deliberately small. A validated
 autonomous runner matters more than agent polling frequency. Poll sparingly,
 publish bounded health updates, and let the GPU run between substantive checks.
+
+### Phase 0 Acceptance Checkpoint
+
+Completed 2026-10-17. All A/B/C and control paths, both rotation schedules, and
+the digit-9 mixture passed CPU/CUDA acceptance and interruption recovery. The
+miniature scheduler completed calibration, screening, frozen selection, and
+closeout using smoke configurations only. The results notebook is deliberately
+concise and prominently labels these as software checks, not scientific results.
+
+The implementation uses mathematically equivalent fixed 7x7 average pooling for
+the canonical 28x28 inputs because PyTorch's adaptive-pooling CUDA backward is not
+deterministic. Numerical stop/resource exceptions propagate without being
+misclassified as invalid methods. Pre-eviction diagnostics, explicit one/two-buffer
+follow-up, and nested initial-Fisher sensitivity checks are recorded.
+
+The acceptance manifest and operator instructions are in
+[PLAN15_HANDOFF.md](PLAN15_HANDOFF.md). No production study was launched and no
+unattended Phase 0 compute remains running.
 
 ## References
 

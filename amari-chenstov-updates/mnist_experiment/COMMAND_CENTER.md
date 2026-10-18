@@ -286,3 +286,14 @@ Do not run replicas 21 through 25 merely to fill the bundle. All ten initial
 Fisher estimates reached the 32,768-score maximum without meeting the 1%
 relative six-sigma early-stop target; the analysis and notebook expose those
 diagnostics explicitly.
+
+## Plan 15 Fisher-Regularized Memory
+
+The autonomous runner and stop/resume commands are documented in
+[PLAN15_HANDOFF.md](PLAN15_HANDOFF.md). Read that handoff before launch; production
+requires an explicit cumulative compute allocation. The concise progressive
+report is [fisher_memory_results.ipynb](fisher_memory_results.ipynb).
+
+Phase 0 smoke and timing artifacts are software acceptance evidence, not
+development or confirmation results. Production calibration and experiments
+must use a new run root under the shared Plan 15 storage budget.
