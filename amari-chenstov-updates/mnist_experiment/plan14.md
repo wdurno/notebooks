@@ -2026,3 +2026,196 @@ extensions are explicit additions.
    Curvature](https://proceedings.mlr.press/v37/martens15.html). A possible
    scalable curvature backend if the gate's decision sensitivity justifies
    further approximation work after this study.
+
+## Post-Study Data Offload And Recovery
+
+This is a storage operation, not another experimental phase. Use the
+codebase utility `mnist_experiment/archive_plan14.py`; it imports no training
+code and never uses CUDA. All scripts, configurations, notebooks, and other
+source files stay in the codebase. No scripts are copied onto the backup
+drive. The destination is a required `--destination` argument: no personal
+mount path or drive identifier is hardcoded in this plan or the utility.
+
+### Scope And Capacity
+
+Read-only inspection on October 17, 2026 found approximately **546 GiB**
+allocated to `cache/mnist_experiment/akaike_score_gate`, with 210,136 files
+and 545.47 GiB of file contents. The main `default_float64` study accounts
+for approximately 529 GiB. Archive **the entire Plan 14 cache tree**, including
+pilots, CUDA preflights, historical incomplete/staging records, execution
+logs, ledgers, matrix/reference artifacts, checkpoints, rendered report
+exports, and all original completion/integrity records. Do not select only
+the final cohort or discard abandoned runs.
+
+The shared MNIST dataset and all other experiments stay on the primary
+drive. The rendered results notebook remains available there, including its
+embedded plots; analyses that reload raw artifacts require restoration.
+The current checkout retains the scientific code and its recorded source
+hashes. Commit the utility and this amendment before relying on future
+recovery from Git; the data archive is intentionally **not a code backup**.
+
+At inspection the external drive had approximately 7.3 TiB available, while
+the primary filesystem had about 49 GiB free. **The external drive was mounted
+read-only.** Establish a healthy, writable mount before launching the archive.
+The utility refuses a read-only archive destination; do not bypass filesystem
+health checks or force writes to a damaged/unclean volume to make it proceed.
+Verification and restoration can read an already completed archive from a
+read-only mount.
+
+Do not assume strong compression of floating-point tensors. The utility
+requires conservative destination capacity of uncompressed content size
+plus 3% and 1 GiB before starting, and checks space before each shard.
+Compression streams directly onto the external drive, so no full-size
+intermediate archive consumes primary space. Successful removal should
+recover approximately 546 GiB on the primary drive. A full restoration needs
+approximately 546 GiB available plus at least a 2-GiB reserve and filesystem
+overhead; retain more working headroom for subsequent analyses.
+
+### Archive And Removal Protocol
+
+1. Leave Plan 14 quiescent. The utility obtains the study's existing advisory
+   run locks without rewriting their contents, and refuses competing archive
+   operations. Do not launch a new Plan 14 writer while offloading; new
+   experiments may use their own separate cache roots normally.
+2. Freeze an inventory of every directory and regular file, including relative
+   paths, sizes, modes, nanosecond modification times, and source identity.
+   Symlinks and special files are rejected rather than silently followed.
+   Record the Git commit and actual destination filesystem UUID in the
+   external archive manifest, not in source-controlled defaults.
+3. Write independently compressed `.tar.zst` shards using Zstandard level 1
+   and two worker threads. The default target is 4 GiB of uncompressed input
+   per shard; a single larger file is never split. Compute SHA-256 while
+   reading each original file, then read back and decompress each shard,
+   checking its complete member inventory, file hashes, and compression
+   footer. Flush writes and atomically commit a checksummed shard receipt.
+4. Publish the archive's `COMPLETED` seal only after all shards are verified
+   and the source inventory still matches. This seal is separate from, and
+   does not modify, the original scientific `COMPLETED` markers. Resumption
+   checks committed shard hashes and retries only uncommitted shards.
+5. Removal is **opt-in** through `--prune-source`, or a separate `prune`
+   command requiring `--yes-delete-source`. Immediately before any deletion,
+   perform a fresh full verification of every archived shard. Then hash
+   each remaining original file against its archived content before deleting
+   it. Refuse unexpected/new or modified source entries. Record
+   `PRIMARY_REMOVED` only after the Plan 14 data tree is gone. Partial removal
+   is recoverable: rerun the same archive/removal command with `--resume`.
+
+The utility checks mount identity during processing and refuses a missing,
+replaced, wrong-UUID, or primary-filesystem destination. Do not unplug the
+drive while it runs. An I/O failure or signal leaves committed shards usable
+and unfinished work retryable. An interrupted removal can leave some data
+only on the already verified external archive, which is why the drive must
+remain healthy and attached. Once primary data are removed, this is a
+**single external copy**, not redundant backup; a second independent copy is
+recommended for irreplaceable evidence. Safely eject the drive after all
+operations finish.
+
+### Background Commands
+
+Run from the repository root with the normal project virtual environment.
+The utility requires the system `zstd` and `findmnt` commands; both were
+available at inspection. `nice` and `ionice` are used by the launch examples.
+Select a **new dedicated archive directory** beneath the mounted backup
+drive, rather than the shared directory containing unrelated backups:
+
+```bash
+source ~/.venv/bin/activate
+read -r -p "Dedicated Plan 14 archive directory: " DEST
+export DEST
+mkdir -p cache/plan14-offload-logs
+```
+
+The recommended first pass retains the primary data while creating and
+verifying the archive. It runs at low CPU and best-effort low I/O priority:
+
+```bash
+nohup nice -n 15 ionice -c 2 -n 7 \
+  python -u -m mnist_experiment.archive_plan14 archive \
+  --destination "$DEST" --resume \
+  >> cache/plan14-offload-logs/archive.log 2>&1 < /dev/null &
+```
+
+For an unattended **archive, verify, and move** in one background invocation,
+use the same command with the additional `--prune-source` flag. This is an
+explicit authorization to delete only the verified Plan 14 data tree. Do
+not run both variants concurrently. For separate removal after inspecting a
+completed archive:
+
+```bash
+nohup nice -n 15 ionice -c 2 -n 7 \
+  python -u -m mnist_experiment.archive_plan14 prune \
+  --destination "$DEST" --yes-delete-source \
+  >> cache/plan14-offload-logs/prune.log 2>&1 < /dev/null &
+```
+
+`nohup` survives terminal/client disconnection, not shutdown or reboot. The
+startup log reports the PID. Stop the actual current utility process with
+`kill -TERM PID`, then wait for it to exit before disconnecting the drive.
+Rerun the archive command with `--resume` after an interruption; include
+`--prune-source` again when removal is intended. The standalone `prune`
+command is also restartable. Never interpret a scientific `.run.lock` file's
+historical PID as an active process to signal.
+
+```bash
+tail -f cache/plan14-offload-logs/archive.log
+python -m mnist_experiment.archive_plan14 status --destination "$DEST"
+```
+
+`status` is a lightweight progress report, not a fresh integrity audit. A
+separate full audit, when desired, is:
+
+```bash
+python -m mnist_experiment.archive_plan14 verify --destination "$DEST"
+```
+
+There is no measured throughput benchmark yet. For scale, one 545-GiB pass
+at 100 MiB/s takes approximately 1.6 hours. Compression, compressed readback,
+decompression/hashing, fresh pre-removal verification, and primary-file
+checking involve multiple passes. Budget **several hours, potentially most
+of a day or longer on a slow USB connection** for the complete move, not a
+short `mv`. Compression ratio, actual drive throughput, and competition from
+the next experiment determine elapsed time. This consumes no GPU compute,
+but shares primary-disk bandwidth and some CPU/RAM; lower `--threads` to 1
+on the initial invocation if needed. The chosen compression settings are
+stored in the manifest and retained on resume.
+
+### Recovery To The Primary Drive
+
+Keep this utility in the repository and recover the corresponding Git
+checkout separately if necessary. Reconnect/mount the drive, set `DEST` to
+the existing archive directory, and ensure enough primary disk space. Stop
+any Plan 14 analysis/writer that expects its data while restoring. From the
+intended checkout:
+
+```bash
+mkdir -p cache/plan14-offload-logs
+nohup nice -n 15 ionice -c 2 -n 7 \
+  python -u -m mnist_experiment.archive_plan14 restore \
+  --destination "$DEST" --resume \
+  >> cache/plan14-offload-logs/restore.log 2>&1 < /dev/null &
+```
+
+`--repo-root` optionally selects a different checkout; the default is the
+checkout containing the utility. Restore reads and verifies the completed
+archive, extracts only inventoried regular files/directories into a unique
+staging directory under `cache/`, restores file modes and modification
+times, and publishes the entire data tree at its original relative path
+only after every shard passes. It never overwrites an existing Plan 14 data
+tree or merges into existing completed evidence. An interrupted restore
+can be rerun with `--resume`: it revalidates shards and staged bytes, so
+restart cost includes archive replay. A partially pruned original tree must
+first finish verified removal, or restoration must target another checkout.
+
+The uncompressed tree is staged once and renamed on the same filesystem,
+not duplicated into a second full-sized destination. Paths, file bytes,
+empty directories, modes, and modification times are recovered; ownership
+uses the restoring user, and ACLs/extended attributes are not preserved.
+No trajectories, notebooks, or scientific integrity records are recomputed.
+After restoration, existing analysis commands can read their original paths.
+Keep the external archive until the restored data have served their purpose.
+If using an independently copied archive on a different drive, explicitly
+add `--allow-relocated-archive` to `verify`, `restore`, or `status`. It allows
+the recorded UUID to differ, but retains mount monitoring and all content
+checks during verification/restoration; it cannot authorize archive writes
+or primary deletion. The original archive can also be used to remove an
+unchanged restored tree later via the same verified `prune` protocol.
