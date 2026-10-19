@@ -329,6 +329,27 @@ def test_budget_does_not_accept_unfinished_line_search_trial():
     assert diagnostics["final_objective"] == 4.
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("material", [False, True])
+def test_increasing_iterate_is_rejected_and_roundoff_is_not_solver_failure(monkeypatch, dtype, material):
+    start = torch.ones(1, dtype=dtype)
+    increase = .01 if material else 4 * torch.finfo(dtype).eps
+    def step(optimizer, closure):
+        initial = closure()
+        with torch.no_grad():
+            optimizer.param_groups[0]["params"][0].add_(increase)
+        closure()
+        return initial
+    monkeypatch.setattr(torch.optim.LBFGS, "step", step)
+    theta, diagnostics = learner._bounded_solve(
+        start, lambda value: (value.sum(), {}), learner.FitSettings(max_iter=2), None)
+    assert torch.equal(theta, start)
+    assert diagnostics["solver_failed"] is material
+    assert diagnostics["solver_reason"] == ("objective_increase" if material else "roundoff_stagnation")
+    assert diagnostics["rejected_objective_increase"] > 0
+    assert diagnostics["final_objective"] == diagnostics["initial_objective"]
+
+
 def test_cancel_during_objective_rolls_back_every_input(fit_inputs):
     args = fit_inputs
     original = copy.deepcopy(args)

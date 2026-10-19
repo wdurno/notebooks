@@ -239,6 +239,47 @@ def test_solver_ceiling_repair_precedes_policy_search(tmp_path):
     assert result["environments"]["rotation_linear"]["baseline"]["inner_steps"] == 100
 
 
+def test_under_solved_common_learner_gets_bounded_repair_and_visible_note(tmp_path):
+    runner = FakeRunner(tmp_path, environments=("rotation_linear",))
+    def change(value, family, phase, env, replica, treatment):
+        value["under_solved_fraction"] = 1. if treatment.inner_steps < 100 else .1
+        return value
+    runner.transform = change
+    progress = Progress()
+    result = Scheduler(runner, progress=progress).run(through_phase=1)
+    assert len(runner.calls) == 2
+    policy = result["environments"]["rotation_linear"]
+    assert policy["solver_ceiling_repair"]
+    assert policy["baseline"]["max_evaluations"] == 150
+    assert len(progress.state["changes"]) == 1
+    assert "1e-3" in progress.state["changes"][0]["problem"]
+
+
+def test_intentionally_short_smoke_does_not_expand_to_production_solver_ceiling(tmp_path):
+    runner = FakeRunner(tmp_path, environments=("rotation_linear",))
+    runner.cfg = dataclasses.replace(runner.cfg, smoke=True, inner_steps=2, max_evaluations=4)
+    runner.transform = lambda value, *args: {**value, "under_solved_fraction": 1.}
+    result = Scheduler(runner).run(through_phase=1)
+    policy = result["environments"]["rotation_linear"]
+    assert len(runner.calls) == 1
+    assert not policy["solver_ceiling_repair"]
+    assert policy["baseline"]["inner_steps"] == 2
+
+
+def test_policy_search_does_not_reselect_original_under_solved_ceiling(tmp_path):
+    runner = FakeRunner(tmp_path, environments=("rotation_linear",))
+    def change(value, family, phase, env, replica, treatment):
+        value.update(retention_ok=False, under_solved_fraction=1. if treatment.inner_steps < 100 else .1,
+                     current_auc=.5 if treatment.inner_steps < 100 else 1.)
+        return value
+    runner.transform = change
+    policy = Scheduler(runner).run(through_phase=1)["environments"]["rotation_linear"]
+    assert policy["baseline"]["inner_steps"] == 100
+    assert any(item["treatment"]["inner_steps"] == 50 for item in policy["trials"].values())
+    selected_keys = {row["key"] for row in policy["policy_selection"]["table"]}
+    assert all(policy["trials"][key]["treatment"]["inner_steps"] == 100 for key in selected_keys)
+
+
 def test_invalid_method_is_isolated_and_never_receives_predictive_trials(tmp_path):
     runner = FakeRunner(tmp_path, environments=("rotation_linear",))
     def invalidate(value, env, treatment):

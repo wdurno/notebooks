@@ -12,6 +12,17 @@ from mnist_experiment.fisher_memory.runner import common_fd_step
 from mnist_experiment.fisher_memory import acceptance
 
 
+def test_progress_preserves_significant_changes_across_restart(tmp_path):
+    import json
+    from mnist_experiment.fisher_memory.config import Config
+    from mnist_experiment.fisher_memory.run import Progress
+
+    changes = [{"problem": "numerical ceiling", "change": "bounded common repair"}]
+    (tmp_path / "status.json").write_text(json.dumps({"changes": changes, "phase": "phase2"}))
+    progress = Progress(SimpleNamespace(root=tmp_path), Config(device="cpu"))
+    assert progress.state["changes"] == changes
+
+
 def test_production_needs_explicit_allocation(tmp_path):
     with pytest.raises(ValueError, match="positive compute allocation"):
         main(["--config", str(PACKAGE / "configs/default.json"), "--root", str(tmp_path / "study")])

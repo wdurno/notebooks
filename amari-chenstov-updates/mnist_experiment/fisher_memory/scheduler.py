@@ -36,7 +36,7 @@ from typing import Any
 
 from .artifacts import ArtifactError
 from .config import Config, METHODS, Treatment, content_hash
-from .control import ResourceLimit, StopRequested
+from .control import ResourceLimit, StopRequested, utc_now
 from .metrics import paired_summary
 
 
@@ -327,8 +327,21 @@ class Scheduler:
             trials[treatment.key] = {"treatment": treatment.mapping(), "rows": rows}
             return rows
         default_rows = trial(baseline)
-        solver_repair = any(r.get("solver_ok") is False for r in default_rows)
+        solver_repair = any(r.get("solver_ok") is False
+                            or (not self.cfg.smoke and r.get("under_solved_fraction", 0.) > .5)
+                            for r in default_rows)
         if solver_repair and baseline.inner_steps < 100:
+            if self.progress is not None:
+                change = {"date": utc_now(), "revision": "Sol numerical repair v4",
+                          "phase": "phase1", "environment": env,
+                          "problem": "Common learner failed or most updates retained gradients above 1e-3 at the solve limit.",
+                          "change": "Common ceiling: 100 iterations / at least 150 closures. Rounding-sized rejected increases retain the accepted iterate. Directional mathematical checks use a bounded decreasing-radius ladder; the training radius is unchanged.",
+                          "affected_results": f"{env} common-policy development; previous run roots remain separate.",
+                          "validation": "Development-only diagnostic; common ceilings and dtype-aware stopping apply to all treatments. Rejected increase and tolerance are recorded.",
+                          "next": "Re-evaluate the common policy before predictive screening."}
+                changes = self.progress.state.get("changes", [])
+                recorded = any(c.get("problem") == change["problem"] and c.get("environment") == env for c in changes)
+                self._status(changes=changes if recorded else [*changes, change])
             baseline = dataclasses.replace(baseline, inner_steps=100,
                                             max_evaluations=max(150, baseline.max_evaluations),
                                             label="common-solver-ceiling-repair")
@@ -344,7 +357,11 @@ class Scheduler:
                                                      ridge_multiplier=ridge)
                     if candidate.key not in trials:
                         trial(candidate)
-            healthy = {key: item["rows"] for key, item in trials.items() if health(item["rows"])}
+            # Keep the original short solve as an audit, not as a policy contender after repair.
+            eligible = {key: item for key, item in trials.items()
+                        if item["treatment"]["inner_steps"] == baseline.inner_steps
+                        and item["treatment"]["max_evaluations"] == baseline.max_evaluations}
+            healthy = {key: item["rows"] for key, item in eligible.items() if health(item["rows"])}
             if healthy:
                 # A broken default is not a valid paired reference. Every item
                 # here already passed both predeclared acquisition/retention checks.
@@ -353,7 +370,7 @@ class Scheduler:
                 selection = {"selected": selected, "classification": "healthy_common_policy",
                              "rule": "among policies passing acquisition and retention checks, minimum current AUC then cost"}
             else:
-                valid = {key: item["rows"] for key, item in trials.items()
+                valid = {key: item["rows"] for key, item in eligible.items()
                          if all(not r["nonfinite"] and r.get("solver_ok") is not False for r in item["rows"])}
                 reference = next(iter(valid.values()), default_rows)
                 selection = select_candidate(reference, valid, retention_margin=self.cfg.retention_margin)

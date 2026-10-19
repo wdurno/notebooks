@@ -283,10 +283,18 @@ def audit(
     try:
         directional_reference = _evaluate(lambda p: exact_directional_values(
             model, layout, p, inputs, unit[None], chunk_size=settings.chunk_size)[0], point, check_stop)
-        function = lambda p: step_kl_values(model, layout, p, inputs, local_delta,
-                                           min_norm=0.)
-        row = _evaluate(function, point, check_stop)
-        agreement = _agreement(row, directional_reference, ltm, stm)
+        candidates = []
+        radii = dict.fromkeys(min(radius, settings.direction_max_norm)
+                              for radius in (1e-3, 5e-4, 2.5e-4, 1e-4))
+        for radius in radii:
+            function = lambda p, delta=unit * radius: step_kl_values(
+                model, layout, p, inputs, delta, min_norm=0.)
+            row = _evaluate(function, point, check_stop)
+            agreement = _agreement(row, directional_reference, ltm, stm)
+            candidates.append({"radius": radius, "agreement": agreement})
+            if agreement["passed"]:
+                break
+        result["direction"].update(local_check_norm=radius, local_check_candidates=candidates)
         stencil = _gradient_stencil(function, point, row["gradient"], ltm, stm, check_stop)
         result["methods"]["directional"] = {"valid": agreement["passed"] and stencil["passed"],
                                              "status": "checked", "agreement": agreement,

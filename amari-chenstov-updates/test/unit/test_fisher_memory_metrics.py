@@ -374,6 +374,44 @@ def test_paired_retention_requires_matching_observed_horizons(tmp_path):
     assert "Historical holdout | 0 | pending" in conclusion
 
 
+def test_confirmation_readout_distinguishes_frozen_reference_and_actual_compute(tmp_path):
+    for replica in (0, 1):
+        for condition, offset, seconds in (("replay_ewc", 0., 100.),
+                                           ("finite_difference", -.1, 200.),
+                                           ("replay_compute_matched", 0., 120.)):
+            rows = _rows(offset)
+            for row in rows:
+                row["cumulative_active_seconds"] = seconds
+                if row["split"] == "current":
+                    row["frozen_nll"] = .8
+            _write_unit(tmp_path, f"{condition}-{replica}", rows=rows,
+                        metadata=_metadata(condition=condition, replica=replica))
+    units = report.collect_artifacts(tmp_path)["units"]
+    source = report._conclusion(units, {"confirmation_complete": True,
+                                       "conclusion": "persistent under-solving warnings"}).source
+    assert "nominal 95% paired intervals favor the treatment on both NLL endpoints" in source
+    assert "0.82 versus 0.8 for the frozen initial model (descriptive)" in source
+    assert "online time 2.00x replay/EWC" in source
+    assert "60%--60%" in source
+    assert "not a realized equal-time comparison" in source
+    assert "Mechanism remains unresolved" in source
+    assert "not exact objective minimization" in source
+    partial = report._conclusion(units, {}).source
+    assert "nominal 95% paired intervals favor" not in partial
+    assert "pending fixed-cohort completion" in partial
+
+
+def test_confirmation_readout_does_not_label_a_null_candidate_favorable(tmp_path):
+    for replica in (0, 1):
+        for condition in ("replay_ewc", "finite_difference"):
+            _write_unit(tmp_path, f"{condition}-{replica}", metadata=_metadata(
+                condition=condition, replica=replica))
+    source = report._conclusion(report.collect_artifacts(tmp_path)["units"],
+                                {"confirmation_complete": True}).source
+    assert "do not establish improvement on both NLL endpoints" in source
+    assert "nominal 95% paired intervals favor" not in source
+
+
 def test_report_rendering_is_bounded_separate_and_artifact_only(tmp_path, monkeypatch):
     for env in report.ENVIRONMENTS:
         for replica in (0, 1):
@@ -484,6 +522,28 @@ def test_reserved_publication_is_atomic_and_bounded(tmp_path, monkeypatch):
     assert list(target.parent.iterdir()) == [target]
     with pytest.raises(ValueError, match="reports"):
         publish(tmp_path / "units" / "bad.ipynb", b"bad")
+
+
+def test_predictive_plot_shows_one_paired_frozen_reference_from_stored_metrics(monkeypatch):
+    from matplotlib import pyplot as plt
+    units = []
+    for replica in (0, 1):
+        for condition in ("replay_ewc", "jvp"):
+            rows = _rows()
+            for row in rows:
+                if row["split"] == "current":
+                    row["frozen_nll"] = .4 + .2 * replica
+            units.append({"metadata": _metadata(replica=replica, condition=condition), "rows": rows})
+    monkeypatch.setattr(report, "_plot_cell", lambda figure, caption: figure)
+    figure = report._predictive_figure(units, "rotation_linear", "phase3")
+    try:
+        frozen = [line for line in figure.axes[0].lines if line.get_label() == "Frozen initial model"]
+        assert len(frozen) == 1
+        np.testing.assert_allclose(frozen[0].get_ydata(), .5)
+        assert frozen[0].get_linestyle() == "--"
+        assert not any(line.get_label() == "Frozen initial model" for axis in figure.axes[1:] for line in axis.lines)
+    finally:
+        plt.close(figure)
 
 
 def test_actual_store_report_publication_and_cli(tmp_path):

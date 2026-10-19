@@ -117,6 +117,28 @@ def test_zero_age_or_zero_shadow_is_uncalibrated_not_a_mathematical_failure():
     json.dumps(report, allow_nan=False)
 
 
+@pytest.mark.parametrize("recover", [True, False])
+def test_directional_local_check_shrinks_a_bounded_stencil_without_changing_training_radius(monkeypatch, recover):
+    original = numerical.step_kl_values
+    def distorted(model, layout, theta, inputs, delta, **kwargs):
+        value = original(model, layout, theta, inputs, delta, **kwargs)
+        norm = float(delta.norm())
+        local = norm <= .00101
+        too_large = norm > .000251 if recover else True
+        return value * 1.1 if local and too_large else value
+    monkeypatch.setattr(numerical, "step_kl_values", distorted)
+    args = _inputs()
+    _, stm = memory_indices(args[1])
+    direction = torch.ones(stm.numel(), dtype=torch.float64)
+    direction *= .02 / direction.norm()
+    report = numerical.audit(*args, direction=direction)
+    assert report["direction"]["norm"] == pytest.approx(.02)
+    candidates = report["direction"]["local_check_candidates"]
+    assert [row["radius"] for row in candidates] == ([.001, .0005, .00025] if recover else [.001, .0005, .00025, .0001])
+    assert report["methods"]["directional"]["valid"] is recover
+    assert all(not row["agreement"]["passed"] for row in candidates[:-1])
+
+
 def test_unavailable_jvp_does_not_block_kl_or_distillation_audits(monkeypatch):
     def unsupported(*args, **kwargs):
         raise NotImplementedError("deliberately unsupported forward-mode backend")

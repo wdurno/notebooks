@@ -975,6 +975,51 @@ The acceptance manifest and operator instructions are in
 [PLAN15_HANDOFF.md](PLAN15_HANDOFF.md). No production study was launched and no
 unattended Phase 0 compute remains running.
 
+### Production Execution Notes
+
+Sol began phases 1--4 on 2026-10-17 with an initial 20-hour active-time allocation.
+Early Phase 1 diagnostics exposed two numerical handling omissions, repaired
+under the autonomous-correction policy. Most under-solved default updates now
+trigger the planned common 100-iteration/150-closure ceiling repair; a repaired
+policy search cannot reselect the original short ceiling. For line-search
+increases within 16 parameter-dtype machine epsilons times
+$\max(1,|L|)$, the learner retains its previous accepted iterate and records
+rounding stagnation rather than a solver failure. Larger increases remain
+failures. Rejected increases and their tolerances are recorded explicitly.
+
+The first two roots are separate Phase 1 diagnostic evidence. Version 3 finished
+Phase 1 but exposed finite-stencil truncation in one mixture directional check:
+the local radius .001 produced 4.3% gradient-magnitude error despite a passing
+independent derivative check. A radius of .00025 reduced the error to 1.08%,
+with gradient cosine above .99997, on the same saved state and direction.
+The mathematical audit now tries the bounded radii
+$\{.001,.0005,.00025,.0001\}$ until its original tolerances pass, retaining
+every attempted result. Failure at all radii still makes the method unavailable.
+The actual training direction and perturbation cap are unchanged.
+
+Production resumes under `production_v4`, with no confirmation outcomes used
+in these corrections. Version 3's early development remains separate.
+Details and the current restart command are in the handoff; significant changes
+also appear in the notebook and survive resumption.
+
+Phases 1--4 completed on 2026-10-18 (America/Los_Angeles), with 140 development
+and 144 fresh confirmation trajectories in version 4. The fixed cohort used
+12 replicas per environment and four conditions. Cumulative active time was
+about 14.5 hours, below the 20-hour allowance, and artifacts plus budgeted
+dependencies occupy about 1.9 GB. Full content validation passed all 630 units;
+there are no incomplete units or recorded numerical failures. No optional
+extension was launched.
+
+Selected finite-difference KL improved current and historical NLL AUC in all
+12 confirmation replicas of each rotation schedule, with nominal paired 95%
+intervals above zero. The digit-9 mixture showed no clear predictive gain.
+These results do not establish consolidation: rotation STM-removal effects,
+the frozen-initial reference, and persistent under-solving leave regularization
+or capacity suppression as alternatives. The calibrated larger-ceiling replay
+control consumed less actual time than the selected method and is not a
+realized equal-time comparison. See the notebook's concise conclusion and the
+handoff for effects, uncertainty, actual costs, and remaining limitations.
+
 ## References
 
 1. Hu et al., [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685).

@@ -76,8 +76,10 @@ class Progress:
     def __init__(self, store, cfg, notebook=None):
         self.store, self.cfg, self.notebook = store, cfg, notebook
         self.last_report = 0.
+        prior_status = store.root / "status.json"
+        changes = json.loads(prior_status.read_text()).get("changes", []) if prior_status.exists() else []
         self.state = dict(schema_version=1, protocol_revision=cfg.protocol, phase="0" if cfg.smoke else "1",
-                          status="running", changes=[], report_seconds=0.,
+                          status="running", changes=changes, report_seconds=0.,
                           note="Smoke acceptance only; no scientific inference." if cfg.smoke else "Development begins.")
 
     def __call__(self, *, force=False):

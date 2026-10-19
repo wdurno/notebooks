@@ -408,6 +408,14 @@ def _legend(figure: Any, axes: Any) -> None:
                       fontsize=8, frameon=False)
 
 
+def _draw_frozen_nll(axis: Any, units: list[dict[str, Any]]) -> None:
+    controls = [unit for unit in units if unit["metadata"]["condition"] == "replay_ewc"]
+    x, mean, sem, _ = _mean_curve(controls, "current", "frozen_nll")
+    if len(x):
+        axis.plot(x, mean, color=".3", linestyle="--", linewidth=1.5, label="Frozen initial model")
+        axis.fill_between(x, mean - sem, mean + sem, color=".3", alpha=.1)
+
+
 def _predictive_figure(units: list[dict[str, Any]], environment: str, phase: str) -> Any:
     from matplotlib import pyplot as plt
 
@@ -418,12 +426,13 @@ def _predictive_figure(units: list[dict[str, Any]], environment: str, phase: str
         _draw(axes[1, col], units, split, "accuracy", xfield=xfield, percent=True)
         axes[0, col].set_title(title, fontsize=10)
         axes[1, col].set_xlabel("Unique digits integrated" if split == "current" else "Digits since cohort eviction")
+    _draw_frozen_nll(axes[0, 0], units)
     axes[0, 0].set_ylabel("NLL (lower is better)")
     axes[1, 0].set_ylabel("Accuracy (%)")
     smoke = " (acceptance only)" if any(u["metadata"].get("smoke") for u in units) else ""
     figure.suptitle(f"{ENVIRONMENT_LABELS[environment]} / Phase {phase.removeprefix('phase')}{smoke}")
     _legend(figure, axes)
-    return _plot_cell(figure, "Means and +/-1 replica SEM; equal available-cohort means within replica. Right censoring changes contributing cohort/replica counts with age; no fixed-population claim.")
+    return _plot_cell(figure, "Means and +/-1 replica SEM; equal available-cohort means within replica. Dashed NLL: the unadapted initial model on the current holdout. A gain over replay/EWC can still fall short of this frozen reference. Right censoring changes contributing counts with age.")
 
 
 def _selected_groups(units: list[dict[str, Any]], status: Mapping[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[str]]:
@@ -510,7 +519,7 @@ def _conclusion(selected: list[dict[str, Any]], status: Mapping[str, Any]) -> An
             "Neither their predictive scores nor apparent treatment differences establish acquisition, retention, "
             "consolidation or statistical efficiency. Production calibration and independent paired cohorts remain necessary."
         )
-    rows = []
+    rows, readout, cost_matches = [], [], []
     labels = _display_labels(selected)
     release = status.get("confirmation_complete") is True
     for environment in ENVIRONMENTS:
@@ -521,6 +530,7 @@ def _conclusion(selected: list[dict[str, Any]], status: Mapping[str, Any]) -> An
             if unit["metadata"]["condition"] != "replay_ewc":
                 treatments[_variant(unit)][unit["metadata"]["replica"]] = unit
         for condition, replicas in treatments.items():
+            endpoints = {}
             for split in ("current", "historical"):
                 a, b = {}, {}
                 for replica in controls.keys() & replicas.keys():
@@ -529,11 +539,47 @@ def _conclusion(selected: list[dict[str, Any]], status: Mapping[str, Any]) -> An
                     if wa is not None and wa == wb and ca is not None and cb is not None:
                         a[replica], b[replica] = ca, cb
                 summary = paired_summary(a, b)
+                endpoints[split] = summary
                 interval = summary["ci"] if release else None
                 interval_text = (f"[{interval[0]:.4g}, {interval[1]:.4g}]" if interval else "pending fixed-cohort completion")
                 rows.append([ENVIRONMENT_LABELS[environment], labels[condition], POPULATIONS[split], summary["n_pairs"],
                              summary["mean_gain"], summary["median_gain"], summary["favorable_replicas"], interval_text])
+            if not release or next(iter(replicas.values()))["metadata"]["condition"] not in (
+                    "jvp", "finite_difference", "directional"):
+                continue
+            supported = all(value["ci"] is not None and value["ci"][0] > 0 for value in endpoints.values())
+            result = ("nominal 95% paired intervals favor the treatment on both NLL endpoints"
+                      if supported else "the paired intervals do not establish improvement on both NLL endpoints")
+            details = []
+            frozen, adapted = [], []
+            for replica in controls.keys() & replicas.keys():
+                current = sorted((r for r in controls[replica]["rows"] if r["split"] == "current"),
+                                 key=lambda r: r["exposure"])
+                if len(current) < 2 or any(r.get("frozen_nll") is None for r in current):
+                    continue
+                value, _ = _auc_for_unit(replicas[replica], "current")
+                if value is not None:
+                    frozen.append(normalized_auc([r["exposure"] for r in current], [r["frozen_nll"] for r in current]))
+                    adapted.append(value)
+            if frozen:
+                details.append(f"mean current NLL AUC {_text(float(np.mean(adapted)))} versus "
+                               f"{_text(float(np.mean(frozen)))} for the frozen initial model (descriptive)")
+            def online_seconds(units):
+                values = [max(times) for unit in units if
+                          (times := [r["cumulative_active_seconds"] for r in unit["rows"]
+                                     if r.get("cumulative_active_seconds") is not None])]
+                return float(np.mean(values)) if values else None
+            treated_time, control_time = online_seconds(replicas.values()), online_seconds(controls.values())
+            if treated_time and control_time:
+                details.append(f"online time {treated_time / control_time:.2f}x replay/EWC")
+            matched_time = online_seconds(u for u in units if u["metadata"]["condition"] == "replay_compute_matched")
+            if treated_time and matched_time:
+                cost_matches.append(matched_time / treated_time)
+            readout.append(f"- **{ENVIRONMENT_LABELS[environment]}:** {result}."
+                           + (" " + "; ".join(details) + "." if details else ""))
     source = "## Conclusion\n\n"
+    if readout:
+        source += "\n".join(readout) + "\n\n"
     if rows:
         source += _table(["Environment", "Treatment", "Endpoint", "Pairs", "Mean gain", "Median", "Favorable", "95% paired interval"], rows)
         source += "\n\nGain is control minus treatment NLL AUC; positive favors treatment. Only matched complete trajectories and follow-up grids enter."
@@ -544,7 +590,18 @@ def _conclusion(selected: list[dict[str, Any]], status: Mapping[str, Any]) -> An
                "Small-replica intervals are fragile; a nonsignificant retention difference is not noninferiority. "
                "Development and confirmation are never pooled.")
     conclusion = status.get("conclusion")
-    if isinstance(conclusion, str):
+    if readout:
+        source += ("\n\n**Mechanism remains unresolved.** These predictive effects do not identify STM-to-LTM transfer; "
+                   "ordinary regularization or capacity suppression remain alternatives. Negative STM-removal harm "
+                   "means muting STM helps, not negative knowledge. Pre-eviction snapshots are after rehearsal.")
+        if cost_matches:
+            source += (f" The calibrated larger-ceiling replay control used {min(cost_matches):.0%}--"
+                       f"{max(cost_matches):.0%} of the selected method's actual online time across environments; "
+                       "it is an allowance control, not a realized equal-time comparison.")
+        if isinstance(conclusion, str) and "under-solving" in conclusion:
+            source += (" Persistent under-solving warnings limit interpretation to the configured bounded solver, "
+                       "not exact objective minimization.")
+    elif isinstance(conclusion, str):
         source += "\n\n" + conclusion
     return nbformat.v4.new_markdown_cell(source)
 
@@ -632,6 +689,9 @@ def build_notebook(root: Path | str, *, row_adapter: RowAdapter | None = None,
         "when later STM replaces earlier STM while earlier LTM is fixed. Positive means harm. "
         "**Curvature** measures local predictive sensitivity, not a memory share. "
         "**Fixed prevalence** $p_{ref}=0.1$ standardizes digit-9 precision during evaluation only.\n\n"
+        "**Pre-eviction** means just before the cohort's first member leaves replay, after rehearsal; it is not a fresh-arrival measurement.\n\n"
+        "**Under-solving** means an accepted update ended with loss-gradient infinity norm above $10^{-3}$; "
+        "this warning is distinct from a failed line search or nonfinite result.\n\n"
         "New/current holdout, evicted training examples, and independent historical holdouts are different populations. "
         "Prediction panels show means and +/-1 replica SEM, not significance intervals. "
         "Cohorts are averaged within replica; missing future follow-up is never filled in. "
@@ -797,6 +857,7 @@ def build_notebook(root: Path | str, *, row_adapter: RowAdapter | None = None,
         "## Functional memory dependence\n\n"
         "Reliance and vulnerability are functional interventions, not percentages of stored knowledge. "
         "Low vulnerability without useful acquisition may indicate lost plasticity. Raw Fisher traces are subordinate diagnostics."
+        " Low STM reliance after rehearsal is compatible with transfer, but does not distinguish it from capacity suppression. Fresh-arrival STM use is not measured by the pre-eviction snapshot."
     ))
     if any(r["split"] in ("dependence", "curvature") for u in selected for r in u["rows"]):
         figure, axes = plt.subplots(3, 3, figsize=(12, 8), layout="constrained")

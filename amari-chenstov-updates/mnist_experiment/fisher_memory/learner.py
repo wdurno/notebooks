@@ -490,6 +490,7 @@ def _bounded_solve(start: Tensor, objective: Callable, cfg: FitSettings,
     accepted_record = initial_record = None
     evaluations = calls = iterations = accepted_steps = 0
     reason = "max_iterations"
+    rejected_increase = roundoff_tolerance = 0.
     started = time.perf_counter()
 
     def evaluate():
@@ -545,7 +546,12 @@ def _bounded_solve(start: Tensor, objective: Callable, cfg: FitSettings,
             if candidate is None:
                 raise _SolveLimit("unevaluated_candidate")
             if candidate["value"] > accepted_record["value"]:
-                raise _SolveLimit("objective_increase")
+                rejected_increase = candidate["value"] - accepted_record["value"]
+                roundoff_tolerance = (16 * torch.finfo(parameter.dtype).eps
+                                      * max(1., abs(accepted_record["value"])))
+                # Keep the previous nonincreasing iterate even for a rounding-sized increase.
+                raise _SolveLimit("roundoff_stagnation" if rejected_increase <= roundoff_tolerance
+                                  else "objective_increase")
             moved = not torch.equal(accepted, candidate["theta"])
             change = abs(candidate["value"] - accepted_record["value"])
             accepted = candidate["theta"].clone()
@@ -573,6 +579,8 @@ def _bounded_solve(start: Tensor, objective: Callable, cfg: FitSettings,
         "converged": accepted_record is not None and float(accepted_record["gradient"].abs().max()) <= cfg.tolerance_grad,
         "evaluation_limit_reached": reason == "max_evaluations",
         "parameter_change_norm": float((accepted - start).double().norm()),
+        "rejected_objective_increase": rejected_increase,
+        "objective_roundoff_tolerance": roundoff_tolerance,
         "solver_failed": reason in {"objective_increase", "unevaluated_candidate",
                                       "nonfinite_parameters", "nonfinite_objective_or_gradient"},
         "solver_seconds": time.perf_counter() - started,
