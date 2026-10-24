@@ -591,7 +591,8 @@ def _bounded_solve(start: Tensor, objective: Callable, cfg: FitSettings,
 def fit_step(model, layout, theta: Tensor, new_x: Tensor, new_y: Tensor,
              replay_x: Tensor, replay_y: Tensor, ages: Tensor, fisher: Any,
              anchor: Tensor, condition: str, settings: FitSettings | Mapping,
-             seed: int, check_stop: Callable | None = None) -> tuple[Tensor, dict]:
+             seed: int, check_stop: Callable | None = None, *,
+             objective_observer: Callable | None = None) -> tuple[Tensor, dict]:
     """Fit one arrival without mutation or I/O; ``ages`` are squared age weights.
 
     ``fisher`` and ``anchor`` contain LTM coordinates only. All settings, probes,
@@ -633,4 +634,6 @@ def fit_step(model, layout, theta: Tensor, new_x: Tensor, new_y: Tensor,
                        unsupported_direction=condition == "directional" and not bool(direction.count_nonzero()),
                        total_closure_calls=diagnostics["closure_calls"] + shadow_diagnostics.get("closure_calls", 0))
     diagnostics.update({f"shadow_{key}": value for key, value in shadow_diagnostics.items()})
+    if objective_observer is not None:
+        objective_observer(accepted.detach(), objective, metadata, diagnostics)
     return accepted.detach(), diagnostics

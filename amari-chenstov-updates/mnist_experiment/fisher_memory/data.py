@@ -48,7 +48,7 @@ def _draw_labels(labels: Tensor, count: int, generator: torch.Generator,
 
 def plan_data(source: MNISTSource, cfg: Config, family: str, replica: int, kind: str) -> dict[str, Any]:
     """Sample IDs without replacement; different treatments never resample assets."""
-    if kind not in ("rotation", "mixture"):
+    if kind not in ("rotation", "mixture", "drip"):
         raise ValueError("unknown asset kind")
     component = lambda name: cfg.seed_for(family, replica, f"{kind}:{name}")
     labels = source.train_labels
@@ -65,23 +65,51 @@ def plan_data(source: MNISTSource, cfg: Config, family: str, replica: int, kind:
     buckets = {k: _choose(available_ids[labels[available_ids] == k],
                          int((labels[available_ids] == k).sum()), stream_gen) for k in range(10)}
     offsets = {k: 0 for k in range(10)}
-    if kind == "mixture":
+    indices, targets = [], []
+    event_batches = []
+    if kind == "drip":
+        event_target, ramp_batches, plateau = (2, 2, .5) if cfg.smoke else (100, 40, .1)
+        width = 4
+        event_count = 0
+        j = 0
+        while event_count < event_target:
+            j += 1
+            if j > 10_000:
+                raise ValueError("drip stream did not reach its rotated-image target")
+            probability = plateau * min((j - 1) / (ramp_batches - 1), 1.)
+            row_labels = _draw_labels(labels, width, stream_gen)
+            flags = torch.rand(width, generator=stream_gen) < probability
+            start = len(indices)
+            for k, rotated in zip(row_labels, flags.tolist(), strict=True):
+                if offsets[k] >= len(buckets[k]):
+                    raise ValueError("stream exhausted a class; refusing duplicate unique exposures")
+                indices.append(buckets[k][offsets[k]])
+                offsets[k] += 1
+                targets.append(k)
+                event_count += int(rotated)
+                if event_count == event_target:
+                    break
+            event_batches.append(dict(start=start, end=len(indices),
+                                      probability=probability,
+                                      rotated=[bool(v) for v in flags[:len(indices) - start]],
+                                      cumulative_events=event_count))
+    elif kind == "mixture":
         values = [0., *cfg.schedule("digit9_mixture")]
         width = cfg.mixture_batch
     else:
         values = [None] * cfg.rotation_steps
         width = cfg.rotation_batch
-    indices, targets = [], []
-    for prevalence in values:
-        row_labels = _draw_labels(labels, width, stream_gen, prevalence)
-        row = []
-        for k in row_labels:
-            if offsets[k] >= len(buckets[k]):
-                raise ValueError("stream exhausted a class; refusing duplicate unique exposures")
-            row.append(buckets[k][offsets[k]])
-            offsets[k] += 1
-        indices.extend(row)
-        targets.extend(row_labels)
+    if kind != "drip":
+        for prevalence in values:
+            row_labels = _draw_labels(labels, width, stream_gen, prevalence)
+            row = []
+            for k in row_labels:
+                if offsets[k] >= len(buckets[k]):
+                    raise ValueError("stream exhausted a class; refusing duplicate unique exposures")
+                row.append(buckets[k][offsets[k]])
+                offsets[k] += 1
+            indices.extend(row)
+            targets.extend(row_labels)
 
     # Development and confirmation have disjoint test-image halves per class.
     eval_ids = []
@@ -90,11 +118,12 @@ def plan_data(source: MNISTSource, cfg: Config, family: str, replica: int, kind:
         bucket = torch.where(source.test_labels == k)[0]
         bucket = bucket[torch.randperm(len(bucket), generator=fixed_gen)]
         cut = len(bucket) // 2
-        bucket = bucket[cut:] if family == "confirmation" else bucket[:cut]
+        bucket = bucket[cut:] if family in (
+            "confirmation", "drip_confirmation", "regularization_confirmation") else bucket[:cut]
         eval_ids.extend(_choose(bucket, cfg.eval_per_class, gen(f"evaluation:{k}")))
     probabilities = torch.bincount(labels, minlength=10).double()
     probabilities /= probabilities.sum()
-    return dict(schema_version=1, kind=kind, family=family, replica=replica,
+    result = dict(schema_version=1, kind=kind, family=family, replica=replica,
                 initialization_ids=initial, reference_ids=reference, stream_ids=indices,
                 stream_labels=targets, evaluation_ids=eval_ids,
                 class_probabilities=probabilities.tolist(),
@@ -104,13 +133,23 @@ def plan_data(source: MNISTSource, cfg: Config, family: str, replica: int, kind:
                        "evaluation_partition": cfg.seed_for("evaluation-partition", 0, "strata"),
                        "evaluation_classes": [component(f"evaluation:{k}") for k in range(10)]},
                 schedules={e: cfg.schedule(e) for e in cfg.environments
-                           if (e == "digit9_mixture") == (kind == "mixture")})
+                           if kind != "drip" and (e == "digit9_mixture") == (kind == "mixture")})
+    if kind == "drip":
+        result.update(event_batches=event_batches, event_target=event_target,
+                      ramp_batches=ramp_batches, plateau=plateau)
+    return result
 
 
 def materialize(source: MNISTSource, cfg: Config, plan: dict[str, Any]) -> dict[str, Any]:
     raw = source.images(plan["stream_ids"])
     labels = torch.tensor(plan["stream_labels"], dtype=torch.long)
     streams = {}
+    if plan["kind"] == "drip":
+        flags = [value for batch in plan["event_batches"] for value in batch["rotated"]]
+        mixed = raw.clone()
+        selected = torch.tensor([i for i, value in enumerate(flags) if value], dtype=torch.long)
+        mixed[selected] = rotate_mnist_batch(raw[selected], 30., ROTATION)
+        streams = {"drip_mixed": mixed, "drip_base": raw}
     for environment, values in plan["schedules"].items():
         if environment == "digit9_mixture":
             streams[environment] = raw

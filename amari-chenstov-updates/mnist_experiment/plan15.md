@@ -667,7 +667,908 @@ by a nearly significant result. The four-day travel window can fund these or
 larger precommitted cohorts if authorized, but is not permission to consume
 96 hours or exceed the storage cap merely because the node is idle.
 
+The optional JVP/directional extension has its own entry point and run root.
+Choose the method and environment lists **before** the first invocation; the
+completed extension ledger freezes those lists, replica count, pilot-selected
+strengths, reference-control seals, and paired asset-plan hashes. The source
+`production_v4` root is read-only. Extension outcomes are secondary,
+post-selection evidence and are not pooled into Phase 3 confirmation.
+
+Launch from the repository root in `tmux` after choosing a scope and cumulative
+compute allocation (omit `--resume` on the first invocation):
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.extension \
+  --source-root cache/mnist_experiment/plan15/production_v4 \
+  --root cache/mnist_experiment/plan15/extension_v1 \
+  --methods <selected-methods> --environments <selected-environments> \
+  --replicas 12 --allocation-hours <cumulative-hours>
+```
+
+Allowed methods are `jvp` and `directional`; allowed environments are
+`rotation_linear`, `rotation_sigmoid`, and `digit9_mixture`. Keep the same scope,
+source, and root on resume and add `--resume`. `--max-units` or
+`--max-wall-seconds` can bound an invocation without changing the cohort;
+`--clear-stop --resume` deliberately clears a cooperative STOP. The live
+artifact-only notebook is `mnist_experiment/fisher_memory_extension_results.ipynb`.
+The extension uses the shared 500 GB budget lock and checkpoints every accepted
+step. A VS Code SSH disconnect does not terminate a runner launched inside a
+remote `tmux` session; a machine reboot still requires `--resume`.
+
+### Phase 5A: Sigmoid JVP Strength Reassessment (completed)
+
+The first Phase 5 extension used JVP strength 0.0268905 for sigmoid rotation,
+while the selected finite-difference KL coefficient was 26.8896597. Its weak
+sigmoid result therefore does not establish that a sensibly penalized JVP is
+inferior. The coefficient scales different penalties and is not an equivalence
+calibration; the matched numeric value is a diagnostic anchor, not an assertion
+of equal effective curvature. Do not use the earlier extension outcomes as
+pilot data or pool them with this versioned repair.
+
+Freeze a sigmoid-only development grid at factors
+$(1/30,1/10,1/3,1,3)$ times the sealed finite-difference coefficient from
+`production_v4` (approximately 0.8963, 2.6890, 8.9632, **26.8897**, and
+80.6690). Run three new paired replicas per grid point, each sharing its own
+fresh replay/EWC control. Select the coefficient with the largest mean paired
+current-holdout NLL-AUC gain among points whose mean paired post-eviction
+historical NLL-AUC harm is at most 0.01. The three-replica pilot makes a
+choice, not a significance claim. If none meet retention, select the best
+joint diagnostic fallback and label it as such.
+
+Use a disjoint 12-replica confirmation seed family, again with fresh paired
+replay/EWC controls. Confirm the pilot-selected JVP coefficient as the primary
+repair comparison. Also confirm the fixed 26.8897 anchor as a secondary
+diagnostic if it was not selected. Report both predictive endpoints, favorable
+replica counts, nominal paired intervals, exact STM Fisher trace, solver health,
+and measured compute. Retain the earlier finite-difference study as historical
+context, not a same-seed paired comparison. No STM-to-LTM transfer claim follows
+from a predictive gain alone.
+
+The repair uses its own immutable root, a cumulative active-time allocation,
+the shared 500 GB budget lock, step checkpoints, and `--resume`. A compact
+artifact-only notebook at
+`mnist_experiment/fisher_memory_jvp_repair_results.ipynb` publishes pilot and
+confirmation progress while trajectories complete. Start in `tmux` from the
+repository root (omit `--resume` initially):
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.jvp_repair \
+  --source-root cache/mnist_experiment/plan15/production_v4 \
+  --root cache/mnist_experiment/plan15/jvp_repair_v1 \
+  --allocation-hours 6
+```
+
+For a later invocation, use the same arguments plus `--resume`; the allocation
+is cumulative. `--max-units` and `--max-wall-seconds` bound an invocation.
+The allocation of six active hours leaves headroom over the approximately
+3.5--5 hour wall-clock forecast; it is a ceiling, not a target to consume.
+
+Phase 5A subsequently completed all 42 trajectories in 2.92 active hours.
+The pilot selected JVP strength 26.8897. In 12 fresh paired confirmation
+replicas, replay/EWC minus JVP mean NLL-AUC gain was 0.1145 on the current
+sigmoid holdout and 0.1359 on the post-eviction holdout, favorable in all 12
+replicas on both endpoints. This repairs the weak-strength JVP result against
+replay/EWC but does not provide a paired JVP-versus-finite-difference comparison.
+All 59 units passed full artifact validation. The separate repair notebook
+contains the complete readout; the earlier forecast above is retained as the
+pre-run estimate.
+
+### Phase 5B: Rare Rotated-Domain Drip Development (completed)
+
+The question is whether finite-difference STM Fisher shrinkage improves
+prediction of a rare new domain while novel labeled images are scarce. This
+extends the continual-learning, limited-data and limited-compute motivation of
+Plan 15. The development phase checks that the task has measurable acquisition,
+calibrates one finite-difference coefficient, and measures its actual runtime.
+Development results never enter Phase 5C inference.
+
+Keep the Plan 15 architecture, 30,000-image all-digit unrotated initialization,
+rank-two STM, FIFO capacity 32, Ridge, eviction-only LTM EWC, common repaired
+optimizer ceiling, and rotation archive rate $\pi=0.025$. Freeze two domains:
+$D_0$ contains unrotated MNIST images of all ten digits and $D_R$ contains the
+same class distribution rotated by $30^\circ$. The previous frozen model had
+mean NLL about 0.20 on $D_0$ and 1.39 on $D_R$; this motivates the fixed angle,
+not a new angle search. A domain flag guides sampling and reporting but is never
+an input to the model. Within each replica, use unique stream source-image IDs
+disjoint from initialization and Fisher-reference training IDs. Draw evaluation
+IDs only from the MNIST test split. Partition its per-class test IDs into
+disjoint development and confirmation pools; replicas may draw from their own
+phase's pool, and all four conditions in a replica use identical fixed panels.
+
+Generate each replica's observation stream before fitting any condition. With
+batch size four, set the rotated draw probability for arrival batch $j$ to
+$p_j=0.1\min((j-1)/39,1)$: a 40-batch ramp from zero followed by a 0.10
+plateau. Draw domain independently of digit label, retain the original ten-class
+distribution, and stop **at the 100th unique rotated image**. Truncate the
+final batch at that image, so every completed mixed trajectory has exactly 100
+novel exposures. It has about ten per digit in expectation, without imposing
+ten-per-class quotas. This schedule reaches 100 events around batch 270 on
+average; a cheap 20,000-stream simulation gave 5th/95th percentiles near
+232/311 batches (random seed 1515). Record the complete domain and label
+sequence, realized per-class counts, base-image counts, batch sizes, source IDs,
+and seeds.
+
+The four conditions share initialization, source IDs, labels, arrival order,
+optimizer settings unrelated to treatment, evaluation panels, and event times:
+
+| Domain stream | Replay/EWC control | Finite-difference KL |
+| --- | --- | --- |
+| Rare $D_R$ mixed into $D_0$ | Main acquisition control | Main treatment |
+| Every stream image left in $D_0$ | Base-only continuation control | Base-only penalty control |
+
+For the base-only arms, use the **same** image IDs as their mixed partners and
+leave images unrotated, including at the 100 scheduled rotated-event positions.
+Those arms see zero rotated training images. The event positions supply only a
+matched reporting clock. Their curves must say "paired rotated-event index",
+never "rotated images observed". Use one selected KL coefficient in both
+penalized arms. All replay and archive mechanics remain otherwise identical.
+
+For each condition $m$, let $R_m^R(n)$ be mean NLL on one fixed, all-digit
+$30^\circ$ test panel after the batch containing the $n$th rotated event in
+the paired mixed stream. If a batch crosses several event counts, use its one
+post-batch evaluation for each crossed count. Record $R_m^R(0)$ before online
+training, then evaluate at all event counts $n=1,\ldots,100$. The primary
+per-replica acquisition score is
+
+$$
+A_m^R(100)=\frac{1}{100}\sum_{n=1}^{100}R_m^R(n).
+$$
+
+Here "test panel" means a fixed, class-stratified sample from the official
+MNIST test split: 100 images per digit per replica in the production
+configuration. Every image is rotated by $30^\circ$ for the new-domain panel.
+Within a replica, the frozen reference and all four adaptive arms use identical
+test images, labels, rotations, and weights at every checkpoint. Each digit's
+total weight is its frequency in the full MNIST training split, divided equally
+among that digit's test examples; weights do not change with the stream.
+Test examples never enter pretraining, online optimization, replay, Fisher
+estimation, or curvature penalties. Confirmation test IDs are disjoint from
+the Phase 5B development panels used for coefficient selection. Panels may
+overlap between replicas; replicas, not repeated evaluations, are the
+uncertainty units.
+
+"Post-batch" means after finishing optimization on the entire incoming batch
+of up to four training examples plus the resident replay examples, followed by
+inference on the separate test panel. It does not mean evaluating loss on the
+training batch. These NLLs exclude EWC, Ridge, and KL penalties. The frozen
+reference is the initial model's measured NLL on that same **rotated test
+panel**, not its unrotated pretraining loss. Its predictive NLL remains constant
+without online updates, so its acquisition score equals its endpoint NLL.
+For an adaptive model, endpoint NLL and acquisition score differ only in time
+aggregation. Report equal-weight means of these per-replica quantities.
+
+This is simply the average new-domain test NLL after seeing one through 100
+novel images. Lower values reward good prediction throughout the scarce-data
+period, even when final NLLs coincide. Use the same event checkpoints for the
+fixed unrotated test panel $R_m^0(n)$ and its retention AUC $A_m^0(100)$.
+The base-only conditions use their partner's event times for both panels;
+their $n$ is a paired index, not an actual novel-exposure count. Track incoming
+rotated-image prequential NLL, per-domain accuracy, solver health, replay and
+eviction counts, STM diagnostics, optimizer closures, and wall-clock time as
+secondary observations. For prequential NLL, predict each scheduled rotated
+image before its update. A base-only arm may predict that rotated form for
+this audit but trains on the unrotated form. Do not collapse acquisition,
+retention, and compute into an unmotivated weighted score.
+
+Implement a tiny cached-MNIST smoke and interruption/recovery check first.
+Then run three control-only development replicas with both replay/EWC stream
+types. Display the 30-degree frozen-to-final response, how much base-only
+continuation changes 30-degree NLL, event-count distribution, runtime, and
+storage in the live notebook. A flat response is reported as a limitation;
+poor efficacy alone does not stop the predeclared experiment.
+
+On four additional development replicas, run mixed replay/EWC and a broad
+finite-difference coefficient grid
+$\{0.00178,0.0219,0.269,2.689,26.89,53.63\}$. Its endpoints come from the
+prior digit-9 and rotated-domain selections, with intermediate log-scale
+probes. Select the coefficient with the largest mean paired gain in $A^R(100)$
+among candidates with finite metrics, no recorded solver failures, and mean
+harm to $A^0(100)$ at most 0.01 NLL relative to mixed replay/EWC. Record
+under-solved updates without treating them as failed solves. Break exact ties
+by lower measured online time, then lower coefficient. If all candidates miss
+the retention margin or fail to improve acquisition, carry the best acquisition
+candidate into confirmation and label the pilot warning; do not hide the
+failure. If the entire grid is numerically invalid, repair and version the
+pilot before confirmation. If the best candidate is at a grid boundary, test
+exactly one further coefficient at one tenth of the lower edge or three times
+the upper edge on the same four development replicas, then apply the same
+selection rule. Finally, run the two base-only arms on those four replicas
+using the selected coefficient. Seal the selection and all decisions before
+Phase 5C starts.
+
+### Phase 5C: Fresh Drip Confirmation And Reporting (completed)
+
+Run 12 new paired replicas of all four conditions, with a seed family and
+test-image pool disjoint from Phase 5B. Freeze the angle, schedule, event
+budget, archive policy, selected coefficient, evaluation panels, and statistic
+before viewing these outcomes. Every replica must complete its 100th rotated
+event; a machine interruption leaves a resumable partial trajectory, not a
+scientifically censored sample-efficiency value. Completed trajectories are
+immutable and are never extended because an interval approaches zero.
+
+The one primary paired contrast is
+$D_r=A^R_{r,\mathrm{mixed,replay}}(100)-
+A^R_{r,\mathrm{mixed,FD}}(100)$, positive when finite-difference KL predicts
+better on the new domain during acquisition. Test $E[D_r]>0$ at one-sided
+$\alpha=0.05$ with a prespecified paired sign-flip test; show the mean,
+replica bootstrap 95% interval, individual differences, favorable count, and
+standardized effect. The sign-flip result requires exchangeable signs under
+the null; disclose material asymmetry rather than presenting the test as exact
+under any data distribution. Pilot replicas are excluded from this test.
+
+Show mixed-condition base-domain retention separately as
+$A^0_{\mathrm{FD}}-A^0_{\mathrm{replay}}$ (positive means harm), with a
+prespecified descriptive tolerance of 0.01 NLL and its 95% interval. A
+nonsignificant difference is not a noninferiority result. As a secondary
+diagnostic, compare the treatment gain in the mixed stream with its gain in
+the base-only stream:
+
+$$
+\bigl(A^R_{\mathrm{mixed,replay}}-A^R_{\mathrm{mixed,FD}}\bigr)
+-\bigl(A^R_{\mathrm{base,replay}}-A^R_{\mathrm{base,FD}}\bigr).
+$$
+
+Report this interaction and both constituent gains without claiming it proves
+STM-to-LTM transfer. Include NLL and accuracy trajectories for both fixed test
+domains, rotated-event prequential NLL, per-class event counts, final NLL, and
+time/closure cost. New-domain acquisition is the primary result; retention and
+cost determine whether a positive result is useful in the intended setting.
+
+Add **one concise section** to `fisher_memory_results.ipynb`, after earlier phases,
+with progress in its header. Explain $A^R(100)$ in plain language as "average rotated-domain test
+NLL after each of the first 100 rotated training images" and state that lower
+is better. Include one acquisition plot versus actual rotated-event count,
+one base-retention plot at the matched checkpoints, and a small paired-effect
+table with the 95% interval and measured compute. Label the base-only curves'
+pseudo-clock explicitly. Publish sealed partial results during both phases;
+the notebook only reads artifacts and never trains or repairs them. Keep
+detailed checks in separate JSON. Do not make samples-to-target a primary
+result or display only trajectories that reached a threshold. If a threshold
+view is later added, show attainment fraction by event count and the fraction
+still unreached at 100.
+
+Use new immutable roots under `cache/mnist_experiment/plan15/` for development
+and confirmation, the shared 500 GB admission limit, a frozen ledger, accepted
+batch checkpoints, `--resume`, stop-file and signal handling, cumulative time
+limits, and bounded report updates. A new protocol version isolates this
+outcome-informed follow-up from the completed Plan 15 cohorts. The runner
+continues without an assistant connection and records any material correction
+in the live notebook. Phase 5B uses `fisher_memory.drip` under the separate
+`cache/mnist_experiment/plan15/drip_development_v1` root. Its cached-MNIST
+accepted-step pause/resume smoke and focused unit suite passed before launch.
+Phase 5C is authorized for execution with the predeclared ten-active-hour cap.
+Its separate `fisher_memory.drip_confirmation` entry point reads and verifies
+the sealed Phase 5B selection, freezes a 12-replica ledger, and reuses the same
+trajectory mathematics. Confirmation metadata and orchestration are versioned;
+the numerical learner and initialization are unchanged. Run from the repository
+root using:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.drip_confirmation \
+  --source-root cache/mnist_experiment/plan15/drip_development_v1 \
+  --root cache/mnist_experiment/plan15/drip_confirmation_v1 \
+  --allocation-hours 10
+```
+
+Add `--resume` after interruption, and `--clear-stop` when deliberately resuming
+after a STOP request. Checkpoints, the frozen cohort, and the compute allocation
+survive restart. The notebook publishes descriptive progress; the final inference
+is released after all 48 trajectories are sealed. No Phase 6 condition enters
+this confirmation.
+
+Phase 5B completed all 46 trajectories (including four predeclared boundary
+probes) in 5.21 active hours. All 55 ledger, asset, selection, and trajectory
+units passed full content-hash validation. The pilot selected
+$\lambda_F=160.89$, the upper edge after its one allowed extension. On the four
+screen replicas, mixed-stream FD KL gained 0.500 mean 30-degree NLL-AUC over
+mixed replay/EWC, but base-only FD KL gained 0.413 on that same 30-degree
+holdout without any rotated training images. The mixed-specific descriptive
+difference was 0.087 NLL-AUC (3/4 replicas positive). These selected-on-pilot
+effects are not confirmatory evidence; most of the treatment lift may reflect
+protection or regularization rather than rare-domain learning. The concise
+notebook and sealed selection artifact contain the full development readout.
+
+Measured sigmoid trajectories with 120 batches took about 114 seconds for
+replay/EWC and 206 seconds for finite-difference KL; their per-batch solve
+times were nearly flat across the run. Scaling to roughly 270 batches gives
+about 4.3 and 7.7 minutes per trajectory before asset, reporting, and restart
+overhead. The new event-aligned score requires up to 100 evaluation checkpoints
+per trajectory, more than the old every-fourth-batch schedule; its inference
+cost is not isolated in those timings. The pilot will measure this cost and
+replace the extrapolation with observed drip times.
+
+| New phase | Forecast wall-clock compute | Basis |
+| --- | --- | --- |
+| 5B: development and strength pilot | 5--7 h | Three control-only pairs; four strength-screen replicas with six coefficients, then their selected-coefficient base-only pairs; includes smoke, assets, reporting, and bounded validation |
+| 5C: fresh confirmation | 5--8 h | Twelve replicas x four conditions, roughly 270 batches per condition; includes assets, reports, and integrity audit |
+| **Both phases** | **10--15 h** | GPU execution and validation; code-writing time excluded |
+
+Proposed per-root active-time ceilings are eight hours for 5B and ten hours
+for 5C, for at most 18 hours across the two new roots. This leaves room for
+ordinary timing variation, not for extra replicas or a new outcome-driven
+condition. Reforecast Phase 5C after 5B measures the
+actual event counts and per-condition costs. If the forecast exceeds the
+available allocation, preserve completed pilot artifacts and seek a separate
+compute decision; do not shorten the 100-event confirmation post hoc.
+
+Phase 5C completed on 2026-10-23: all 48 trajectories across twelve fresh paired
+replicas finished in 4.59 active hours. Full content-hash validation passed all
+62 artifact units, the sealed analysis reproduced exactly, and the frozen
+scientific source hash remained unchanged. The root occupies about 284 MB.
+There were no recorded solver failures or nonfinite trajectories; 8,318
+under-solved updates remain disclosed diagnostics under the common ceiling.
+
+The primary mean acquisition gain was **0.4619 NLL-AUC**, with a paired
+bootstrap 95% interval **[0.3472, 0.5783]** and the prespecified one-sided
+sign-flip **p = 0.00024414**; all twelve replicas favored FD. Mean acquisition
+NLL was 2.1161 for bounded replay/EWC versus 1.6542 for FD. Mean base-retention
+harm was -0.1566, with interval [-0.1898, -0.1238], indicating lower base-domain
+NLL under FD. The secondary interaction was +0.1027, with nominal interval
+[0.0512, 0.1585]. These results do not identify a memory-transfer mechanism.
+
+Final rotated-domain accuracy averaged 61.98% versus 65.62% (descriptive).
+Measured mixed-stream online time averaged 3.88 versus 6.88 minutes, a 1.77x
+ratio. Thus the new-domain predictive advantage is confirmed at the same scarce
+observation budget and resident replay capacity; the equal-compute comparison
+and useful replay/FD allocation remain Phase 6 design questions. The concise
+Phase 5C notebook section contains trajectories and the final readout. The
+earlier wall-clock ranges are retained as pre-run forecasts. GPU work has stopped.
+
+### Phase 6: Compute Allocation After Replay (provisional questions)
+
+These are guiding questions for further experimental design; they are not
+themselves an experimental design, a frozen protocol, or an additional compute
+allocation. Phase 6 remains deferred, is not a prerequisite for Phase 7, and
+must not start automatically when Phase 7 finishes. Keep Phase 5C unchanged.
+Its acquisition result need not establish STM-to-LTM transfer or a positive
+mixed-versus-base interaction to be
+practically useful. Phase 6 asks how to learn effectively from scarce incoming
+labeled observations when compute and resident replay are limited, including
+after those observations leave the buffer.
+
+The four paired Phase 5B screen replicas provide an initial cost reference:
+
+| Mixed-stream treatment | Mean online active minutes | Seconds per incoming observation |
+| --- | ---: | ---: |
+| Replay/EWC | 3.974 | 0.224 |
+| FD KL, $\lambda_F=160.89$ | 7.174 | 0.404 |
+
+Both means cover the same 1,065.25 incoming observations per trajectory on
+average, including exactly 100 rotated images. The ratio of aggregate online
+times is 1.805: roughly 81% additional time, not a universal kernel-cost ratio.
+These summary timers include fitting, eviction processing, and online evaluation,
+but exclude shared initialization, checkpoint/report writes, and final validation.
+Fit-only means were 3.832 and 7.030 minutes. The estimates are hardware- and
+configuration-specific development measurements, not equal-compute comparisons.
+
+Prioritize the following questions in order:
+
+1. **What does FD cost, and where?** Measure per-arrival training, curvature,
+   eviction/archive, and evaluation costs separately, with end-to-end experiment
+   time reported alongside them. Report time per incoming observation and the
+   actual replay/probe work; never treat optimizer iterations as equal-cost
+   across methods. Establish a feasible resource envelope before selecting a
+   predictive experiment grid.
+2. **Does FD earn its cost at equal compute?** With the same stream, architecture,
+   buffer capacity, and EWC policy, compare replay/EWC with FD under common
+   per-arrival compute allowances. Give the baseline a genuine opportunity to
+   use additional optimization on resident observations. A higher iteration
+   ceiling alone is not evidence of matching actual expenditure: record early
+   convergence and unused allowance, and do not manufacture useful work by
+   forcing iterations after convergence. Resolve the budget-enforcement and
+   accepted-update policy in development before confirmation.
+3. **What replay/FD allocation works best?** Compare no FD, the current FD
+   schedule, and a small set of intermittent schedules, for example one FD
+   arrival in four. Spend saved allowance on replay optimization where useful.
+   Calibrate penalty strength separately for each schedule; changing strength
+   alone does not meaningfully allocate computation. Start with FD and one
+   buffer capacity instead of crossing every method, probe count, cadence, and
+   strength. Keep ordinary replay, EWC, and incoming-data access common.
+4. **Where does the useful trade-off change?** After selecting promising
+   allocations, vary compute allowance and a small number of buffer capacities
+   separately. Ask whether FD can sustain useful new-domain prediction with
+   less resident memory, or whether replay is preferable at a given budget.
+   Larger buffers do not receive free replay computation. Only after this
+   comparison consider another curvature method or a focused no-STM control;
+   neither architecture attribution nor a broad method ranking is the first
+   Phase 6 objective.
+
+Retain new-domain NLL versus unique novel observations and its acquisition AUC
+as the main statistical-efficiency view, with accuracy alongside it. Compare
+performance at fixed compute allowances and report realized time and resident
+bytes; avoid an arbitrary NLL/time ratio. Base-domain retention is a guardrail,
+not a competing primary story. Comparable prediction with fewer resources is
+a useful outcome, but a nonsignificant difference alone does not establish
+comparability: freeze a practical degradation margin before such a confirmation.
+
+Use bounded development followed by fresh paired confirmation, not a full
+factorial search or extensions driven by approaching significance. Preserve
+immutable resumable artifacts, the shared 500 GB cap, and a concise notebook
+with a compact progress summary and results ordered oldest to newest. The intended output is a measured map of useful
+replay/FD allocations at the tested budgets, not a universal optimum. Specify
+the exact conditions, cohort, and phase-by-phase wall-clock forecast after
+Phase 5C and the cost calibration; prefer a roughly 20-hour follow-up scope
+unless a separate allocation is justified and agreed.
+
+### Phase 7: Regularization, Numerical Adequacy, And Useful Acquisition (completed)
+
+**Status:** the user authorized implementation and execution of 7A--7D on
+2026-10-23, using the proposed initial 26-hour aggregate active-time allowance.
+Sol completed implementation and CPU/CUDA recovery acceptance (389 tests plus
+focused reporting follow-ups), then executed all four sub-phases on CUDA.
+Completion was 2026-10-24 12:42 UTC, with final validation/report refresh
+afterward: about 9.44 aggregate active hours, 128 sealed trajectories, 48
+sealed frozen-objective audits, and about 0.78 GB of artifacts. Full checksum
+validation and all-stage completed-work `--resume` passed with all 201
+development/confirmation unit seals unchanged. The final 43 reporting tests
+also passed. Phase 6 remains deferred and has not started. Original forecasts
+below are retained; results and tested restart commands live in
+`PLAN15_HANDOFF.md` and the chronological Phase 7 notebook section.
+
+**Outcome:** the audit did not trigger a solver repair (2/48 material objective
+gaps, versus the predeclared 12/48 trigger). Both methods selected the strongest
+tested ridge, $c=1$; the optimum is not bracketed beyond the grid. FD retained
+$\lambda_F=160.89$ after the three-coefficient study; no edge extension ran.
+In twelve fresh paired replicas, its primary acquisition gain over same-ridge
+replay was $0.1302$ (bootstrap 95% interval $[0.1046,0.1571]$; one-sided
+sign-flip $p=0.00024414$), favorable in 12/12 replicas. Its nominal acquisition
+gain over freezing was $0.1200$ ($[0.0589,0.1880]$), favorable in 11/12.
+Base-domain acquisition NLL still worsened by $0.0646$ from initialization
+($[0.0588,0.0709]$), although less than replay. Mixed-stream FD cost about
+1.98 times replay's online time. These are equal-data predictive results in
+this tested regime, not equal-compute superiority, a samples-saved estimate,
+or proof of STM-to-LTM transfer. The confirmation recorded no solver failures
+or nonfinite trajectories, but 7,583 residual-based under-solved update flags;
+the audit does not establish exact stationarity for every later solve.
+
+**Motivation:** improve learning from scarce new-domain observations while
+retaining useful predictions on older data, using the existing objective's
+regularizers before introducing update damping or an early-stopping policy.
+The completed Phase 5C comparison favored FD over replay/EWC, but its mean
+acquisition NLL was 1.6542 versus 1.6068 for the frozen initial model. FD's final
+rotated NLL was lower, 1.5596. In the base-only continuation controls, mean
+base-domain acquisition NLL was 0.4371 for replay/EWC and 0.3240 for FD, versus
+0.1822 initially; both deteriorated in all twelve replicas. These observations
+motivate the investigation but do not prove overfitting, overconfidence, or an
+STM-to-LTM transfer mechanism.
+
+The drip experiment held ridge at $c=0.1$. Earlier common-policy fallback
+calibration considered only $c\in\{0.01,0.1\}$, on the earlier environments.
+Neither establishes a well-calibrated stronger-ridge baseline for this task.
+Phase 7 is explicitly an outcome-informed follow-up, not a replacement analysis
+of Phase 5C or a retroactive change to its confirmatory claim.
+
+#### Shared Contract And Scope
+
+Inherit the Phase 5B/5C drip protocol: a fixed $30^\circ$ novel domain, arrivals
+of at most four images, novelty probability ramping from zero to 0.1 over forty
+batches, and termination at exactly 100 unique rotated images. Keep the paired
+base-only stream, whose corresponding images stay unrotated. It has zero novel
+training exposures; its event index is only a matched reporting clock.
+This phase does not rerun digit-9 mixtures or linear/sigmoid rotation schedules.
+
+Keep 487 LTM and 176 STM coordinates, replay capacity 32, replay weight 0.5,
+eviction-only model-label Fisher updates, rank-eight-plus-diagonal compression,
+and $\pi=0.025$ fixed. There is still one likelihood Fisher. Use the existing
+initialization/reference protocol and FD stencil $h=0.01$ with two fixed probes
+per solve. The starting FD coefficient is $\lambda_0=160.89$. Controls have
+$\lambda_F=0$ and exactly the same trainable coordinates and ordinary losses.
+Do not search replay weights, $\pi$, architecture, buffer size, learning rates,
+FD probe counts, or perturbation radii in this phase.
+
+The varied ridge multiplier is $c$, not an absolute penalty coefficient:
+
+$$
+s_t=\frac{\operatorname{tr}\widehat F_{LL,t}}{d_L},\qquad
+\kappa_t=c\,s_t,\qquad \omega=\frac{1-\pi}{\pi}=39,
+$$
+
+$$
+R_{\mathrm{ridge},t}(c)=\frac{\omega\kappa_t}{2}
+\left(\|\theta_L-\mu_t\|^2+
+\|\theta_S-\theta_{S,t}^{\mathrm{start}}\|^2\right).
+$$
+
+The EWC term, age-weighted FD term, and anchor-update rules remain as specified
+above. In particular, neither ridge anchor is a permanent initial-model anchor.
+Hold both anchors fixed inside each solve; update the archive anchor only at
+the existing eviction transaction. Record $s_t$, $\kappa_t$, and
+$\omega\kappa_t$, because trajectories with the same $c$ can develop different
+Fisher scales. Holding $\pi$ fixed avoids simultaneously changing EWC odds and
+archive forgetting. A permanent-anchor experiment would be a separate design,
+not an automatic extension of this grid.
+
+Use four newly seeded development replicas shared throughout 7A--7C, and twelve
+fresh paired confirmation replicas in 7D. Within a replica, every candidate
+shares initialization, reference inputs, stream IDs/order, event times, test
+panels, and named random-probe/compression seeds. A treatment must not change
+the random stream that generates those common assets. Reuse completed 7A units
+in 7B only when all scientific identities, including the solver policy, match.
+Historical Phase 5 trajectories are context, not additional Phase 7 replicas.
+
+Preserve the existing per-class development/confirmation test-pool split and
+explicitly assign the new families to their intended partitions. The current
+`data.py` chooses the confirmation half using a family-name allowlist; merely
+inventing a new family name is insufficient. Test partition membership and
+disjointness. Do not evaluate Phase 7 development candidates on its confirmation
+partition. That partition has already been used in earlier studies, including
+5C: describe 7D as fresh stochastic replicas on a reused MNIST benchmark, not
+as a never-inspected external dataset. Record overlap with previous test panels.
+
+Use the same fixed, class-weighted held-out panels and event-aligned definitions
+$A_m^R(100)$ and $A_m^0(100)$ as 5B/5C. These are predictive NLLs without any
+regularization terms. All candidates and the frozen reference in a replica
+use the same images, transformations, labels, and weights. Initial evaluation
+is excluded from the 100-event average. Multiple events in one batch share
+its post-batch held-out prediction. No evaluated panel or evicted audit example
+returns to optimization, Fisher estimation, or replay.
+
+#### Phase 7A: Frozen-Objective Solve-Sensitivity Audit
+
+**Question:** are the ordinary accepted updates practically close enough to a
+solution that objective calibration, rather than more optimization, is the
+appropriate next intervention?
+
+Implement the Phase 7 runner, audit hook, selection logic, tests, and progressive
+report before production. Run the four development replicas at $c=0.1$ with
+replay/EWC and FD at $\lambda_0$, in both streams: **16 trajectories**. Start
+with the actual drip policy, 100 L-BFGS iterations and 150 closure evaluations,
+not the original 50/75 defaults. During each trajectory capture the update
+containing paired event counts 10, 50, and 90: **48 diagnostic branches**.
+The event rule depends only on the shared stream, never on observed loss.
+
+For each captured update:
+
+1. Preserve its pre-arrival learner, incoming/replay IDs and labels, ages, Fisher,
+   both original anchors, FD probes/seeds, configuration, and ordinary accepted
+   parameters. Preserve the usual solver diagnostics and objective components.
+2. Reconstruct the same $J_t$ using `prepare_objective` with the **pre-arrival**
+   parameters. Verify its value and gradient at the ordinary solution against
+   the original closure before branching. Starting a new ordinary `fit_step`
+   from the accepted parameters would reset the STM anchor and is not this test.
+3. Starting at the ordinary solution, perform a diagnostic re-solve with fresh
+   L-BFGS history and at most 200 additional iterations / 300 closures. Keep all
+   objective inputs fixed. This is a bounded numerical probe, not a guarantee
+   of global optimality. Report the history reset and the actual work used.
+4. Evaluate ordinary and extended parameters on the same two **development**
+   holdouts. Save total/component objective changes, gradient infinity norms,
+   LTM/STM displacement norms, held-out NLL/accuracy changes, and mean predictive
+   total variation $\tfrac12\sum_k|p_k^{\mathrm{extended}}-p_k^{\mathrm{ordinary}}|$.
+   Average this last diagnostic using the fixed panel's observation weights.
+   Distinguish fitted-batch/replay losses from these held-out quantities.
+5. Discard the branch from the live learner: commit only the ordinary accepted
+   update. Do not consolidate branch data, alter the FIFO, consume the live RNG,
+   or count audit evaluations as extra training observations. Audit time is
+   separately measured and excluded from normal online-method timing.
+
+A small prediction change supports practical adequacy even if parameter changes
+or raw gradient norms are large. Lower training objective with worse holdout
+NLL supports an objective/generalization problem; improvement in both suggests
+numerical work could matter. Neither interpretation is proof from four seeds.
+Show all prespecified snapshots, not only ones that support a diagnosis.
+
+Use one bounded, common numerical safeguard rather than a solver grid. Define
+
+$$
+g_J=\frac{J_t(\theta^{\mathrm{ordinary}})-
+J_t(\theta^{\mathrm{extended}})}
+{\max(1,|J_t(\theta^{\mathrm{ordinary}})|)}.
+$$
+
+If at least 12 of the 48 valid branches have $g_J>10^{-3}$, use the existing
+larger-ceiling option, **200 iterations / 300 closures for both methods**, and
+repeat the sixteen $c=0.1$ trajectories and their audits under a new policy
+identity. This threshold is a numerical triage convention, not a significance
+test or a claimed universal convergence tolerance. It never uses held-out NLL
+to choose the ceiling. Preserve the first sixteen as diagnostic evidence and
+exclude them from the subsequent grid. Freeze the resulting common policy
+before 7B; do not keep increasing ceilings to get a favorable chart.
+
+If material gaps remain after that one repair, continue finite, otherwise valid
+comparisons with an explicit optimization-limited label. Do not claim that the
+intended objective has been optimized to stationarity or disproved. Nonfinite
+objectives, wrong gradients, or corrupt branches require the autonomous defect
+correction protocol, not a numerical-adequacy label. Reforecast costs immediately
+if the common ceiling changes; resource limits still apply.
+
+**Deliverables:** sealed audit table, common solver-policy decision, one concise
+objective-change versus held-out-change figure, and measured cost/storage
+forecast. Missing audit snapshots must be regenerated in an incomplete/new unit,
+not invented from the old runs' rolling checkpoints.
+
+#### Phase 7B: Paired Ridge-Response Study
+
+**Question:** can calibrating the existing ridge improve acquisition and base
+retention, and how much of FD's relative advantage survives that calibration?
+
+On the same four development replicas, cross
+
+$$
+c\in\{0.03,0.1,0.3,1\},\qquad
+m\in\{\mathrm{replay/EWC},\mathrm{FD}(\lambda_0)\},\qquad
+\text{stream}\in\{\mathrm{mixed},\mathrm{base\ only}\}.
+$$
+
+This is **64 trajectories total**, including the sixteen compatible 7A
+trajectories, hence **48 new trajectories**. The grid gives a weaker reference,
+the current setting, and two stronger settings. Do not automatically expand
+the ridge grid: a boundary preference is a reported limitation and possible
+future extension, not an invitation to an unbounded search.
+
+Archive each trajectory's acquisition/retention scores, endpoint NLL/accuracy,
+prequential rotated-image NLL, initial/frozen references, realized exposure
+counts, solver health, time, and ridge-scale/parameter-motion summaries. Separate
+post-fit incoming and replay losses from held-out losses. Audit these summaries
+on both streams; base-only deterioration is a diagnostic, not the selection
+objective. Do not choose a model merely because it moves least.
+
+Use the following deterministic development selection rule in both 7B and 7C.
+A candidate must complete all four replicas with finite metrics and no recorded
+solver failures. Under-solving alone does not invalidate it. Define retention
+harm relative to the **same** mixed-stream reference, replay/EWC at $c=0.1$
+under the frozen Phase 7 solver policy:
+
+$$
+H(c,\lambda)=\frac14\sum_{r=1}^4
+\left[A^0_{r,\mathrm{mixed},c,\lambda}(100)
+-A^0_{r,\mathrm{mixed,replay},0.1}(100)\right].
+$$
+
+Among valid candidates with $H\le0.01$, choose the lowest mean mixed-stream
+$A^R(100)$. Break exact ties by lower measured online time, then lower $c$,
+then lower $\lambda$. If none meets the margin, choose the valid candidate with
+lowest acquisition NLL using the same tie-breaks, label the retention warning,
+and continue. If none is numerically valid, repair/version before selection;
+never drop failed replicas to improve a candidate's mean. This inherited margin
+only prevents further deterioration relative to the existing control. It is
+not evidence that absolute retention is good or that freezing has been beaten.
+
+Apply the rule separately to replay and FD. Let $c_R$ be replay's selected
+ridge and $c_{F,0}$ FD's provisional ridge. Retain their union, at most two
+ridge settings, for 7C. This gives FD its own promising setting while ensuring
+it is also tried at the best calibrated replay setting. Show the entire grid
+and paired differences, not only selected points. Four-replica intervals are
+exploratory; selection does not turn them into confirmatory evidence.
+
+**Deliverables:** sealed grid and shortlist, plus an acquisition-versus-retention
+plot with frozen reference and measured time visible.
+
+#### Phase 7C: Bounded FD Retuning At The Shortlisted Ridges
+
+**Question:** does FD still help when its coefficient is calibrated for the
+changed ridge, rather than inherited from a different objective balance?
+
+At each shortlisted ridge, run
+
+$$
+\lambda_F\in\{\lambda_0/3,\lambda_0,3\lambda_0\}
+=\{53.63,160.89,482.67\}
+$$
+
+on all four development replicas and both streams. The middle coefficient
+already exists in 7B. This adds **16 or 32 FD trajectories** for one or two
+shortlisted ridges. Use the mixed-stream selection rule above, never the
+base-only response, to rank coefficients at each ridge.
+
+If the selected coefficient at a ridge is the lower or upper boundary, allow
+exactly one additional coefficient there: $\lambda_0/9$ or $9\lambda_0$,
+respectively, on the same replicas and both streams. This adds eight FD
+trajectories per affected ridge, at most sixteen overall. Do not extend again,
+including when the new edge wins. Seal the extension decision before running
+it; resumption must not rediscover and repeat it.
+
+Select the final FD pair $(c_F,\lambda_F)$ from all completed FD candidates in
+7B/7C using the same rule. Include the nonshortlisted original-coefficient grid
+points so retuning cannot accidentally discard the earlier best feasible FD
+candidate. The final replay setting remains $c_R$: replay has no FD coefficient
+to tune. Both methods have been calibrated, but FD has a larger search space;
+report the candidate counts and development compute rather than claiming equal
+tuning expenditure.
+
+Freeze the final recipes, common solver, twelve confirmation seeds, evaluation
+partition, analysis, and treatment ledger before any 7D outcomes. A weak or
+unfavorable development result is reported and carried into the fixed
+confirmation, not used for significance-based stopping. The one exception is
+an all-invalid comparison, which needs a recorded implementation repair.
+
+**Deliverables:** sealed selection with all rejected/selected candidates and
+warnings, extension history, confirmation ledger, and updated remaining-time
+forecast. No further method, anchor, or hyperparameter search is implied.
+
+#### Phase 7D: Fresh Confirmation And Learning-Efficiency Interpretation
+
+**Question:** after calibration, do we obtain useful prediction from scarce
+new observations, and is FD beneficial beyond an adequately calibrated ridge?
+
+Run twelve fresh replicas in both mixed and base-only streams with these
+recipes, all under the same frozen solver policy:
+
+| Recipe | Purpose |
+| --- | --- |
+| Replay/EWC at $c_R$ | Independently calibrated practical control |
+| FD at $(c_F,\lambda_F)$ | Independently calibrated treatment |
+| Replay/EWC at $c_F$, only if $c_F\ne c_R$ | Same-ridge control to separate FD from the ridge-setting difference |
+
+This is **48 trajectories if the selected ridges coincide, otherwise 72**.
+Deduplicate an identical replay recipe; do not manufacture another stochastic
+replica for the same arm. Include the shared frozen initial model as an
+evaluation-only reference, with no training trajectory or fictitious compute.
+No 7A--7C or Phase 5 replica enters these estimates.
+
+The single primary contrast is the mean paired acquisition gain
+
+$$
+D_r=A^R_{r,\mathrm{mixed,replay}(c_R)}(100)
+-A^R_{r,\mathrm{mixed,FD}(c_F,\lambda_F)}(100).
+$$
+
+It compares calibrated **recipes**, not a pure FD intervention when their
+ridge values differ. Report mean, paired replica-bootstrap 95% interval,
+individual differences/favorable count, and the predeclared one-sided sign-flip
+test at $\alpha=0.05$, with its sign-exchangeability limitation as in 5C. Use
+2,000 bootstrap draws and a separately named analysis seed. Release inference
+only after the complete fixed cohort; no optional significance stopping or
+additional replicas because an interval is near zero.
+
+The same-ridge secondary contrast replaces $c_R$ in the control with $c_F$.
+It isolates the effect of enabling FD under that common ridge/solver policy,
+but still does not identify a transfer mechanism. When $c_R=c_F$, it is the
+primary contrast, not a second independent finding. Show the retention harm
+$A^0_{\mathrm{FD}}-A^0_{\mathrm{replay}}$ and its paired interval separately for
+each relevant comparison. A nonsignificant harm is not proof of noninferiority.
+
+Also show the absolute acquisition gain over freezing,
+$R_r^R(0)-A^R_{r,m}(100)$, and base-domain deterioration relative to the same
+initial model, $A^0_{r,m}(100)-R_r^0(0)$. These prevent a relative win over a
+poor learner, or a model that has essentially stopped learning, from becoming
+a claim of useful adaptation. They are secondary, nominal comparisons, not
+extra opportunities to declare the primary hypothesis confirmed. An interval
+overlapping zero means uncertainty, not equivalence. Report endpoint NLL and
+accuracy as well as acquisition AUC; the primary score can worsen even when
+the final model improves. Do not report an NLL percentage as samples saved.
+
+Keep the notebook to **one chronological Phase 7 section**, approximately six
+to eight cells and three multi-panel figures, with progress visible from 7A:
+
+1. Numerical audit: extra objective reduction against held-out NLL change,
+   marking stream/method and any common-ceiling repair.
+2. Development: acquisition versus retention, with ridge labels, frozen origin
+   (subtract each replica's own initial scores before averaging), and the small
+   FD-retuning comparison. Keep the full candidate table in a linked artifact.
+3. Confirmation: new-domain NLL and running $A^R(n)$ versus actual novel count,
+   base-domain NLL, both domains' accuracy, paired gains/95% intervals, and
+   measured online time. Put base-only controls in separate facets explicitly
+   labeled with their paired-event clock. Do not overlay every pilot trajectory.
+
+Explain the two acquisition comparisons in plain language: "better than
+calibrated replay" and "better than learning nothing." Include post-fit versus
+held-out loss and ridge/motion summaries in a compact expandable diagnostic,
+not a wall of per-arrival output. Preserve the earlier phase sections unchanged.
+
+Use these interpretations rather than an automatic winner label:
+
+| Pattern | Supported next conclusion |
+| --- | --- |
+| Calibrated replay improves and FD's advantage shrinks | The original FD lift may partly reflect inadequate ordinary regularization; compare fresh common-ridge results before attributing it |
+| FD retains an acquisition gain at the common ridge, with acceptable retention | Evidence of incremental predictive value in the tested regime, not proof of STM-to-LTM transfer |
+| Both improve relative to replay but do not beat freezing on acquisition AUC | Relative protection remains useful evidence, but efficient acquisition is not established by this KPI |
+| Stronger ridge mostly approaches freezing | Stability alone has not solved learning; an anchor/objective redesign is a later question |
+| Numerical gaps remain material | Results concern bounded numerical implementations; do not make stationary-optimum claims |
+
+Report per-method fitting/eviction/evaluation time and total study time, including
+calibration, audits, initialization, checkpoints, reports, and validation.
+Equal-data comparisons are not equal-compute comparisons. Do not automatically
+start the deferred Phase 6 allocation experiments or a permanent-anchor study.
+
+#### Sol Implementation And Recovery Checklist
+
+Keep the implementation small: extend the existing `DripRunner`, `Treatment`,
+`Store`, and report helpers where compatible, with a separately versioned Phase 7
+scheduler and report module rather than copying an entire experiment framework.
+Suggested entry point: `mnist_experiment.fisher_memory.regularization`, with
+`--stage all|development|confirmation` and a sealed `--source-root` for standalone
+confirmation.
+These names are a proposed interface, **not commands that exist yet**. Development
+must advance 7A--7C autonomously; the confirmation command implements 7D and
+verifies its development dependency before execution. The all-stage entry point
+advances through 7D only after successful development completion, without an
+assistant connection; a pause/failure must not launch the next stage.
+Document tested commands
+in the handoff after implementation, using `~/.venv/bin/python`.
+
+Use new roots such as `plan15/regularization_development_v1` and
+`plan15/regularization_confirmation_v1` under `cache/mnist_experiment/`, with
+new seed families, schema/protocol identities, and the common Plan 15 budget
+lock. Never resume Phase 5 artifacts under changed scientific sources. Seal
+the common-policy, shortlist, extension, and final-selection decisions so a
+restart cannot reselect them. Source-hash changes require new scientific roots;
+record compatibility when importing unchanged dependency assets read-only.
+
+Save selected frozen-objective snapshots before running their branches. Audit
+branches are separate immutable units with parent-state hashes and their own
+RNG/timing metadata. Checkpoint between the bounded branch solves; an interrupt
+may repeat one unfinished diagnostic solve, not its parent trajectory. Persist
+ordinary accepted updates independently so a pending audit cannot change replay
+or cause duplicate consolidation. Retain only these selected snapshots and the
+normal rolling recovery checkpoints, not every historical Fisher or input bank.
+
+Require `--resume`, cooperative signals/STOP, persistent cumulative active-time
+limits, per-invocation limits, and completion-skipping. Freeze prospective jobs
+and run them round-robin by replica, alternating methods and stream types, so
+partial progress is useful on both streams. Deduplicate scientifically identical
+jobs across sub-phases. Report completed/planned units, audit branches, pending
+decisions, active and estimated remaining time, storage, and numerical validity.
+Refresh the artifact-only notebook on paired completions and a bounded
+15-minute heartbeat; skip redundant historical report rebuilds on resume.
+
+Before production, tests must cover:
+
+- the exact $c\,s_t$ ridge and unchanged EWC/anchor semantics;
+- identical frozen objective values/gradients before and after reconstruction;
+- unchanged main-trajectory scientific states/predictive metrics with audits
+  enabled versus disabled (timers are necessarily different);
+- independently checkpointed audits and no duplicate replay eviction on restart;
+- development/confirmation partition assignment and paired seeds/assets;
+- deterministic selection, ties, warnings, one-edge extensions, and recipe deduplication;
+- immutable completion seals, resource/STOP handling, and exact CPU/CUDA
+  interrupted-versus-uninterrupted smoke results with cached MNIST;
+- chronological, bounded notebook output, no training during rendering, and
+  refusal to publish final inference from an incomplete confirmation ledger.
+
+Sol may fix genuine defects under the existing autonomous-correction rules,
+without waiting for Astra. Record material changes and isolate their evidence.
+Poor efficacy alone does not license redesigning a completed confirmation.
+The hard shared **500 GB** peak-storage cap and filesystem reserve remain in
+force. These small-model runs should require only a few additional GB; reserve
+a conservative 5--10 GB initially and replace that estimate with 7A measurements,
+including branch snapshots and temporary/report copies. Do not delete old evidence.
+
+#### Phase 7 Wall-Clock Forecast
+
+Phase 5C measured 3.88 online minutes per mixed replay trajectory and 6.88 per
+mixed FD trajectory; its complete 48-trajectory study took 4.59 active hours.
+Use these as proxies, not guarantees for stronger ridge or larger FD strengths.
+For example, 7B's 48 additional trajectories contain 24 of each method, about
+4.30 online hours before overhead. 7C adds 16--48 FD trajectories, about
+1.83--5.50 online hours. All ranges below include initialization, checkpoints,
+reporting, audit/validation, and modest timing variation rather than GPU kernels
+alone. Shared assets and compatible 7A trajectories are counted only once.
+
+| Sub-phase | New production trajectories | Expected active wall-clock compute |
+| --- | ---: | ---: |
+| 7A: numerical audit and smoke acceptance | 16, plus 48 short diagnostic branches | 1.5--2.5 h |
+| 7B: ridge-response study | 48 beyond compatible 7A runs | 4.5--6.5 h |
+| 7C: FD retuning and at most one edge extension per shortlisted ridge | 16--48 | 2--6.5 h |
+| 7D: twelve-replica confirmation and synthesis | 48 or 72 | 5--8 h |
+| **Ordinary-policy total** | **128--184, plus audit branches** | **About 14--24 h** |
+
+The sum of unrounded lower bounds is 13 hours; quote 14--24 hours as the practical
+planning range, with roughly 18--20 hours as a central estimate. Programming is
+separate: provisionally 3--6 hours of engineering elapsed time for Sol, with
+smoke/test process time included in 7A above. Neither estimate is a measurement
+of the not-yet-built Phase 7 pipeline or a promise of statistical significance.
+
+The common-ceiling repair is a real contingency, not hidden in that range.
+It adds sixteen replacement development trajectories and their audits, and may
+increase subsequent solve costs. A provisional repaired-policy envelope is
+**20--40 active compute hours**; replace it with measured timing immediately
+after the repeat audit rather than assuming twice the ceiling means twice the
+runtime. Do not spend extra iterations just to exhaust an allowance.
+
+The initial **26-hour aggregate active-time allowance** across the two
+Phase 7 roots was authorized with execution on 2026-10-23. Sub-root CLI
+ceilings must share or partition that allowance, never each receive 26 hours.
+Include superseded audit/repair roots in cumulative Phase 7 expenditure.
+If the measured repair/grid forecast cannot fit, preserve progress and report
+the additional time needed; do not silently consume the contingency, reduce the
+confirmation cohort, shorten trajectories, or drop a control. Halt/resume time
+while the node is repurposed is not active compute. The original plan amendment
+itself did not launch computation; the later execution request authorizes it.
+
 ## Statistical Reporting
+
+For Phases 5B/5C and 7, their phase-specific acquisition AUC and primary contrast
+above supersede the earlier phases' outcome defaults below.
 
 Primary predictive outcomes are exposure-normalized current holdout NLL AUC
 and post-eviction historical holdout NLL AUC. For retention, time zero is the
@@ -708,6 +1609,11 @@ artifact repair, or automatic resume. An empty or partial study has an explicit
 status panel; malformed, incompatible, or falsely completed units fail clearly.
 
 Use this main reading order, with about six to eight multi-panel figures total:
+
+Keep the title and study overview first. Order experimental result sections by
+phase from oldest to newest, keeping plots and explanations within their phase.
+Append new phases at the bottom rather than inserting them ahead of earlier
+results. A compact progress overview can remain at the front.
 
 1. **Execution progress:** phase, environment, completed/planned paired units,
    active compute, time in reporting/validation/restart, projected remaining
@@ -926,6 +1832,9 @@ production run cannot start accidentally. See [PLAN15_HANDOFF.md](PLAN15_HANDOFF
 for acceptance results, tested commands, and the current execution state.
 
 ## Provisional Wall-Clock Envelope
+
+This envelope describes the original Phases 0--4, not the later extensions.
+Phase 7 has its own forecast and proposed allocation above; Phase 6 is deferred.
 
 These are revised planning ranges informed by Phase 0's production-shaped
 timing probes, not measurements of complete production trajectories. Account

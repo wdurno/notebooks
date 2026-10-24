@@ -201,7 +201,8 @@ class Treatment:
 
 
 def scientific_sources() -> dict[str, str]:
-    paths = [p for p in PACKAGE.rglob("*.py") if p.name not in ("report.py", "control.py")]
+    paths = [p for p in PACKAGE.rglob("*.py") if p.name not in (
+        "report.py", "drip_report.py", "regularization_report.py", "control.py")]
     paths.extend(ROOT / name for name in (
         "src/parameters.py", "src/seeding.py", "src/mnist_data.py", "src/mnist_model.py",
         "src/lanczos_wrapper.py", "src/representations.py",

@@ -85,6 +85,27 @@ def _phase_key(value: Any) -> tuple[int, str]:
     return (int(match.group()) if match else -1, label)
 
 
+def order_notebook_chronologically(notebook: Any) -> Any:
+    """Keep the original study first and later phase blocks in execution order."""
+    groups = defaultdict(list)
+    phase = (0, "")
+    for cell in notebook.cells:
+        tagged = next((match for tag in cell.metadata.get("tags", [])
+                       if (match := re.fullmatch(r"plan15_phase(\d+)([a-z]*)", tag, re.I))), None)
+        heading = (re.match(r"^## Phase\s+(\d+)([a-z]*)\b", cell.source, re.I)
+                   if cell.cell_type == "markdown" else None)
+        if tagged:
+            key = (int(tagged[1]), tagged[2].upper())
+        else:
+            if heading:
+                phase = (int(heading[1]), heading[2].upper())
+            key = phase
+        groups[key].append(cell)
+    notebook.cells = [cell for key in sorted(groups) for cell in groups[key]]
+    notebook.metadata["plan15_section_order"] = "oldest_to_newest"
+    return notebook
+
+
 def _version(value: Mapping[str, Any], where: str, *, required: bool = True) -> None:
     version = value.get("schema_version", 1 if not required else None)
     if isinstance(version, bool) or version != REPORT_SCHEMA_VERSION:
@@ -606,6 +627,102 @@ def _conclusion(selected: list[dict[str, Any]], status: Mapping[str, Any]) -> An
     return nbformat.v4.new_markdown_cell(source)
 
 
+def _extension_cell(extension_root: Path, primary_root: Path, selected: list[dict[str, Any]]) -> Any:
+    from .extension_report import collect
+
+    data = collect(extension_root)
+    ledger, status = data["ledger"], data["status"]
+    if Path(ledger["source_root"]).resolve() != primary_root.resolve():
+        raise ArtifactError("extension ledger references a different Plan 15 source root")
+    complete = len(data["observed"]) == len(ledger["jobs"])
+    if status.get("status") == "completed" and not complete:
+        raise ArtifactError("extension reports completion without all planned trajectories")
+    fd = {}
+    for unit in selected:
+        meta = unit["metadata"]
+        if (unit["complete"] and meta.get("family") == "confirmation"
+                and meta.get("phase") == "phase3" and meta.get("condition") == "finite_difference"):
+            fd[(meta["environment"], meta["replica"])] = unit
+
+    rows, comparisons = [], []
+    for environment in ledger["scope"]["environments"]:
+        for method in ledger["scope"]["methods"]:
+            jobs = [(job, data["observed"].get(unit_id)) for unit_id, job in data["expected"].items()
+                    if job["environment"] == environment and job["method"] == method]
+            observed = [(job, summary) for job, summary in jobs if summary is not None]
+            summaries = {}
+            for endpoint in ("current_auc", "historical_auc"):
+                control = {job["replica"]: job["control"].get(endpoint) for job, _ in observed}
+                treatment = {job["replica"]: summary.get(endpoint) for job, summary in observed}
+                summaries[endpoint] = paired_summary(control, treatment)
+
+            def gain_text(endpoint):
+                result = summaries[endpoint]
+                if not result["n_pairs"]:
+                    return "unavailable"
+                if not complete or result["n_pairs"] != ledger["scope"]["replicas"]:
+                    return f"{result['mean_gain']:+.4f} (descriptive)"
+                low, high = result["ci"]
+                return f"{result['mean_gain']:+.4f} [{low:+.4f}, {high:+.4f}]"
+
+            current, historical = summaries["current_auc"], summaries["historical_auc"]
+            favorable = (f"{current['favorable_replicas']}/{current['n_pairs']}; "
+                         f"{historical['favorable_replicas']}/{historical['n_pairs']}")
+            seconds = float(np.mean([summary["active_seconds"] for _, summary in observed])) if observed else None
+            rows.append([ENVIRONMENT_LABELS[environment], "JVP" if method == "jvp" else "Directional KL",
+                         f"{len(observed)}/{len(jobs)}", gain_text("current_auc"),
+                         gain_text("historical_auc"), favorable, f"{seconds:.0f}" if seconds else "-"])
+            if not complete or len(observed) != len(jobs):
+                continue
+            fd_rows = {}
+            for endpoint, split in (("current_auc", "current"), ("historical_auc", "historical")):
+                reference = {}
+                for job, _ in observed:
+                    replica = job["replica"]
+                    if (environment, replica) in fd:
+                        reference[replica], _ = _auc_for_unit(fd[(environment, replica)], split)
+                treatment = {job["replica"]: summary.get(endpoint) for job, summary in observed}
+                fd_rows[endpoint] = paired_summary(reference, treatment)
+            if all(result["n_pairs"] == len(jobs) for result in fd_rows.values()):
+                fd_seconds = float(np.mean([
+                    max(row["cumulative_active_seconds"] for row in fd[(environment, job["replica"])]["rows"]
+                        if row.get("cumulative_active_seconds") is not None)
+                    for job, _ in observed]))
+                comparisons.append((environment, method, fd_rows, seconds / fd_seconds))
+    source = ("## Phase 5: Alternative STM penalties\n\n"
+              f"**Progress:** {len(data['observed'])}/{len(ledger['jobs'])} sealed trajectories; "
+              f"status **{status.get('status', 'unknown')}**. "
+              "Gain is replay/EWC minus method NLL AUC; positive is better. "
+              "The two favorable endpoints are current and post-eviction holdout prediction, respectively.\n\n"
+              + _table(["Environment", "Method", "Pairs", "Current gain [95%]", "Historical gain [95%]",
+                        "Favorable c; h", "Online s"], rows))
+    if comparisons:
+        directional_rotations = [entry for entry in comparisons
+                                 if entry[1] == "directional" and entry[0] in ("rotation_linear", "rotation_sigmoid")]
+        if len(directional_rotations) == 2 and all(
+                abs(entry[2][endpoint]["mean_gain"]) < .02 and entry[3] < 1
+                for entry in directional_rotations for endpoint in ("current_auc", "historical_auc")):
+            source += ("\n\n**Practical readout:** directional KL has rotation means close to finite-difference KL "
+                       "with lower measured online time. This is a promising compute tradeoff, not a proof "
+                       "of equivalent efficacy. JVP is slower and its sigmoid gain is substantially smaller.")
+        source += "\n\n**Compared with selected finite-difference KL:** "
+        fragments = []
+        for environment, method, endpoints, ratio in comparisons:
+            if environment == "digit9_mixture":
+                continue
+            c = endpoints["current_auc"]["mean_gain"]
+            h = endpoints["historical_auc"]["mean_gain"]
+            fragments.append(f"{ENVIRONMENT_LABELS[environment]} {('JVP' if method == 'jvp' else 'directional KL')} "
+                             f"has FD-minus-method gains {c:+.4f} current and {h:+.4f} historical "
+                             f"at {ratio:.2f}x FD's online time")
+        source += "; ".join(fragments) + ". Positive FD-minus-method gains favor the alternative."
+    source += ("\n\nThese are nominal paired-bootstrap intervals from a post-selection extension, "
+               "not additional prespecified confirmation claims or evidence of STM-to-LTM transfer. "
+               "Rotation optimizers remained frequently under-solved; the digit-9 mixture showed no clear "
+               "positive lift. The separate extension notebook contains the per-replica plot.")
+    return nbformat.v4.new_markdown_cell(source)
+
+
 def _pr_records(unit: Mapping[str, Any], split: str) -> list[dict[str, Any]]:
     """Accept nested curves and the runner's explicit scalar threshold rows."""
     records = [dict(row) for row in unit["rows"] if row["split"] == split and row.get("pr_curve")]
@@ -652,14 +769,273 @@ def _efficiency_cell(selected: list[dict[str, Any]]) -> Any | None:
             means.append(float(np.mean(observed)) if observed else None)
         rows.append([ENVIRONMENT_LABELS[environment], labels[variant], len(values), *means])
     return nbformat.v4.new_markdown_cell(
-        "### Sample and compute efficiency\n\n" + _table(
+        "### Earlier study: sample and compute audit\n\n"
+        "These are the original rotation and digit-9 conditions. Prequential NLL averages "
+        "prediction loss on incoming observations before their updates; lower is better. "
+        "It does not estimate how many samples a method saves.\n\n"
+        "<details>\n<summary>Original study measurements</summary>\n\n" + _table(
             ["Environment", "Treatment", "Replicas", "Digits integrated", "Online seconds", "Prequential NLL", "Initial-task NLL"], rows)
         + "\n\nLatest observed endpoints; partial runs remain descriptive. Incoming NLL is weighted by arrival size "
         "within replica, then replicas are weighted equally. Initialization cost is separate from online compute."
+        "\n\n</details>"
     )
 
 
-def build_notebook(root: Path | str, *, row_adapter: RowAdapter | None = None,
+def _phase5c_efficiency_plot(units: list[dict], result: dict) -> Any:
+    """Visualize the frozen acquisition estimand and observed cost separately."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+
+    colors = {"replay_ewc": "#a43b68", "finite_difference": "#147d73"}
+    labels = {"replay_ewc": "Replay/EWC", "finite_difference": "FD KL"}
+    mixed = [unit for unit in units if unit["completed"] and unit["metadata"]["stream"] == "mixed"]
+    target = result["event_target"]
+    figure, grid = plt.subplots(2, 2, figsize=(11.4, 6.8))
+    learning, acquisition, effect_axis, compute = grid.flat
+    curves = {}
+    for condition in colors:
+        cohort = [unit for unit in mixed if unit["metadata"]["condition"] == condition]
+        curves[condition] = np.mean([[row["rotated_nll"] for row in unit["rows"]]
+                                     for unit in cohort], axis=0)
+        learning.plot(range(target + 1), curves[condition], color=colors[condition],
+                      linewidth=2, label=labels[condition])
+        # The registered score excludes the pre-training (n=0) checkpoint.
+        running = np.cumsum(curves[condition][1:]) / np.arange(1, target + 1)
+        acquisition.plot(range(1, target + 1), running, color=colors[condition], linewidth=2,
+                         label=f"{labels[condition]}: " + rf"$A^R({target})={running[-1]:.3f}$")
+    learning.fill_between(range(1, target + 1), curves["finite_difference"][1:],
+                          curves["replay_ewc"][1:], color=colors["finite_difference"], alpha=.10)
+    learning.set(title="Held-out NLL after batch updates", xlabel="New rotated images (batch checkpoints)",
+                 ylabel=r"Test NLL $R_m^R(n)$ (lower is better)", xlim=(0, target))
+    acquisition.set(title="Sample-efficiency score (lower is better)", xlabel="New rotated images observed",
+                    ylabel=r"$A_m^R(n)$: mean NLL through image $n$", xlim=(1, target))
+    for axis in (learning, acquisition):
+        axis.axhline(curves["replay_ewc"][0], color="#666666", linestyle="--", linewidth=1,
+                     label="Frozen initial model")
+        axis.legend(frameon=False, fontsize=8)
+
+    effect = result["primary"]
+    gains = [row["gain"] for row in effect["paired_values"]]
+    low, high = effect["ci"]
+    effect_axis.axvline(0, color="#666666", linewidth=1, linestyle="--")
+    effect_axis.scatter(gains, np.linspace(-.16, .16, len(gains)), s=23,
+                        color=colors["finite_difference"], alpha=.55)
+    effect_axis.hlines(.64, low, high, color=colors["finite_difference"], linewidth=3)
+    effect_axis.scatter([effect["mean_gain"]], [.64], s=65, color=colors["finite_difference"], zorder=3)
+    effect_axis.text(.5, .97, f"{effect['mean_gain']:+.3f}  [{low:+.3f}, {high:+.3f}]",
+                     transform=effect_axis.transAxes, ha="center", va="top", fontsize=10)
+    span = max(.1, *[abs(value) for value in [*gains, low, high]])
+    effect_axis.set(title=rf"Paired gain in $A^R({target})$ (positive favors FD)",
+                    xlabel=rf"$A^R_{{\mathrm{{Replay}}}}({target})-A^R_{{\mathrm{{FD}}}}({target})$",
+                    xlim=(min(0, min(gains), low) - .09 * span, max(0, max(gains), high) + .12 * span),
+                    ylim=(-.35, 1.15), yticks=[0, .64],
+                    yticklabels=[f"{result['n_pairs']} replicas", "Mean / 95% CI"])
+
+    costs = {row["condition"]: row["active_seconds"] / 60 for row in result["arm_summaries"]
+             if row["stream"] == "mixed"}
+    for position, condition in enumerate(colors):
+        compute.barh(position, costs[condition], color=colors[condition], height=.48)
+        compute.text(costs[condition] + .12, position, f"{costs[condition]:.2f}", va="center", fontsize=10)
+    ratio = costs["finite_difference"] / costs["replay_ewc"]
+    compute.set(title=f"Compute cost: FD uses {ratio:.2f}x time",
+                xlabel="Mean online minutes per trajectory", yticks=[0, 1],
+                yticklabels=[labels[key] for key in colors], xlim=(0, max(costs.values()) * 1.23))
+    compute.invert_yaxis()
+    for axis in grid.flat:
+        axis.grid(axis="y" if axis in (learning, acquisition) else "x", alpha=.18)
+        axis.spines[["top", "right"]].set_visible(False)
+    figure.tight_layout(w_pad=2, h_pad=2)
+    return _plot_cell(figure, "Phase 5C: fixed rotated test-panel NLL after batch updates, running acquisition score, paired score gain, and compute cost. Counts crossed in one batch share its evaluation.")
+
+
+def _phase5c_evaluation_cell(result: dict, initial_nll: float) -> Any:
+    target, replicas = result["event_target"], result["n_pairs"]
+    fd = next(row for row in result["arm_summaries"]
+              if row["stream"] == "mixed" and row["condition"] == "finite_difference")
+    return nbformat.v4.new_markdown_cell(
+        "### Evaluation protocol and comparable NLLs\n\n"
+        "Each replica uses one **fixed, class-stratified panel from the official MNIST test split**. "
+        "For new-domain evaluation, every panel image is rotated by 30 degrees. The frozen reference "
+        "and all four adaptive arms use **identical test images, labels, rotations, and class weights** "
+        "within that replica at every checkpoint. These test examples never enter pretraining, online "
+        "updates, replay, Fisher estimation, or curvature penalties. Phase 5C test IDs are disjoint "
+        "from the Phase 5B development panels used to select the coefficient; that coefficient was "
+        "sealed before confirmation began. Panels may overlap between replicas.\n\n"
+        "**Timing:** finish optimization on an incoming batch of up to four training images plus "
+        "the resident replay examples, then measure loss on the separate test panel. If a batch "
+        "contains two new rotated images, both event counts receive that same post-update test loss. "
+        "The test loss is not loss on the incoming batch or replay buffer.\n\n"
+        "<details>\n<summary>NLL equations, weighting, and frozen-reference construction</summary>\n\n"
+        "Let $H_{r,c}$ contain replica $r$'s fixed test-image IDs of digit $c$, "
+        "$T_{30^\\circ}$ be the fixed rotation, and $q_c$ the digit's frequency in the full MNIST "
+        "training split. Class weights stay fixed; they do not track the stream's rotated fraction. "
+        "The common predictive loss is\n\n"
+        "$$\n"
+        r"\ell_r^R(\theta)=-\sum_{c=0}^{9}\frac{q_c}{|H_{r,c}|}"
+        r"\sum_{i\in H_{r,c}}\log p_\theta(c\mid T_{30^\circ}x_i)."
+        "\n$$\n\n"
+        "This is mean per-image NLL in nats. It **excludes EWC, Ridge, and KL penalties**. "
+        "Let $b_r(k)$ be the batch containing the $k$th rotated training image, "
+        "$\\theta_{r,m,b}$ the parameters after optimizing that whole batch, and "
+        "$\\theta_{r,0}$ the shared pretrained parameters before any online batches. Then\n\n"
+        "$$\n"
+        r"\begin{aligned}"
+        r"F_r^R&=\ell_r^R(\theta_{r,0}),\\"
+        r"E_{r,m}^R&=\ell_r^R(\theta_{r,m,b_r(N)}),\\"
+        r"A_{r,m}^R(N)&=\frac{1}{N}\sum_{k=1}^{N}\ell_r^R(\theta_{r,m,b_r(k)})."
+        r"\end{aligned}"
+        "\n$$\n\n"
+        f"Here $N={target}$ and $m$ identifies the adaptive method. The three reported numbers "
+        f"are equal-weight means over {replicas} replicas: "
+        f"$\\overline{{F^R}}={initial_nll:.4f}$, "
+        f"$\\overline{{A_{{\\mathrm{{FD}}}}^R}}={fd['rotated_auc']:.4f}$, and "
+        f"$\\overline{{E_{{\\mathrm{{FD}}}}^R}}={fd['final_rotated_nll']:.4f}$. "
+        "The frozen reference is measured at checkpoint zero on this same rotated test panel, "
+        "not on its unrotated pretraining data. Holding that deterministic model fixed gives "
+        "$R_{r,\\mathrm{frozen}}^R(k)=F_r^R$ at every count, so its acquisition score and final "
+        "NLL both equal $F_r^R$; it is not a separately fitted control. The adaptive endpoint "
+        "and acquisition score use the same predictive loss but different time aggregation. "
+        "Repeated evaluations are not independent observations; uncertainty is summarized across replicas."
+        "\n\n</details>"
+    )
+
+
+def build_phase5c_presentation(base_notebook: Path | str, root: Path | str) -> Any:
+    """Reformat completed confirmation without changing frozen analysis or sources."""
+    from .drip_confirmation_report import TAG, analyze, collect
+
+    data = collect(root)
+    result = analyze(data["units"], data["ledger"])
+    if not result["complete"] or not result["inference_ready"]:
+        raise ArtifactError("visual confirmation summary requires the complete production cohort")
+    sealed = _read_json(Path(root) / "units" / result["result_id"] / "result.json")
+    if result != sealed:
+        raise ArtifactError("confirmation presentation disagrees with sealed analysis")
+    notebook = nbformat.read(base_notebook, as_version=4)
+    old = [cell for cell in notebook.cells if TAG in cell.metadata.get("tags", [])]
+    if not old:
+        raise ArtifactError("existing Phase 5C notebook section required for presentation refresh")
+    accuracy = next((cell for cell in old if cell.cell_type == "code" and any(
+        "Phase 5C accuracy:" in output.get("data", {}).get("text/plain", "")
+        for output in cell.get("outputs", []))), None)
+    if accuracy is None:
+        raise ArtifactError("completed Phase 5C accuracy figure missing")
+    details = [cell.source for cell in old if cell.cell_type == "markdown" and
+               cell.source.startswith(("### Paired effects", "### Prediction and compute audit"))]
+    if not details:
+        details = [cell.source for cell in old if cell.cell_type == "markdown"
+                   and cell.source.startswith("<details>\n<summary>Secondary comparisons")]
+    target, effect = result["event_target"], result["primary"]
+    arms = {row["condition"]: row for row in result["arm_summaries"] if row["stream"] == "mixed"}
+    ratio = arms["finite_difference"]["active_seconds"] / arms["replay_ewc"]["active_seconds"]
+    relative_reduction = 100 * effect["mean_gain"] / arms["replay_ewc"]["rotated_auc"]
+    initial_nll = float(np.mean([unit["rows"][0]["rotated_nll"] for unit in data["units"]
+                                if unit["completed"] and unit["metadata"]["stream"] == "mixed"
+                                and unit["metadata"]["condition"] == "replay_ewc"]))
+    progress = (
+        "## Phase 5C: Sample and compute efficiency\n\n"
+        f"**Complete: {result['completed']}/{result['expected']} trajectories; {result['n_pairs']} paired replicas.** "
+        f"Each mixed-stream trajectory receives {target} unique rotated images, about ten per digit, "
+        "with a 32-image replay buffer.\n\n"
+        "**Statistical efficiency here means prediction quality while new labeled images are scarce.** "
+        "The prespecified acquisition score is the normalized area under the sample-indexed learning curve:\n\n"
+        "$$\nA_m^R(n)=\\frac{1}{n}\\sum_{k=1}^{n}R_m^R(k),"
+        f"\\qquad n=1,\\ldots,{target}.\n$$\n\n"
+        "Here $m$ identifies the method, the superscript $R$ means the rotated domain, and "
+        "$R_m^R(k)$ is NLL on the fixed rotated test panel after optimizing the entire training "
+        "batch containing the $k$th new rotated image. "
+        f"Thus $A_m^R({target})$ averages NLL after images 1 through {target}; lower is better. "
+        "The initial checkpoint ($k=0$) is excluded. Good prediction earlier in the scarce-data period "
+        "counts, even if final predictions coincide.\n\n"
+        f"**Same {target} new images, lower acquisition loss:** mean $A_m^R({target})$ is "
+        f"**{arms['finite_difference']['rotated_auc']:.3f} for FD KL** versus "
+        f"**{arms['replay_ewc']['rotated_auc']:.3f} for replay/EWC** "
+        f"({relative_reduction:.1f}% lower; a descriptive ratio of means)."
+    )
+    reading = (
+        "**Reading the figure:** top left, held-out test NLL at batch-aligned sample counts; top right, running "
+        "$A_m^R(n)$, whose endpoint is the registered score. These curves show replica means, not "
+        "confidence bands. Bottom left, each small dot is one replica's "
+        f"$D_r=A^R_{{r,\\mathrm{{replay}}}}({target})-A^R_{{r,\\mathrm{{FD}}}}({target})$; "
+        "the large dot and line give its mean and paired-bootstrap 95% interval. "
+        "Bottom right, online time for the same observations.\n\n"
+        f"**Efficiency result:** mean gain **{effect['mean_gain']:.3f}** "
+        f"(95% CI **[{effect['ci'][0]:.3f}, {effect['ci'][1]:.3f}]**), favorable in "
+        f"**{effect['favorable_replicas']}/{result['n_pairs']} replicas** "
+        f"(prespecified one-sided sign-flip $p={effect['p_value']:.6g}$), "
+        f"at **{ratio:.2f}x online time**. This supports better use of a fixed scarce-data budget "
+        "relative to replay/EWC with the same buffer; "
+        "it does not estimate a percentage of samples saved or establish equal-compute superiority. "
+        f"Time covers the whole mixed stream (about {arms['replay_ewc']['exposure']:.0f} total images), "
+        "including fitting, eviction processing, and evaluation; initialization is excluded.\n\n"
+        f"**Starting-point context:** the frozen initial model has mean rotated-domain NLL {initial_nll:.3f} "
+        f"(dashed lines). FD's final NLL is {arms['finite_difference']['final_rotated_nll']:.3f}. "
+        "Compare those with the acquisition scores above: an advantage over replay is not necessarily "
+        "net improvement over initialization throughout learning.\n\n"
+        f"The accuracy curves below give a second view: final rotated-domain accuracy averaged "
+        f"**{100 * arms['finite_difference']['final_rotated_accuracy']:.1f}% with FD** versus "
+        f"**{100 * arms['replay_ewc']['final_rotated_accuracy']:.1f}% with replay/EWC** (descriptive)."
+    )
+    plot = _phase5c_efficiency_plot(data["units"], result)
+    cells = [nbformat.v4.new_markdown_cell(progress), _phase5c_evaluation_cell(result, initial_nll), plot,
+             nbformat.v4.new_markdown_cell(reading), accuracy]
+    if len(details) == 1 and details[0].startswith("<details>"):
+        detail_text = details[0]
+    else:
+        detail_text = ("<details>\n<summary>Secondary comparisons and execution diagnostics</summary>\n\n"
+                       + "\n\n".join(details) + "\n\n</details>")
+    if "**Execution health:**" not in detail_text:
+        health = result["health"]
+        diagnostics = (
+            f"**Execution health:** {health['solver_failures']} solver failures; "
+            f"{health['nonfinite_trajectories']} nonfinite trajectories; "
+            f"{health['under_solved_updates']} under-solved updates under the common optimizer ceiling. "
+            f"The selected FD coefficient is {result['selected_strength']:.2f}."
+        )
+        detail_text = detail_text.removesuffix("</details>").rstrip() + "\n\n" + diagnostics + "\n\n</details>"
+    cells.append(nbformat.v4.new_markdown_cell(detail_text))
+    for cell in cells:
+        cell.metadata["tags"] = [TAG]
+    notebook.cells = [cell for cell in notebook.cells if TAG not in cell.metadata.get("tags", [])]
+    notebook.cells.extend(cells)
+    for cell in notebook.cells:
+        if cell.cell_type == "markdown" and cell.source.startswith("### Sample and compute efficiency\n"):
+            _, body = cell.source.split("\n", 1)
+            cell.source = (
+                "### Earlier study: sample and compute audit\n\n"
+                "These measurements concern the original rotation and digit-9 study. "
+                "The new rare-domain confirmation and its sample-efficiency figure are in Phase 5C at the end. "
+                "Prequential NLL averages loss on incoming observations before their updates; "
+                "lower is better. It is not a sample-savings estimate.\n\n"
+                "<details>\n<summary>Original study measurements</summary>\n"
+                + body + "\n\n</details>")
+        if cell.cell_type == "markdown" and cell.source.startswith("### Earlier study: sample and compute audit"):
+            cell.source = cell.source.replace("in Phase 5C above.", "in Phase 5C at the end.")
+    notebook.metadata["plan15_phase5c_presentation"] = dict(
+        schema_version=1, artifact_only=True, analysis_unit=result["result_id"],
+        refreshed_at=datetime.now(timezone.utc).isoformat())
+    order_notebook_chronologically(notebook)
+    nbformat.validate(notebook)
+    return notebook
+
+
+def refresh_phase5c(root: Path, notebook: Path, *, publish: Publisher) -> Path:
+    rendered = build_phase5c_presentation(notebook, root)
+    content = nbformat.writes(rendered).encode("utf-8")
+    if len(content) > MAX_NOTEBOOK_BYTES:
+        raise ArtifactError("notebook exceeds bounded publication size")
+    target = root / "reports" / "fisher_memory_results.ipynb"
+    publish(target, content)
+    overview = next(cell for cell in rendered.cells if cell.cell_type == "code"
+                    and "plan15_phase5c" in cell.metadata.get("tags", []))
+    publish(root / "reports" / "phase5c_efficiency.png",
+            base64.b64decode(overview.outputs[0].data["image/png"]))
+    return target
+
+
+def build_notebook(root: Path | str, *, extension_root: Path | str | None = None,
+                   row_adapter: RowAdapter | None = None,
                    check_stop: Callable[[], None] | None = None) -> Any:
     """Build <=8 figures from sealed scalar JSON; does not publish files."""
     import matplotlib
@@ -685,6 +1061,9 @@ def build_notebook(root: Path | str, *, row_adapter: RowAdapter | None = None,
         "Does reducing old-data sensitivity to **STM** (the LoRA residual) improve new-data learning "
         "without harming evicted-data prediction? **LTM** is the trainable base protected approximately by EWC. "
         "**Eviction** removes an observation from replay and archives its information once.\n\n"
+        "**Shared model size:** every condition trains the same 663 coordinates: 487 in LTM and "
+        "176 in the rank-two LoRA STM. Curvature probes and the detached distillation teacher "
+        "add no trainable parameters.\n\n"
         "**Reliance** is the NLL increase when STM is attenuated; **vulnerability** is the NLL increase "
         "when later STM replaces earlier STM while earlier LTM is fixed. Positive means harm. "
         "**Curvature** measures local predictive sensitivity, not a memory share. "
@@ -896,6 +1275,8 @@ def build_notebook(root: Path | str, *, row_adapter: RowAdapter | None = None,
     if efficiency is not None:
         cells.append(efficiency)
     cells.append(_conclusion(selected, status))
+    if extension_root is not None:
+        cells.append(_extension_cell(Path(extension_root), Path(root), selected))
     notebook = nbformat.v4.new_notebook(cells=cells, metadata={
         "kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
         "language_info": {"name": "python"},
@@ -906,6 +1287,7 @@ def build_notebook(root: Path | str, *, row_adapter: RowAdapter | None = None,
                    "sealed_partial_units": sum(not u["complete"] for u in units)},
     })
     check()
+    order_notebook_chronologically(notebook)
     nbformat.validate(notebook)
     return notebook
 
@@ -915,13 +1297,15 @@ def refresh(
     notebook: Path | str | None = None,
     *,
     publish: Publisher | None = None,
+    extension_root: Path | str | None = None,
     row_adapter: RowAdapter | None = None,
 ) -> Path:
     """Build once, then publish through a reserved atomic storage operation."""
     root = Path(root)
     target = Path(notebook) if notebook is not None else root / "reports" / "fisher_memory_results.ipynb"
     check = getattr(publish, "check_stop", lambda: None)
-    content = nbformat.writes(build_notebook(root, row_adapter=row_adapter, check_stop=check)).encode("utf-8")
+    content = nbformat.writes(build_notebook(
+        root, extension_root=extension_root, row_adapter=row_adapter, check_stop=check)).encode("utf-8")
     if len(content) > MAX_NOTEBOOK_BYTES:
         raise ArtifactError("notebook exceeds bounded publication size")
     if publish is None:
@@ -973,15 +1357,26 @@ def main(argv: list[str] | None = None) -> None:
     from .config import ROOT
     from .run import budget_lock, file_bytes
 
+    os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "plan15-matplotlib"))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--notebook", type=Path)
+    parser.add_argument("--extension-root", type=Path,
+                        help="completed or in-progress Plan 15 optional-method extension")
+    parser.add_argument("--phase5c", action="store_true",
+                        help="refresh the completed Phase 5C visual summary in an existing notebook")
     parser.add_argument("--budget-root", type=Path, default=ROOT / "cache/mnist_experiment/plan15")
     parser.add_argument("--data-root", type=Path, default=ROOT / "cache/mnist_experiment/datasets")
     arguments = parser.parse_args(argv)
+    if arguments.phase5c and (arguments.notebook is None or arguments.extension_root is not None):
+        parser.error("--phase5c requires --notebook and does not take --extension-root")
     root, budget = arguments.root.resolve(), arguments.budget_root.resolve()
     if root == budget or not root.is_relative_to(budget):
         parser.error("run root must be a child of the shared Plan 15 budget root")
+    if arguments.extension_root is not None:
+        extension_root = arguments.extension_root.resolve()
+        if extension_root == root or not extension_root.is_relative_to(budget):
+            parser.error("extension root must be a distinct child of the shared Plan 15 budget root")
 
     identity_file = root / "identity.json"
     if not identity_file.exists():
@@ -999,7 +1394,27 @@ def main(argv: list[str] | None = None) -> None:
         with Store(root, identity, resume=True, max_bytes=ledger.get("max_bytes", 500_000_000_000),
                    external_bytes=external,
                    finalization_reserve_bytes=ledger.get("finalization_reserve_bytes", 1_048_576)) as store:
-            refresh(root, arguments.notebook, publish=reserved_publisher(store))
+            if arguments.phase5c:
+                report = refresh_phase5c(root, arguments.notebook, publish=reserved_publisher(store))
+            else:
+                report = refresh(root, publish=reserved_publisher(store),
+                                 extension_root=arguments.extension_root)
+            if arguments.notebook is not None:
+                target = arguments.notebook.absolute()
+                if target.is_symlink():
+                    raise ValueError("notebook export must not be a symlink")
+                content = report.read_bytes()
+                with store.reserve(len(content), finalizing=True):
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    fd, temporary = tempfile.mkstemp(prefix=".plan15-report-", dir=target.parent)
+                    try:
+                        with os.fdopen(fd, "wb") as handle:
+                            handle.write(content)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                        os.replace(temporary, target)
+                    finally:
+                        Path(temporary).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -609,7 +609,9 @@ def test_flattened_threshold_rows_and_compute_summaries(tmp_path):
     unit = report.collect_artifacts(tmp_path)["units"][0]
     assert report._pr_records(unit, "historical")[0]["pr_curve"]["recall"] == curve["recall"]
     notebook = report.build_notebook(tmp_path)
-    assert "Sample and compute efficiency" in "\n".join(c.source for c in notebook.cells)
+    source = "\n".join(c.source for c in notebook.cells)
+    assert "Earlier study: sample and compute audit" in source
+    assert "does not estimate how many samples" in source
     assert sum(len(c.get("outputs", [])) for c in notebook.cells) <= 7
 
 

@@ -40,3 +40,5 @@ stop rule. Never extend a cohort because significance is close.
 Refresh the concise notebook through the report module. Keep the full audit trail
 in JSON, not in notebook prose. Test changes with the focused unit tests and the
 explicit cached-MNIST smoke/recovery tests before resuming affected work.
+Order result sections by phase, oldest first. Keep each section's plots and
+explanations together, and append new results at the bottom.

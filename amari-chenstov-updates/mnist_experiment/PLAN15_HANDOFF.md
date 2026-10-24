@@ -1,5 +1,335 @@
 # Plan 15 Handoff
 
+## Phase 7 Execution (completed)
+
+The new Phase 7 section of [Plan 15](plan15.md) specifies four sub-phases for
+Sol to implement and execute: 7A frozen-objective solve audit,
+7B paired ridge grid, 7C bounded FD retuning, and 7D fresh confirmation/reporting.
+Phase 6 remains provisional and is neither a dependency nor an automatic next job.
+The user authorized 7A--7D on 2026-10-23 with the planned initial 26-hour
+aggregate allocation. Implementation and CPU/CUDA recovery acceptance passed:
+389 tests with no skips/failures, plus a 41-test reporting follow-up. The sealed
+manifest is `cache/mnist_experiment/plan15/phase7_acceptance_v1/units/phase7-acceptance-v1/result.json`.
+Its 397.837 measured test-process seconds are charged to the shared allocation.
+All four phases completed on CUDA on 2026-10-24, with the final cohort sealed
+at 12:42 UTC. No Phase 7 work remains pending and no experiment process remains
+running. Phase 6 has not started. Scientific source hash:
+`26ca52703bfcc4d13f16d1d42b53851f2d31e443aef8bf035f06056f51a64e75`.
+Do not change scientific source files in place while this root is active;
+use the recorded correction/versioning protocol if a defect needs repair.
+The final notebook includes a brief ridge/FD glossary paragraph and labels
+the after-7A forecast as a historical estimate, not a live countdown. It also
+flags selected ridge-grid boundaries as best tested, without a bracketed optimum.
+The collapsed diagnostics also show recorded fitting, eviction, evaluation,
+and total online seconds, plus a concise interpretation of the final intervals.
+The final 43 focused reporting tests passed, and the scientific source hash
+remains unchanged. These reporting-only clarifications have been published
+through the tested completed-work resume path, with the final plots inspected.
+
+**Final confirmation:** all 48 trajectories / 12 paired replicas are sealed.
+At $c_R=c_F=1$ and $\lambda_F=160.89$, FD's primary acquisition gain over replay
+was +0.13017 (paired bootstrap 95% interval [+0.10456, +0.15706], one-sided
+sign-flip p=0.00024414), with 12/12 favorable replicas. Mean acquisition NLL
+was 1.42354 for replay, 1.29336 for FD, and 1.41341 for the frozen reference.
+FD's nominal acquisition gain over freezing was +0.12004 [+0.05893, +0.18800],
+with 11/12 favorable replicas; replay's was -0.01013 [-0.07069, +0.05102].
+Mixed-stream base retention harm, FD minus replay, was -0.03034
+[-0.03716, -0.02438], but FD still worsened base acquisition NLL from
+initialization by +0.06461 [+0.05881, +0.07094]. This is an adaptation/retention
+trade-off, not forgetting-free learning. Endpoint rotated accuracy was 69.36%
+for FD versus 66.46% for replay, descriptively.
+
+Mixed online times averaged 220.85 seconds FD versus 111.42 seconds replay
+(1.98 times). Equal-data evidence is not equal-compute superiority, a direct
+samples-saved estimate, or a transfer-mechanism identification. Solver failures
+and nonfinite trajectories were zero; 7,583 residual-based under-solved updates
+remain disclosed. The full fixed-cohort analysis reproduced exactly on resume.
+All 201 development/confirmation units passed full checksum validation, and
+every completion seal stayed unchanged through standalone and all-stage resume.
+Both store writer locks were released. Total active compute was approximately
+9.44 hours including acceptance and reporting, with about 0.78 GB stored across
+the two scientific roots and acceptance root. Stronger ridge made solves faster
+than the inherited timing forecast; the unused allocation is not new scope.
+
+**Development history:** all sixteen initial trajectories and 48 frozen
+objective audits sealed successfully. Two audits crossed the predeclared
+objective-gap threshold, below the twelve needed for a repair. The sealed
+common policy remains 100 iterations / 150 closures; no repair cohort ran.
+The 7B ledger covers 64 trajectories, reusing the sixteen compatible 7A units.
+Measured online means were 238.05 seconds for replay/EWC and 428.87 seconds for
+FD. The sealed timing forecast is 12.42--19.44 active hours remaining after 7A,
+within the cumulative allowance. Development storage was about 395 MB at that
+transition. The live status and later sealed decisions supersede this snapshot.
+
+The full 64-trajectory ridge grid sealed on 2026-10-24. The immutable shortlist
+selects $c_R=c_{F,0}=1$, with both candidates retention-feasible under the
+predeclared common reference. Mixed-stream development acquisition NLL means
+were 1.30839 for replay and 1.19176 for FD at the inherited coefficient 160.89;
+the mean frozen reference was 1.24016. These four-replica development outcomes
+are descriptive, not confirmation. The strongest tested ridge won for both
+methods, so the optimum is not bracketed. Do not expand the ridge grid.
+Phase 7C compared FD coefficients 53.63, 160.89 (reused), and 482.67 at
+that one ridge. Their mixed acquisition means were 1.20957, 1.19176, and
+1.20631, respectively. The middle coefficient won, so the sealed extension
+decision requests no extra coefficient. Final recipes are replay at $c=1$
+and FD at $(c,\lambda_F)=(1,160.89)$, with the unchanged 100/150 solver.
+The selected ridges coincide, so the same-ridge contrast is the primary
+contrast, not another independent finding or additional replay arm.
+
+Development finished at 2026-10-24 09:49 UTC after about 6.54 aggregate active
+hours including acceptance. All 80 unique development trajectories and 48
+audits are sealed; development storage is about 478 MB. The immutable fresh
+confirmation ledger has 12 replicas, both streams, and two recipes: 48
+trajectories total. Phase 7D then started automatically. Based on the selected
+recipes' measured development timings (about 108 seconds replay and 211 seconds
+FD per mixed trajectory), the operational remaining forecast at transition
+is approximately 2.5--3.5 active hours including initialization/reporting.
+That was the transition forecast, not a change to the immutable historical
+after-7A timing artifact. Confirmation took about 2.89 active hours. The final
+results above supersede this historical transition snapshot.
+
+The ordinary-policy forecast is 14--24 active compute hours (central estimate
+18--20), excluding roughly 3--6 hours of implementation. A proposed 26-hour
+aggregate allowance is authorized. One conditional common-ceiling repair
+could raise the forecast to 20--40 hours and requires a measured reforecast
+within whatever allocation is actually granted. Do not treat per-root ceilings
+as independent copies of the overall allowance.
+
+Use the detailed selection, audit, and versioning rules in the plan, not ad hoc
+optimizer/regularizer tuning. In particular: reconstruct diagnostic objectives
+with their original pre-arrival STM anchors; branches must not alter the live
+learner; explicitly assign new seed families to development/confirmation test
+partitions; preserve completed Phase 5 evidence; and add the common-ridge replay
+control when the final selected FD and replay ridge settings differ. The proposed
+Phase 7 entry point is `mnist_experiment.fisher_memory.regularization`.
+It runs the complete study autonomously, persists every policy/selection
+decision, and checkpoints accepted arrivals and pending objective audits.
+
+The completed production command is retained below for reproducibility. There
+is no need to launch it again. From the repository root using the user's venv:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.regularization \
+  --root cache/mnist_experiment/plan15/regularization_development_v1 \
+  --confirmation-root cache/mnist_experiment/plan15/regularization_confirmation_v1 \
+  --allocation-hours 26
+```
+
+After any interruption, use the same command with `--resume`. Add `--clear-stop`
+only after an intentional STOP request. The 26-hour limit is cumulative across
+both roots, previous invocations, and any superseded Phase 7 repair roots;
+it is not 26 additional hours per resume. The acceptance compute record also
+counts toward that allowance. CUDA access requires ordinary host execution;
+the filesystem sandbox hides GPU device files, while PyTorch in the user's
+venv detects the RTX 4070 outside it. Do not substitute CPU for production.
+
+The active root's `status.json` and the concise Phase 7 notebook section show
+progress. Use `fisher_memory.control stop --root <active-root>` for a cooperative
+pause; SIGTERM/Ctrl-C are also cooperative. A hard kill replays at most an
+uncommitted arrival or unfinished short audit. Completed units stay immutable.
+
+## Rare Rotated-Domain Confirmation (Phase 5C completed)
+
+The user authorized Phase 5C as written on 2026-10-23, with twelve fresh
+four-arm replicas and the predeclared ten-active-hour cumulative cap. The
+implementation reuses the Phase 5B trajectory mathematics and fixes FD strength
+at its sealed selection, 160.89. Fresh `drip_confirmation` seeds and the
+confirmation half of the per-class test-image pool exclude development evidence.
+Numerical learning sources are checked against development; only scheduler and
+trajectory metadata handling changed. The main notebook receives a concise
+live Phase 5C section after the earlier phases. Final inference requires all 48 sealed
+trajectories; partial results remain descriptive.
+
+Completed locally on CUDA at 2026-10-23 22:23 UTC after starting at 17:48 UTC.
+All 48 trajectories and 62 artifact units are complete and passed full
+content-hash validation. The sealed result reproduced exactly and the source
+hash still matches. Active runtime was 4.59 hours; artifacts occupy about 284 MB.
+No experiment process remains running. Before launch, 244 focused unit/CPU
+pipeline tests passed (four expected CUDA-only skips), along with a CUDA
+pipeline test. Both CPU and CUDA drills proved exact interrupted/uninterrupted
+trajectory equality and unchanged completion seals on resume. Scientific source
+hash: `2013757a582afdcceddb36979c77b7c150365117f34f6fde30b8366e53495adb`.
+Preserve this source identity for resumption; use a new identity/root for any
+scientific correction. Execution used the foreground local session, not `tmux`.
+
+The primary FD gain was +0.4619 NLL-AUC, paired bootstrap 95% interval
+[+0.3472, +0.5783], one-sided sign-flip p=0.00024414, with 12/12 favorable
+replicas. Mean new-domain acquisition NLL was 2.1161 for replay/EWC versus 1.6542
+for FD. Base-retention harm was -0.1566 [-0.1898, -0.1238]; the secondary
+interaction was +0.1027 [+0.0512, +0.1585]. The mixed-stream runtime ratio was
+1.77 (3.88 versus 6.88 online minutes). Final rotated accuracy averaged 61.98%
+versus 65.62%, descriptively. There were zero recorded solver failures/nonfinite
+trajectories and 8,318 disclosed under-solved updates. These results establish a
+predictive advantage at the tested data/replay budget, not equal-compute
+superiority or a memory-transfer mechanism.
+
+The current notebook view is **Phase 5C: Sample and compute efficiency**, at
+the bottom after Phase 5B. Results are ordered oldest to newest, and presentation
+refreshes preserve that order. Its four-panel figure shows new-domain NLL versus
+novel observations, the running acquisition score $A_m^R(n)$, the twelve paired
+gains and mean/95% interval, and measured online compute. The score is explicitly
+defined as average NLL after novel images 1 through $n$, excluding initialization.
+The final means are 2.116 (replay/EWC) and 1.654 (FD), a descriptive 21.8% lower
+acquisition loss, not an estimate of the percentage of samples saved. Dashed
+lines show the frozen starting model (mean NLL 1.607); a relative efficiency
+gain over replay need not be net improvement over initialization throughout
+learning. Detailed tables are collapsed, accuracy curves
+remain visible, and the older section is labeled as an earlier-study audit.
+This presentation lives in reporting-only `report.py`; the frozen analysis and
+completed scientific artifacts are unchanged. Refresh the view without training:
+
+```bash
+~/.venv/bin/python -m mnist_experiment.fisher_memory.report \
+  --root cache/mnist_experiment/plan15/drip_confirmation_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb --phase5c
+```
+
+The standalone figure is `reports/phase5c_efficiency.png` inside that run root.
+
+The notebook's **Evaluation protocol and comparable NLLs** subsection separates
+training batches from evaluation. All twelve sealed data plans were checked:
+each has 1,000 unique test IDs (100 per digit by construction), disjoint from
+the Phase 5B tuning panels. The four arms share assets and initial rotated NLL
+within each replica. All NLLs use the same fixed 30-degree rotated panel and
+training-frequency class weights, with no EWC/Ridge/KL penalty included.
+The frozen reference is the initial *rotated test* loss (1.6068), not unrotated
+training loss; FD's acquisition score (1.6542) averages checkpoints 1--100,
+whereas its final NLL (1.5596) uses only checkpoint 100. The definitions and
+equations are included in an expandable note. Batch-aligned plotting is labeled
+explicitly. This is a reporting clarification, not a scientific change or rerun.
+
+Command used from the repository root (the run is already complete):
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.drip_confirmation \
+  --source-root cache/mnist_experiment/plan15/drip_development_v1 \
+  --root cache/mnist_experiment/plan15/drip_confirmation_v1 \
+  --allocation-hours 10
+```
+
+Resume with `--resume`; add `--clear-stop` after a deliberate STOP request.
+The run root's `status.json`, frozen `drip-confirmation-ledger-v1`, accepted
+batch checkpoints, and final `drip-confirmation-results-v1` are authoritative.
+The initial forecast remains 5--8 hours, with approximately 4.4 hours of online
+trajectory work projected from the paired development timings before fresh
+initialization, checkpoint/report writes, and validation. No additional condition
+or replica is authorized by the Phase 6 guiding questions.
+
+## Rare Rotated-Domain Drip (Phase 5B completed)
+
+Phase 5B development of finite-difference KL sample efficiency in a rare
+30-degree rotated domain completed on 2026-10-23. Phase 5C fresh confirmation
+completed separately above. The pre-run compute forecast was 5--7 hours for 5B and
+5--8 hours for 5C; Phase 5B used 5.21 active hours.
+Provisional Phase 6 questions are recorded in `plan15.md`: measured FD overhead,
+equal-compute replay comparison, intermittent FD/replay allocation, then limited
+buffer/budget sensitivity. These notes do not change Phase 5C or allocate Phase 6
+compute. No Phase 6 implementation or run has started.
+The Phase 5B runner is `fisher_memory.drip`; its deterministic 100-event stream,
+four paired arms, strength selection, immutable artifacts, and live section in
+`fisher_memory_results.ipynb` are implemented. The accepted-step cached-MNIST
+stop/resume smoke passed, as did 220 focused unit tests (four CUDA skips).
+
+Run from the repository root inside `tmux` with the cumulative eight-hour cap:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.drip \
+  --root cache/mnist_experiment/plan15/drip_development_v1 \
+  --allocation-hours 8
+```
+
+Use the same command plus `--resume` after an unplanned interruption. A requested
+cooperative stop is a `STOP` file in that root; resume afterward with both
+`--resume --clear-stop`. The root's `status.json`, sealed selection unit, and
+completed trajectory units are authoritative. A paused invocation exits 3;
+neither pause nor failure should trigger a Phase 5C launch automatically.
+
+Launched in `tmux` session `plan15-drip-5b` on 2026-10-22 and resumed in the
+foreground after the node was repurposed. The original console output is in
+`cache/mnist_experiment/plan15/drip_development_v1.log`. All 46 trajectories,
+including four predeclared upper-boundary probes, and all 55 artifact units
+passed full content-hash validation. The sealed pilot selected FD strength
+160.89 at the new upper grid boundary. Across the four screen replicas, its
+mixed-stream acquisition gain was +0.500 mean 30-degree NLL-AUC over replay/EWC,
+but the base-only gain was +0.413 without rotated training images. The
+descriptive interaction was +0.087 (3/4 positive), and the mean 0-degree AUC
+difference in the mixed stream was -0.128 (improvement). Thus most treatment
+lift is not specific to exposure to the rare domain; protection or general
+regularization remains a strong explanation. These are selected-on-pilot
+development estimates, not a significance test or proof of STM-to-LTM transfer.
+See the concise main notebook and sealed selection artifact for the development
+readout; fresh confirmation is reported above.
+
+## Sigmoid JVP Repair (completed)
+
+The versioned `fisher_memory.jvp_repair` runner completed a fresh
+sigmoid-rotation strength reassessment. Its frozen grid included the exact
+finite-difference-selected coefficient, approximately 26.8897, three weaker
+settings, and one stronger setting. Three fresh pilot replicas selected a JVP
+strength subject to the stated retention margin; a disjoint 12-replica cohort
+confirmed it. Each replica had a new paired replay/EWC control. The original
+completed roots remain read-only.
+See Phase 5A in `plan15.md` for the scientific rules.
+
+The code and tiny cached-MNIST pause/resume pipeline were tested. The repair
+completed all 42 trajectories in 2.92 active hours; all 59 units passed full
+artifact validation. The pilot selected 26.8897, and the 12 fresh confirmation
+replicas favored JVP over replay/EWC on current and historical sigmoid NLL AUC
+in all 12 pairs. The mean gains were 0.1145 and 0.1359, respectively. The
+command used to launch the completed root from the repository root was:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory.jvp_repair \
+  --source-root cache/mnist_experiment/plan15/production_v4 \
+  --root cache/mnist_experiment/plan15/jvp_repair_v1 \
+  --allocation-hours 6
+```
+
+For an interrupted run, use the identical command plus `--resume`. A paused
+invocation exits with status 3, so `&&` will not silently start a later command.
+The live notebook is `mnist_experiment/fisher_memory_jvp_repair_results.ipynb`.
+Measured prior sigmoid medians were about 299 seconds per JVP trajectory and
+114 seconds per replay/EWC control. The pre-run forecast was 3.5--5 hours wall
+clock including assets and validation; realized active time was 2.92 hours.
+
+## Optional Method Extension (completed)
+
+The `fisher_memory.extension` entry point now supports separately sealed JVP
+and/or directional-KL Phase 5 trajectories with explicit environment scope,
+replica count, cumulative compute allocation, and `--resume`. It reuses the
+original `production_v4` replay/EWC summaries as verified read-only paired
+controls, freezes pilot-selected strengths, and reproduces the confirmation
+seed family, asset-plan hashes, and exact initial learner-state fingerprints in a
+new run root. The extension notebook is published separately and reports
+progress plus paired current/historical NLL AUC. See the Phase 5 command in
+`plan15.md`.
+
+**Completed on 2026-10-19.** `cache/mnist_experiment/plan15/extension_v1`
+contains all 72 JVP and directional-KL trajectories (12 paired replicas for
+each of three environments and two methods). Its 97 artifact units passed full
+content-hash validation; no trajectories are missing or unsealed. The run used
+approximately 4.61 cumulative active hours. The main results notebook now
+includes a concise Phase 5 comparison, and the separate extension notebook
+retains the progress and per-replica view.
+
+Relative to paired replay/EWC, both alternative penalties show positive mean
+current and historical NLL-AUC gains in rotation. Directional KL is closest to
+the selected finite-difference method at lower measured online cost; JVP is
+slower and substantially weaker on sigmoid rotation. Neither alternative shows
+a clear digit-9 mixture gain. These are secondary nominal paired comparisons,
+not a new familywise-confirmatory claim or proof of STM-to-LTM transfer.
+
+Verification: 216 focused tests passed with four expected CUDA-only skips,
+including a cached-MNIST CPU entry-point test that interrupted after one
+trajectory and resumed the remaining method. The real sealed source root passed
+the extension-ledger preflight for all 72 method/environment/replica jobs before
+the extension was launched.
+
+This added scientific source changes the current source hash, so do not attempt
+to resume the completed `production_v4` study using the new source tree. Its
+sealed artifacts remain the read-only reference, and a reporting-only refresh
+does not require resuming its scientific scheduler.
+
 ## Status
 
 **Phases 1--4 completed on 2026-10-18 (America/Los_Angeles).**
@@ -7,7 +337,7 @@
 fresh confirmation trajectories (12 replicas x 3 environments x 4 conditions).
 All 630 artifact units passed a full content-hash validation. There are no
 incomplete units, recorded solver failures, nonfinite results, or missing
-primary retention endpoints. No optional Phase 5 experiment was started.
+primary retention endpoints. Phase 5 was run subsequently, as noted above.
 The run consumed approximately 14.5 cumulative active hours, below its 20-hour
 allocation; retired diagnostic roots and implementation tests are separate.
 The final production artifacts plus budgeted dependencies occupy about 1.9 GB,
