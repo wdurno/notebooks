@@ -804,7 +804,9 @@ def build_notebook(base_notebook: Path, root: Path):
     for cell in cells:
         cell.metadata["tags"] = [TAG]
     notebook = nbformat.read(base_notebook, as_version=4)
-    notebook.cells = [cell for cell in notebook.cells if not {TAG, PROGRESS_TAG}.intersection(cell.metadata.get("tags", []))]
+    # A sealed follow-up conclusion belongs after the regenerated Phase 7 plots.
+    followup = [cell for cell in notebook.cells if "plan15_phase7e" in cell.metadata.get("tags", [])]
+    notebook.cells = [cell for cell in notebook.cells if not {TAG, PROGRESS_TAG, "plan15_phase7e"}.intersection(cell.metadata.get("tags", []))]
     current = str(status.get("current_job") or "none").replace("\n", " ").replace("`", "'")[:96]
     heartbeat = str(status.get("heartbeat") or "not recorded")[:40]
     summary = _empty(
@@ -817,6 +819,7 @@ def build_notebook(base_notebook: Path, root: Path):
                       if cell.cell_type == "markdown" and cell.source.lstrip().startswith("# ")), 0)
     notebook.cells.insert(title_end, summary)
     notebook.cells.extend(cells)
+    notebook.cells.extend(followup)
     nbformat.validate(notebook)
     if len(nbformat.writes(notebook).encode("utf-8")) > MAX_NOTEBOOK_BYTES:
         raise ArtifactError("Phase 7 notebook exceeds bounded publication size")

@@ -1090,7 +1090,7 @@ the exact conditions, cohort, and phase-by-phase wall-clock forecast after
 Phase 5C and the cost calibration; prefer a roughly 20-hour follow-up scope
 unless a separate allocation is justified and agreed.
 
-### Phase 7: Regularization, Numerical Adequacy, And Useful Acquisition (completed)
+### Phase 7: Regularization, Numerical Adequacy, And Useful Acquisition (7A--7E completed)
 
 **Status:** the user authorized implementation and execution of 7A--7D on
 2026-10-23, using the proposed initial 26-hour aggregate active-time allowance.
@@ -1104,6 +1104,11 @@ development/confirmation unit seals unchanged. The final 43 reporting tests
 also passed. Phase 6 remains deferred and has not started. Original forecasts
 below are retained; results and tested restart commands live in
 `PLAN15_HANDOFF.md` and the chronological Phase 7 notebook section.
+
+Phase 7E below is an approved artifact-only interpretation follow-up. Its
+implementation, CPU analysis, visual fit review, and notebook conclusion
+completed on 2026-10-24. It does not reopen 7D's confirmation, authorize more
+trajectories, or activate the deferred Phase 6.
 
 **Outcome:** the audit did not trigger a solver repair (2/48 material objective
 gaps, versus the predeclared 12/48 trigger). Both methods selected the strongest
@@ -1460,7 +1465,211 @@ calibration, audits, initialization, checkpoints, reports, and validation.
 Equal-data comparisons are not equal-compute comparisons. Do not automatically
 start the deferred Phase 6 allocation experiments or a permanent-anchor study.
 
-#### Sol Implementation And Recovery Checklist
+#### Phase 7E: Budget-Averaged Efficiency And Exploratory Sample Equivalence (completed)
+
+**Purpose:** conclude the notebook's Phase 7 section with a confident statement
+of budget-averaged efficiency and a clearly separate, preliminary estimate of
+the observations needed to match the current model's predictive capability.
+This is an outcome-informed, post hoc analysis of completed 7D artifacts, not a
+new confirmation or training experiment. Approval of this phase freezes the
+choices below; Sol should not need further design decisions to execute it.
+
+**Data and scope.** Require the complete sealed 7D ledger/results and all twelve
+paired replicas. Use only the mixed-training FD and replay/EWC recipes selected
+in 7C, both at $c=1$, with FD strength $\lambda_F=160.89$. Preserve their fixed,
+class-weighted $30^\circ$ test panel and predictive NLL without regularizers.
+Do not pool development replicas or earlier phases. The unrotated-domain and
+unrotated-only-control results remain retention/context evidence, not the
+trajectories fitted for new-domain sample equivalence. There are no new model
+evaluations, label acquisitions, hyperparameter searches, or GPU jobs.
+
+**Established budget-averaged result.** Reuse the original sealed contrast and
+interval without refitting $A(n)$, choosing a burn-in, or recalculating a primary
+test. For $N=100$, explain
+
+$$
+A_m^R(N)=\frac1N\sum_{n=1}^{N}R_m^R(n),\qquad
+\mathbb E_K[R_m^R(K)]=A_m^R(N),\quad
+K\sim\operatorname{Uniform}\{1,\ldots,N\}.
+$$
+
+The random budget is independent of the learning trajectory. Averaging across
+replicas gives the analogous population-budget interpretation. No monotonic
+trend or i.i.d. continual-training stream is required for this identity.
+Use a concise declaration such as:
+
+> Under the tested mixed-stream protocol and 32-image replay budget, FD improves
+> budget-averaged rotated-domain predictive NLL over calibrated replay/EWC by
+> 0.1302 nats (paired 95% interval [0.1046, 0.1571]), with favorable differences
+> in all twelve fresh replicas. This establishes a budget-averaged efficiency
+> advantage over the first 100 new rotated observations in this tested regime.
+
+Keep the positive nominal comparison against freezing visible. Also retain the
+unrotated retention cost, approximately 1.98-times online compute, and the
+best-tested ridge-grid boundary qualification. The 9.1% reduction in acquisition
+NLL is not a percentage of observations saved or equal-compute superiority.
+
+**One linear fit per condition.** Fit the two mean trajectories in **Mixed
+training: Rotated test NLL**, not **Running A(n): mixed training**. Specifically,
+
+$$
+\overline R_m^R(n)=\frac1{12}\sum_{r=1}^{12}R_{r,m}^R(n),\qquad
+f_m(n)=\alpha_m+\beta_m n,\qquad n\in\{1,\ldots,100\}.
+$$
+
+Use ordinary least squares with an intercept and equal weights across those
+100 post-observation checkpoints, separately for FD and replay. Show $n=0$ as
+the initial reference, but do not include it as an extra fitted observation.
+There is **no $n>10$ restriction**, alternative fit window, spline, power law,
+forced negative slope, or automatic model-selection procedure. Preserve the
+existing event alignment: several novel images in one batch can share one
+post-batch held-out prediction. The 100 checkpoints are not independent data
+replicas, and conventional i.i.d.-residual regression intervals are inappropriate.
+
+**Fixed matching target.** Anchor the comparison at replay's
+fitted current-model test NLL after 100 new observations:
+
+$$
+q_{100}=f_{\mathrm{replay}}(100),\qquad
+n_{\mathrm{FD}}^{\mathrm{eq}}
+=\frac{q_{100}-\alpha_{\mathrm{FD}}}{\beta_{\mathrm{FD}}},\qquad
+S=100-n_{\mathrm{FD}}^{\mathrm{eq}},\qquad
+P=100\left(1-\frac{n_{\mathrm{FD}}^{\mathrm{eq}}}{100}\right)\%.
+$$
+
+Here $S$ is the model-implied number of new rotated observations saved, and $P$
+is its percentage relative to replay's 100-observation budget. This is one
+endpoint-anchored comparison, not a search over performance targets. Use the
+**fitted**, not observed final-checkpoint, replay NLL consistently. Fractional
+counts are linear-model interpolation; calculate before rounding and describe
+them as approximate. This targets the inverse of the mean learning curve, not
+the average of individual replicas' first-passage times or a guaranteed
+per-trajectory sample requirement.
+
+Check the shared observed mean initial rotated-test NLL against $q_{100}$.
+If initialization already meets or beats this target, label it **already met
+without adaptation** and withhold a new-learning sample-saving claim. Do not
+replace it with a more favorable target. The comparison is between fitted
+post-arrival trends, not proof that replay actually needed 100 observations
+to reach that NLL for the first time.
+
+Only interpret the point estimate if both fitted slopes are strictly negative,
+the fitted NLLs are finite and nonnegative on the fit interval, and the matching
+FD budget lies in $[1,100]$. A nonnegative/degenerate slope or out-of-range
+crossing is a reportable limitation, not a reason to clip a value, assume a
+saving, extrapolate beyond 100, or choose another cutoff. A negative fitted
+slope is a descriptive trend under the linear approximation, not proof of
+monotonicity of the underlying expected risk or of a good fit.
+
+**Uncertainty and qualifications.** Use 2,000 bootstrap draws of the twelve
+whole paired replicas with a new, independently named analysis seed. Recompute
+both mean trajectories, both fits, $q_{100}$, and the crossing within every
+draw; do not hold the estimated replay target fixed. Recompute the shared
+initial reference as well, and apply the same slope, finite/nonnegative-loss,
+and already-met-target checks to each draw. Keep pairing and the full
+within-trajectory dependence. Do not bootstrap checkpoints independently,
+report slope-significance tests, or create a new confirmatory p-value.
+
+Retain every draw and its status; failed checks make a draw inversion-invalid.
+If all inversions are well-defined, form
+nominal percentile intervals without discarding finite out-of-range crossings.
+If any draw is inversion-invalid, report its count and mark the ordinary inversion
+interval unavailable; never calculate a 95% interval conditional on successful
+draws alone. If the point or interval extends outside the observed budget range,
+label the sample-saving claim range-limited rather than clipping bounds or
+presenting extrapolation as observed evidence. Preserve numerical outputs and
+failure categories in the analysis artifact even when a headline estimate is
+withheld. Bootstrap uncertainty describes replica variability conditional on
+the fit, not uncertainty from linear-model misspecification or post hoc design.
+
+Interpretation assumes a fixed target holdout population, independently sampled
+paired replicas, and adequate moments of predictive log loss for uncertainty
+estimation; NLL is not automatically bounded. The quantity counts **new rotated
+observations**, in addition to shared pretraining and the prescribed unrotated
+background stream. Do not describe it as total training data saved, guaranteed
+future performance, or proof of STM-to-LTM transfer.
+
+**Human-facing conclusion and diagnostic.** Append a compact **Conclusion** at
+the end of the existing Phase 7 notebook section, retaining earlier phase order.
+Allow at most three additional cells: the established statement, one diagnostic
+figure, and a short preliminary interpretation. The figure overlays the two
+observed mean $R(n)$ trajectories with their two straight-line fits over
+$1\le n\le100$. Label actual new rotated observations on the horizontal axis
+and rotated-test NLL in nats on the vertical axis. Identify the methods, means,
+and fits in the legend; mark the matching target and within-range crossing
+without adding a wall of numbers or bootstrap-path overlays.
+
+The diagnostic is the intended visual check of the linear approximation. Do
+not add automatic goodness-of-fit gates or alternative model searches. If the
+fit is visibly poor, flag that issue and withhold a persuasive samples-saved
+claim while still publishing the figure and established budget-averaged result.
+Complete this reporting phase without waiting for user review of the plot;
+any corrective model/window change is a separately recorded follow-up, not a
+silent improvement of an unfavorable fit. Label any supported numerical result
+**exploratory linear-model sample equivalence**, with a nominal interval when
+available, motivating further work rather than validating actual future savings.
+
+**Implementation, recovery, and forecast.** Put fitting/bootstrap work in a
+small standalone CPU entry point, not notebook execution. Prefer a module such
+as `mnist_experiment.plan15_efficiency` outside the frozen `fisher_memory`
+scientific-source fingerprint; reuse its artifact and report helpers without
+editing the completed learner, scheduler, or scientific-source exclusions.
+Write to a new analysis-only root such as
+`cache/mnist_experiment/plan15/regularization_efficiency_v1`, with its own
+source/configuration hashes, schema/protocol version, named seed, and dependency
+completion seals. This preserves 7A--7D source identity and completed evidence.
+
+Provide `--resume`, atomic completion, the shared storage-budget lock/reservations,
+and cooperative interruption. Persist the resolved analysis and bootstrap
+indices/seed so an interruption reproduces the same draws; repeating an
+unfinished small analysis unit is sufficient. Skip completed analysis on resume.
+The notebook only renders sealed scalar/fit artifacts and fails clearly on
+incomplete or incompatible dependencies; it never trains or performs bootstrap
+inference. Charge runtime/storage to the study and retain the 500 GB shared cap.
+
+Before publication, test exact linear recovery and target inversion, the full
+fit window with initialization excluded, paired deterministic resampling and
+target recomputation, invalid-slope/crossing handling, resume equivalence, and
+unchanged scientific completion seals. Verify chronological compact rendering,
+no training/inference during notebook rendering, and preservation of all
+existing plots and the original 7D inference.
+
+**Expected cost:** approximately **1--5 minutes of CPU wall-clock compute** for
+validation, fits, bootstrap, tests, and reporting; **zero GPU training time** and
+no new trajectories. Allow roughly **20--45 minutes of implementation/checking**
+separately. Reserve at most 100 MB of additional working/report artifacts within
+the shared cap. The user approved execution on 2026-10-24. Implementation and
+110 focused unit/recovery/reporting tests passed before analysis execution.
+
+**Execution record (2026-10-24).** Completed the CPU-only entry point
+`mnist_experiment.plan15_efficiency` and its separate artifact-only renderer;
+the final focused suite passes 111 tests. The new analysis root is
+`cache/mnist_experiment/plan15/regularization_efficiency_v1`. It seals the
+resolved configuration, named seed and all 2,000 paired bootstrap index sets,
+dependency seals, both point fits, every draw/status, and a separate visual
+fit review. No training, model evaluation, or original inference was repeated.
+All 201 scientific dependency completion seals remain unchanged.
+
+Replay's fitted target is $q_{100}=1.3190592$ nats. The FD fitted mean crosses
+at approximately **43.25** new rotated observations, a model-implied saving of
+**56.75 observations (56.75%)** relative to replay's 100. Both point slopes are
+negative and the crossing is inside the observed range. Visual inspection
+supports a coarse overall linear trend, with early overshoot and local
+reversals, not a monotonic or first-passage model. These numbers are exploratory
+sample equivalence, not validated future observations saved.
+
+**No ordinary 95% inversion interval is reported:** two of 2,000 draws already
+meet the fitted replay target at initialization and therefore fail the agreed
+new-learning guard. All draws are retained; none are selectively removed.
+There are no out-of-range finite crossings. This does not alter 7D's established
+budget-averaged gain or its original interval. The notebook adds exactly three
+cells after the existing Phase 7 results; every pre-existing cell and original
+inference is preserved. Analysis/report execution takes seconds of CPU time;
+the focused test invocations take approximately two minutes altogether, with
+zero GPU training and far less than the 100 MB additional artifact allowance.
+See `PLAN15_HANDOFF.md` for the tested resume command and final accounting.
+
+#### Sol Implementation And Recovery Checklist (Phases 7A--7D)
 
 Keep the implementation small: extend the existing `DripRunner`, `Treatment`,
 `Store`, and report helpers where compatible, with a separately versioned Phase 7
@@ -1541,6 +1750,7 @@ alone. Shared assets and compatible 7A trajectories are counted only once.
 | 7C: FD retuning and at most one edge extension per shortlisted ridge | 16--48 | 2--6.5 h |
 | 7D: twelve-replica confirmation and synthesis | 48 or 72 | 5--8 h |
 | **Ordinary-policy total** | **128--184, plus audit branches** | **About 14--24 h** |
+| 7E: artifact-only efficiency conclusion (additional) | 0 | 1--5 min CPU; no GPU training |
 
 The sum of unrounded lower bounds is 13 hours; quote 14--24 hours as the practical
 planning range, with roughly 18--20 hours as a central estimate. Programming is

@@ -1,5 +1,74 @@
 # Plan 15 Handoff
 
+## Phase 7E Efficiency Conclusion (completed)
+
+User approval and execution were on 2026-10-24. This was a CPU-only,
+artifact-based follow-up, not more training or confirmation. The final focused
+unit/recovery/report suite passes 111 tests. New implementation lives outside
+the frozen scientific package in `plan15_efficiency.py` and
+`plan15_efficiency_report.py`. The original scientific source hash below is
+unchanged. The existing report received only a presentation-order change to
+keep this conclusion after refreshed Phase 7 plots.
+
+Analysis root: `cache/mnist_experiment/plan15/regularization_efficiency_v1`.
+Its sealed plan retains the fixed configuration, named bootstrap seed,
+2,000 whole-paired-replica index sets, original 7D inference, and completion
+seals for all 201 development/confirmation units. Separate sealed units retain
+the analysis/draws and visual fit review. Completed-work resume skips fitting
+and bootstrap; unfinished bootstrap work can safely repeat. The notebook adds
+exactly three cells at the end of Phase 7; all 38 earlier cells are unchanged.
+
+**Conclusion:** the original budget-averaged gain remains **0.13017 nats**, with
+its original paired 95% interval **[0.10456, 0.15706]** and 12/12 favorable fresh
+replicas. Neither the primary interval nor p-value was recomputed. The new
+independent-uniform-budget interpretation does not need monotonic learning.
+Retention cost, 1.98-times online compute, frozen-reference gain and unbracketed
+ridge-grid boundaries remain visible.
+
+**Exploratory sample equivalence:** separate OLS fits on mean rotated-test NLL
+use all events 1--100, excluding initialization. Replay's fitted endpoint
+target is 1.3190592 nats. FD's model crossing is **43.2493** images, implying
+**56.7507 images (56.7507%)** less than replay's 100 under that approximation.
+The diagnostic captures the overall decline but has early overshoot and local
+reversals; the sealed visual review explicitly qualifies the fit. This is not
+mean first-passage time, guaranteed future saving, or STM-to-LTM identification.
+
+**No ordinary 95% inversion interval:** bootstrap draws 848 and 1451 already
+meet the fitted replay target at initialization; 2/2,000 are inversion-invalid
+under the predeclared guard. All draws and raw crossings are retained. There
+are zero out-of-range finite crossings. Do not quietly discard these two draws
+or relax the guard to publish an interval. Any changed target/model is a new,
+explicitly post hoc analysis, not a correction of the sealed analysis.
+
+Tested completed-work resume, from the repository directory:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.plan15_efficiency \
+  --source-root cache/mnist_experiment/plan15/regularization_confirmation_v1 \
+  --root cache/mnist_experiment/plan15/regularization_efficiency_v1 \
+  --resume
+```
+
+An interrupted job uses the same command; add `--clear-stop` only when explicitly
+resuming after a deliberate STOP. The shared budget lock, 500 GB study cap,
+100 MB extra-analysis allowance and original 26-hour Phase 7 allocation remain
+enforced. Existing fitting/draw/result units and scientific dependencies are
+never rewritten. Notebook rendering only reads sealed results; it does not
+train, download, evaluate models, or bootstrap. Phase 6 remains deferred.
+
+Final checks: completed-work resume ran with fitting/bootstrap explicitly
+disabled and passed; all analysis seals, all 201 original scientific seals,
+and all 38 earlier notebook cells stayed unchanged. The diagnostic legend was
+visually checked after a rendering-only clipping fix. Final focused suite:
+111 passed, plus five targeted renderer checks. The four recorded test
+invocations total 130.17 CPU process-seconds, charged once in a sealed
+acceptance unit. Including analysis/reporting/recovery validation, 7E adds
+approximately **2.4 CPU minutes**, **4.2 MB** of artifacts, and no GPU work;
+aggregate Phase 7 expenditure is approximately **9.48 hours**. A separate
+append-only clarification corrects a hash-label typo in the acceptance record;
+the plan's dependency/source identities and all scientific results are unchanged.
+All Phase 7 work is complete; no experiment process remains running.
+
 ## Phase 7 Execution (completed)
 
 The new Phase 7 section of [Plan 15](plan15.md) specifies four sub-phases for
