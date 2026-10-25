@@ -136,6 +136,73 @@ def test_confirmation_direct_counts_retention_resources_and_curve_bands():
     json.dumps(result, allow_nan=False)
 
 
+def test_conclusion_names_the_frozen_replay_policies():
+    records, manifest = cohort()
+    result = analysis.analyze_confirmation(records, manifest, 17, draws=10)
+    text = report._conclusion(result)["source"]
+    assert "FD KL + replay/EWC: C=16, b=4" in text
+    assert "Replay/EWC: C=16, b=4" in text
+    assert "C=0, b=0" in text
+
+
+def test_conclusion_states_supported_unfavorable_results_explicitly():
+    records, manifest = cohort()
+    result = analysis.analyze_confirmation(records, manifest, 17, draws=10)
+    result["risk_gain"]["ci"] = [-30., -10.]
+    result["frozen_gain"][analysis.FD]["ci"] = [-30., -10.]
+    result["direct_contrast"]["ci"] = [10., 30.]
+    result["retention"][analysis.FD].update(ci=[1.1, 1.5], meets_guard=False)
+    text = report._conclusion(result)["source"]
+    assert "supports replay-policy advantage" in text
+    assert "supports worse prediction than freezing" in text
+    assert "FD at the smaller budget is worse" in text
+    assert "retention guard violated" in text
+
+
+def test_correction_prose_does_not_duplicate_terminal_periods():
+    text = report._changes([dict(stage="Repair", change="Numerics", reason="Cause.",
+                                validity="Versioned.", validation="Checked.")])["source"]
+    assert "Cause. Versioned. Validation: Checked." in text
+    assert ".." not in text
+
+
+def test_allocation_caption_shows_registered_development_review_during_confirmation():
+    value = snapshot(complete=True)
+    value["confirmation"]["fit_reason"] = "Development line misses the plateau; no inversion registered."
+    text = report._allocation(value)["source"]
+    assert value["confirmation"]["fit_reason"] in text
+    assert "Visual review: pending" not in text
+
+
+def test_progress_forecast_tracks_remaining_confirmation_and_final_completion():
+    value = snapshot(complete=True)
+    assert "remaining forecast: 0.00 h" in report._progress(value)["source"]
+    value.update(status="running", analysis=None)
+    value["confirmation"]["estimated_seconds"] = 3600.
+    value["progress"].update(family="confirmation", completed=6, planned=12)
+    assert "remaining forecast: 0.50 h" in report._progress(value)["source"]
+
+
+def test_figure_layout_is_drawn_before_export(monkeypatch):
+    figure = report._figure()
+    axis = figure.subplots()
+    axis.set(title="A readable title", xlabel="Observation budget", ylabel="Risk")
+    events = []
+    draw, save = figure.canvas.draw, figure.savefig
+
+    def drawn():
+        events.append("drawn")
+        return draw()
+
+    def exported(*args, **kwargs):
+        assert events == ["drawn"]
+        return save(*args, **kwargs)
+
+    monkeypatch.setattr(figure.canvas, "draw", drawn)
+    monkeypatch.setattr(figure, "savefig", exported)
+    assert report._image("layout-test", figure, "Caption")["attachments"]
+
+
 @pytest.mark.parametrize("defect", ["missing", "duplicate", "invalid", "development", "pairing",
                                     "summary", "recipe", "exposure", "same_replica", "unsealed"])
 def test_incomplete_unpaired_or_invalid_cohort_has_no_inference(defect):
@@ -297,6 +364,40 @@ def test_old_notebook_version_updates_header_without_modifying_cells():
     book = report.build_notebook(snapshot(), previous)
     assert book["nbformat_minor"] == 5
     assert [cell for cell in book["cells"] if not report._owned(cell)] == previous["cells"]
+
+
+def test_full_budget_calibration_warning_is_visible_before_confirmation():
+    value = snapshot()
+    value["smoke"] = False
+    value["calibration"] = {"strength_warning": "No development policy met the base-retention tolerance."}
+    cells = report.build_cells(value)
+    text = "\n".join("".join(cell["source"]) for cell in cells)
+    assert "**Retention warning:**" in text
+    assert "No development policy met the base-retention tolerance." in text
+    assert "least-violating valid reference policy" in text
+
+
+def test_heatmap_cost_flag_matches_total_work_per_total_arrivals(monkeypatch):
+    value = snapshot()
+    value["calibration"] = {"learning_seconds_per_observation_limit": .4}
+    value["allocation"] = [dict(method=analysis.REPLAY, capacity=16, replay_count=4,
+        replica=replica, valid=True, novel_auc=40., base_auc=9., frozen_base_mse=9.,
+        learning_seconds=seconds, observations=observations)
+        for replica, seconds, observations in ((0, 8., 10), (1, 18., 90))]
+    monkeypatch.setattr(report, "_image", lambda name, figure, caption: figure)
+    figure = report._allocation(value)
+    replay_axis = figure.axes[1]
+    assert [text.get_text() for text in replay_axis.texts] == ["40.0\nn=2"]
+    figure.clear()
+
+
+def test_sample_figure_discloses_unsupported_development_fallback():
+    value = snapshot(complete=True)
+    value["confirmation"]["development_supported"] = False
+    cells = report.build_cells(value)
+    text = "\n".join("".join(cell["source"]) for cell in cells)
+    assert "Development did not identify a smaller-budget match" in text
+    assert "prespecified fallback probe" in text
 
 
 class FakeStore:

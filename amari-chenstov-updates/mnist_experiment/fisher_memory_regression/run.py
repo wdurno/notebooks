@@ -18,7 +18,7 @@ from mnist_experiment.fisher_memory.control import ResourceLimit, StopRequested,
 from mnist_experiment.fisher_memory.learner import StopRequested as LearnerStop
 from mnist_experiment.fisher_memory.run import budget_lock
 
-from . import PROTOCOL
+from . import PROTOCOL, SCIENTIFIC_CHANGES
 from .config import Config, Recipe, ROOT, PACKAGE, content_hash
 from .data import MNISTSource
 from .design import aggregate, choose, rank_candidates, grid, confirmation_manifest
@@ -61,7 +61,7 @@ class Study:
         self.calibration_namespace = None
         self.status = dict(schema_version=1, protocol=PROTOCOL, smoke=cfg.smoke,
                            status="running", stage=args.stage, current=None,
-                           completed=0, planned=0, changes=[], forecast_seconds=None)
+                           completed=0, planned=0, changes=list(SCIENTIFIC_CHANGES), forecast_seconds=None)
         old_status = store.root / "status.json"
         if old_status.exists():
             prior = read_json(old_status)

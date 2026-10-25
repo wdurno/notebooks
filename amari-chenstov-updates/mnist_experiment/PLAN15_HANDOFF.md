@@ -1,9 +1,165 @@
 # Plan 15 Handoff
 
+## Phase 8 Complete
+
+Phases 8A--8E completed on 2026-10-24. No Phase 8 experiment or test process
+remains running. Valid evidence is under
+`cache/mnist_experiment/plan15/regression_phase8_v2`; v1 remains superseded.
+The completed notebook is [fisher_memory_results.ipynb](fisher_memory_results.ipynb),
+chronological after Phase 7E, with five main figures and two compact tables.
+
+Twelve fresh paired replicas cover FD (C=256,b=16), replay/EWC (256,4), and
+EWC-only (0,0), all to 100 novel observations. Mean replay-minus-FD acquisition
+MSE is -21.91, nominal paired 95% interval [-28.44,-14.49]; only 1/12 pairs favors
+FD. The FD(75)-replay(100) contrast is +79.80 [59.75,101.02] square degrees:
+the smaller-budget advantage is not supported. FD improves on freezing by
+293.92 [267.64,316.07] square degrees, but exceeds the one-degree base-retention
+guard: 1.334 [1.162,1.485] degrees. Replay also exceeds it, at 1.591
+[1.408,1.769]. Thus this regression study does not confirm an FD sample-efficiency
+advantage or a policy meeting all practical constraints. Retention differences
+between policies are descriptive; no extra paired significance claim was added.
+
+Selected-policy FD/replay learning-cost ratio is 1.73 (47.77/27.61 seconds at
+100 novel / 1048.5 mean total observations). Both satisfy the measured resource
+envelope. No linear inversion was registered; use raw curves and the observed
+budget contrast. No cohort resizing, optional extension or new target followed
+confirmation inspection.
+
+Aggregate active compute is approximately **2.93 hours** out of 20, including
+8A, superseded v1 work, repair and both closeout validations. V2 data occupy
+about 0.235 GB; shared budgeted storage is about 4.45 GB out of 500.
+`closeout-qa-v1` validates 100 trajectory units (20 calibration, including
+prefixes/continuations; 44 allocation; 36 confirmation), zero failed solves,
+and all 41 preserved historical cells. Maximum final archive trace relative
+error is 3.075e-16, diagonal error 1.668e-20. `closeout-qa-v2` rechecks all prior
+scientific seals and passes 305 CPU plus nine CUDA recovery tests after a
+reporting-only fix that draws figure layout before export, preserving titles
+and axis labels. The scientific source hash remains unchanged below.
+
+The artifact-only supplementary entry point now publishes separately sealed
+`diagnostics-v2` / `reports/phase8-diagnostics-v2.html`, linked in the notebook.
+It covers renderer examples, development resource frontiers, per-digit errors,
+and the prospective fit diagnostic. Earlier `diagnostics-v1` HTML remains
+unchanged. To refresh/validate the current supplement without learning:
+
+```bash
+~/.venv/bin/python -m mnist_experiment.plan15_regression_diagnostics \
+  --root cache/mnist_experiment/plan15/regression_phase8_v2 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb --resume
+```
+
+## Phase 8 Numerical Repair
+
+**v1 is superseded; validated v2 is complete.** V1 confirmation replica 3
+revealed exploding Fisher archives and nonfinite solver trials in all three
+conditions. The legacy Lanczos routine loses Krylov-basis orthogonality on
+nearly rank-one matrices: a PSD target with trace 1 was represented with trace
+4, and repeated constant-target compression inflated trace above 63,000 in ten
+updates. Several initial assets were already inflated; confirmation replica
+3 represented trace 3.0534 for a source trace of 1.5571. This is a numerical
+defect, not evidence against learning or FD.
+
+All v1 development and partial confirmation artifacts remain immutable under
+`regression_phase8_v1`; its STOP marker remains set. The sealed
+`compression-failure-evidence` unit retains the reproduction, asset trace audit,
+and prior report snapshot. The notebook now discloses the failure and withholds
+v1 inference. Impact on older experiments using this shared legacy routine has
+not been assessed; their code/results have not been changed.
+
+The regression-specific repair uses exact symmetric eigh on the already-dense
+287-coordinate LTM block, retaining eight modes plus the residual diagonal.
+It preserves the source diagonal/trace and the intended likelihood Fisher,
+eviction EMA and ridge formula. A failed numerical solve now stops before an
+arrival can be committed. Protocol v2 changes component-seed namespaces, so
+the entire calibration/allocation/confirmation study is restarted with fresh
+seeds under `regression_phase8_v2`, without pooling v1 evidence. The shared
+20-hour compute limit still charges all v1, repair and acceptance costs.
+
+CPU validation passes 298 checks, including nearly rank-one matrices, repeated
+convex-update trace bounds and checkpoint recovery. CUDA recovery passes nine
+checks; both tiny full-stage CPU/CUDA smokes pass. Acceptance is sealed under
+`regression_repair_acceptance_v2` (307 checks). The exact affected saved model
+and its 1,024 inputs reproduce raw trace 1.5571 versus legacy 3.0534; repaired
+trace is exactly 1.5571, with zero diagonal error. That reproduction is sealed
+under `regression_repair_target_audit_v2`. The new scientific source hash is
+`cdc2da2dafb1d9868926c96391165b187074c71697a96c7633dc359c62d728cf`.
+Aggregate expenditure was about 1.34 active hours at the v2 restart. Do not
+restart v1 with the changed scientific source. The repair-time forecast was
+2.5--4 total active hours; the final actual is recorded above.
+
+V2 calibration completed 20 trajectories. It selects c=10,
+lambda_F=263.5643254076, h=0.01, with measured FD/replay cost ratio 1.7705
+and learning-time envelope 0.05852044 seconds per arrival. All full-budget
+solver audits pass; reference retention still misses one degree. The selected
+FD strength is interior, so no edge extension ran. The full 34-trajectory v2
+allocation map and ten-trajectory refinement are complete (44 trajectories).
+Final choices remain FD at (C,b)=(256,16) and replay at (256,4). Development
+base RMSE increases are 0.895 and 1.014 degrees, respectively: FD passes the
+mean guard; replay narrowly misses and carries its warning. Their new-domain
+A(N) means are 1336.79 and 1325.88 square degrees. The sealed development
+visual review rejects full-range linear inversion because of systematic early
+and late plateaus (residual RMSE 44--49 square degrees).
+
+The fresh 12-replica/36-trajectory confirmation cohort is sealed, without
+outcome-based resizing. FD(75) versus replay(100) is the unsupported-development
+fallback; the fixed development target is 1160.7384 square degrees. Confirmation,
+analysis, supplementary diagnostics and closeout checks are complete. Scientific
+hash remains unchanged; no v1 evidence enters v2 intervals.
+
+## Superseded v1 Execution Notes
+
+**Historical v1 status before supersession, not current instructions.** Its
+8C was complete and 8D had begun. The full map has 34 trajectories and the
+refinement adds six (four development replicas at the selected cell). Both
+policies select C=256, b=16. Mean development acquisition MSE is 1295.08 for
+replay and 1296.96 for FD; base RMSE increases are 1.371 and 1.311 degrees,
+respectively. Neither meets the one-degree guard. These remain development
+results, not inference. The 12-replica/36-trajectory confirmation cohort is
+sealed, with no outcome-based resizing allowed. Its sample contrast is
+FD(75) versus replay(100); 75 is the prespecified unsupported-development
+fallback. The fixed development target is 1087.8141 square degrees.
+
+`allocation-fit-review-evidence` and `allocation-visual-review` were sealed
+before confirmation registration. The full-range linear fit was rejected:
+it misses the late plateau, making inverse target crossings misleading.
+The cohort manifest records this prospective decision; use raw curves and
+the directly observed budget contrast. After 8D, run `--stage analyze`, then
+the supplementary diagnostics entry point. No scientific code or settings
+were changed during production.
+
+The user authorized 8B--8E on 2026-10-24. Calibration completed in
+`cache/mnist_experiment/plan15/regression_phase8_v1`, using the default
+regression configuration and the shared 20-hour allowance (including 8A).
+All 22 calibration trajectories and numerical/solver decisions are sealed.
+Selected common ridge multiplier: 10; FD strength: 3.1984308793; FD step: 0.01.
+Measured FD/replay learning-time ratio: 1.5775. Full-budget reference retention
+missed the one-degree guard, so the least-violating valid FD strength was
+carried forward with a warning. All selected full-budget solver audits passed.
+Aggregate charged time at this transition is about 0.37 hours. The full
+eight-cell allocation grid is affordable and is running next in paired batches.
+Phase 8C is being inspected in batches of 17 completed trajectories (one
+replica across both methods and all eight cells, plus EWC-only), followed by
+the planned affordable refinement. Confirmation has not started. Reporting-only
+changes make the calibration warning explicit and align heatmap cost flags with
+total work / total arrivals. The scientific source hash remains
+`bd8b385d05e60efa77600ccb26df34a11161db97a9485e0b6cc3704476b66dde`.
+The reporting/supplement tests pass (52 checks). The supplementary entry point
+`mnist_experiment.plan15_regression_diagnostics` should run after 8E to publish
+renderer examples, development risk/cost frontiers, and per-digit errors.
+Measured calibration and first-map costs suggest roughly 1.5--2.5 total active
+hours for the planned study, replacing the initial 14--20-hour forecast. The
+20-hour hard ceiling remains unchanged; fresh cohort size will still be frozen
+from timing before confirmation outcomes are read.
+The results notebook updates while work runs. Check the root's `status.json`
+and the read-only control status before resuming; never start a second writer.
+Inspect the allocation heatmaps before sealing fresh confirmation. All earlier acceptance evidence remains
+preserved. This execution note supersedes the pending status in the 8A handoff
+below.
+
 ## Phase 8A: Regression Implementation
 
-Phase 8A is implemented. **Production 8B--8E has not started.** The user's
-next execution instruction, after the model switch, authorizes that work.
+Historical 8A handoff: Phase 8A was implemented before production authorization.
+The user's subsequent instruction authorized 8B--8E; see current status above.
 The new package is `mnist_experiment.fisher_memory_regression`; read its
 `AGENTS.md` and Plan 15's Phase 8 before proceeding. Earlier categorical
 implementations and completed scientific artifacts have not been changed.
@@ -14,12 +170,13 @@ From the repository directory, using the user's venv:
 
 ```bash
 ~/.venv/bin/python -u -m mnist_experiment.fisher_memory_regression \
-  --root cache/mnist_experiment/plan15/regression_phase8_v1 \
+  --root cache/mnist_experiment/plan15/regression_phase8_v2 \
   --notebook mnist_experiment/fisher_memory_results.ipynb \
   --allocation-hours 20 --resume
 ```
 
-This command is ready for Sol, **not already running**. `all` is the default;
+This is the canonical resume command; check current status above before use.
+`all` is the default;
 explicit stages are `calibrate`, `allocate`, `confirm`, and `analyze`. One root
 contains separately sealed stage decisions, paired assets, immutable prefixes,
 continuations and complete trajectories. No assistant connection is required.
@@ -32,7 +189,7 @@ source/configuration requires a new versioned root, not a forced resume.
 
 ```bash
 ~/.venv/bin/python -m mnist_experiment.fisher_memory.control stop \
-  --root cache/mnist_experiment/plan15/regression_phase8_v1
+  --root cache/mnist_experiment/plan15/regression_phase8_v2
 ```
 
 Replace `stop` with `status` for a read-only operational check. `status.json`

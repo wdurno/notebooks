@@ -34,7 +34,7 @@ def _development_records(records, *, target=None, require_valid=False):
     seen, families, targets, paired, plans = set(), set(), set(), {}, {}
     for row in records:
         try:
-            if row.get("schema_version") != 1 or row.get("protocol", PROTOCOL) != PROTOCOL:
+            if row.get("schema_version") != 1 or row.get("protocol") != PROTOCOL:
                 raise ValueError("incompatible development record schema/protocol")
             family = row["family"]
             if (row["partition"] != "development" or not isinstance(family, str)

@@ -50,6 +50,7 @@ def _figure(width=9., height=4.):
 
 def _image(name, figure, caption):
     buffer = io.BytesIO()
+    figure.canvas.draw()
     figure.savefig(buffer, format="png", dpi=110, bbox_inches="tight")
     cell = _markdown(name, f"![{caption}](attachment:{name}.png)\n\n{caption}")
     cell["attachments"] = {f"{name}.png": {"image/png": base64.b64encode(buffer.getvalue()).decode("ascii")}}
@@ -132,7 +133,7 @@ def _changes(changes):
         heading = ": ".join(_brief(change[key], 100) for key in ("stage", "change") if change.get(key))
         text = f"**{heading or 'Correction'}.**"
         if change.get("reason"):
-            text += " " + _brief(change["reason"]) + "."
+            text += " " + _brief(change["reason"]).rstrip(".") + "."
         before, after = change.get("before"), change.get("after")
         if isinstance(before, dict) and isinstance(after, dict):
             modified = [key for key in after if before.get(key) != after[key]]
@@ -140,9 +141,9 @@ def _changes(changes):
                 text += " " + "; ".join(f"{key.replace('_', ' ')} {_brief(before.get(key), 30)} -> "
                                          f"{_brief(after[key], 30)}" for key in modified[:3]) + "."
         if change.get("validity"):
-            text += " " + _brief(change["validity"]) + "."
+            text += " " + _brief(change["validity"]).rstrip(".") + "."
         if change.get("validation"):
-            text += " Validation: " + _brief(change["validation"]) + "."
+            text += " Validation: " + _brief(change["validation"]).rstrip(".") + "."
         paragraphs.append(text)
     return _markdown("changes", "**Significant corrections**\n\n" + "\n\n".join(paragraphs)
                      + "\n\nFull provenance remains in the study's decision artifacts.")
@@ -211,6 +212,12 @@ def _progress(snapshot):
     used = progress.get("active_seconds", 0) / 3600
     allocation = progress.get("allocation_seconds", 72000) / 3600
     forecast = progress.get("forecast_seconds")
+    confirmation = snapshot.get("confirmation") or {}
+    if snapshot.get("analysis") and snapshot.get("status") == "completed":
+        forecast = 0.
+    elif (progress.get("family") == "confirmation" and progress.get("planned", 0) > 0
+          and confirmation.get("estimated_seconds") is not None):
+        forecast = confirmation["estimated_seconds"] * max(0., 1 - progress.get("completed", 0) / progress["planned"])
     forecast = "pending" if forecast is None else f"{forecast / 3600:.2f} h"
     if isinstance(storage, dict):
         size = storage.get("used_bytes", storage.get("bytes_used"))
@@ -314,7 +321,8 @@ def _allocation(snapshot):
                     label = f"{matrix[i, j]:.1f}\nn={count}"
                     if method != "difference" and cell and all("base_auc" in row and "frozen_base_mse" in row for row in cell):
                         retention = np.mean([math.sqrt(row["base_auc"]) - math.sqrt(row["frozen_base_mse"]) for row in cell])
-                        costly = limit is not None and np.mean([row["learning_seconds"] / row["observations"] for row in cell]) > limit
+                        cost = sum(row["learning_seconds"] for row in cell) / sum(row["observations"] for row in cell)
+                        costly = limit is not None and cost > limit
                         if retention > guard or costly:
                             label += " !"
                 if color:
@@ -325,11 +333,12 @@ def _allocation(snapshot):
                  yticklabels=counts, xlabel="Capacity C", ylabel="Replay count b",
                  title="Paired replay - FD" if method == "difference" else LABELS[method])
         figure.colorbar(plot, ax=axis, shrink=.8, label="Budget-averaged MSE (degrees squared)")
+    review = snapshot.get("allocation_review") or (snapshot.get("confirmation") or {}).get("fit_reason")
     return _image("allocation", figure, "Development only. Risk maps share a color scale; positive paired "
                   "differences favor FD. n is the replica count (paired intersection in the difference map); "
                   "unequal sets are not pooled as paired evidence. ! marks a retention/cost violation. "
                   "Missing and invalid cells remain distinct. Visual review: "
-                  + _display(snapshot.get("allocation_review", "pending; numerical selection can proceed")))
+                  + _display(review or "pending; numerical selection can proceed"))
 
 
 def _curves(snapshot, analysis):
@@ -567,6 +576,9 @@ def _equivalence(curves, analysis, snapshot):
     axis.legend(fontsize=8)
     caption = "; ".join(budgets) + ". Counts exclude shared pretraining but retain accompanying background exposure. "
     caption += "This is not a causal label-only effect or a first-passage samples-saved estimate."
+    if confirmation.get("development_supported") is False:
+        caption += (" Development did not identify a smaller-budget match; "
+                    f"n_F={n_fd} is the prespecified fallback probe.")
     if analysis:
         caption += " FD(n_F) - replay(N) MSE: " + _interval_text(analysis["direct_contrast"]) + "."
     else:
@@ -582,16 +594,26 @@ def _conclusion(analysis):
     fd = next(row["recipe_key"] for row in recipes if row["method"] == FD)
     gain, frozen = analysis["risk_gain"], analysis["frozen_gain"][fd]
     direct, retention, resources = analysis["direct_contrast"], analysis["retention"][fd], analysis["resources"][fd]
-    budget_claim = "supports FD advantage" if gain["ci"][0] > 0 else "FD advantage not established"
-    frozen_claim = "supports useful acquisition" if frozen["ci"][0] > 0 else "improvement over freezing not established"
-    direct_claim = "supports better prediction at fewer observations" if direct["ci"][1] < 0 else "not established; nonsignificance is not equivalence"
+    budget_claim = ("supports FD-policy advantage" if gain["ci"][0] > 0 else
+                    "supports replay-policy advantage" if gain["ci"][1] < 0 else "FD advantage not established")
+    frozen_claim = ("supports useful acquisition" if frozen["ci"][0] > 0 else
+                    "supports worse prediction than freezing" if frozen["ci"][1] < 0 else
+                    "improvement over freezing not established")
+    direct_claim = ("supports better prediction at fewer observations" if direct["ci"][1] < 0 else
+                    "FD at the smaller budget is worse" if direct["ci"][0] > 0 else
+                    "not established; nonsignificance is not equivalence")
     resource_claim = {True: "within measured mean-cost envelope", False: "exceeds mean-cost envelope", None: "resource envelope pending"}[resources["resource_feasible"]]
     body = "### Conclusion\n\n| Question | Mean [nominal 95% interval] | Interpretation |\n| --- | --- | --- |\n"
     body += f"| Budget-averaged replay - FD MSE | {_interval_text(gain)} | {budget_claim} |\n"
     body += f"| Frozen - FD MSE | {_interval_text(frozen)} | {frozen_claim} |\n"
     body += f"| FD({direct['n_F']}) - replay({direct['n_R']}) MSE | {_interval_text(direct)} | {direct_claim} |\n"
     body += f"| FD base RMSE increase (degrees) | {_interval_text(retention)} | " + (
-        "retention guard supported" if retention["meets_guard"] else "retention guard not established") + " |\n"
+        "retention guard supported" if retention["meets_guard"] else
+        "retention guard violated" if retention["ci"][0] > retention["guard_degrees"] else
+        "retention guard not established") + " |\n"
+    policies = "; ".join(f"{LABELS.get(row['method'], row['method'])}: "
+                         f"C={row['capacity']}, b={row['replay_count']}" for row in recipes)
+    body += f"\nFrozen replay settings: {policies}.\n"
     body += f"\nFD: {resources['mean_seconds_per_observation']:.3g} learning seconds per arrival; {resource_claim}. "
     if "peak_vram_bytes" in resources:
         body += f"Peak VRAM {resources['peak_vram_bytes'] / 1e9:.3g} GB. "
@@ -611,6 +633,8 @@ def build_cells(snapshot: dict, *, check_stop=None) -> list:
     cells = [_progress(snapshot), _markdown("intro", "## Phase 8: Regression, Allocation And Sample Efficiency\n\n"
              "**Question:** under limited new data and compute, how should replay capacity and replay work be "
              "allocated, and can FD KL improve learning while retaining near-upright prediction?\n\n"
+             "Each paired replica starts from the same pretrained scalar model (287 LTM and 135 STM parameters); "
+             "both memory blocks update online. Novel counts exclude pretraining and accompanying background observations.\n\n"
              r"$C$ is logical FIFO replay capacity; $b$ is the fixed resident subset per solve, not total closure passes. "
              r"$n$ counts unique novel arrivals. $R^D(n)$ is predictive MSE on a fixed held-out image/angle panel; "
              r"$A^D(N)=N^{-1}\sum_{n=1}^{N}R^D(n)$ averages over novel-sample budgets, excluding initialization. "
@@ -618,9 +642,14 @@ def build_cells(snapshot: dict, *, check_stop=None) -> list:
              "Gaussian NLL uses a fixed 45-degree scale and contains no regularizers. "
              "New-domain learning and near-upright retention are evaluated separately. "
              "Neither evaluation panel enters training, replay, or Fisher estimation; development selects policies, "
-             "and separate confirmation panels never tune them.\n\n"
-             + ("**Phase 8A smoke/pending scaffold; not scientific results.**" if snapshot.get("smoke") else
+             "and separate confirmation panels never tune them. The final contrast compares separately selected "
+             "policies under the same constraints, not an isolated equal-(C,b) FD effect.\n\n"
+             + ("**Software acceptance only; scientific stages pending.**" if snapshot.get("smoke") else
                 "**Status:** " + _display(snapshot.get("status", "pending"))))]
+    diagnostics = snapshot.get("diagnostics")
+    if diagnostics and analysis and diagnostics.get("manifest_hash") == analysis.get("manifest_hash"):
+        cells[1]["source"] += ("\n\n[Supplementary diagnostics](" + diagnostics["href"] +
+            "): renderer examples, development risk/compute frontiers and per-digit prediction errors.")
     cells.append(_density())
     _check(check_stop)
     acceptance = _acceptance(snapshot)
@@ -636,6 +665,11 @@ def build_cells(snapshot: dict, *, check_stop=None) -> list:
                 ("Seconds/arrival allowance", calibration.get("learning_seconds_per_observation_limit"))]
         text = "### Calibration\n\n| Check | Development result |\n| --- | --- |\n"
         text += "\n".join(f"| {name} | {_display(value)} |" for name, value in rows)
+        warnings = list(dict.fromkeys(calibration[name] for name in ("ridge_warning", "strength_warning")
+                                      if calibration.get(name)))
+        if warnings:
+            text += "\n\n**Retention warning:** " + " ".join(warnings)
+            text += " The allocation study continues with the least-violating valid reference policy."
     else:
         text = "### Calibration\n\nPending: regression initialization, numerical adequacy, regularization and measured cost. The categorical 2x ratio is not assumed."
     cells.append(_markdown("calibration", text))
@@ -689,6 +723,13 @@ def build_notebook(snapshot: dict, previous=None, *, check_stop=None) -> dict:
         raise ValueError("expected a version-4 notebook")
     book["nbformat_minor"] = max(5, book.get("nbformat_minor", 0))
     historical = [cell for cell in book["cells"] if not _owned(cell)]
+    diagnostics = snapshot.get("diagnostics", book.get("metadata", {}).get("plan15_phase8_diagnostics"))
+    if diagnostics:
+        snapshot = {**snapshot, "diagnostics": diagnostics}
+        book.setdefault("metadata", {})["plan15_phase8_diagnostics"] = deepcopy(diagnostics)
+        if (snapshot.get("analysis") and diagnostics.get("manifest_hash") == snapshot["analysis"].get("manifest_hash")
+                and diagnostics.get("allocation_review")):
+            snapshot.setdefault("allocation_review", diagnostics["allocation_review"])
     new = build_cells(snapshot, check_stop=check_stop)
     for cell in new:
         nbformat.validate(cell, ref="markdown_cell", version=4, version_minor=5)

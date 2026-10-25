@@ -18,7 +18,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 import numpy as np
 
-PROTOCOL = "plan15-regression-v1"
+from . import PROTOCOL
 SCHEMA_VERSION = 1
 FD = "fd_replay_ewc"
 REPLAY = "replay_ewc"
@@ -163,7 +163,7 @@ def manifest_recipes(manifest: Mapping[str, Any]) -> list[dict]:
 def _cohort(records, manifest, check_stop):
     if manifest.get("sealed", True) is not True:
         raise ValueError("confirmation manifest is not sealed")
-    if manifest.get("protocol", PROTOCOL) != PROTOCOL or manifest.get("schema_version", 1) != 1:
+    if manifest.get("protocol") != PROTOCOL or manifest.get("schema_version", 1) != 1:
         raise ValueError("incompatible confirmation manifest")
     recipes = manifest_recipes(manifest)
     replicas = list(manifest["replicas"])
@@ -184,7 +184,7 @@ def _cohort(records, manifest, check_stop):
             raise ValueError("invalid/incomplete planned trajectory; exclusion is not allowed")
         if record.get("partition", "confirmation") != "confirmation":
             raise ValueError("development records cannot enter confirmation inference")
-        if record.get("protocol", PROTOCOL) != PROTOCOL or record.get("schema_version", 1) != 1:
+        if record.get("protocol") != PROTOCOL or record.get("schema_version", 1) != 1:
             raise ValueError("incompatible trajectory schema")
         recipe = next(recipe for recipe in recipes if recipe["recipe_key"] == key[0])
         for name, value in recipe.items():

@@ -144,3 +144,26 @@ def test_sigterm_stops_within_one_minute_and_resumes(tmp_path, inputs, baseline)
     assert time.monotonic() - requested_at[0] < 60
     _, state = execute(tmp_path, inputs, resume=True)
     equal_tree(scientific(state), scientific(baseline[1]))
+
+
+def test_numerical_fit_failure_cannot_commit_an_arrival(tmp_path, inputs, monkeypatch):
+    from mnist_experiment.fisher_memory_regression import learner
+    from mnist_experiment.fisher_memory_regression.runner import NumericalIntegrityError
+    from mnist_experiment.fisher_memory_regression.runtime import read_json
+
+    def failed(*args, **kwargs):
+        return args[2].clone(), dict(solver_failed=True, solver_reason="nonfinite_objective_or_gradient")
+
+    monkeypatch.setattr(learner, "fit_step", failed)
+    with pytest.raises(NumericalIntegrityError, match="before arrival commit"):
+        execute(tmp_path, inputs)
+    cfg, _ = inputs
+    with Store(tmp_path, {"acceptance": 1, "config_hash": cfg.scientific_hash},
+               resume=True, free_reserve_bytes=0) as store:
+        unit = next(row["unit_id"] for row in store.iter_units() if row["metadata"].get("kind") == "regression_trajectory")
+        checkpoint = store.load_checkpoint(unit)
+        assert checkpoint["next_segment"] == checkpoint["n"] == 0
+        assert checkpoint["learner"]["cumulative_count"] == 0
+        assert not checkpoint["learner"]["consolidated_ids"]
+        assert read_json(store.unit_path(unit) / "numerical_failure.json")["committed"] is False
+        assert not store.is_complete(unit)

@@ -29,10 +29,9 @@ from mnist_experiment.fisher_memory.learner import (
     _stop,
     _vector,
     age_weights as _legacy_age_weights,
-    compress_fisher,
-    consolidate,
     retention_terms,
 )
+from src.representations import LowRankDiagonalFisher
 from src.seeding import derive_component_seed
 
 from .curvature import fd_values, gaussian_nll
@@ -43,6 +42,85 @@ STATE_SCHEMA = 1
 LIKELIHOOD = "gaussian_fixed_scale_45_degrees"
 NOMINAL_ARRIVAL_SIZE = 4
 CONDITIONS = frozenset({"fd_replay_ewc", "replay_ewc", "ewc_only"})
+
+
+def compress_fisher(matrix: Tensor, *, rank: int = 8, seed: int = 0,
+                    check_stop: Callable | None = None) -> tuple[dict, dict]:
+    """Keep top PSD modes and the residual diagonal without inflating curvature.
+
+    This experiment already materializes the small LTM block. Exact eigh avoids
+    duplicated Ritz directions near Lanczos breakdown. The seed is recorded for
+    interface compatibility; this deterministic projection consumes no RNG.
+    """
+    _integer(rank, "rank", 0)
+    if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**63:
+        raise ValueError("compression seed must lie in [0, 2**63)")
+    _stop(check_stop)
+    source = _fisher_matrix(matrix)
+    eigenvalues, eigenvectors = torch.linalg.eigh(source)
+    _stop(check_stop)
+    scale = max(float(eigenvalues.abs().max()), torch.finfo(source.dtype).tiny)
+    tolerance = 100 * len(source) * torch.finfo(source.dtype).eps * scale
+    minimum = float(eigenvalues.min())
+    if minimum < -tolerance:
+        raise ValueError("cannot archive a materially indefinite Fisher")
+    count = min(rank, len(source))
+    selected = torch.arange(len(source) - count, len(source)) if count else torch.empty(0, dtype=torch.long)
+    selected = selected[eigenvalues[selected] > 0]
+    factor = eigenvectors[:, selected] * eigenvalues[selected].sqrt()
+    residual = source.diagonal() - factor.square().sum(1)
+    residual_minimum = float(residual.min())
+    if residual_minimum < -tolerance:
+        raise ValueError("spectral factor materially exceeds the source diagonal")
+    representation = LowRankDiagonalFisher(factor, residual.clamp_min(0))
+    diagonal = representation.diagonal_vector()
+    if not torch.allclose(diagonal, source.diagonal(), rtol=0, atol=tolerance):
+        raise ValueError("Fisher compression did not preserve the diagonal")
+    _stop(check_stop)
+    return representation.artifact_mapping(), {
+        "pre_compression_min_eigenvalue": minimum,
+        "pre_compression_negative_mass": float((-eigenvalues[eigenvalues < 0]).sum()),
+        "source_trace": float(source.trace()), "represented_trace": float(diagonal.sum()),
+        "compression": dict(algorithm="exact_symmetric_eigh", requested_rank=rank,
+            realized_rank=representation.rank, seed=seed, randomized=False,
+            retained_eigenvalues=eigenvalues[selected].flip(0).tolist(),
+            residual_diagonal_minimum_before_clipping=residual_minimum,
+            represented_diagonal_relative_error=float((diagonal - source.diagonal()).norm()
+                / source.diagonal().norm().clamp_min(torch.finfo(source.dtype).tiny))),
+    }
+
+
+def consolidate(fisher: Any, anchor: Tensor, accepted_ltm: Tensor,
+                evicted_fisher: Tensor | None, *, evicted_ids: Sequence,
+                consolidated_ids: Sequence, pi: float, arrival_size: int,
+                rank: int = 8, seed: int = 0, check_stop: Callable | None = None) -> dict:
+    """Same eviction EMA and anchors, using the trace-preserving compressor."""
+    if not math.isfinite(pi) or not 0 < pi <= 1:
+        raise ValueError("pi must lie in (0, 1]")
+    _integer(arrival_size, "arrival_size")
+    ids, old_ids = _exposure_ids(evicted_ids), _exposure_ids(consolidated_ids)
+    if set(ids).intersection(old_ids):
+        raise ValueError("exposure already consolidated")
+    _stop(check_stop)
+    old = _fisher_matrix(fisher)
+    anchor, accepted_ltm = _vector(anchor, "anchor").cpu(), _vector(accepted_ltm, "accepted_ltm").cpu()
+    if anchor.shape != accepted_ltm.shape or old.shape != (len(anchor), len(anchor)):
+        raise ValueError("archive and LTM anchor dimensions must agree")
+    if not ids:
+        if evicted_fisher is not None:
+            raise ValueError("a Fisher update requires actual evicted exposures")
+        return dict(fisher_L=copy.deepcopy(fisher), anchor_L=anchor.clone(),
+                    consolidated_ids=old_ids, eta=0., evicted_count=0)
+    if evicted_fisher is None:
+        raise ValueError("eviction requires the accepted-state model-label Fisher")
+    fresh = _fisher_matrix(evicted_fisher)
+    if fresh.shape != old.shape:
+        raise ValueError("evicted Fisher must be the matching LTM block")
+    eta = 1. if pi == 1 else -math.expm1(len(ids) / arrival_size * math.log1p(-pi))
+    archived, diagnostics = compress_fisher((1 - eta) * old + eta * fresh,
+        rank=rank, seed=seed, check_stop=check_stop)
+    return dict(fisher_L=archived, anchor_L=accepted_ltm.clone(), consolidated_ids=old_ids + ids,
+                eta=eta, evicted_count=len(ids), archive_diagnostics=diagnostics)
 
 
 def age_weights(insertion_counts: Sequence[int] | Tensor, cumulative_count: int,

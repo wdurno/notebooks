@@ -18,6 +18,10 @@ from .config import Config, Recipe, content_hash
 from .runtime import read_json, synchronize
 
 
+class NumericalIntegrityError(ValueError):
+    pass
+
+
 def trajectory_id(family: str, replica: int, recipe: Recipe, target: int) -> str:
     return f"trajectory-{family}-{replica:04d}-{recipe.key}-n{target:04d}"
 
@@ -326,6 +330,12 @@ class Runner:
             accepted, diagnostics = fit_step(model, layout, theta, new_x, new_y,
                 replay_x, replay_y, ages, old["fisher_L"], old["anchor_L"], recipe.method,
                 fit_cfg, seed, fit_check, objective_observer=observer)
+            if diagnostics["solver_failed"]:
+                store.write_json(unit, "numerical_failure.json", dict(step=step, n=new_n,
+                    recipe=recipe.mapping(), diagnostics=cpu_tree(diagnostics),
+                    committed=False, checkpoint_segment=state["next_segment"]))
+                raise NumericalIntegrityError(
+                    f"numerical fit failed before arrival commit: {unit}, step {step}, {diagnostics['solver_reason']}")
             synchronize(cfg.device)
             audit_seconds = sum(item["seconds"] for item in branch)
             fit_seconds = time.perf_counter() - fit_tick - audit_seconds
@@ -387,7 +397,7 @@ class Runner:
         if state["n"] != target or len(state["rows"]) != target + 1:
             raise ValueError("trajectory ended without every exact-budget prediction")
         rows = state["rows"]
-        summary = dict(schema_version=1, unit_id=unit, family=family, partition=partition,
+        summary = dict(schema_version=1, protocol=cfg.protocol, unit_id=unit, family=family, partition=partition,
             replica=replica, method=recipe.method, recipe=recipe.mapping(), recipe_key=recipe.key,
             capacity=recipe.capacity, replay_count=recipe.replay_count, target=target,
             novel_auc=sum(row["novel_mse"] for row in rows[1:]) / target,

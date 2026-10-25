@@ -15,6 +15,11 @@ separate scientific protocol, not a revision of categorical Plan 15 artifacts.
 - Archive only actual FIFO retirements once, at accepted parameters. Preserve
   the nominal-four-observation archive clock despite variable segment sizes.
   The C=b=0 boundary retires immediately after its arrival fit.
+- Protocol v2 uses exact symmetric eigh on the existing small dense LTM block,
+  retaining eight modes plus the residual diagonal. Compression must preserve
+  the source diagonal and trace. Do not restore the legacy Lanczos compressor:
+  near rank-one inputs produced duplicated directions and explosive archives.
+  The likelihood, eviction EMA, ridge formula and intended Fisher are unchanged.
 - All comparisons have exactly aligned novel-budget checkpoints. Held-out
   panels never train or supply Fisher/curvature inputs. Never pool development
   and confirmation or reselect after observing confirmation.

@@ -1775,7 +1775,13 @@ confirmation cohort, shorten trajectories, or drop a control. Halt/resume time
 while the node is repurposed is not active compute. The original plan amendment
 itself did not launch computation; the later execution request authorizes it.
 
-### Phase 8: Regression, Resource Allocation, And Sample Efficiency (draft)
+### Phase 8: Regression, Resource Allocation, And Sample Efficiency (completed)
+
+**Completed 2026-10-24.** Phases 8A--8E are complete under the repaired v2
+protocol, including twelve fresh paired confirmation replicas. Actual aggregate
+active compute was approximately **2.93 hours**, including superseded work,
+repairs and validation, below the 20-hour ceiling. The execution record below
+supersedes the initial timing forecast; no additional cohort was launched.
 
 **Motivation:** find useful continual-learning policies when new labeled
 observations and computation are both scarce. First select how much information
@@ -2094,6 +2100,29 @@ constant; failed audits are not accepted as evidence of convergence. Remaining
 defects require Sol's documented, versioned repair rather than weakening an
 integrity check. Tiny smoke outcomes are not development evidence.
 
+**Execution repair (2026-10-24).** Protocol v1 is superseded after a confirmed
+archive-compression defect. Legacy Lanczos can duplicate nearly rank-one Ritz
+directions, inflate the Fisher trace and hence the ridge coefficient, and cause
+nonfinite solver trials. A fixed PSD target with trace 1 was represented with
+trace 4; repeated compression grew its trace above 63,000 in ten updates.
+The sealed v1 `compression-failure-evidence` unit retains the reproduction and
+actual asset audit. All v1 development and partial confirmation are preserved
+for diagnosis and excluded from final inference; no individual failed replica
+is silently removed from a cohort.
+
+Protocol v2 replaces only this regression compressor with stable exact eigh
+on the small dense LTM block. For the supplied matrix
+$M=(1-\eta)\widehat F+\eta F_{\mathrm{retired}}$, take its top eight PSD modes
+$A=U_8\operatorname{diag}(\sqrt{\lambda_1},\ldots,\sqrt{\lambda_8})$ and store
+$AA^T+\operatorname{diag}(\operatorname{diag}(M-AA^T))$. Only roundoff-sized
+negative residuals may be clipped, with explicit diagnostics and a diagonal
+conservation check. Its trace therefore follows the intended convex update,
+without manufactured curvature. Likelihood, Fisher estimand, eviction clock,
+anchors and ridge equations remain unchanged. Failed numerical fits stop
+before committing an arrival. Fresh v2 component seeds and a new run identity
+restart all stages; superseded compute still counts against 20 hours. Repairs
+remain within Sol's existing authority and are visible in the notebook.
+
 #### Phase 8B: Sol Numerical, Initialization, And Cost Calibration
 
 Use development-only seeds/assets. Check near-upright initialization against
@@ -2357,6 +2386,46 @@ significant-changes table, linking detailed diagnostics instead of printing
 configuration dumps, every replica, or solver logs. The notebook loads small
 artifacts only and never trains, evaluates models, repairs data, or runs the
 bootstrap; compute analysis in a resumable Python stage.
+
+**Execution record (2026-10-24).** The valid root is
+`cache/mnist_experiment/plan15/regression_phase8_v2`. It contains 20 calibration
+trajectory units (including prefixes/continuations), 44 allocation trajectories,
+and 36 fresh confirmation trajectories: twelve complete paired replicas. V1
+evidence remains separate and superseded. Calibration selected $c=10$,
+$\lambda_F=263.5643$, and $h=0.01$. Development selected FD at $(C,b)=(256,16)$
+and replay/EWC at $(256,4)$, with the $C=b=0$ EWC-only control. These are policy
+comparisons under common constraints, not isolated equal-allocation FD effects.
+
+| Fresh-cohort contrast | Mean [nominal paired 95% interval] | Interpretation |
+| --- | --- | --- |
+| Replay minus FD new-domain $A(100)$, degrees squared | -21.91 [-28.44, -14.49] | Selected replay policy is better |
+| FD $R(75)$ minus replay $R(100)$, degrees squared | 79.80 [59.75, 101.02] | No smaller-budget advantage; FD is worse |
+| Frozen minus FD new-domain $A(100)$, degrees squared | 293.92 [267.64, 316.07] | FD still learns usefully versus freezing |
+| FD base RMSE increase, degrees | 1.334 [1.162, 1.485] | Exceeds the one-degree guard |
+| Replay base RMSE increase, degrees | 1.591 [1.408, 1.769] | Also exceeds the guard |
+
+Only one of twelve acquisition comparisons favors FD. Its smaller-budget probe
+was the prospectively recorded unsupported-development fallback, not an
+established sample equivalence. The full-range linear inversion was rejected
+before confirmation because it misses early and late plateaus. No fitted
+samples-saved claim is made. Both learning policies improve on freezing, but
+neither meets the full practical-success contract. Lower FD retention harm is
+descriptive here; it does not rescue its worse new-data efficiency.
+
+Selected FD uses 47.77 mean learning seconds per trajectory versus 27.61 for
+replay (1.73 times), with 100 novel observations and 1048.5 mean total arrivals.
+Both fit the frozen measured time/memory envelope; this is not a large-network
+timing extrapolation. The final v2 root occupies about 0.235 GB, and shared
+artifacts/dependencies about 4.45 GB of the 500 GB cap. Final acceptance passes
+305 CPU checks and nine CUDA recovery checks; all 100 trajectory units are
+numerically valid, with zero failed solves. Full content checks preserve prior
+scientific seals and all 41 historical notebook cells. Final archive trace
+error is below $3.1\times10^{-16}$ relative. Evidence is sealed in
+`closeout-qa-v1` and `closeout-qa-v2`; the latter also checks the report-label
+rendering repair. Supplementary report v2 preserves the earlier immutable v1
+report. The concise results and interpretation are in
+[fisher_memory_results.ipynb](fisher_memory_results.ipynb), with operational
+details in [PLAN15_HANDOFF.md](PLAN15_HANDOFF.md). No Phase 8 job remains running.
 
 #### Phase 8 Recovery, Autonomy, And Budget
 

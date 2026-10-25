@@ -15,10 +15,10 @@ from pathlib import Path
 from mnist_experiment.fisher_memory.artifacts import Store, iter_units
 from mnist_experiment.fisher_memory.run import budget_lock
 
-from . import PROTOCOL
+from . import PROTOCOL, SCIENTIFIC_CHANGES
 from .config import ROOT, content_hash
 from .report import publish
-from .runtime import RuntimeBudget, file_bytes, file_digest, read_json, scientific_sources
+from .runtime import RuntimeBudget, file_bytes, file_digest, other_compute_seconds, read_json, scientific_sources
 
 
 def test_evidence(path):
@@ -69,6 +69,7 @@ def main(argv=None):
     parser.add_argument("--superseded-smoke-root", type=Path, action="append", default=[])
     parser.add_argument("--test-results", type=Path, action="append", required=True)
     parser.add_argument("--preliminary-test-seconds", type=float, required=True)
+    parser.add_argument("--label", default="8A")
     parser.add_argument("--notebook", type=Path, default=ROOT / "mnist_experiment/fisher_memory_results.ipynb")
     parser.add_argument("--budget-root", type=Path, default=ROOT / "cache/mnist_experiment/plan15")
     parser.add_argument("--resume", action="store_true")
@@ -82,13 +83,16 @@ def main(argv=None):
     source_hash = content_hash(sources)
     inputs = dict(smokes=[str(path.resolve()) for path in args.smoke_root],
         superseded=[str(path.resolve()) for path in args.superseded_smoke_root],
-        tests=[str(path.resolve()) for path in args.test_results], prior=args.preliminary_test_seconds)
+        tests=[str(path.resolve()) for path in args.test_results], prior=args.preliminary_test_seconds,
+        label=args.label)
     identity = dict(protocol=PROTOCOL, allocation_family="plan15-phase8", role="acceptance",
         source_hash=source_hash, inputs_hash=content_hash(inputs), recorder_hash=file_digest(Path(__file__)))
     with budget_lock(args.budget_root):
+        other = other_compute_seconds(args.budget_root, args.root)
         with Store(args.root, identity, resume=args.resume, external_bytes=file_bytes(
-                args.budget_root, exclude=args.root), finalization_reserve_bytes=32_000_000) as store:
-            budget = RuntimeBudget(store)
+                args.budget_root, exclude=args.root), finalization_reserve_bytes=32_000_000,
+                max_active_seconds=72000 - other) as store:
+            budget = RuntimeBudget(store, other_seconds=other)
             try:
                 with store.control.signal_handlers():
                     if store.is_complete("acceptance"):
@@ -105,8 +109,9 @@ def main(argv=None):
                                    + sum(row["runtime_seconds"] for row in smokes + prior))
                         # Durable restore is idempotent if acceptance was interrupted before its seal.
                         store.control.restore_active_seconds(charged)
+                        budget.check()
                         budget.pulse(force=True)
-                        result = dict(schema_version=1, protocol=PROTOCOL, status="8A complete",
+                        result = dict(schema_version=1, protocol=PROTOCOL, status=f"{args.label} complete",
                             sources=sources, source_hash=source_hash, tests=tests, smokes=smokes,
                             superseded_smokes=prior, preliminary_test_seconds=args.preliminary_test_seconds,
                             charged_evidence_seconds=charged, total_tests=sum(row["tests"] for row in tests),
@@ -116,10 +121,10 @@ def main(argv=None):
                         store.write_json("acceptance", "result.json", result)
                         store.complete("acceptance")
                     snapshot = dict(schema_version=1, protocol=PROTOCOL, smoke=True,
-                        status="8A complete; 8B--8E pending", stage="8A complete", revision=source_hash[:12],
+                        status=f"{args.label} complete; 8B--8E pending", stage=f"{args.label} complete", revision=source_hash[:12],
                         acceptance=result, progress=dict(completed=1, planned=1, active_seconds=budget.used,
                             allocation_seconds=72000, storage=store.storage_status()),
-                        calibration=None, allocation=[], confirmation=None, analysis=None, records=[], changes=[])
+                        calibration=None, allocation=[], confirmation=None, analysis=None, records=[], changes=list(SCIENTIFIC_CHANGES))
                     store.write_json(None, "report_snapshot.json", snapshot)
                     publish(snapshot, args.notebook, store=store)
                     print(json.dumps(dict(status=result["status"], tests=result["total_tests"],

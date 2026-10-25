@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from mnist_experiment.fisher_memory_regression import design
+from mnist_experiment.fisher_memory_regression import design, PROTOCOL
 from mnist_experiment.fisher_memory_regression.config import Config, Recipe
 
 
@@ -25,6 +25,13 @@ def recipe(method=REPLAY, *, capacity=64, replay_count=16):
     return Recipe(method, 0 if method == BOUNDARY else capacity,
                   0 if method == BOUNDARY else replay_count,
                   strength=1. if method == FD else 0.)
+
+
+def test_superseded_protocol_cannot_supply_new_development_evidence():
+    row = record(recipe(), 0)
+    row["protocol"] = "plan15-regression-v1"
+    with pytest.raises(ValueError, match="protocol"):
+        design.aggregate([row])
 
 
 def record(policy, replica, *, risk=None, frozen_base=4., base_auc=4.,
@@ -40,7 +47,7 @@ def record(policy, replica, *, risk=None, frozen_base=4., base_auc=4.,
     rows = [dict(n=n, novel_mse=float(value), base_mse=frozen_base if n == 0 else base_auc,
                  observations=observations * n // 100, learning_seconds=learning_seconds * n / 100)
             for n, value in enumerate(curve)]
-    return dict(schema_version=1, protocol="plan15-regression-v1", recipe=policy.mapping(),
+    return dict(schema_version=1, protocol=PROTOCOL, recipe=policy.mapping(),
                 recipe_key=policy.key, method=policy.method, capacity=policy.capacity,
                 replay_count=policy.replay_count, target=100, N=100, replica=replica,
                 family=family, partition="confirmation" if family == "confirmation" else "development",
