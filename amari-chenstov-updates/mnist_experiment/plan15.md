@@ -2033,8 +2033,8 @@ model switch. Prefer a separately versioned regression package, for example
 `mnist_experiment.fisher_memory_regression`, reusing compatible artifact,
 parameter, compression, and reporting helpers. Give it local instructions
 covering its Gaussian likelihood and scalar-head counts; do not weaken old
-categorical assertions to make new runs fit old schemas. These are proposed
-interfaces, not commands that exist yet.
+categorical assertions to make new runs fit old schemas. The implemented
+interfaces and operator commands are recorded in `PLAN15_HANDOFF.md`.
 
 Provide configuration-driven stages `calibrate`, `allocate`, `confirm`,
 `analyze`, and `all`, with `--resume`, persistent study-wide active-time limits,
@@ -2068,6 +2068,31 @@ acceptance manifests, timing/storage smoke measurements, and a short update to
 `PLAN15_HANDOFF.md`. Begin the chronological Phase 8 notebook section with its
 question, density plot, concise glossary, and explicit pending status. Historical
 cells and sealed scientific artifacts must remain intact.
+
+**8A implementation checkpoint (2026-10-24).** The separate regression package
+implements all subsequent stages. Acceptance covers tiny CPU and CUDA runs,
+production-dtype FD checks, interruption recovery and exact prefix continuation.
+The focused CPU suite passes 276 tests; CUDA recovery is also checked in both
+float64 and float32. Detailed counts, source hashes, immutable smoke seals and
+charged test/smoke time live in
+`cache/mnist_experiment/plan15/regression_8a_acceptance_v1/units/acceptance/result.json`.
+Production 8B--8E remains pending the subsequent execution instruction.
+Acceptance charged approximately **7.8 minutes** against the shared 20-hour
+allowance, with about **45.5 MB** of artifacts including superseded smokes.
+All 41 historical notebook cells are unchanged; the new section adds eight
+concise cells including its progress panel. These are software checks, not a
+production throughput forecast or scientific result.
+
+Implementation uses one versioned study root with sealed stage units, rather
+than requiring four roots. It retains one shared Phase 8 time allocation and
+the existing Plan 15 storage ceiling. Numerical acceptance now explicitly
+requires both float64 and actual-training-dtype FD value/gradient agreement.
+The shared solver may receive at most two automatic ceiling doublings, with
+revalidation of selected full-budget policies and separate immutable decisions
+for each attempt. Gaps are normalized after removing the Gaussian additive
+constant; failed audits are not accepted as evidence of convergence. Remaining
+defects require Sol's documented, versioned repair rather than weakening an
+integrity check. Tiny smoke outcomes are not development evidence.
 
 #### Phase 8B: Sol Numerical, Initialization, And Cost Calibration
 

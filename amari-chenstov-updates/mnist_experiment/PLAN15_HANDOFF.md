@@ -1,5 +1,125 @@
 # Plan 15 Handoff
 
+## Phase 8A: Regression Implementation
+
+Phase 8A is implemented. **Production 8B--8E has not started.** The user's
+next execution instruction, after the model switch, authorizes that work.
+The new package is `mnist_experiment.fisher_memory_regression`; read its
+`AGENTS.md` and Plan 15's Phase 8 before proceeding. Earlier categorical
+implementations and completed scientific artifacts have not been changed.
+
+### Start And Resume
+
+From the repository directory, using the user's venv:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory_regression \
+  --root cache/mnist_experiment/plan15/regression_phase8_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb \
+  --allocation-hours 20 --resume
+```
+
+This command is ready for Sol, **not already running**. `all` is the default;
+explicit stages are `calibrate`, `allocate`, `confirm`, and `analyze`. One root
+contains separately sealed stage decisions, paired assets, immutable prefixes,
+continuations and complete trajectories. No assistant connection is required.
+
+Repeat the same command after interruption. After a deliberate STOP add
+`--clear-stop`; never delete checkpoints or change the root to bypass a stop or
+budget. Use `--max-wall-seconds` or `--max-units` for smaller batches. Exit code
+2 means a deliberate/resource pause, not completion. A changed scientific
+source/configuration requires a new versioned root, not a forced resume.
+
+```bash
+~/.venv/bin/python -m mnist_experiment.fisher_memory.control stop \
+  --root cache/mnist_experiment/plan15/regression_phase8_v1
+```
+
+Replace `stop` with `status` for a read-only operational check. `status.json`
+and `report_snapshot.json` also provide small progress artifacts. CUDA must be
+available; production never silently falls back to CPU. In a restricted agent
+sandbox, GPU work required an approved unsandboxed Python invocation; the
+installed driver and PyTorch CUDA work normally outside that restriction.
+
+### Scientific And Operational Notes
+
+- Gaussian regression from initialization onward: 45-degree fixed likelihood
+  scale, 287 LTM + 135 STM parameters, exact conditional-target Fisher $JJ^T$.
+  No categorical pretraining or categorical Fisher is used.
+- Near-upright training is Uniform[-10,10]; novel training is the signed,
+  upper-truncated lognormal in the plan. Unique novel counts and evaluation
+  checkpoints are exact; short split segments retain the nominal-four archive
+  clock. All evictees, not only sampled replay observations, are consolidated.
+- Calibration checks FD values and full gradients in both float64 and the
+  actual production dtype. Failed diagnostics are sealed before an error.
+  Common solver ceilings can double twice; each attempt has independent
+  decision identities and reuses the same streams/assets. Selected full-budget
+  policies are re-audited, including late snapshots. Objective gaps exclude the
+  Gaussian additive constant; residuals and predictive changes are recorded.
+- A failed numerical gate is not a negative scientific result. Sol may repair
+  it, version affected evidence, and continue under the plan's autonomy rules.
+  Weak initialization and failed retention guards remain visible; they are not
+  efficacy-based early-stop rules. Smoke-only solver-gate bypasses are explicit
+  and never apply to production.
+- Inspect the allocation heatmaps while they accumulate. The deterministic
+  near-tie rule selects independently for FD and replay. Confirmation count is
+  chosen from timing before its outcomes; the target, budgets, recipes, replica
+  list and bootstrap settings are sealed. The initial forecast must be replaced
+  by production pilot measurements, not extrapolated from tiny smokes.
+- Optional linear fits default to **unregistered**. To register one, stop after
+  development trajectories but before cohort sealing and supply `--fit-review`
+  on the allocation resume. Its JSON needs `partition: "development"`, the
+  canonical JSON hash (`config.content_hash`) of the development selection as
+  `selection_hash`, an `approved`
+  boolean, `reviewer`, and `reason`. The fit uses all events 1--100. A later
+  review cannot change a sealed confirmation manifest. No review is required
+  for the primary observed-budget comparison or sample-equivalence figure.
+- Keep the final confirmation and diagnostic-only retirement-cohort views
+  distinct. Retired exposure ages/counts differ across capacities. The common
+  held-out base panel is the primary retention test.
+
+The cumulative 20-hour cap includes the acceptance ledger and every production
+or repair root. `--allocation-hours 20` is a total allowance, never another 20
+hours per invocation. Hard kills conservatively charge the outstanding bounded
+timing lease. All Plan 15 data share the 500 GB cap, with temporary-write and
+filesystem reserves; no deletion is authorized. Pretraining recovery repeats
+at most sixteen minibatches; online recovery repeats one uncommitted solve.
+
+### Acceptance Evidence
+
+The sealed acceptance record is
+`cache/mnist_experiment/plan15/regression_8a_acceptance_v1/units/acceptance/result.json`.
+Final scientific source hash starts `bd8b385d05e6`. Charged acceptance is
+approximately **468 seconds (7.8 minutes)**, including superseded smokes and
+conservative preliminary-test accounting. Phase 8 artifacts occupy about
+**45.5 MB**; a tiny full scheduler smoke occupies about 6--7 MB. These do not
+justify a production throughput extrapolation. The provisional 2--10 GB
+production forecast must be replaced during 8B.
+
+It records scientific source hashes, final test reports, current CPU/CUDA smoke
+seals, superseded smoke costs and conservative preliminary-test accounting.
+Tiny smokes have only three novel observations, one pretraining epoch and two
+solver iterations: **they say nothing about effectiveness or production cost**.
+They exercise all scheduler stages, intentional pause/resume, and final analysis.
+
+Focused CPU coverage: 276 tests. Additional CUDA recovery coverage runs in both
+float64 and float32. It checks pretraining, mid-fit, retirement, accepted-update,
+STOP and SIGTERM recovery; prefix continuation; immutable completion; and
+bitwise equality of scientific state to uninterrupted execution on each device.
+Expected timing fields and allocator peaks are not equality targets. Unit tests
+also cover crash-time charging, data separation, exact count alignment,
+independent selection, whole-replica uncertainty and report preservation.
+
+The results notebook appends a concise Phase 8 question/glossary, angle-density
+figure, acceptance summary and explicit pending sections after Phase 7E, plus
+progress near the top. All 41 historical cells are unchanged; eight cells were
+added. Completed-work resume was tested with training and asset creation
+disabled: all 331 sealed files per final CPU/CUDA smoke stayed byte-identical.
+No experiment writer remains active. The production
+report reads small artifacts, never trains or evaluates a model, and does not
+perform bootstrap computation. Computational analysis is a separate sealed
+stage. No production-quality regression estimate exists yet.
+
 ## Phase 7E Efficiency Conclusion (completed)
 
 User approval and execution were on 2026-10-24. This was a CPU-only,
