@@ -20,10 +20,11 @@ data, alongside resource cost, remains the basis for judging practical value.
 > Replay supplies predictive pressure during consolidation; long-term-memory
 > EWC protects the evicted information approximately, not perfectly.
 
-**Status:** phases through 8 have completed execution records below. The user
-authorized Phase 8.1 implementation and execution on 2026-10-25; recovery and
-CPU/CUDA acceptance precede production. Unexecuted numerical settings are
-prospective choices, not results. Live state is in the notebook and handoff.
+**Status:** the latest completed study is Phase 8.1E, recorded below.
+Phase 9 is a newly drafted continuous-rendering-shift study, awaiting execution
+authorization. This drafting request does not start implementation or compute.
+Unexecuted numerical settings are prospective choices, not results. Live state
+is in the notebook and handoff.
 
 **Scope:** paired LoRA-shaped STM and trainable LTM, three curvature strategies,
 an otherwise identical replay/EWC control, and an explicit distillation control.
@@ -34,6 +35,8 @@ SubGD, ASG, spectral-ridge, or optimal-$\pi$ search.
 **Operational contract:** Astra develops the mathematical paradigm and plan,
 then writes and validates the initial experiment codebase. After one user-managed
 switch, Sol owns calibration, pilots, confirmation, maintenance, and closeout.
+Phase 9 explicitly changes this division: Astra supplies the design only;
+Sol owns its implementation, acceptance, execution, and closeout after authorization.
 The user may be unavailable throughout the run. Sol may independently correct
 implementation and mathematical defects and revise the experiment within its
 research scope; no return to Astra or intermediate user review is required.
@@ -2983,14 +2986,597 @@ not a fast-fail trigger; integrity/resource limits can require an honest partial
 closeout. The user subsequently authorized this phase's implementation and execution;
 the notebook and handoff report its current state.
 
+### Phase 9: Continuous Rendering Shifts And Useful Sample Savings (draft)
+
+**Motivation.** Find experimental contexts in which Fisher-regularized STM
+provides substantially more useful learning per scarce novel observation and
+additional compute. Small MNIST networks remain the intended proxy for adapting
+a pretrained model in a resource-constrained application. Moving to robotics,
+large pretrained models, or expensive new datasets is not required.
+
+Phase 8.1E estimated 8.59% fewer novel observations for 1.537 times the learning
+compute at matched prediction quality. Its exploratory score under the new
+definition below is approximately 0.056. Phase 7E's much larger classification
+estimate used a different task, retention comparison, and global curve fit;
+it is motivation, not a comparable confirmed effect size or promised result.
+Phase 9 asks whether changing the adaptation context, rather than optimizing
+implementation overhead, can materially improve this trade-off.
+
+**Working hypothesis.** FD is more useful when initialization already supplies
+the prediction capability, scarce observations teach a coherent correction,
+and that correction must coexist with useful old behavior. Broad-angle
+extrapolation, ambiguous handwriting, or a largely missing representation may
+limit all methods independently of their memory strategy. These are hypotheses
+to investigate, not established explanations of Phase 8.1.
+
+**Scope and roles.** Astra writes this phase. After the user authorizes execution
+and switches roles, **Sol implements and executes 9A--9E autonomously**, including
+tests, calibration, bounded refinements, repairs, reporting, and closeout. No
+Astra programming phase or intermediate model-switch/review gate is required.
+The general autonomous correction protocol below applies. Material departures
+must have a recorded scientific reason and new identity; disappointing efficacy
+alone is not a reason to terminate the study or silently change its target.
+
+Keep the 422-coordinate regression model, all ten digits, the Gaussian
+likelihood, FD KL, and replay/EWC. Park buffer-capacity optimization, replay
+selection engineering, cheaper FD estimators, gradient-preserving retirement,
+JVP/directional/distillation treatments, and mechanistic transfer claims.
+There is no new classification, digit-9-mixture, robotics, or architecture study.
+The rules here supersede old data/selection defaults only for new Phase 9 roots.
+
+Propose a new **20-hour aggregate active-compute ceiling**, including tests,
+initialization, calibration, exploratory work, confirmation, repairs, reporting,
+and restart overhead. It is not renewed by resumption and does not spend unused
+allowances from prior phases. Preserve the shared **500,000,000,000-byte** Plan 15
+peak-artifact limit. Drafting does not authorize any of that execution.
+
+#### Shared Prediction And Continuous-Shift Contract
+
+Predict the applied angle in degrees with the existing scalar mean head.
+Use the same angle law in initialization, background, novel training examples,
+and both evaluation domains:
+
+$$
+\alpha\sim\operatorname{Uniform}[-60^\circ,60^\circ].
+$$
+
+This is the agreed prospective range, not an alteration of old results. Novelty
+now means a changed measurement/rendering condition, never a new angle range
+or digit label. Natural handwriting orientation remains an acknowledged source
+of uncertainty. Do not remove difficult digits, replace labels by predictions,
+clip output angles, or choose different angle distributions for different arms.
+
+Pretrain on nominal MNIST rendering throughout this angle range, using the
+Phase 8 regression recipe: 30,000 unique images, one recorded angle per image,
+LTM training with zero STM residual, Adam at 0.001, batch 256, initially 15
+epochs. Validation and the initial model-label Fisher use independent nominal
+images with the same angle law. Use 1,024 initial Fisher inputs and the existing
+nested-prefix adequacy check. Freeze a common initialization recipe in 9B;
+repeat it with named seeds for every replica and share its exact assets across
+methods and contexts within that replica. Do not use transformed-domain
+confirmation data to improve initialization.
+
+Render the ordinary bilinear rotation first, with the existing fill convention,
+then apply a measurement transform to the resulting intensities in [0,1].
+Initial candidate contexts are:
+
+| Family | Weaker endpoint | Stronger endpoint | Transform |
+| --- | ---: | ---: | --- |
+| Gamma response | 1.8 | 3.0 | $x\mapsto x^{\gamma}$, with $\gamma(j)=\gamma_{\max}^{u_j}$ |
+| Gaussian blur | 0.6 pixels | 1.2 pixels | $x\mapsto G_{\sigma(j)}*x$, with $\sigma(j)=\sigma_{\max}u_j$ |
+
+Nominal gamma is 1 and nominal blur is zero. Use a normalized separable
+Gaussian with fixed radius six pixels and zero padding; zero blur is exactly
+the identity. Do not round blur strength to discrete kernels, quantize gamma,
+renormalize each transformed image, or add independent label-dependent noise.
+All transforms preserve the applied-angle target. Test continuity numerically,
+including convergence to the nominal rendering. For an optional combined
+context, apply gamma followed by blur; order is part of its frozen identity.
+
+The strength follows one smooth, coherent trajectory on nominal arrival
+groups of four:
+
+$$
+v_j=\min\!\left(\frac{j-1}{199},1\right),\qquad
+u_j=\frac12+\frac12(3v_j^2-2v_j^3).
+$$
+
+Thus the novel component starts at half strength and smoothly approaches its
+endpoint over 200 groups; there are no abrupt task switches or independently
+redrawn camera regimes. The mixture itself retains the established drip law
+$p_j=0.1\min((j-1)/39,1)$. Background images use nominal rendering, novel
+images use the current transformed rendering, and both have the same continuous
+angle law and fixed empirical digit proportions. The distribution changes
+continuously; individual source images and angles may still be independent draws.
+Starting the novel component away from nominal avoids making its first labels
+arbitrarily indistinguishable from background. Its mass starts at zero.
+
+Generate the complete source IDs, angles, membership flags, group indices,
+transform strengths, and stream order before any treatment runs. Stop at exactly
+100 unique novel source images and retain every intervening background image.
+Split groups after each novel event as in Phase 8, using the original group
+index for both schedules. Save predictions after every exact novel count.
+The nominal-four-observation archive clock does not change for split segments.
+Novel membership is sampler metadata, never an input to the learner.
+
+Use disjoint source roles for pretraining, initialization validation, initial
+Fisher, online stream, the diagnostic learnability fit below, and evaluation.
+All treatments share each replica's initialization, inputs, angles, stream
+segments, replay-selection seeds, and held-out panels. Across contexts use
+common source IDs/angles/flags and change only the named rendering, enabling
+paired exploratory comparisons without treating contexts as independent replicas.
+No source image repeats within an online trajectory. Reuse across separately
+paired treatment/context trajectories is deliberate, not extra labeled data.
+
+**Fixed evaluation task.** The nominal held-out panel uses no measurement
+transform. The novel panel uses a separately seeded, fixed
+$u_{\mathrm{eval}}\sim\operatorname{Uniform}[0.5,1]$ per image and the
+context's endpoint parameters. Use 100 test images per digit in each panel,
+with fixed empirical class weights, paired source IDs and angles, and no change
+to these images/weights across checkpoints. This is prediction across a fixed
+range of new measurement conditions, not evaluation on a moving current
+distribution or only on the easiest current strength.
+
+Partition the official test IDs explicitly into development and confirmation
+pools. Confirmation seeds, streams, and initializations are fresh. Earlier MNIST
+studies inspected this benchmark, so describe this as stochastic confirmation on
+a reused benchmark, not external validation. Held-out examples never provide
+training gradients, replay, Fisher inputs, or curvature probes.
+
+#### Learning Policies And Retention
+
+Reuse the repaired Phase 8 likelihood and learning mathematics: 287 LTM + 135
+STM parameters, normalized mean $f_\theta$, fixed Gaussian scale 45 degrees,
+exact model-target Fisher $J_iJ_i^T$, rank-eight plus residual-diagonal archive,
+trace-preserving symmetric eigendecomposition, retirement-only EMA, and
+$\pi=0.025$. Both memory blocks train in every adaptive arm. Retain the
+age-squared FD weighting, two fixed-within-solve Rademacher probes, initial
+step 0.01, replay weight 0.5, and 100-iteration/150-closure solver settings.
+Numerical adequacy is tested, not inferred from a successful exit.
+
+The primary comparison is FD + replay/EWC versus replay/EWC. Keep FIFO capacity
+$C=256$ for both, with the same limited $b\in\{4,16\}$ calibration options
+inherited from 8.1. This is not a buffer-capacity or broad compute-allocation
+search. Include EWC-only with $C=b=0$ and a frozen-initialization prediction
+reference. EWC-only retains its original loss normalization and immediate
+retirement, so it is a useful competing policy, not a pure FD ablation.
+
+Ridge and FD strength are calibrated per method and context. Report matched
+$(C,b)$ development contrasts alongside the selected-policy comparison;
+an independently selected replay count does not isolate the FD penalty.
+Old Phase 8.1 settings are reference candidates, not assumed optimal here.
+
+Let $R^D_{m,r}(n)$ be pure held-out angle MSE after exactly $n$ novel
+observations for method $m$, replica $r$, and domain $D\in\{0,R\}$.
+No regularizer enters this predictive error. Retain
+
+$$
+A^D_{m,r}=\frac1{100}\sum_{n=1}^{100}R^D_{m,r}(n),\qquad
+H_{m,r}=\sqrt{A^0_{m,r}}-\sqrt{R^0_r(0)}.
+$$
+
+Compute $H$'s roots within replicas. Use the prospective practical ceiling
+$\delta=1.0^\circ$ and comparison tolerance $\epsilon=0.20^\circ$.
+These are benchmark design choices, not deployment safety limits; do not
+inherit 8.1's outcome-derived 1.3342351463-degree ceiling into a different task.
+The preferred development band is $[\delta-\epsilon,\delta]$.
+Never worsen a policy that improves both acquisition and retention merely
+to put it in the band. Preserve and label unmatched/infeasible results.
+
+Freeze these tolerances before development comparisons. Do not relax them
+after seeing confirmation. At confirmation, report paired uncertainty for
+the difference in $H$, and each method's one-sided 95% upper bound against
+$\delta$. A two-sided 95% interval contained in
+$[-\epsilon,\epsilon]$ supports equivalence; a nonsignificant difference
+does not. A clearly better-retaining policy can instead support a joint
+improvement, without being called an equal-retention comparison.
+
+#### Reader-Facing Efficiency And Analysis Rules
+
+Keep the main definition simple:
+
+$$
+S=\frac{\text{fraction of novel samples saved}}
+        {\text{learning-compute multiplier}}.
+$$
+
+Lead the notebook with wording such as "50% fewer novel examples for twice
+the learning compute; $S=0.25$", then the two components and their uncertainty.
+Larger $S$ is better under the same prediction/retention conditions. The
+aspirational 0.25 is not a promised effect, a significance threshold, or an
+outcome-dependent stopping rule. This $S$ is a new score; Phase 8.1E used the
+same letter for a saved-image count. Preserve that historical notation and
+explain the distinction once.
+
+Different contexts can have different replay endpoint errors. Publish that
+achieved RMSE beside each exploratory score: a higher $S$ does not imply
+better absolute prediction across different tasks. Confirmation supports the
+selected context only, not a universal advantage over the other contexts.
+
+**Operational definition for the implementer.** Within one context/cohort,
+the common risk target is replay/EWC's observed mean novel MSE at 100:
+$q=\overline R^R_{\mathrm{replay}}(100)$. This target-selection rule is frozen
+before development, and is recomputed within bootstrap draws. Do not choose a
+more flattering error level after seeing curves. Interpolate adjacent observed
+FD mean-MSE checkpoints and use the last downward entry into the at-or-below
+target region that persists through event 100, following the 8.1E rule.
+Record all crossings. No global fit, smoothing, imposed monotonicity, different
+fit window, or extrapolation is authorized.
+
+For an evaluable crossing $n_F\in[1,100]$, the components are
+$s=(100-n_F)/100$ and
+$r_T=\overline T_F(n_F)/\overline T_{\mathrm{replay}}(100)$, with $S=s/r_T$.
+Interpolate cumulative measured learning time at the same adjacent points.
+Time includes input preparation, all background learning, replay, FD,
+retirement/Fisher work, and accepted optimization; exclude measurement-only
+holdouts, archival/reporting I/O, pretraining and calibration from this marginal
+learning ratio and report their costs separately. Never substitute the
+equal-sample-budget time ratio or multiply it by the sample fraction.
+
+If initialization already reaches the target, FD has not reached it by 100,
+or the crossing/denominator is invalid, report "sample equivalence unresolved"
+and its reason. Do not assign zero savings, extrapolate a negative saving,
+discard the case, or let an unresolved score win selection. An endpoint equality
+can legitimately yield zero savings. Also show whether replay's target improves
+on frozen initialization by at least 5% in MSE; smaller changes cannot qualify
+as the preferred practical-efficiency context, even if an inversion produces a
+large numerical $S$. Keep the numerical/descriptive evidence visible.
+
+Novel budgets include different amounts of background exposure and different
+points on the prescribed drift trajectory. Report total arrivals and final
+drift strengths at both matched budgets. The estimand is equivalence of the
+complete acquisition policies in this environment, not an isolated causal
+effect of removing novel labels while holding history fixed.
+
+**Retention at the matched budgets matters separately.** Interpolate each
+replica's nominal MSE at the common $n_F$, take its square root, and average;
+compare with the analogous mean replica RMSE for replay at 100. Report their
+paired difference and each endpoint's deterioration from its paired initial
+RMSE. A retention-qualified savings claim requires:
+
+1. The full-budget comparison supports retention equivalence, or the one-sided
+   95% upper bound for FD-minus-replay $H$ is at most $\epsilon$, with
+   better-retention cases explicitly distinguished from equivalence. Both
+   methods support the $H$ ceiling.
+2. At the matched budgets, the one-sided 95% upper bound for FD-minus-replay
+   nominal RMSE is at most $\epsilon$, and both endpoint deterioration upper
+   bounds are at most $\delta$.
+
+The second check does not inherit the first check's certificate. If unsupported,
+show the raw numerical $S$ labeled retention-unqualified and the predictive
+trade-off; do not describe it as the requested success. Better FD retention is
+allowed and does not have to be deliberately degraded.
+
+Use 2,000 whole-paired-replica bootstrap draws for final analysis, with
+independently named seeds. Recompute the target, crossings, time ratio, score,
+and matched-budget retention jointly in every draw. Preserve all unresolved
+draws and multiple-crossing counts. If any draw is inversion-invalid, withhold
+an ordinary percentile interval for $s,r_T,S$ and matched-budget retention,
+rather than conditioning on successful draws; full-budget comparisons remain
+available. Explain flat/reversing curves as an inverse-risk limitation. A valid
+point score with an unavailable interval is descriptive, not confirmed savings.
+
+The primary efficiency endpoint is $S$, always shown with its two components
+and retention qualification. The accompanying finite-window predictive contrast
+is the paired mean $A^R_{\mathrm{replay}}-A^R_F$, available even if $S$ is
+unresolved; it cannot substitute for a samples-saved claim. Show RMSE
+trajectories in degrees, MAE and accuracy within a fixed $10^\circ$ tolerance
+as secondary applied metrics; MSE defines all matching and selection. Do not
+switch to whichever error metric makes FD look best. Report nominal paired
+95% intervals, mean effects, and complete-pair counts. Context screening is
+exploratory; inference uses the single fresh selected-context cohort. Distinguish
+evidence of positive acquisition, evidence of sample savings, and whether
+the point score reaches 0.25. A point above 0.25 alone does not establish that
+the population trade-off exceeds 0.25.
+
+#### Phase 9A: Sol Implementation And Recovery Acceptance
+
+Implement a separately versioned package/entry point, for example
+mnist_experiment/fisher_memory_shift/, and a new root under
+cache/mnist_experiment/plan15/continuous_shift_v1. Reuse stable helpers but
+do not edit frozen scientific packages in a way that breaks old source hashes
+or recovery. Introduce explicit Phase 9 configuration/data schemas rather than
+bypassing the old angle-distribution validators. Keep all code in the repository.
+
+The CLI must implement a durable, unattended scheduler, status, stop, report,
+and resume operations, accepting --resume and --clear-stop for explicit
+resumption and clearing of a deliberate stop request.
+Publish tested commands to the handoff after acceptance; paths are arguments.
+Use the user's ~/.venv/bin/python. No assistant session or connection is required
+for the scheduled phases to advance.
+
+Test renderer identity/continuity/order, unchanged labels and intensity bounds,
+paired schedules and disjoint source roles, exact novel-event checkpoints,
+Gaussian Fisher/FD gradient routing, retirement once per exposure, solver
+adequacy, retention definitions, deterministic selection/refinement caps,
+crossing guards and paired bootstrap, and notebook-cell ownership.
+Run small cached-MNIST CPU/CUDA smokes and interrupted/resumed equivalence checks,
+including hard interruption around a committed update and a sealed decision.
+No long integrations from older plans are needed.
+
+Build the concise pending Phase 9 notebook section and progress display now,
+with an explicit incomplete state and links to diagnostics. Preserve all
+earlier cells and the frozen Phase 8 notebook. Record the resolved contract,
+code snapshot/hashes, software/device/dtype, component seeds, budget ledger,
+and recovery acceptance before production. Forecast timings from actual work.
+
+#### Phase 9B: Initialization, Context, And Numerical Calibration
+
+Use two paired development replicas. Share their nominal initialization across
+all rendering candidates; do not retrain a model for every hyperparameter.
+
+**Initialization capability.** Compare nominal validation MSE with constant-zero
+prediction and report per-digit errors. The readiness target is at least 50%
+mean-MSE reduction from zero prediction, assessed on the two-replica mean,
+with finite, stable training and validation behavior. This is an engineering
+adequacy check, not a test of FD. If 15 epochs miss it, extend the same runs to
+30 and then 45 epochs within the budget, retaining each version. Select the
+earliest common epoch recipe meeting the target. If none does, retain the best
+common validation recipe, flag limited capability, and continue with the best
+valid design; do not select favorable replica initializations or remove digits.
+A material remedy beyond these defaults uses the autonomous correction protocol.
+
+**Context readiness.** Inspect frozen predictions and small image strips for
+the four proposed contexts before any FD-based context ranking. Desired
+degradation is at least 10% in novel RMSE relative to nominal RMSE, with visible
+input information remaining. Assess recoverability using a separate diagnostic
+fit on 512 nominal plus 256 transformed development-training images, starting
+from the same initialization, without FD or EWC, with both blocks trainable.
+Use Adam at 0.001, batch 128, five epochs, with one extension to ten epochs if
+needed. Reuse the same diagnostic source images across contexts; select the
+epoch count on development validation only.
+Use the same angle law and fixed uniform strength range as the held-out task
+for these diagnostic images, with independently named training-render seeds.
+Replay each admitted replacement's readiness check before freezing the contexts.
+
+A useful diagnostic recovery is at least 10% lower novel MSE than frozen
+initialization while nominal RMSE increases by at most one degree. This is a
+relaxed-memory learnability reference, not a competing online treatment or
+evidence of 100-label performance. Its extra labels, optimization, and access
+to old examples must be disclosed and never enter an online initial state.
+
+Allow at most one severity replacement per family, before FD comparisons:
+if both defaults cause negligible degradation, replace the stronger endpoint
+by gamma 4.5 or blur 1.8 pixels; if the stronger one is clearly destructive
+(more than twice the nominal frozen RMSE and failed diagnostic recovery),
+replace it by the midpoint between the two default endpoints. Preserve all
+diagnostic evidence. Otherwise retain the defaults. If no context meets the
+readiness preferences, retain the best valid two endpoints per family with
+warnings; those preferences are not automatic efficacy-based cancellation gates.
+Seal the resulting four contexts before 9C.
+
+**Numerics and time.** Run replay/EWC reference trajectories at $C=256,b=16,c=10$
+through all 100 novel events on the two development replicas in each context.
+Reuse these units when they are grid members. Check Gaussian FD against the
+exact JVP reference at step sizes 0.005, 0.01 and 0.02, using frozen replay
+subsets/probes and float64 spot checks. Apply any step/solver repair commonly
+and freeze it before method comparisons. Audit at least early and late
+reference/FD snapshots with doubled solver ceilings and the inherited
+0.1% objective-gap / 5% normalized numerical sensitivity checks.
+
+For each context, estimate a central FD coefficient from the reference
+snapshots near novel counts 25 and 75. Let $a$ be the median full-parameter
+norm of the data-loss gradient and $b_\Phi$ the median norm of the unweighted,
+age-weighted normalized FD penalty gradient on those fixed snapshots. Set
+$\lambda_0=0.1a/b_\Phi$, recording both values and per-snapshot ratios.
+Do not divide by a numerically zero gradient: inspect the mathematical routing
+and use the historical 2.6356432540763373 as a flagged fallback only if the
+calculation is numerically valid but too flat to calibrate. This is a scale
+initializer; the crossed search below decides efficacy.
+
+Seal a per-context, common learning-cost allowance equal to 2.5 times the
+reference mean learning seconds per total arrival, and the measured memory
+allowance with device headroom. It is an allowance, not equal compute consumed;
+$S$ always uses actual measured cost. Count GPU synchronization consistently
+and report operation counts alongside tiny-network wall time. Calibration,
+diagnostics and initialization belong in the total study budget.
+
+#### Phase 9C: Bounded Context And Policy Exploration
+
+Use the same two development replicas for the initial screen. Every efficacy
+candidate runs through 100 novel events; do not select a policy from an easier
+short prefix. Within each of the four contexts:
+
+- Replay/EWC: $c\in\{1,10,100\}$, crossed with $b\in\{4,16\}$: six settings.
+- FD + replay/EWC: those same $c,b$ values crossed with
+  $\lambda_F\in\{\lambda_0/10,\lambda_0,10\lambda_0\}$: eighteen settings.
+- EWC-only: $c\in\{1,10,100\}$: three settings.
+
+This is 27 settings per context, 216 initial trajectories over four contexts
+and two replicas, including reusable reference units. Do not multiply it by
+capacity, solver, architecture, angle-range, or alternative-curvature grids.
+
+Reuse 8.1's deterministic retention-band selection logic: among valid,
+resource-feasible candidates prefer the lowest novel $A^R$ in the band;
+retain a below-band joint improvement instead of forcing deterioration.
+When no setting enters the band, retain the closest valid candidate with a
+warning. Ties favor lower measured learning cost, then smaller replay count
+and lexicographic numeric settings. Do not exclude a failed replica to make
+a setting valid.
+
+Permit at most **eight additional settings per context**, each on both
+development replicas. Prioritize geometric ridge midpoints that bracket the
+retention band, then one outward ridge decade when an edge is unbracketed,
+then one adjacent FD-strength decade or the historical FD coefficient when
+the promising range is untested. Use all eight slots fairly: reserve at least
+two for each primary method when its band is unresolved; EWC-only remains
+eligible for refinement. Seal each next proposal and reason before execution.
+A restart cannot replenish slots. Do not infer monotone retention response
+when the observed map contradicts it.
+
+Inspect the acquisition-versus-retention scatter and compact $c$-by-strength
+heatmaps visually after paired completions. Record a short assessment of
+boundary optima, noisy slices, and untested gaps. Visual inspection informs
+the bounded rules; it does not replace recorded outcomes or authorize
+unbounded searches for a favorable point.
+
+**Optional combination.** Admit at most one gamma-plus-blur context only if
+both families have a valid primary policy pair within the retention/resource
+conditions and a positive development acquisition gain in at least one
+severity. Choose each family's eligible severity by its point $S$, breaking
+ties by acquisition gain and then lower severity; if inversion is unresolved,
+use acquisition gain alone. Combine their endpoint transforms using the same
+smooth $u_j$. Run the same readiness/numerical checks, 27-setting screen and
+eight-setting refinement cap. This is a new exploratory context, not a pooled
+estimate. Admission requires a timing forecast leaving the full confirmation
+and reporting reserve. If either family fails these criteria, omit the
+combination and continue; do not cancel the single-family study.
+
+Rank contexts after within-context policy selection. First prefer complete
+numerically valid primary pairs with resource feasibility, point retention
+matching or FD joint improvement, a useful replay target (at least 5% MSE
+gain over frozen initialization), positive acquisition gain, and an evaluable
+point $S$. Rank those by $S$, then acquisition gain, then lower FD cost.
+Other contexts remain visible; rank them by acquisition gain with explicit
+feasibility warnings, rather than inventing an $S$. No bootstrap significance
+filter is used on these small development cohorts.
+
+For the top two contexts, shortlist at most two settings per adaptive method:
+the selected setting and the best distinct feasible retention alternative,
+or the next-closest valid one if matching failed. Run these on two additional
+paired development replicas. This adds at most 24 trajectories and yields four
+replicas per finalist. Reapply the same policy/context rules on the expanded
+cohorts and select **one** context and three adaptive recipes for confirmation.
+Poor efficacy is still informative: if none qualifies as a promising
+efficiency context, confirm the best valid acquisition comparison with its
+warnings. Do not keep adding contexts until FD wins.
+
+Freeze context, rendering, initialization, solver, strengths, replay policies,
+targets/rules, tolerances, source identity, seeds, and confirmation size before
+reading any confirmation outcome. Development data may select the context;
+confirmation data may not reopen that choice.
+
+#### Phase 9D: Fresh Paired Confirmation
+
+Run 12 fresh paired replicas, each with FD, replay/EWC, and EWC-only through
+100 novel events, plus its common frozen reference. This is 36 adaptive
+trajectories. A timing-only reduction to ten or eight replicas is permitted
+before the cohort begins, after removing optional exploration first. Preserve
+the full observation window and controls. If eight cannot fit, close with
+honest development/partial status rather than call an undersized cohort final.
+
+Publish complete-pair progress and descriptive curves as units finish. Do not
+extend the cohort, change hyperparameters, replace the selected context, or
+stop at significance in response to intermediate results. Interrupted execution
+resumes the same planned cohort. Scientific defects can trigger versioned
+paired repairs under the correction protocol; outcome-informed redesign is
+development and cannot be pooled into the old confirmation.
+
+Store pure nominal/novel MSE, RMSE, MAE, and within-$10^\circ$ accuracy,
+initial references, exact sample/total-arrival counts, drift strengths,
+learning/evaluation/I/O timing, solver diagnostics, and complete input provenance.
+Retain the inherited retired-training-cohort errors and ages as supplemental
+diagnostics. They are not independent held-out observations and cannot replace
+the common nominal retention panel.
+
+#### Phase 9E: Efficiency Interpretation And Human-Readable Closeout
+
+Analyze the frozen complete cohort with the registered paired rules. Give
+$S$'s components equal prominence: novel examples saved, actual compute
+multiplier, and retention qualification. Report a valid negative acquisition
+result plainly. If curves do not support inversion, explain that the
+samples-saved question is unresolved while still reporting predictive and
+compute evidence; do not manufacture a numerical success score.
+
+Append Phase 9 after Phase 8.1E in
+[fisher_memory_results.ipynb](fisher_memory_results.ipynb), preserving history.
+Keep the progress overview near the top. Limit the new main narrative to a
+short motivation/glossary, about five multi-panel figures, and two compact
+tables:
+
+1. Initialization capability, representative transformed digits, and the
+   continuous rendering-strength schedule. Explain what changed and what did not.
+2. Development context comparison and retention/compute feasibility, showing
+   unsuccessful contexts too and distinguishing selection from confirmation.
+3. Fresh nominal/novel RMSE curves versus unique novel observations, with
+   frozen references, complete-pair counts, units, and paired uncertainty.
+4. Observed novel curves with the replay target, terminal matching point, and
+   local zoom; show measured compute and matched-budget retention alongside.
+5. A compact applied-metric panel for angular MAE and within-$10^\circ$
+   accuracy, plus the plain-language savings/compute conclusion and $S$.
+
+Put exhaustive grids, per-digit and retired-cohort diagnostics, source hashes,
+bootstrap crossing counts, and detailed solver audits in a linked supplement.
+State the online label cost separately from initialization, development labels,
+diagnostic-fit labels, validation use, and all calibration compute. No claim
+of lifelong end-to-end sample efficiency follows from a marginal online score.
+
+Publish on paired completions, bounded to at most one full report refresh per
+15 active minutes; update the lightweight progress record more frequently.
+The notebook loads artifacts only and never trains, evaluates models, downloads,
+repairs, or resumes. Inspect plot images for labels, legends, readability,
+clipping, and consistent axes. Close with what survived confirmation, the
+conditions under which it held, unresolved limitations, and resource use.
+
+#### Phase 9 Recovery, Autonomy, And Wall-Clock Forecast
+
+Inherit atomic accepted-update checkpoints, immutable completion seals,
+single-writer leases, named RNG state, resolved config/source hashes, dependency
+validation, and durable active-compute/storage accounting. Version and seal
+context-readiness decisions, severity replacements, calibration coefficients,
+refinement proposals, combination admission, and final selection as well as
+trajectories. A stopped process cannot repeat a decision with a new draw or
+silently skip a failed treatment. Completed units never change on resume.
+
+Use bounded, stop-aware validation and incremental reporting; do not replay
+every historical notebook or large archive on each restart. Permit checkpointed
+pretraining, mid-trajectory recovery at accepted updates, and blockwise
+bootstrap recovery. Maintain sufficient temporary-write/free-space reserves
+inside the shared 500 GB cap. Store IDs/angles/transforms rather than redundant
+rendered copies for every recipe. Do not prune old evidence, move code/data,
+or interrupt unrelated archival jobs. Expected new compact artifacts are
+approximately 1--5 GB, subject to the 9A storage forecast.
+
+Sol may repair implementation, numerical, and mathematical defects and revise
+unproductive calibration within the general correction protocol and remaining
+budget. Record significant changes promptly in the notebook and handoff,
+including equations, affected units, tests, and impact on interpretation.
+Keep controls comparable, preserve all superseded evidence, and use new roots
+when the scientific meaning changes. Do not silently exceed resources or
+redefine confirmation outcomes. No intermediate return to Astra is required.
+
+| Sub-phase | Operator | Expected active wall-clock compute | Deliverable |
+| --- | --- | ---: | --- |
+| 9A: implementation acceptance | Sol | 0.3--0.8 h | Tested pipeline, pause/resume, initial report and forecast |
+| 9B: capability/context/numerical calibration | Sol | 1--2.5 h | Common initialization, four contexts, numerical and time scales |
+| 9C: context/policy screen and finalists | Sol | 3--6 h | Bounded maps, optional admitted combination, one frozen context |
+| 9D: fresh confirmation | Sol | 1--3 h | Normally 12 paired three-arm replicas |
+| 9E: analysis and closeout | Sol | 0.2--0.6 h | Human-readable efficiency, retention and uncertainty |
+| **Expected total** | **Sol** | **5.5--12.9 h** | Before node pauses; including process overhead |
+| **Aggregate ceiling** | **Sol** | **20 h** | Includes repairs, tests, repeated work and reporting |
+
+Initial implementation is separately estimated at **3--6 hours of development
+time**, not GPU compute; any test/smoke processes during it count above.
+Forecasts are informed by 8.1's roughly five-hour study, not guarantees for
+broader-angle initialization or shifted inputs. Revise them from measured
+complete-unit time in 9B. The maximum five-context screen/refinement is 350
+trajectories, plus at most 24 finalist and 36 confirmation trajectories;
+reference, readiness, repair, and acceptance work must also be budgeted.
+
+Reserve the larger of four active hours or the measured confirmation/analysis
+forecast with 50% contingency before optional exploration. If time tightens,
+omit the combination, then unstarted refinement slots, before reducing fresh
+confirmation by timing-only rules. Do not shorten all trajectories, delete
+controls, or abandon a valid study because an early effect is weak. Stop safely
+at the cap and preserve a readable partial result when necessary.
+
+After acceptance, the handoff must list tested start, resume, status, stop and
+report commands, selected source/root identities, next pending immutable units,
+remaining active budget, storage headroom, and any unresolved health warnings.
+This phase remains a design awaiting execution authorization; no process is
+started by adding it to the plan.
+
 ## Statistical Reporting
 
-For Phases 5B/5C, 7, 8, and 8.1, their phase-specific acquisition scores and primary
+For Phases 5B/5C, 7, 8, 8.1, and 9, their phase-specific acquisition scores and primary
 contrasts above supersede the earlier phases' outcome defaults below. Phase 8
 uses Gaussian regression, MSE/RMSE, and its prospectively selected sample-budget
 comparison; it does not inherit categorical accuracy or Phase 7E's post hoc fit.
 Phase 8.1 retains regression $A^R(100)$ and explicitly evaluates retention
 matching; it does not inherit Phase 8's smaller-budget contrast.
+Phase 9 prospectively specifies continuous rendering shifts, context selection,
+and the simple savings/compute score $S$, with separate matched-budget
+retention checks. It does not inherit Phase 7E's global linear inversion.
 
 Primary predictive outcomes are exposure-normalized current holdout NLL AUC
 and post-eviction historical holdout NLL AUC. For retention, time zero is the
@@ -3150,6 +3736,10 @@ do not interrupt, edit, prune, or require them.
 
 ## Astra-To-Sol Responsibilities
 
+Phase 9 is an explicit exception to the initial-code division below: Astra
+authors the design; Sol implements, validates, executes, and closes it out.
+There is no required intermediate model switch after execution is authorized.
+
 | Astra before handoff | Sol after handoff |
 | --- | --- |
 | Develop the mathematical paradigm and initial plan | Reassess assumptions and correct mathematical defects when evidence warrants |
@@ -3256,8 +3846,9 @@ for acceptance results, tested commands, and the current execution state.
 ## Provisional Wall-Clock Envelope
 
 This envelope describes the original Phases 0--4, not the later extensions.
-Phases 7 and 8 have their own forecasts above; Phase 8 proposes a separate
-20-hour aggregate ceiling. Phase 6 remains deferred.
+Phases 7, 8, 8.1, and 9 have their own forecasts above. Phase 9 proposes a new
+20-hour aggregate ceiling, awaiting execution authorization. Phase 6 remains
+deferred.
 
 These are revised planning ranges informed by Phase 0's production-shaped
 timing probes, not measurements of complete production trajectories. Account

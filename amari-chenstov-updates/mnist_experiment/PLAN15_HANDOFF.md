@@ -1,5 +1,50 @@
 # Plan 15 Handoff
 
+## Phase 9 Draft: Continuous Rendering Shifts
+
+The latest user request authorized **plan writing only**. The new Phase 9 in
+[plan15.md](plan15.md#phase-9-continuous-rendering-shifts-and-useful-sample-savings-draft)
+is ready for review. No Phase 9 code, acceptance run, training, or notebook
+publication has been started. The latest completed work remains Phase 8.1E.
+
+The responsibility split is deliberate: Astra authored the design; after the
+user authorizes execution, Sol owns implementation, acceptance, calibration,
+exploration, confirmation, repair, reporting, and closeout. No further
+model-switch or intermediate review is required. Do not resume an old Phase 8
+root to start this new data protocol.
+
+Core design:
+
+- Keep the 422-coordinate Gaussian angle-regression model and all ten digits.
+  Pretrain the full Uniform[-60,60]-degree task; novelty is now continuous
+  gamma/blur rendering change, not extrapolation to an unseen angle range.
+- Retain exact 100-novel-image drip trajectories, paired initialization/streams,
+  fixed nominal/novel held-out panels, and independently named randomness.
+- Hold replay capacity at 256. Calibrate both primary methods over replay
+  counts four/sixteen and ridge; cross FD strength with ridge. Keep EWC-only
+  and frozen initialization visible.
+- Start with two gamma and two blur severities. Bound readiness repairs and
+  refinement; at most one combined context is conditional on evidence and time.
+  Select one context on development, then normally run 12 fresh paired replicas.
+- Present S as fraction of novel samples saved divided by the measured compute
+  multiplier at matched prediction quality. Specify inverse-curve uncertainty,
+  full-budget and matched-budget retention, and unresolved scores explicitly.
+- Keep progress near the notebook top and append a concise Phase 9 section
+  after 8.1E. Detailed diagnostics belong in a linked supplement.
+
+Forecast: 5.5--12.9 active compute hours, a proposed new aggregate 20-hour cap,
+and approximately 3--6 hours of initial implementation work separately.
+All process work, including tests/repairs/restarts, counts toward the cap.
+The strict shared 500 GB artifact ceiling remains. Execution must implement
+--resume, explicit --clear-stop, immutable decisions/units, accepted-update
+checkpoints, and bounded stop-aware validation/reporting.
+
+Proposed code/root identities are fisher_memory_shift/ and
+cache/mnist_experiment/plan15/continuous_shift_v1; these do not exist merely
+because the plan names them. Sol must publish tested commands after acceptance.
+The plan supplies the complete schedule, selection, metric, budget and repair
+rules. Preserve all historical evidence and code identities.
+
 ## Phase 8.1E Complete
 
 The user authorized the artifact-only exploratory sample-equivalence follow-up
