@@ -1,12 +1,234 @@
 # Plan 15 Handoff
 
+## Phase 8.1E Complete
+
+The user authorized the artifact-only exploratory sample-equivalence follow-up
+after discussing why Phase 7E's global straight-line fit would distort these
+flattening regression curves. It completed October 25 local time (October 26
+UTC). **No GPU training was run or remains required.** The original Phase 8.1
+confirmation and all 318 source unit seals remain unchanged.
+
+New root: `cache/mnist_experiment/plan15/retention_efficiency_v1`.
+Protocol: `plan15-retention-sample-equivalence-v1`. Analysis source hash:
+`463fa8b9a5923d14bcfaee624533363114e374fc3c4048956cc879eb318a7c8a`.
+Code is in `plan15_retention_efficiency.py` and its reporting companion,
+outside the original scientific-source fingerprint. The notebook has three
+new cells immediately after Phase 8.1's original conclusion. Parent report
+refreshes preserve the new section. The frozen Phase 8 archive is untouched.
+
+The target is replay's **observed** mean new-domain MSE at 100 novel images,
+1159.3112 square degrees. Adjacent-checkpoint interpolation places FD's terminal
+crossing at **91.4087 images**: **8.5913 saved (8.59%)**, nominal paired-bootstrap
+95% interval **[1.8083,21.1794]**. The rule retains every downward entry but
+uses the last one that persists through the observed endpoint. This is not a
+global-line fit, smoothing, extrapolation, individual first-passage time or a
+guarantee of future observations saved. Background exposure changes with the
+novel budget; calibration/pretraining labels are excluded.
+
+All 2,000 bootstrap draws are evaluable; **959 (47.95%) have multiple entries**.
+The point mean has one entry. Keep this sensitivity warning prominent rather
+than treating a nominal inversion interval as newly confirmed sample savings.
+Every draw recomputes both mean curves, the replay target, matching budget,
+corresponding costs and old-domain endpoint errors using the same paired sample.
+All results are retained in 20 immutable 100-draw blocks.
+
+Equal-capability mean learning times are 38.4630 s for FD and 25.0247 s for
+replay, ratio **1.5370 [1.3287,1.6402]**; the original equal-budget ratio remains
+1.6540. Total arrivals are 983.9636 versus 1050.7500. Old-domain endpoint RMSEs
+are 7.3221 versus 7.6818 degrees, difference -0.3596 [-0.8591,-0.0075]. These
+are not H and do not extend the original retention-equivalence certificate.
+
+Acceptance passes **39 tests**, including complete three-arm cohort/pairing,
+invalid and multiple crossings, bootstrap target recomputation, immutable
+block-level resume, stop files and notebook preservation. The follow-up
+conservatively charges 60 seconds once for pre-run acceptance; production
+analysis/reporting adds only seconds. It shares Phase 8.1's 20-hour ledger,
+has a ten-active-minute own cap, and adds about 2.2 MB under the 500-GB ledger.
+The original 4.93-hour execution record below is historical, before this addition.
+Final closeout confirms all 50 pre-existing notebook cells unchanged, the frozen
+archive checksum unchanged, all 318 original unit seals unchanged, and 23
+completed follow-up units. Its final plot was visually inspected. Charged
+follow-up time including report refresh is about 68 seconds; total Phase 8.1
+allocation usage is approximately 4.95 active hours. Both invocations exited
+successfully; no follow-up process is running.
+
+To resume/revalidate/republish this completed analysis without training:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.plan15_retention_efficiency \
+  --source-root cache/mnist_experiment/plan15/regression_phase8_1_v1 \
+  --root cache/mnist_experiment/plan15/retention_efficiency_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb --resume
+```
+
+Add `--clear-stop` only for an intentional STOP-file pause. Do not extend the
+cohort, change target/crossing rules or overwrite existing blocks. A new
+scientific interpretation requires a separately identified follow-up.
+
+## Phase 8.1 Complete
+
+**Completed 2026-10-25 at approximately 23:44 UTC; presentation closeout followed.**
+No further training is required or running. The retained `plan15-phase81` tmux
+pane exited with code zero. Artifacts are under
+`cache/mnist_experiment/plan15/regression_phase8_1_v1`; the adjacent `.log` file
+retains the execution history. The main notebook contains four figures, two
+compact tables and a linked human-readable diagnostics supplement.
+
+All **272 trajectories** completed: 144 initial-grid, 80 bounded-refinement,
+12 additional finalist-development and 36 fresh-confirmation trajectories.
+The 12-replica confirmation cohort was frozen before its first outcome, with
+no subsequent retuning or cohort extension. There were zero solver failures;
+30 enlarged-solve audit snapshots were recorded during the initial grid.
+
+Primary replay-minus-FD acquisition gain is **18.8931 [15.6257, 22.3599] square
+degrees**, nominal paired whole-replica bootstrap 95% interval, favorable in
+12/12 replicas. The selected FD policy has **1.40% lower budget-averaged novel
+MSE**. FD-minus-replay H is 0.04904 [-0.00253, 0.09847] degrees, supporting the
+registered +/-0.20-degree equivalence criterion. All three methods meet the
+common retention ceiling by their one-sided 95% upper bounds and satisfy the
+measured resource limits. FD's ceiling support is narrow: upper H is 1.31994
+versus delta 1.33424 degrees. These are conditional reused-benchmark results,
+not an external deployment guarantee.
+
+Selected policies: FD C=256,b=16,c=10,lambda=2.635643; replay/EWC
+C=256,b=4,c=13.160740; EWC-only C=b=0,c=39.482220. FD and replay mean learning
+times are 41.39 and 25.02 seconds per trajectory (1.65 times). This is a
+separately calibrated policy comparison, not an isolated FD-penalty effect or
+an equal-compute advantage. No actual-samples-saved estimate was made.
+FD versus EWC-only has a positive secondary acquisition interval, but does
+not establish retention equivalence; do not extend the primary matching claim.
+
+Aggregate charged active compute is approximately **4.93 hours** out of 20,
+including acceptance and report refreshes. New artifacts use about 0.50 GB;
+shared budgeted storage is about 4.94 GB out of 500. The sealed closeout checks
+317 preceding units; the resulting total is 318 complete units. Independent
+post-run checks verified all 2,884 sealed file checksums and all 18 authoritative
+sampling plans. Both scientific hashes and all 41 earlier/ten archived notebook
+cells are unchanged. Final reporting/archive tests passed 19 checks, and all
+four final figures were visually inspected.
+
+The content-addressed supplement is linked from the conclusion. It includes
+35 same-(C,b,c) development contrasts, the full 236 development trajectories
+in an expandable table, calibration costs, retired-training-cohort diagnostics
+and metadata interpretation notes. It adds no confirmation tests or selections.
+For artifact-only republishing after future presentation changes, use the
+normal command below with `--stage analyze --resume`. Do not restart or extend
+confirmation automatically; any further scientific work needs a new design.
+
+Final acceptance: **319 CPU and ten CUDA checks passed**, including abrupt
+process kill, accepted-update/eviction/line-search interruption, stop-file
+handling and immutable completed replay. Acceptance plus earlier test work is
+charged conservatively at about five active minutes. Scientific source hash:
+`0cdc9f1dba59112c8b520cdab0a9849dd3df5a46983108b6614fb1bc7898dad8`.
+The original Phase 8 scientific hash remains unchanged. The frozen initial
+notebook SHA-256 is
+`12cffa3c25a745dbfe55f40dc93c1f1b8f2fdb26166e555f1151758c225d823d`.
+
+Restart on 2026-10-25 at approximately 21:20 UTC: the prior process and tmux
+server were absent. Resumed the same root with `--resume`, recovering the
+interrupted initial-grid trajectory at novel count 96. It completed normally;
+the previous 132 trajectories were reused without mutation. No STOP marker was
+present and no scientific setting changed. Paused time is not charged as active
+compute; the interrupted invocation's durable timing lease is retained.
+The old `status.json` reason string can survive a restart; use the current
+status, heartbeat and live process rather than that historical reason alone.
+
+Raw-metadata interpretation notes from source review (no numerical change):
+
+- The generic interval helper's `favorable_replicas` field counts values above
+  zero. This is favorable for the signed acquisition-gain contrasts, but is
+  merely a positive-value count for raw errors, H, and H differences. Do not
+  interpret it as favorable for those quantities. It does not enter any interval,
+  ceiling, equivalence or policy-selection calculation, and is not shown in the
+  notebook's conclusion table.
+- The confirmation manifest's auxiliary `seed_components` inventory includes
+  `stream_ids` and `stream_novel` labels that are not driving RNG names.
+  Authoritative sampling provenance is each sealed `assets-*/plan.json`:
+  `seeds.stream_sources`, `seeds.stream_digits`, `seeds.stream_domains`, the
+  separately named angle seeds, actual sampled source IDs and applied angles.
+  All arms consume those same saved plans. Do not reconstruct a stream from
+  the auxiliary aliases. Preserve the frozen manifest and scientific source;
+  these are inventory-label caveats, not changes to sampling or pairing.
+
+Two initial reporting-only improvements were tested separately (ten fast checks):
+comparison labels use "vs" to avoid suggesting the wrong subtraction sign,
+and confirmation captions state total arrivals alongside novel-image counts.
+The final artifact-only refresh has loaded these changes and the additional
+conclusion/supplement presentation. It did not retrain or mutate sealed units.
+
+During the first replica, a reporting-only checkpoint pause/resume loaded a
+full-range plus target-neighborhood plot. A weak-ridge outlier otherwise made
+the matching band unreadable. All observations remain visible; no selection,
+metric, setting or scientific source changed. Nine focused report/design tests
+passed, the updated PNG was visually inspected, and the scientific hash was
+rechecked before immediately resuming the same tmux run.
+
+The user authorized all Phase 8.1 work on 2026-10-25 after switching to Sol.
+Implementation is in the separate `fisher_memory_retention` package, reusing
+the repaired Phase 8 learning engine unchanged. CPU/CUDA acceptance precedes
+production under `cache/mnist_experiment/plan15/regression_phase8_1_v1`.
+The frozen Phase 8 notebook and all original computational units stay unchanged.
+
+The new scheduler runs all stages unattended, supports accepted-update recovery,
+and freezes every development expansion and the confirmation ledger. On a
+normal restart, use the command below; add `--clear-stop` only when intentionally
+resuming a STOP/SIGTERM pause. Do not resume the old regression Phase 8 root.
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory_retention.run \
+  --root cache/mnist_experiment/plan15/regression_phase8_1_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb \
+  --allocation-hours 20 --resume
+```
+
+Production requires a matching immutable acceptance record at
+`cache/mnist_experiment/plan15/retention_acceptance_v1`. The new root records
+the full scientific source snapshot in addition to hashes/configuration, so
+the experimental method remains recoverable even before a git commit.
+The 20-hour allocation is cumulative across Phase 8.1 production/acceptance
+roots and invocations, not additional time on each resume. Prior Phase 8
+compute is not charged again; all data still share the 500 GB storage cap.
+
+## Phase 8.1 Draft And Notebook Archive
+
+Historical drafting record: on 2026-10-25 the user requested the retention-matched follow-up **draft and
+notebook reorganization only**. No Phase 8.1 experimental implementation,
+integration smoke, or training is authorized yet. Read the new Phase 8.1 in
+[plan15.md](plan15.md) before further work. Its proposed ceiling is the earlier
+FD mean, 1.3342351463 degrees, with a separately proposed 0.20-degree matching
+tolerance; both remain reviewable design choices, not new results.
+
+The main [results notebook](fisher_memory_results.ipynb) now retains a short
+Phase 8 historical conclusion and link, followed by the pending Phase 8.1
+section; progress is near the top. All ten original Phase 8 cells, including
+their static figures, corrections and conclusion, are preserved unchanged in
+[the frozen initial report](fisher_memory_phase8_initial_results.ipynb).
+All 41 pre-Phase-8 cells remain unchanged in the main notebook. Snapshot
+metadata records original notebook/cell digests, run identity, scientific
+source hash and source commit `4337a6f2b095f327b00acab9dac8bdd171123ef0`.
+
+This is a reporting-only migration. The Phase 8 scientific hash below and all
+cache artifacts are unchanged. A publisher guard rejects old Phase 8 refreshes
+targeting either the frozen snapshot or the reorganized main notebook. Historical
+refreshes must use a distinct output path; do not remove the guard to revive the
+old main-notebook layout. The archive was copied, not recomputed from checkpoints.
+
+Proposed Phase 8.1 execution is 5--11 active compute hours, capped at 20 only if
+authorized. Each method gets independent full-budget ridge calibration, FD
+gets crossed strength/ridge calibration, and both replay arms investigate
+the same two allocations. Preserve the old outcomes as context, never pool
+them into new confirmation or choose replicas by observed retention. No online
+retention controller is proposed. Resume engineering starts only after the
+user's next instruction, not by resuming the completed Phase 8 root.
+
 ## Phase 8 Complete
 
 Phases 8A--8E completed on 2026-10-24. No Phase 8 experiment or test process
 remains running. Valid evidence is under
 `cache/mnist_experiment/plan15/regression_phase8_v2`; v1 remains superseded.
-The completed notebook is [fisher_memory_results.ipynb](fisher_memory_results.ipynb),
-chronological after Phase 7E, with five main figures and two compact tables.
+The completed Phase 8 presentation is now preserved in
+[fisher_memory_phase8_initial_results.ipynb](fisher_memory_phase8_initial_results.ipynb),
+with five main figures and two compact tables; the main notebook links to it.
 
 Twelve fresh paired replicas cover FD (C=256,b=16), replay/EWC (256,4), and
 EWC-only (0,0), all to 100 novel observations. Mean replay-minus-FD acquisition
@@ -45,7 +267,7 @@ unchanged. To refresh/validate the current supplement without learning:
 ```bash
 ~/.venv/bin/python -m mnist_experiment.plan15_regression_diagnostics \
   --root cache/mnist_experiment/plan15/regression_phase8_v2 \
-  --notebook mnist_experiment/fisher_memory_results.ipynb --resume
+  --notebook cache/mnist_experiment/plan15/regression_phase8_v2/reports/phase8-historical-review.ipynb --resume
 ```
 
 ## Phase 8 Numerical Repair

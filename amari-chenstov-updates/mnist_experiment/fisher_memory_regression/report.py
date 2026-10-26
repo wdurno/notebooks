@@ -12,6 +12,7 @@ import base64
 from collections import defaultdict
 from contextlib import nullcontext
 from copy import deepcopy
+import hashlib
 import io
 import json
 import math
@@ -27,6 +28,7 @@ from .analysis import FD, PROTOCOL, REPLAY, flatten_record
 TAG = "plan15_phase8"
 PREFIX = "plan15-phase8"
 MAX_NOTEBOOK_BYTES = 24_000_000
+PRESENTATION = "plan15_phase8_presentation"
 LABELS = {FD: "FD KL + replay/EWC", REPLAY: "Replay/EWC", "ewc_only": "EWC only"}
 COLORS = {FD: "#ad503d", REPLAY: "#168477", "ewc_only": "#74668f"}
 
@@ -714,11 +716,105 @@ def _read_previous(path):
     return json.loads(content)
 
 
+def prepare_phase81_notebooks(previous: dict, *, provenance: dict, archive_name: str) -> tuple[dict, dict]:
+    """Split a completed report without regenerating its cells or attachments.
+
+    The caller persists the archive before replacing the main notebook. This
+    pure presentation migration neither opens run artifacts nor starts work.
+    """
+    if previous.get("nbformat") != 4 or not isinstance(previous.get("cells"), list):
+        raise ValueError("expected a version-4 notebook")
+    if PRESENTATION in previous.get("metadata", {}):
+        raise ValueError("Phase 8 presentation is already archived")
+    if Path(archive_name).name != archive_name or not archive_name.endswith(".ipynb"):
+        raise ValueError("archive must be a sibling notebook")
+    required = {"source_revision", "source_notebook_sha256", "scientific_source_hash", "run_root", "identity_hash"}
+    if not required.issubset(provenance) or any(not isinstance(provenance[k], str) or not provenance[k] for k in required):
+        raise ValueError("missing archive provenance")
+    owned = [deepcopy(cell) for cell in previous["cells"] if _owned(cell)]
+    ids = {cell.get("id") for cell in owned}
+    if not {f"{PREFIX}-progress", f"{PREFIX}-intro", f"{PREFIX}-conclusion"}.issubset(ids):
+        raise ValueError("missing Phase 8 report section")
+    conclusion = next(cell for cell in owned if cell.get("id") == f"{PREFIX}-conclusion")
+    if "Budget-averaged replay - FD MSE" not in "".join(conclusion["source"]):
+        raise ValueError("archive requires a completed scientific conclusion")
+    digest = hashlib.sha256(json.dumps(owned, sort_keys=True, ensure_ascii=False,
+                                      allow_nan=False).encode("utf-8")).hexdigest()
+    record = dict(schema_version=1, **deepcopy(provenance), phase8_cells_sha256=digest,
+                  cell_ids=[cell.get("id") for cell in owned], archive=archive_name)
+
+    def cell(name, text):
+        return nbformat.v4.new_markdown_cell(text, id=name,
+                                            metadata={"plan15_phase81_presentation": True})
+
+    archive = deepcopy(previous)
+    archive["metadata"][PRESENTATION] = dict(record, role="frozen_archive")
+    archive["cells"] = [cell("plan15-initial-regression-archive", (
+        "# Phase 8: Initial Regression Study\n\n"
+        "**Frozen historical report.** The following Phase 8 cells, plots, captions and corrections "
+        "are copied unchanged from the completed main notebook. This study compared selected policies; "
+        "it did not establish matched retention. Its unfavorable acquisition result remains evidence, "
+        "not a discarded experiment. Original progress timestamps describe that completed run.\n\n"
+        "[Main results and Phase 8.1](fisher_memory_results.ipynb) | [Original protocol](plan15.md)\n\n"
+        f"Run: `{provenance['run_root']}`. Source revision: `{provenance['source_revision']}`. "
+        f"Scientific source hash: `{provenance['scientific_source_hash']}`. "
+        "Source-notebook and preserved-cell checksums are recorded in notebook metadata. "
+        "Do not refresh this snapshot in place; publish any later historical analysis separately."
+    ))] + owned
+
+    main = deepcopy(previous)
+    main["metadata"][PRESENTATION] = dict(record, role="historical_link")
+    main["metadata"].pop("plan15_phase8_diagnostics", None)
+    historical = [cell for cell in main["cells"] if not _owned(cell)]
+    progress = cell("plan15-retention-progress", (
+        "**Phase 8.1 progress:** draft for review; implementation and experiments have not started. "
+        "No new scientific compute is running. Proposed experiment forecast: **5-11 active hours**, "
+        "with a **20-hour ceiling** if authorized.\n\n"
+        f"Phase 8 is complete: [archived report]({archive_name})."
+    ))
+    history = cell("plan15-regression-initial-summary", (
+        "## Phase 8: Initial Regression Study\n\n"
+        "With 12 fresh paired replicas, selected FD had **21.91 square degrees higher "
+        "budget-averaged novel-domain MSE** than replay/EWC (nominal paired 95% interval "
+        "[14.49, 28.44]). FD nevertheless learned better than freezing. Mean old-domain "
+        "deterioration was **1.33 degrees for FD, 1.59 for replay/EWC, and 3.41 for EWC-only**. "
+        "These are increases in the square root of budget-averaged old-domain MSE relative to "
+        "initialization, not endpoint errors. All selected policies exceeded the original one-degree guard.\n\n"
+        "The study motivates comparing acquisition at comparable retention cost; it does not establish "
+        "which method has the best trade-off. "
+        f"[Unchanged plots, calibration, corrections and conclusion]({archive_name})."
+    ))
+    draft = cell("plan15-retention-draft", (
+        "## Phase 8.1: Learning At Comparable Retention Cost\n\n"
+        "**Draft; no results yet.** How much new-domain learning can each method achieve at a "
+        "comparable old-domain deterioration, under the same data and resource limits?\n\n"
+        r"The proposed forgetting ceiling is $\delta=1.3342351463^\circ$, informed by Phase 8's "
+        r"FD mean. A separately declared $0.20^\circ$ matching tolerance prevents calling "
+        "merely ceiling-compliant policies retention-matched. Settings are calibrated offline "
+        "using development trajectories and separate old/novel validation panels, then frozen "
+        "for fresh paired confirmation. No online controller or confirmation-based retuning is planned.\n\n"
+        "The main diagnostic will plot **old-domain deterioration horizontally** against "
+        "**budget-averaged novel-domain MSE vertically**, colored by method; lower and left is better. "
+        "All tested settings remain visible, including unmatched and resource-infeasible candidates. "
+        "Fresh prediction trajectories and paired uncertainty will follow alongside measured cost.\n\n"
+        "The 100-novel-observation budget counts online training after calibration, not the novel "
+        "labels consumed in development or validation. Those costs will be reported separately. "
+        "[Phase 8.1 protocol and proposed compute budget](plan15.md#phase-81-retention-matched-regression-follow-up)."
+    ))
+    main["cells"] = historical[:1] + [progress] + historical[1:] + [history, draft]
+    for book in (main, archive):
+        nbformat.validate(nbformat.from_dict(deepcopy(book)))
+    return main, archive
+
+
 def build_notebook(snapshot: dict, previous=None, *, check_stop=None) -> dict:
     """Keep all non-Phase-8 cells unchanged and ordered; insert progress near top."""
     if isinstance(previous, (str, Path)):
         previous = _read_previous(previous)
     book = deepcopy(previous) if previous is not None else dict(nbformat.v4.new_notebook())
+    if PRESENTATION in book.get("metadata", {}):
+        raise ValueError("Phase 8 report is archived; use a new output path for historical refreshes. "
+                         "Do not overwrite the archive or the Phase 8.1 main notebook.")
     if book.get("nbformat") != 4 or not isinstance(book.get("cells"), list):
         raise ValueError("expected a version-4 notebook")
     book["nbformat_minor"] = max(5, book.get("nbformat_minor", 0))
