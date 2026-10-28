@@ -1,11 +1,361 @@
 # Plan 15 Handoff
 
+## Phase 11 Draft
+
+Phase 11 in plan15.md was drafted for review on 2026-10-28: joint nine-digit
+registration with 54 targets and a shared CNN/dense head. No Phase 11 code or
+experiment has been started. The draft proposes a 20-hour cumulative allocation,
+an upfront Fisher/compression timing check, three adaptive controls, and a
+32-grid/two-replay-grid resource convention. Execution awaits authorization;
+Phase 10 remains complete.
+
+The 2026-10-28 resource amendment adds a 10--20-minute initial assessment
+(30-minute active cap, included in 11B and the 20-hour total). Measure exact
+CPU/CUDA compression and whole accepted updates before assuming the larger
+model is affordable. Keep exact eigh when costs permit; otherwise consider
+QR-stabilized block power iteration, reorthogonalized block Lanczos, or a
+PSD-aware Nystrom/operator approach according to the measured bottleneck.
+The plan specifies trace/diagonal, low-rank-breakdown and exact-reference
+acceptance checks. No benchmark or backend implementation has been run yet.
+
+## Phase 10 Complete
+
+Phase 10 completed on 2026-10-27: **230 trajectories** (156 development, 72 fresh
+confirmation, two independent pilots), with **12 fresh paired replicas per task**
+and 2,000 paired bootstrap draws. There is no pending Phase 10 training. The
+production tmux process exited successfully; inspect live state rather than
+treating its recorded PIDs as active. The study used approximately **8.4 active
+hours including closeout checks**, below the single 20-hour allowance; offline
+node pauses did not renew or consume the allowance. New data occupies roughly
+1--2 GB, with less than 8 GB in the shared 500 GB budget, including prior Plan 15
+artifacts and inputs. Read the final status/storage ledger for exact counts.
+
+Both tasks show small positive budget-averaged acquisition effects:
+
+- Vector replay-minus-FD A: **0.010589 square pixels**, nominal paired 95% CI
+  **[0.004562, 0.016832]**; 9/12 favorable, median gain 0.011657. FD uses **2.434
+  times** equal-budget replay learning compute.
+- Scalar gain: **0.002606 square pixels**, CI **[0.000966, 0.004225]**; 8/12 favorable,
+  median 0.002477. FD uses **2.087 times** equal-budget compute.
+
+Full-budget retention is supported and equivalent within the registered
+tolerance for both tasks. Vector **14.79% fewer novel pairs** (85.21 versus 100)
+at **2.078 times matched-quality compute**, $S=0.0712$, is a **descriptive point
+estimate**, not confirmed sample savings. One of 2,000 inverse draws is unresolved,
+so the prespecified rule withholds ordinary inverse intervals and matched-budget
+certification. No draw was discarded. Scalar matching fails at the endpoint;
+1,157/2,000 draws are unresolved. Targets improve frozen risk by 10.75% vector
+and 13.65% scalar. These limitations are distinct from failed full-budget retention.
+
+The secondary common-y1 gain contrast favors the vector context: 0.008733,
+CI [0.002546, 0.015747] square pixels. This is compatible with the richer-response
+lead, not proof of output dimension or STM-to-LTM transfer. Both tasks benefit;
+head capacity, pretraining and extra supervision also differ.
+
+All **345 immutable units** passed a full checksum audit with no incomplete
+units. The accepted scientific source hash remains
+369c81456c0747d160163bd7c60e9a5418128072d312664db4586e7fa9680306.
+The final notebook retains all 65 historical cells. Initial CPU/CUDA recovery
+acceptance remains valid; final fast unit and report checks passed. Reporting-only
+changes add capacity/readiness context, label descriptive savings and explain
+withheld inverse uncertainty. The efficiency plot now displays sqrt(mean replica
+risk), consistent with the stored inversion, rather than mean replica RMSE;
+no stored analysis or learning result changed. Predictive panels retain mean RMSE.
+Development stars and relative costs also use the initial grid cohort, avoiding
+mixed two-replica points and four-replica selection scores in one frontier.
+At the user's request, Interpretation now opens with a compact vector/scalar
+comparison table, prominently including S, sample savings, both compute ratios,
+retention and inverse failures. The reporting template preserves it on refresh;
+no scientific result or uncertainty rule changed.
+
+An analysis-only refresh consumes sealed analyses and performs no training:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory_registration.run \
+  --root cache/mnist_experiment/plan15/registration_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb \
+  --stage analyze --resume --clear-stop
+```
+
+Run this only without another writer. Unlike the standalone --stage report
+shortcut, it retains budget-aware supplement publication. Completed scientific
+units remain immutable. No new cohort or subsequent phase is authorized here.
+
+## Phase 10 Execution Record
+
+Authorized 2026-10-26: implement and execute Phase 10 under Sol, with one
+20-hour active-compute allocation and the shared 500 GB Plan 15 storage cap.
+New code is in mnist_experiment/fisher_memory_registration/. Historical
+scientific modules are unchanged. The main notebook now has a pending Phase 10
+section; its 65 pre-existing cells were verified unchanged.
+
+**Production started 2026-10-26 at about 18:54 UTC** in tmux session
+plan15-phase10, root cache/mnist_experiment/plan15/registration_v1 and log
+cache/mnist_experiment/plan15/registration_v1.log. Initial PID 14908 was verified
+in nvidia-smi. The scheduler passed pretraining/calibration and is running the
+policy screen. Both FD optimizer audits passed seven checkpoints each, with no
+objective improvement under the doubled solver budget.
+Use current process/lease state rather than treating this historical PID as live.
+
+**Latest restart verified 2026-10-26 at about 22:33 PDT.** The old tmux server
+and GPU process were absent. The normal resume command restored the vector
+replica-2 EWC-only finalist from novel count 79, preserving 138 completed
+trajectories and approximately 5.46 charged active hours. That trajectory then
+completed and the next finalist started (139 complete). The tmux session name
+and root above are unchanged; the resumed PID was 4237, historical only.
+The earlier 19:01 PDT restart likewise recovered the 66-trajectory checkpoint.
+No scientific settings or source identity changed. Offline time was not charged,
+and neither allocation renewed. Inspect live status before restarting.
+At that restart, initial-grid and bounded-refinement work was sealed; finalist
+development, fresh confirmation and analysis remained. Fourteen reporting checks
+passed then, including clear pending cost labels; that reporting-only clarification
+loaded on restart. The completed status above supersedes these historical notes.
+
+Formal CPU acceptance passed **121 checks**, including exact resume, hard kills,
+pretraining and retirement transactions for both tasks. Full CPU and CUDA
+scheduler smokes passed; an accepted-boundary CUDA interruption/resume matched
+all 30 common uninterrupted trajectory parameter vectors and retirement ledgers
+exactly. The acceptance seal is registration_acceptance_v1, scientific hash
+369c81456c0747d160163bd7c60e9a5418128072d312664db4586e7fa9680306.
+Acceptance/superseded work charged about 803 seconds to this allocation before
+production, including a conservative 600-second preliminary-test allowance.
+Tiny smoke outputs are acceptance evidence, not scientific findings.
+PyTorch 2.10.0+cu128 accesses the RTX 4070 through ~/.venv/bin/python outside
+the restricted sandbox; sandboxed CUDA initialization fails despite nvidia-smi.
+
+Acceptance evidence uses:
+
+- cache/mnist_experiment/plan15/registration_checks_v1/cpu.xml
+- cache/mnist_experiment/plan15/registration_smoke_cpu_v1
+- cache/mnist_experiment/plan15/registration_smoke_cuda_v1
+
+Earlier registration_dev_smoke_v1/v2/v3 roots preserve pre-acceptance attempts
+and must be charged as superseded work. Source hashes are not frozen until
+acceptance; never bypass a production source mismatch to resume older code.
+The Python scheduler advances 10B--10E without an agent connection. Reporting
+source may change independently; scientific source changes require a new source
+identity and validated lineage. GPU operations and process inspection require
+outside-sandbox tool execution in this environment. A sandboxed status command
+can falsely report process_alive=false because /proc access is restricted.
+
+Run from the repository root. For an inactive/stopped job:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory_registration.run \
+  --root cache/mnist_experiment/plan15/registration_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb \
+  --resume --clear-stop
+```
+
+For status or a graceful stop, use the same module/root with --stage status or
+--stage stop. Do not start a second writer while the tmux job is running.
+After a reboot, explicitly resume; completed scientific units remain immutable.
+Restart commands have been tested on the matching-source CPU/CUDA smoke roots.
+
+Source/rendering design: two 28x28 views of a source, fixed 6D affine law in
+all roles, query-only continuously changing blur, scalar companion on identical
+inputs; covariance 4I, both-block gradients, retirement once. Counts 476/636;
+capability fallback 792/1000. Keep complete paired trajectories and all labels,
+report physical-pixel errors plus matched-quality savings/cost/retention.
+
+### Planned FD Optimizer Audit Supplement
+
+At about 19:05 UTC, the scheduler stopped cleanly during the first grid FD
+trajectory (novel count 29) to complete the planned representative FD optimizer
+audits before policy selection. Pretraining passed at 15 epochs: vector risk
+ratio 0.2514 and scalar 0.1996 versus zero displacement. Blur 1.8 was retained.
+Rank 8 compression passed, maximum checked relative Frobenius error 0.00832;
+diagnostic STM effective ranks were 6.14 vector and 1.26 scalar.
+
+The versioned operator mnist_experiment/plan15_registration_audit.py performs
+the two planned FD grid recipes at c=sqrt(10), strength=lambda0, with doubled
+solver audits; it then execs the original scheduler. It leaves the frozen
+scientific package/hash unchanged and records its own hash, trajectory seals,
+and measurements in decision-fd-solver-audit-vector/scalar. Audited recipes
+are reused by the grid. A focused CPU integration check verifies that these
+read-only optimizer audits leave accepted parameters/metrics unchanged.
+
+If interrupted before both audit decisions exist and pass, resume via:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.plan15_registration_audit \
+  --root cache/mnist_experiment/plan15/registration_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb \
+  --resume-scheduler
+```
+
+Once both decisions pass, the normal scheduler --resume --clear-stop command
+above is sufficient. The tmux session remains plan15-phase10; inspect live
+processes instead of relying on its earlier PID. This supplement changes
+measurement/scheduling, not likelihood, optimization settings or accepted
+learning updates. All time is charged to the same 20-hour allocation.
+
+The report now supports rolling complete-pair descriptive confirmation curves,
+secondary common-coordinate contrasts and linked sealed geometry. Thirteen
+reporting checks passed, in addition to two audit-observer checks. A subsequent
+clean resume loaded reporting-only updates; the accepted scientific hash did
+not change. Its displayed workload extrapolation is conservative and can exceed
+remaining allocation when early weak-ridge settings dominate timings. The
+20-hour cap and confirmation reserve are still enforced by the scheduler.
+
+## Phase 9 Complete
+
+Phase 9 finished on 2026-10-26: **340 complete trajectories** (304 development,
+36 fresh confirmation), **446 completed immutable units**, and 2,000 paired
+bootstrap draws. There is no pending Phase 9 GPU work. The tmux pane exited
+successfully (pane_dead=1, exit status 0). Aggregate charged work, including
+acceptance and final publication, is approximately **6.96/20 active hours**;
+the node's offline interval did not count as compute. New artifacts occupy
+approximately **0.83 GB**, with approximately 5.85 GB in the shared 500 GB
+budget including earlier Plan 15 data and inputs.
+
+The selected gamma-4.5 confirmation did **not** establish an FD acquisition
+advantage: replay-minus-FD budget-mean MSE is **0.05568 square degrees**, paired
+95% CI **[-0.15151, 0.29494]**. Full-budget retention is equivalent within the
+registered tolerance: FD-minus-replay H is -0.00580 degrees, CI
+[-0.01485, 0.00139], and both satisfy the deterioration ceiling.
+FD learning cost is 47.60 versus replay's 28.89 seconds, **1.65 times at the
+same 100-novel-image budget**, not at matched quality.
+
+**Sample savings and S are unresolved, not zero.** FD's mean endpoint MSE
+(402.9575) misses replay's target (402.4652); 1,987/2,000 bootstrap inversions
+are unresolved, so no ordinary inverse interval is reported. Replay improves
+frozen MSE by only 1.96%, below the 5% practical-target preference. Matched-
+budget retention cannot be certified without an evaluable inverse. This is
+a negative result for these screened contexts, not a universal rejection of
+FD or STM. The concise notebook conclusion reports these distinctions,
+secondary applied metrics, label accounting, and learning costs.
+
+Scientific source remains the hash below. All 446 unit seals were verified,
+with zero incomplete units; final reporting changes preserve the same seals,
+all 53 historical notebook cells, and the frozen Phase 8 notebook. The original
+93 CPU/CUDA acceptance checks remain valid; all five final reporting checks
+pass. Final changes were reporting-only: clearer practical-target/inverse
+warnings, full-versus-matched retention, accounting, and figure labels.
+
+### Execution And Recovery Record
+
+The user authorized all Phase 9 work on 2026-10-25 under Sol, including
+implementation and the new aggregate 20-active-hour allocation. The package
+is mnist_experiment/fisher_memory_shift/. Production must use CUDA from
+the user's ~/.venv; GPU access works outside the restricted sandbox.
+
+Current scientific source:
+7a0406428fd36c964abfab0dd61a6b99f0447a3aac4f8e824ccb64d130ac8ee8.
+All Phase 8.1 scientific source hashes remain unchanged. The main notebook has
+the completed Phase 9 section and top progress entry; all 53 older cells were
+verified unchanged (canonical history SHA256
+9084283e64df73af20ea4c7f7e6a6daba19516755baf70913d924fd1ce890467).
+
+Implementation includes coherent gamma/blur plans, shared staged nominal
+pretraining with Adam-state continuation, old regression learning mathematics,
+immutable context/refinement/selection decisions, accepted-update checkpoints,
+source/config/data identities, blockwise bootstrap recovery, and a standalone
+unattended scheduler. Two bounded parallel coding tasks implemented data/config
+and analysis/selection; integration and execution were retained here.
+
+Acceptance now passes **93 checks** (92 CPU, one CUDA), including hard-kill
+recovery, atomic boundary stops, source pairing, notebook preservation, exact
+Adam-state continuation, and the no-band dominance regression. Both matching
+current-source full scheduler smokes are complete. Evidence is sealed under
+continuous_shift_acceptance_v2. The older
+continuous_shift_acceptance_v1 and smoke roots are preserved and count toward
+the same phase budget; they validate the earlier pre-production source only.
+The uncompleted dev0 CPU smoke is also preserved, not efficacy evidence.
+
+Production started at approximately **2026-10-26 03:09 UTC** in detached tmux
+session **plan15-phase9**. Root: cache/mnist_experiment/plan15/continuous_shift_v1;
+log: cache/mnist_experiment/plan15/continuous_shift_v1.log.
+The scheduler runs all stages autonomously under the shared 20-hour ledger and
+updates the main results notebook. Do not run concurrent writers against the
+shared Plan 15 storage budget; its lock deliberately serializes them.
+
+Broad-angle initialization met the readiness target at 15 epochs: validation
+MSE is 68.41% lower than zero prediction across the two development replicas.
+The planned readiness extensions selected gamma 4.5 and blur 1.8 pixels as the
+stronger endpoints, alongside gamma 1.8 and blur 0.6. The strongest blur raises
+frozen RMSE by about 12%; gamma shifts remain mild. Those limitations are
+visible in the notebook; they do not cancel the full screen. All four reference
+and FD gradient calibrations passed; the full-budget 9C screen subsequently completed.
+The first-context enlarged solver audits had zero measured objective gap.
+A brief reporting-only checkpoint/restart loaded clearer partial-pair labels
+and supplemental heatmaps. All 41 preceding completed seals were checked
+unchanged; scientific source, settings and the cumulative budget did not change.
+The status JSON records counts and stage, but its "running" value is not a
+liveness check: after a reboot or hard stop it may be stale. Check the UTC
+heartbeat and the live tmux pane before reporting that computation is active.
+
+**Restart verified 2026-10-26, approximately 13:42 UTC.** The node had been
+repurposed, and no tmux session survived. Before resumption, all 334 completed
+units were validated read-only, including 272 complete trajectories; the
+scientific source still matched the frozen identity. The interrupted stronger-
+blur replay trajectory had valid current/previous checkpoints at novel counts
+83/82. User authorization restored GPU availability. The same root resumed in
+plan15-phase9 without clearing a STOP request (none existed), advanced to 100,
+and completed trajectory 273. The aggregate ledger remained about 5.8/20 active
+hours; disconnected downtime did not become experimental compute. The complete
+216-trajectory initial grid and completed refinements are reused, not rerun.
+At that restart, remaining work was bounded refinement, any eligible combination,
+finalist development, frozen fresh confirmation and analysis. Reporting-only heatmap
+layout changes passed the three reporting tests and do not change source
+identity or scientific settings.
+
+**Confirmation frozen at approximately 14:14 UTC.** All 304 development
+trajectories are complete (216 initial + 64 refinement + 24 finalist).
+The optional combination was not admitted: both families did not provide a
+feasible positive acquisition lead within the point retention tolerances. Four-replica
+finalist selection chose gamma 4.5. The immutable confirmation manifest fixes
+12 fresh paired replicas through 100 novel images, all at ridge 10; FD and
+replay have capacity 256/replay count 16, and FD strength is the historical
+2.6356432540763373. EWC-only remains capacity/replay zero. Development gain
+was only 0.2875 square degrees; the replay target improved frozen MSE by 2.82%,
+below the 5% practical-target preference, and the development inverse was
+unresolved. These warnings do not cancel the planned fresh cohort.
+The next work was 9D confirmation, followed by 9E analysis/closeout. A fourth
+reporting test covers explicit disclosure of small target improvements; all
+four reporting tests passed then. That reporting-only clarification was loaded
+in final publication, without changing scientific identity; five now pass.
+
+To inspect or request a graceful halt:
+
+    ~/.venv/bin/python -m mnist_experiment.fisher_memory_shift.run \
+      --root cache/mnist_experiment/plan15/continuous_shift_v1 --stage status
+    ~/.venv/bin/python -m mnist_experiment.fisher_memory_shift.run \
+      --root cache/mnist_experiment/plan15/continuous_shift_v1 --stage stop
+
+For live-process verification, also inspect:
+
+    tmux display-message -p -t plan15-phase9 \
+      '#{pane_pid} #{pane_dead} #{pane_dead_status} #{pane_current_command}'
+
+A missing session or pane_dead=1 is not running, regardless of saved status.
+
+The tested interrupted-run command below is retained for recovery context.
+No resume is needed now that the phase is complete. After an interruption,
+resume the SAME root and acceptance identity:
+
+    ~/.venv/bin/python -u -m mnist_experiment.fisher_memory_shift.run \
+      --root cache/mnist_experiment/plan15/continuous_shift_v1 \
+      --acceptance-root cache/mnist_experiment/plan15/continuous_shift_acceptance_v2 \
+      --notebook mnist_experiment/fisher_memory_results.ipynb \
+      --allocation-hours 20 --stage all --resume
+
+Add --clear-stop only when deliberately clearing a STOP request. Resume does
+not grant another 20 hours. The initial accepted/test work was charged once;
+all acceptance versions share the allocation. For an unattended restart, run
+the command in a new/reused detached tmux session and preserve its log.
+GPU commands invoked by Codex require access outside the restricted sandbox.
+
+Current runtime decisions and progress belong in the new root, not an old
+Phase 8 resume command. Read Phase 9 in the plan for bounded exploration,
+retention qualification and score guards. Completed numerical artifacts never
+change; meaningful repairs need new identities and documented lineage.
+
 ## Phase 9 Draft: Continuous Rendering Shifts
 
-The latest user request authorized **plan writing only**. The new Phase 9 in
-[plan15.md](plan15.md#phase-9-continuous-rendering-shifts-and-useful-sample-savings-draft)
-is ready for review. No Phase 9 code, acceptance run, training, or notebook
-publication has been started. The latest completed work remains Phase 8.1E.
+Historical design handoff, superseded by the execution authorization above:
+the earlier request authorized plan writing only. Phase 9 is in
+[plan15.md](plan15.md#phase-9-continuous-rendering-shifts-and-useful-sample-savings-complete).
 
 The responsibility split is deliberate: Astra authored the design; after the
 user authorizes execution, Sol owns implementation, acceptance, calibration,
