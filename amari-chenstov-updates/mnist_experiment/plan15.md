@@ -26,9 +26,13 @@ tasks show small positive budget-averaged acquisition effects with full-budget
 retention supported; matched-quality sample savings remain inferentially
 unresolved. The notebook and handoff distinguish confirmed effects from the
 descriptive sample-equivalence estimate. Unexecuted settings elsewhere in this
-plan remain prospective choices, not results. Phase 11 is drafted for review:
-nine-digit, 54-output registration with a shared CNN and dense prediction head.
-Its implementation and execution have not begun.
+plan remain prospective choices, not results. Phase 11 was authorized on
+2026-10-28: nine-digit, 54-output registration with a shared CNN and dense head.
+Implementation and CPU/CUDA acceptance are complete; numerical calibration
+selected a separately versioned, exact-audited subspace compressor to fit the
+original 20-hour allocation. Capability, numerical and FD/solver calibration
+are complete; the bounded policy screen is running autonomously in tmux.
+Fresh confirmation and artifact-only analysis follow frozen selection.
 
 **Scope:** paired LoRA-shaped STM and trainable LTM, three curvature strategies,
 an otherwise identical replay/EWC control, and an explicit distillation control.
@@ -39,7 +43,7 @@ SubGD, ASG, spectral-ridge, or optimal-$\pi$ search.
 **Operational contract:** Astra develops the mathematical paradigm and plan,
 then writes and validates the initial experiment codebase. After one user-managed
 switch, Sol owns calibration, pilots, confirmation, maintenance, and closeout.
-Phases 9, 10, and proposed Phase 11 change this division: Astra supplies the
+Phases 9, 10, and 11 change this division: Astra supplies the
 design only; Sol owns implementation, acceptance, execution, and closeout after
 authorization.
 The user may be unavailable throughout the run. Sol may independently correct
@@ -4324,13 +4328,12 @@ Stop safely at the cap with a readable partial result if required. The user's
 2026-10-26 execution request authorized this allocation and the autonomous
 implementation/calibration/confirmation sequence.
 
-### Phase 11: Joint Nine-Digit Registration And Sample Efficiency (draft)
+### Phase 11: Joint Nine-Digit Registration And Sample Efficiency
 
-**Drafted 2026-10-28 for review.** This phase follows Phase 10's implementation,
-calibration, paired confirmation, recovery and reporting workflow. The draft
-does not launch an experiment. Following execution authorization, Sol owns
+**Execution authorized 2026-10-28.** This phase follows Phase 10's implementation,
+calibration, paired confirmation, recovery and reporting workflow. Sol owns
 11A--11E and may make documented corrections without intermediate user review.
-The proposed aggregate active-compute ceiling is 20 hours, with the existing
+The aggregate active-compute ceiling is 20 hours, with the existing
 shared 500 GB Plan 15 storage ceiling; neither renews on resume.
 
 **Motivation.** Improve continual learning when new observations and compute
@@ -4526,7 +4529,7 @@ initial 100-iteration/150-closure limits and stencil step 0.01 subject to audits
 
 #### Replay Resources And Retirement
 
-**Proposed resource convention for review:** use a FIFO capacity of **32 whole
+**Authorized resource convention:** use a FIFO capacity of **32 whole
 grids** and **two replay grids per update** for both replay methods. These hold
 288 digit pairs and replay eighteen, close to Phase 10's capacity 256 and replay
 sixteen digit pairs. This keeps the raw image footprint and rehearsed constituent
@@ -4787,6 +4790,52 @@ a forecast that exceeds the allocation is not evidence against the method.
 
 #### Phase 11C: Bounded Policy Calibration And Frozen Selection
 
+**2026-10-28 numerical execution amendment, before policy screening.** The
+exact-backend pilot completed 100 novel grids in 677.9 learning seconds. Its
+conservative full-workload forecast exceeded the 20-hour allocation. A separate
+17.4-second numerical assessment compared rank-64 compression at initialization
+and the frozen pilot's counts 25 and 75. Four block-power/QR steps with sixteen
+oversampling directions, followed by PSD-aware Nystrom reconstruction, passed
+the prescribed matrix, diagonal/trace, quadratic and damped-solve checks, plus
+actual bounded optimizer comparisons on the two online snapshots. Cold-start
+represented-matrix discrepancies were at most **0.014%**, compared with the
+1% admission ceiling. Accepted prediction changes differed by at most **0.09%**
+of the reference update. Transfer-inclusive compression measured **0.068--0.073
+seconds**, versus **0.567--0.581 seconds** for exact CUDA on these matrices;
+this is an approximately eightfold compression speedup, not a whole-run claim.
+
+Admit this candidate only through a separately versioned execution wrapper and
+fresh CPU/CUDA acceptance. Freeze rank 64, initial power count four,
+oversampling sixteen and normalized Ritz-residual tolerance $10^{-4}$. Extend
+to eight and then sixteen power steps when that tolerance is missed, with
+exact compression as the bounded fallback for unresolved convergence or
+invalid factor/diagonal checks. Record realized steps and every fallback.
+The PSD reconstruction uses $Y=MQ$, $W=Q^TMQ$ and
+$\widetilde M=YW^\dagger Y^T\preceq M$ in exact arithmetic for PSD $M$;
+truncate its factor to the retained rank and restore the residual diagonal.
+Do not infer global PSD from a few Ritz values: the archive/Gaussian-Jacobian
+construction supplies that property, with exact audits at the frozen states.
+
+Preserve the exact-backend root, its pilot and all acceptance evidence.
+Reuse qualified initialization assets only after checking source/configuration,
+data-plan and completion identities; predictions, optimizer states and dense
+initial references must remain paired. Recompress the initial archive under
+the new numerical policy and retain explicit parent seals. Do not pool learning
+trajectories across numerical versions for efficacy inference. Record the
+change and audit results in the notebook, repeat calibration as needed, and
+measure the new full learning cost before the policy screen. All versions,
+assessments and acceptance work share the original 20-hour ledger and storage
+ceiling. No allocation is renewed by the numerical version change.
+
+**Execution telemetry limitation (2026-10-28).** Online matrix, diagonal,
+trace, Ritz and fallback checks remain enforced, but the current transaction
+retains only the latest compression diagnostics in its rotating checkpoints.
+Whole-trajectory fallback totals and power-step distributions are therefore
+unavailable, not zero. Disclose this in the notebook; do not reconstruct missing
+history or mutate completed units. Compact per-retirement telemetry requires
+a later numerical version. This limits retrospective diagnosis, not the
+validity checks applied during learning, and does not interrupt accepted work.
+
 Use one frozen grid context and replay convention. Screen
 $c\in\{0.1,1,\sqrt{10},10\}$ on both development replicas: four replay/EWC,
 four EWC-only and twelve FD recipes crossing those ridges with
@@ -4943,7 +4992,7 @@ unrecorded estimand changes or retrospective confirmation.
 
 ## Statistical Reporting
 
-For Phases 5B/5C, 7, 8, 8.1, 9, 10, and proposed 11, their phase-specific
+For Phases 5B/5C, 7, 8, 8.1, 9, 10, and 11, their phase-specific
 acquisition scores and primary contrasts above supersede the earlier phases'
 outcome defaults below. Phase 8
 uses Gaussian regression, MSE/RMSE, and its prospectively selected sample-budget
@@ -4957,7 +5006,7 @@ Phase 10 uses multivariate registration error in pixels, a separate scalar
 companion, and the same observed-curve efficiency rules with its own retention
 thresholds. Neither output dimension nor extra labels are isolated by comparing
 its results directly to historical angle regression.
-Phase 11 proposes full-grid registration with risk averaged over 27 landmarks,
+Phase 11 uses full-grid registration with risk averaged over 27 landmarks,
 whole-grid sample budgets and the same observed-curve efficiency rules. Its
 54-coordinate likelihood sums contributions per grid; its matched-budget score
 does not treat constituent digits as independent replica trajectories.

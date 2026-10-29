@@ -297,3 +297,21 @@ report is [fisher_memory_results.ipynb](fisher_memory_results.ipynb).
 Phase 0 smoke and timing artifacts are software acceptance evidence, not
 development or confirmation results. Production calibration and experiments
 must use a new run root under the shared Plan 15 storage budget.
+
+Phase 11 (joint nine-digit registration) was authorized on 2026-10-28. Its
+runner advances calibration, selection, confirmation and reporting autonomously:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.plan15_grid_subspace run \
+  --root cache/mnist_experiment/plan15/grid_registration_subspace_v2 \
+  --reuse-root cache/mnist_experiment/plan15/grid_registration_v1 \
+  --evidence-root cache/mnist_experiment/plan15/grid_compression_assessment_v2 \
+  --acceptance-root cache/mnist_experiment/plan15/grid_subspace_acceptance_v2 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb --resume --clear-stop
+```
+
+Use the same module and `run --root <root>` with `--stage status` or `--stage stop` to inspect or
+pause it. Resume retains the same cumulative 20-hour allowance and immutable
+completed units. Read the handoff for current acceptance and live-process state
+before launching another writer. The exact-backend root remains immutable;
+the accepted numerical wrapper keeps all versions on the same compute ledger.

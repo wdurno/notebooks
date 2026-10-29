@@ -1,13 +1,84 @@
 # Plan 15 Handoff
 
-## Phase 11 Draft
+## Current Phase 11 Command
+
+**The active execution path is now the accepted subspace wrapper**, not the
+original exact entry point below. Both numerical versions, assessments and
+acceptance seals consume the same original 20-hour allocation. Current tmux
+session: `plan15-phase11`. Root: `grid_registration_subspace_v2`; log:
+`grid_registration_subspace_v2.log`. Inspect status/lease before another writer.
+
+**Latest check: 00:47 PDT, 2026-10-29.** After an unexpected node reboot, the
+unchanged accepted wrapper resumed in tmux `plan15-phase11`. CUDA and the
+scientific source hash were reverified; the old process was absent before
+launch. The interrupted FD trajectory recovered at novel-grid count 82 and
+was observed advancing to 90, with ten completed development trajectories
+preserved. The live runner remains in **11C policy screen**, with approximately
+3.05 cumulative active hours, including superseded numerical/acceptance work.
+Offline time did not consume the allocation; the conservative final timing
+lease from the interrupted invocation was retained. No code or scientific
+configuration changed for this resume.
+All four control/FD calibration references completed. No implementation task
+is pending; the detached scheduler advances through selection, fresh
+confirmation and analysis. Do not start a second writer. The maximum-work
+forecast exceeds the allocation; optional refinements/alternate finalists
+and the prespecified timing-only 12/10/8 confirmation admission protect it.
+Use current status rather than this historical checkpoint for exact progress.
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.plan15_grid_subspace run \
+  --root cache/mnist_experiment/plan15/grid_registration_subspace_v2 \
+  --reuse-root cache/mnist_experiment/plan15/grid_registration_v1 \
+  --evidence-root cache/mnist_experiment/plan15/grid_compression_assessment_v2 \
+  --acceptance-root cache/mnist_experiment/plan15/grid_subspace_acceptance_v2 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb --resume --clear-stop
+```
+
+For status or a graceful stop, use the same module with `run --root <root>`
+and `--stage status` or `--stage stop`; the three auxiliary roots are not needed
+for those read/control commands. The first launch omitted `--clear-stop`.
+The accepted wrapper scientific source is
+`a0def6ad6a9685f9f3feb4bd5a0a35ff820c3fdb204fb058818230c8ca5426d4`.
+Acceptance passed **137 checks**, including four interruption boundaries on each
+device and complete CPU/CUDA scheduler smokes. Both assessments passed all real
+matrices and accepted-solve checks. The second added tied-cutoff diagnostics,
+direct dense-Fisher errors, source snapshots and provenance; its cold rank-64
+dense errors were at most 0.31%, below the 10% representation preference.
+
+The wrapper reuses only verified pretrained assets from the exact root; no
+learning trajectories are pooled across versions. It records parent seals and
+the cold block-power/PSD-Nystrom policy, with exact fallback for unresolved Ritz
+residuals, invalid factors or tied cutoffs. The frozen original package is
+unchanged and still reproduces its original source hash. The main notebook's
+old Phase 11 diagnostic view was preserved as
+`grid_registration_v1/reports/phase11_exact_calibration.ipynb` before replacement.
+
+The native-precision FD/JVP audit passed at steps
+0.005, 0.01 and 0.02; the preferred step remains 0.01 and lambda0 is 0.19761.
+Seven enlarged-solver checks passed for each audited control/FD trajectory.
+The two-replica mean learning times are 445.8 seconds for replay and 522.5
+seconds for FD at the calibration settings, not the eventual selected policies.
+Full retirement transactions consumed 312.9 and 317.1 seconds respectively,
+so the isolated eightfold kernel speedup must not be reported as an eightfold
+whole-run improvement. A checkpointed reporting-only restart at 22:20 PDT
+loaded the tested disclosure below; the scientific source hash stayed unchanged.
+
+**Known telemetry limitation:** each compression enforces its validity and
+fallback checks, but the transaction does not append archive diagnostics to
+`fit_records`. Checkpoint rotation retains only the latest two states, so
+trajectory-wide power-step and fallback totals cannot be reconstructed. Do not
+infer zero fallbacks. The reporting-only disclosure is tested; no scientific
+source or settings changed. A future numerical version should retain compact
+per-retirement diagnostics. This does not justify interrupting the validated
+run or retrospectively changing completed units.
+
+## Original Exact-Backend History (Superseded)
 
 Phase 11 in plan15.md was drafted for review on 2026-10-28: joint nine-digit
-registration with 54 targets and a shared CNN/dense head. No Phase 11 code or
-experiment has been started. The draft proposes a 20-hour cumulative allocation,
+registration with 54 targets and a shared CNN/dense head. Execution was authorized
+on 2026-10-28; implementation and acceptance are complete. The 20-hour cumulative allocation,
 an upfront Fisher/compression timing check, three adaptive controls, and a
-32-grid/two-replay-grid resource convention. Execution awaits authorization;
-Phase 10 remains complete.
+32-grid/two-replay-grid resource convention apply. Phase 10 remains complete.
 
 The 2026-10-28 resource amendment adds a 10--20-minute initial assessment
 (30-minute active cap, included in 11B and the 20-hour total). Measure exact
@@ -16,7 +87,92 @@ model is affordable. Keep exact eigh when costs permit; otherwise consider
 QR-stabilized block power iteration, reorthogonalized block Lanczos, or a
 PSD-aware Nystrom/operator approach according to the measured bottleneck.
 The plan specifies trace/diagonal, low-rank-breakdown and exact-reference
-acceptance checks. No benchmark or backend implementation has been run yet.
+acceptance checks, now implemented in the new versioned package.
+
+Implementation is in `mnist_experiment/fisher_memory_grid_registration/`.
+**Acceptance sealed; production launched in tmux `plan15-phase11`.** Inspect
+live status and the lease before resuming. The accepted scientific source is
+`a1daa7a96de2d3e3db2cb62259b840ebace1c87b48274c51a0ba562dafe11d6f`.
+The passing CPU scheduler smoke is `grid_registration_smoke_cpu_v5`; CUDA
+`grid_registration_smoke_cuda_v2` passed on that same source.
+There are 127 passing unit checks, eleven CPU recovery checks, and four CUDA
+recovery checks. Evidence XML is in `grid_checks_v1` (`final_unit.xml`,
+`recovery_v2.xml`, `cuda_recovery.xml`). The optimized frozen-objective retention
+formula has exact value/gradient equivalence tests against the legacy helper.
+Earlier dev smokes and CPU v1--v4 are superseded acceptance evidence, never
+efficacy data. The acceptance seal `grid_registration_acceptance_v1` charges
+approximately 2,697 active seconds (0.75 hours), including superseded work and
+a conservative 600-second preliminary-test allowance. The allocation remains
+20 hours total. Thirteen complete smoke trajectories match the previous
+objective implementation exactly in parameters, predictive risks and retirement.
+Production root is `grid_registration_v1`; log is `grid_registration_v1.log`.
+The corrected launch was verified live on the GPU (PID 10807, historical only)
+at about 20:44 PDT on 2026-10-28. It passed resource assessment and entered
+development pretraining; the second replica's 15-epoch initialization was active
+at that check. Always inspect current status/process/lease instead of reusing
+this PID. The initial launch error remains at the top of the append-only log;
+the live `status.json` and subsequent events supersede it.
+At about 20:51 PDT the runner was checkpointed at pilot novel-grid count 12
+and resumed solely to load a tested reporting update: readiness limitations
+and the last heartbeat are now visible. All 36 reporting checks passed;
+scientific source/configuration identities stayed unchanged. Initialization
+selected channels (4,6), 45 epochs, with 50.4% average nominal risk reduction.
+The bounded readiness rule selected blur maximum 2.4; recoverability was mixed
+(one of two development diagnostic replicas), which the report flags explicitly.
+
+**Latest state, about 21:03 PDT:** v1 is cleanly checkpointed for a bounded
+numerical fallback assessment. Its independent full pilot completed 100 novel
+grids in 677.9 learning seconds; the conservative maximum-work forecast was
+about 29 hours, above the 20-hour allocation. Rank 64 passed the initial/n25/n75
+dense-Fisher audits (all below 1% relative Frobenius error at that rank).
+The paused development reference is at novel count 4; all existing units remain
+intact. Source v1 still matches the accepted hash above and can resume unchanged.
+`plan15_grid_compression_probe.py` is an assessment-only block-power/PSD-Nystrom
+candidate outside the frozen engine; its 47 CPU checks passed. A separate
+`plan15_grid_compression_assessment.py` is being prepared to compare it with
+exact compression on the sealed real matrices/accepted solves, with its compute
+charged to the same allowance. No approximate backend has been adopted. Require
+the planned 1% matrix, diagonal/trace, quadratic and solve checks plus meaningful
+measured savings before considering a separately versioned production path.
+
+The assessment is now sealed at `grid_compression_assessment_v1/units/summary`:
+four-step cold and warm candidates passed all three real matrices, including
+actual bounded fits at n25/n75. Cold matrix errors were at most 0.014%, accepted
+prediction differences at most 0.09% of the reference update, and compression
+was about eight times faster (0.068--0.073 versus 0.567--0.581 seconds). The
+assessment charged 17.4 seconds to the existing family ledger. A separate
+`mnist_experiment/plan15_grid_subspace.py` wrapper is being implemented with
+explicit, restorable process-local bindings; no frozen package files change.
+It must pass CPU/CUDA acceptance before production. The plan records the
+numerical amendment, fallback policy and requirement to keep versions separate.
+Pytest convenience symlinks ending in `current` were removed from the generated
+test directory after recovery tests; the strict storage scanner rejects links.
+
+The initial numerical profile validated both exact backends at dimension 3268;
+CUDA compression plus reconstruction was approximately 0.65 seconds versus
+2.53 seconds on CPU. Full-update profiling remains part of production calibration.
+The notebook has a chronological Phase 11 section and near-top progress view.
+Current acceptance work is under `grid_checks_v1`; completed/superseded smoke
+roots are evidence only. Production must match its sealed acceptance source hash.
+
+Run/resume from the repository root after acceptance:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.fisher_memory_grid_registration.run \
+  --root cache/mnist_experiment/plan15/grid_registration_v1 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb --resume --clear-stop
+```
+
+Use the same module/root with `--stage status`, `--stage stop`, or `--stage report`.
+For the first launch of a new store, omit `--clear-stop`; that flag requires an
+existing matching identity. The initial production invocation refused it before
+creating scientific units; the corrected launch retains the same accepted source.
+Inspect process and lease state before starting a second writer. GPU access and
+process inspection require execution outside the restricted sandbox. Use
+`~/.venv/bin/python`; source changes require a new identity and validated lineage.
+Completed scientific units and all earlier phases remain immutable. Graceful
+stopping is checked between closure calls, Jacobian chunks and compression stages.
+Each accepted update is atomically checkpointed; offline pauses renew no budget.
 
 ## Phase 10 Complete
 
