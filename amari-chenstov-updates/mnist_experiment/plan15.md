@@ -20,19 +20,21 @@ data, alongside resource cost, remains the basis for judging practical value.
 > Replay supplies predictive pressure during consolidation; long-term-memory
 > EWC protects the evicted information approximately, not perfectly.
 
-**Status:** Phases 9 and 10 are complete. Phase 10 finished on 2026-10-27 with
+**Status:** Phases 9, 10, and 11 are complete. Phase 10 finished on 2026-10-27 with
 230 trajectories, including 12 fresh paired replicas per task. Both registration
 tasks show small positive budget-averaged acquisition effects with full-budget
 retention supported; matched-quality sample savings remain inferentially
 unresolved. The notebook and handoff distinguish confirmed effects from the
 descriptive sample-equivalence estimate. Unexecuted settings elsewhere in this
-plan remain prospective choices, not results. Phase 11 was authorized on
-2026-10-28: nine-digit, 54-output registration with a shared CNN and dense head.
-Implementation and CPU/CUDA acceptance are complete; numerical calibration
-selected a separately versioned, exact-audited subspace compressor to fit the
-original 20-hour allocation. Capability, numerical and FD/solver calibration
-are complete; the bounded policy screen is running autonomously in tmux.
-Fresh confirmation and artifact-only analysis follow frozen selection.
+plan remain prospective choices, not results. Phase 11 completed 80 trajectories,
+including ten fresh paired replicas per method, in 13.17 active hours. Against
+Replay/EWC, FD KL saved an estimated 38.2% of novel grids at 0.775 times
+matched-quality learning compute, giving $S=0.493$ (nominal 95% interval
+$[0.345,0.821]$), with full- and matched-budget retention supported.
+Phase 12's STM-capacity follow-up was authorized on 2026-10-29. Implementation
+and CPU/CUDA acceptance are complete. The accepted record-consistency wrapper
+is running production calibration in `stm_capacity_records_v2`; its correction,
+resource ledger and restart procedure are recorded below and in the handoff.
 
 **Scope:** paired LoRA-shaped STM and trainable LTM, three curvature strategies,
 an otherwise identical replay/EWC control, and an explicit distillation control.
@@ -43,7 +45,7 @@ SubGD, ASG, spectral-ridge, or optimal-$\pi$ search.
 **Operational contract:** Astra develops the mathematical paradigm and plan,
 then writes and validates the initial experiment codebase. After one user-managed
 switch, Sol owns calibration, pilots, confirmation, maintenance, and closeout.
-Phases 9, 10, and 11 change this division: Astra supplies the
+Phases 9, 10, 11, and 12 change this division: Astra supplies the
 design only; Sol owns implementation, acceptance, execution, and closeout after
 authorization.
 The user may be unavailable throughout the run. Sol may independently correct
@@ -4990,9 +4992,489 @@ earlier results, validate controls together and label outcome-informed changes
 as development. This autonomy does not authorize selective replica exclusion,
 unrecorded estimand changes or retrospective confirmation.
 
+### Phase 12: STM Capacity, Placement, And Sample Efficiency
+
+**Execution authorized 2026-10-29.** Sol owns 12A--12E, including implementation, numerical
+repairs, bounded calibration, confirmation and closeout without intermediate
+user review. Use one 20-hour active-compute allowance and retain the shared
+500 GB Plan 15 artifact ceiling. Neither allowance renews on resume.
+
+**Motivation.** Find how much short-term memory makes continual learning most
+efficient when both new data and compute are scarce. Phase 11's nine-digit
+registration task finally produced a substantial, retention-qualified benefit:
+38.2% fewer novel grids (nominal 95% interval 30.5--50.9%), a matched-quality
+compute ratio of 0.775 (0.621--0.883), and $S=0.493$ (0.345--0.821). Equal-budget
+learning still cost 1.226 times Replay/EWC. These are ten-replica benchmark
+results, not evidence that STM rank two is optimal or that information transfer
+caused the gain. The rank and placement were inherited rather than optimized.
+
+Keep this successful prediction problem fixed. Test whether smaller STM improves
+sample savings per compute, whether larger STM helps acquisition enough to earn
+its cost, and whether an aggressively small head-only STM is useful. A plausible
+trade-off is restricted adaptation at low capacity versus harder regularization
+at high capacity; neither direction is assumed to win. Report new-domain
+learning and old/evicted-data behavior together. Do not reopen task difficulty,
+output dimension, replay capacity, or curvature-method selection to obtain lift.
+
+#### Fixed Task And Memory Conditions
+
+Inherit the **executed Phase 11 selection**, not its original readiness defaults:
+the (4,6)-channel CNN, unrestricted 54-to-54 head, 45 pretraining epochs, maximum
+query-cell blur 2.4, Gaussian covariance $4I_{54}$, and continuous branch/severity
+schedule. Retain 100 unique novel grids, exact novel-count segmentation, FIFO32
+whole grids, two replay grids per update, replay weight 0.5, $\pi=0.025$, and
+the nominal four-grid retirement clock. Every grid still supplies nine digit
+pairs and 54 scalar labels. Reuse the Phase 11 source-pool, role-disjointness,
+holdout, affine-rendering and pixel-error contracts without a new capability
+search. Evaluation data supply neither gradients nor Fisher updates.
+
+Use these four STM configurations. A zero rank means that adapter is absent;
+it does not freeze the corresponding LTM layer.
+
+| Configuration | Ranks: first conv, second conv, head | STM parameters | LTM parameters | Total trainable parameters |
+| --- | --- | ---: | ---: | ---: |
+| `head_r1` | (0, 0, 1) | 108 | 3,268 | 3,376 |
+| `all_r1` | (1, 1, 1) | 172 | 3,268 | 3,440 |
+| `all_r2`, current configuration | (2, 2, 2) | 344 | 3,268 | 3,612 |
+| `all_r4` | (4, 4, 4) | 688 | 3,268 | 3,956 |
+
+The adapter counts are $22r$, $42r$ and $108r$ respectively. All base weights
+and biases remain trainable LTM; STM contains factor matrices only. These are
+stored parameter counts, not identifiable statistical degrees of freedom:
+LoRA factorizations are redundant. Because the full LTM matrices remain
+trainable, this is a study of memory parameterization and regularized adaptation,
+not a simple enlargement of the unregularized network's function class.
+
+Initialize every condition from the same pretrained LTM weights and zero STM
+residual. Preserve the inherited $W+(\alpha/r)BA$ convention with $\alpha=r$,
+random A and zero B; do not introduce rank-dependent rescaling as another
+treatment. Keep the inherited rank-two factor draw as the reference, use its
+row prefixes for rank one, and separately named draws for added rank-four rows.
+Head-only uses the same rank-one head initialization as `all_r1`. Record the
+factor mapping and seeds so removing an adapter does not shift unrelated draws.
+Pair data, holdouts, replay choices and numerical randomness as far as their
+different parameter charts permit; record charts and dimension-specific probes.
+
+Pretrain once per replica, with zero STM residual, then share the initial
+Gaussian LTM Fisher after verifying parameter-name ordering and identical
+initial LTM Jacobians across configurations. The archive dimension is unchanged.
+Retain Phase 11's exact-audited subspace compressor, archive rank 64, tolerances,
+refinement/exact-fallback policy and accumulation precision. Archive rank 64
+is distinct from STM rank. Numerical audits still apply on the new learning
+paths; do not automatically repeat the whole compressor-development study.
+
+#### Head-Only Mechanism And Penalty Normalization
+
+For head-only STM, write
+
+$$
+f(x)=(W+BA)h_\phi(x)+b,
+\qquad
+f_+(x)-f_-(x)=(B_+A_+-B_-A_-)h_\phi(x).
+$$
+
+Here $W,b,\phi$ are LTM. With fixed Gaussian covariance the additive LTM head
+cancels from the FD prediction difference, giving
+
+$$
+\nabla_W P_{\mathrm{FD}}=0,\qquad
+\nabla_b P_{\mathrm{FD}}=0,
+\qquad \nabla_\phi P_{\mathrm{FD}}\ \text{need not vanish}.
+$$
+
+This removes one direct gradient pathway, not the possibility of useful
+STM--LTM interaction. The penalty still acts on STM and LTM features, and the
+ordinary replay likelihood updates all parameters. As age weighting changes
+the optimum, the likelihood can favor compensating changes in the LTM head.
+Eviction and LTM anchoring continue as before. Head-only is therefore a joint
+size-and-placement intervention, not a pure dimension contrast or an assumed
+failure. Neither a positive result nor this coupling proves information transfer.
+
+For replay sample $i$ with fixed squared age weight $w_i$, retain
+
+$$
+P_{\mathrm{FD}}=
+\frac{1}{|\mathcal B|\,d_S K}
+\sum_{i\in\mathcal B}w_i\sum_{k=1}^{K}
+\frac{\|f_{\theta+hv_k/2}(x_i)-f_{\theta-hv_k/2}(x_i)\|^2}{4h^2},
+\qquad K=2.
+$$
+
+The probes are Rademacher in the active STM coordinates only and fixed within
+each solve. Both branches retain gradients. Keep the existing data/EWC/ridge
+objective, with $\kappa=c\operatorname{tr}(\widehat F_{LL})/3268$ and the
+inherited STM proximal anchor; $d_S$ must not replace the LTM dimension in that
+trace scale. No additional division by output dimension or grid cell count is
+allowed. All likelihood-Fisher contributions retain exact Gaussian target
+integration, not observed residual-gradient outer products.
+
+Changing $d_S$ changes the trace normalization and the perturbation norm
+$h\sqrt{d_S}$. Do not interpret equal numerical penalty strengths as equal
+regularization across ranks. Calibrate each new configuration and audit the
+FD approximation. Start with $h=0.01$ and two probes. Test $h/2,h,2h$ against
+float64 JVP values and full penalty gradients on fixed states. For head-only,
+the symmetric difference divided by $h$ equals the directional derivative in
+exact arithmetic because the factors enter bilinearly; use this as an acceptance
+identity, not permission to silently replace its FD implementation with JVP.
+
+#### References, Controls, And Comparable S
+
+Run **eight adaptive arms**: FD + Replay/EWC and Replay/EWC for each of the four
+STM configurations. Frozen-initial predictions are a diagnostic reference,
+not another training arm. EWC-only, zero-STM and alternative curvature methods
+are outside this phase's execution scope.
+
+The headline reference $B$ is the **frozen Phase 11 `all_r2` Replay/EWC policy**:
+$c=\sqrt{10}$, no FD penalty, FIFO32/replay2. Preserve the current `all_r2` FD
+policy as the incumbent: $c=1$, $\lambda_F=1.976099143570005$, $h=0.01$, two
+probes, and 100-iteration/150-closure solve limits. Record full resolved policies
+and parent seals from `grid_registration_subspace_v2`, including the design,
+calibration, selection and analysis decisions. Neither policy is retuned in
+this phase. These historical recipes were already selected with a larger
+development search; disclose that asymmetry rather than claim identical
+lifetime tuning effort across sizes.
+
+Rerun both historical recipes on fresh paired replicas; never use their old
+confirmation trajectories as the new control cohort. This preserves the
+baseline policy and statistical definition, not the exact previous numerical
+estimate. The other three Replay/EWC policies receive their own bounded ridge
+calibration. They measure whether an effect is also available without FD at
+that STM size; they cannot replace or weaken the common headline reference.
+
+Let $\overline R^R_a(n)$ be mean held-out novel risk for arm $a$, using Phase
+11's square-pixel error per landmark, and let $N=100$. Set
+
+$$
+q=\overline R^R_B(N),\qquad
+n_a=\text{last interpolated downward crossing of }q
+\text{ that persists through }N,
+$$
+
+$$
+s_a=\frac{N-n_a}{N},\qquad
+t_a=\frac{\overline T_a(n_a)}{\overline T_B(N)},\qquad
+S_a=\frac{s_a}{t_a}.
+$$
+
+This is the existing $S$ statistic, with one shared Replay/EWC target and
+denominator. Headline FD-size comparisons use this definition. Include the
+size-matched replay arms' common-reference results in the compact control
+summary, so an improvement obtainable by changing STM without FD is visible.
+The reference itself has zero savings by definition; do not invert its noisy
+curve against itself and create an artificial reference gain.
+
+Secondary within-size FD-versus-replay acquisition contrasts use complete
+paired trajectories. If reporting within-size sample-equivalence scores,
+explicitly label their different reference/target and keep them separate from
+the headline $S$ table. They are not interchangeable scores for ranking sizes.
+
+Inherit $A^D_{a,r}=N^{-1}\sum_{n=1}^{N}R^D_{a,r}(n)$, the retention ceiling
+$\delta=0.50$ pixels and one-sided tolerance $\epsilon=0.10$ pixels. Require
+both full-budget and matched-budget retention checks against $B$ before calling
+a headline saving retention-qualified. Retention roots are taken within replicas;
+sample matching inverts mean squared risk. Show old held-out errors and evicted
+training-cohort errors separately. Include applied RMS/one-pixel outcomes,
+not only the inverse-efficiency statistic.
+
+Use the same 5% minimum reference improvement diagnostic, observed crossings,
+and no smoothing, extrapolation or fitted trend. Failure to reach the target
+by 100 is unresolved, not zero savings; an already-met initialization target
+is invalid. Keep all inverse failures and multiple crossings. Use 2,000 shared,
+named-seed whole-replica bootstrap draws across all eight arms, recomputing the
+common target, crossings, timing and retention. Withhold an ordinary inverse
+interval for an arm if any of its draws is unresolved, without suppressing valid
+intervals for other arms or their full-budget acquisition contrasts.
+
+Also compute paired $S_a-S_{\mathrm{all\_r2,FD}}$ for the three alternatives,
+using the same draws and only issuing an ordinary interval when both inverses
+are resolved in every draw. Overlap of separate $S$ intervals is not a test of
+this difference. Report nominal 95% intervals and favorable-replica acquisition
+counts; there is no familywise claim or significance stopping. The largest
+observed $S$ is not automatically an established optimal size. Cross-phase
+scores remain contextual; new paired contrasts support comparisons here.
+
+Learning time retains Phase 11's definition, including intervening nominal
+arrivals, data preparation, all optimization/replay/FD, retirement and Fisher
+compression. Show equal-100-grid costs separately. Pretraining, calibration,
+evaluation, reporting and restart overhead are disclosed and charged to the
+experiment allowance, but not silently added to or removed from online $S$.
+Sample savings remain conditional on pretraining and different background/drift
+histories at different budgets, not a causal estimate of deleting novel labels.
+
+#### Phase 12A: Implementation, Historical Parity, And Recovery
+
+Add a separately versioned STM-capacity driver/package, for example
+`mnist_experiment/plan15_stm_capacity.py` and
+`mnist_experiment/fisher_memory_stm_capacity/`, with a new root under
+`cache/mnist_experiment/plan15/stm_capacity_v1`. Reuse stable grid/rendering,
+compression, artifact and analysis helpers; avoid copying the entire historical
+implementation or changing its frozen scientific behavior. Rank/placement,
+factor/probe ordering and reference-arm identity enter hashes, schemas and unit
+keys. A checkpoint with a different chart must fail clearly, not reshape itself.
+
+Required acceptance includes exact counts and active masks, identical initial
+predictions/LTM Fishers, deterministic coupled factor initialization, FD values
+and both-block gradients for every chart, and the head-only cancellation and
+bilinear identity. Test that replay gradients can update the LTM head even when
+its direct FD gradient is zero. Check inherited Gaussian normalization, ridge
+scale, exactly-once retirement and holdout isolation. Reproduce the historical
+rank-two objective/gradients and a tiny accepted trajectory against the unchanged
+Phase 11 implementation with the same inputs and numerical seeds.
+
+Test common-reference matching, within-size contrasts, correlated $S$
+differences, unresolved bootstrap draws, incompatible charts, immutable collisions
+and decision freezing. Run tiny CPU/CUDA recovery smokes, including interruption
+during pretraining, accepted updates, retirement and analysis. Validate preserved
+parameters, RNG states, FIFO contents, IDs, timing ledgers and metric counts.
+Record pass/fail tolerances and artifacts; no production sweep is a smoke test.
+
+Publish run/resume/status/stop/report commands using `~/.venv/bin/python`, and
+create the pending Phase 12 notebook section plus near-top progress before
+production. Do not require an agent connection to advance stages.
+
+**2026-10-29 record-consistency repair.** The initial acceptance passed its
+mathematical and interruption checks, but a subsequently added schema-parity
+test found that the engine's fresh return omitted chart metadata already written
+to its sealed summary. A restart could mix those two record shapes and fail
+analysis. Preserve the original package and `stm_capacity_v1` checkpoint; the
+production attempt stopped before any complete trajectory. The versioned
+`mnist_experiment.plan15_stm_capacity_records` wrapper reads the sealed record
+after every trajectory. The numerical objective, accepted parameters and saved
+metrics are unchanged. Repeat full CPU/CUDA scheduler smokes with an actual
+completed-unit restart and the added regression before admitting
+`stm_capacity_records_v2`. All acceptance versions and this interrupted attempt
+share the same original twenty-hour ledger. The notebook records the correction.
+
+#### Phase 12B: Numerical Calibration And Measured Resource Admission
+
+Use two development replicas with new component seeds. Generate their pretrained
+LTM, source plans and initial references once, sharing them across all charts.
+An inspected historical asset may support debugging, but cannot replace fresh
+confirmation or be quietly counted as an independent development replica.
+
+Begin the full-horizon development runs with the frozen rank-two reference pair
+and the new charts' Replay/EWC policy at $c=\sqrt{10}$. These ten trajectories
+are included in 12C's screen count, not an additional pilot cohort. Preserve
+diagnostic states near novel counts 25 and 75. On each new chart, use fixed
+training/diagnostic inputs to audit FD values and gradients, per-block gradient
+norms, solve sensitivity, archive approximation and measured component costs.
+Do not take these calibration gradients from confirmation or predictive holdouts.
+
+Initialize each new chart's strength center by the inherited rule
+
+$$
+\lambda_{0,a}=0.1\,
+\frac{\operatorname{median}\|\nabla L_{\mathrm{data}}\|}
+{\operatorname{median}\|\nabla P_{\mathrm{FD},a}\|},
+$$
+
+using both replicas and both diagnostic states, the stated dimension-normalized
+penalty, and documented probe seeds. Record numerator, denominator and LTM/STM
+components. Investigate zero/nonfinite denominators; do not turn them into an
+arbitrarily huge strength. A genuinely inactive penalty is a reported mechanism
+limitation, not an excuse to omit that requested configuration without results.
+
+Preserve the inherited 0.1% objective-gap and 5% solve-sensitivity criteria.
+Check the selected FD recipes again before confirmation; replay-path audits
+alone do not establish validity along the FD path. Keep $h=0.01$ when valid;
+an audited alternative from $\{0.005,0.02\}$ for a new chart is selected by
+numerical accuracy, not efficacy, then frozen and disclosed. Preserve the
+historical recipes unless a demonstrated defect forces a documented new version.
+Do not treat numerical failure as evidence that a memory size is ineffective.
+
+Measure full learning time, initialization, peak RAM/VRAM and artifact sizes.
+Retirement dominated Phase 11 cost and the LTM dimension is unchanged, so smaller
+STM does not imply proportionally faster runs. Retain compact per-retirement
+compression/fallback and solve telemetry in this new version. Freeze a revised
+budget forecast before optional work, including all eight confirmation arms,
+reporting, interruptions and numerical contingency.
+
+#### Phase 12C: Bounded Calibration For The New Memory Configurations
+
+Calibrate `head_r1`, `all_r1` and `all_r4` with equal initial search budgets.
+The rank-two pair remains fixed as the historical anchor.
+
+1. For each new chart, screen Replay/EWC at $c\in\{1,\sqrt{10},10\}$ on both
+   development replicas: eighteen trajectories in total.
+2. For each new chart, screen FD at $c=1$ and
+   $\lambda_F/\lambda_{0,a}\in\{0.1,1,10\}$ on both replicas: eighteen more.
+3. Add the frozen rank-two pair on both replicas: four trajectories. Including
+   the reused 12B pilots, the initial screen is **forty trajectories**, each
+   through 100 novel grids.
+4. Give each new FD chart one additional ridge test at its best initial strength:
+   use $c=10$ if that chart's selected replay ridge is 10, otherwise $c=\sqrt{10}$.
+   This adds six trajectories, for **forty-six mandatory development trajectories**.
+
+Choose each new replay policy by minimum novel $A^R$ among numerically valid
+recipes meeting the inherited one-sided retention ceiling. Select each new FD
+policy by minimum novel $A^R$ among valid recipes meeting that ceiling, the
+one-sided retention tolerance versus both the common reference and its selected
+same-chart replay control, and the inherited 2.5-times common-reference learning
+cost-per-arrival envelope. Use paired retention uncertainty, not overlap of
+separate intervals. Break ties by cost, then numeric recipe order. This stable
+acquisition-based calibration matches Phase 11; it is not a noisy search over
+many inverted development $S$ values or a proof of globally optimal tuning.
+
+If no recipe qualifies, retain the best numerically valid diagnostic ordered by
+retention violation, acquisition and cost; report the failed requirements. All
+four requested configurations still receive confirmation when computationally
+valid and affordable. Weak development lift alone is not a cancellation gate.
+
+Allow at most **four additional recipe proposals**, each on both development
+replicas, with a sealed lifetime counter: at most eight trajectories. Give each
+new chart one opportunity before allocating a second to any chart. Use a
+log-ridge midpoint, one adjacent ridge/strength decade, or a strength refinement
+at the second ridge when diagnostics justify it. Both replay and FD are eligible;
+never deliberately weaken a replay control. Inspect a small acquisition/retention
+heatmap or frontier rather than trust an isolated minimum. This is a sparse,
+bounded search; describe untested interactions honestly.
+
+If the confirmation reserve remains secure, validate the eight provisional
+selected policies on two further development replicas: at most sixteen additional
+trajectories. Do not compare unequal replica cohorts as though paired. Any repair
+or changed policy after validation is still development and receives a new seal.
+Optional refinements and extra development replicas may be omitted for timing;
+the mandatory grid is not shortened based on favorable early outcomes.
+
+**Initial execution admission (2026-10-29).** Omit the optional sixteen-trajectory
+extra development cohort to protect all eight fresh confirmation blocks within
+twenty hours. The implemented screen retains the forty-six mandatory trajectories
+and at most eight refinement trajectories. This caps admitted development at
+fifty-four trajectories; the larger seventy-trajectory design above is a retained
+option for a later allocation, not an automatic execution branch.
+
+Freeze all eight recipes, charts, numerical policies, task settings, source
+identity, seeds, reference definition, margins, analysis rules and confirmation
+count before observing any confirmation outcome. Preserve excluded recipes and
+decisions. The maximum development workload is seventy trajectories, including
+pilots; optional slots are a ceiling, not an instruction to exhaust them.
+
+#### Phase 12D: Fresh Paired Confirmation
+
+Target **eight fresh paired replicas across all eight arms: sixty-four complete
+trajectories**. Use new initialization and stream seeds, and evaluation panels
+not used by this phase's development selection. Preserve the benchmark's role
+partitions and disclose overlap of the finite MNIST source population with
+historical studies; independence is not a claim of a new dataset.
+
+Interleave whole replica blocks, rotating method/chart execution order
+deterministically. All eight arms in a replica share its pretrained LTM, initial
+Fisher, complete stream and holdouts. Count complete comparison pairs and full
+eight-arm blocks separately in progress. Do not skip a slow or unfavorable arm
+to improve the report. Planned stops preserve the next unfinished unit.
+
+Timing alone may increase the frozen cohort to ten replicas before the first
+confirmation outcome if all mandatory work and contingency fit. Do not reduce
+below eight to create a nominally completed study within the allowance. If the
+minimum cannot fit, finish useful bounded units, publish an honest partial
+result and a measured extension forecast; the next allocation is a user decision.
+There is no outcome-dependent extension, significance stopping or automatic
+follow-up experiment.
+
+Report paired acquisition gains versus the common reference and within size,
+applied errors, full/matched retention, sample savings, matched-quality and
+equal-budget costs, and $S$. Compare alternatives directly with the current
+rank-two FD policy, not merely with the historical point estimate 0.493.
+Keep development and confirmation separate. Material scientific repairs after
+confirmation begins require new identities and an explicit validity decision;
+do not pool changed estimands as the original frozen comparison.
+
+#### Phase 12E: Concise Notebook And Interpretation
+
+Append Phase 12 after Phase 11 in `fisher_memory_results.ipynb`; preserve earlier
+cells and artifacts. Keep near-top progress explicit: stage, completed/planned
+trajectories and paired blocks, active unit/checkpoint, active hours, forecast
+remaining hours, heartbeat, storage headroom and development/confirmation status.
+Show mandatory versus optional work so progress denominators do not silently
+change. Publish significant corrections promptly, with full details linked.
+
+Limit this section to short motivation/definitions, **four multi-panel figures
+and three compact tables**:
+
+- A configuration table with STM/LTM counts, placement, selected strengths/ridges
+  and the common Replay/EWC reference identified prominently.
+- One bounded development acquisition/retention/cost plot; full tuning records
+  and numerical audits belong in a linked supplement.
+- Novel and old holdout risk/applied-error trajectories, with frozen references,
+  visible uncertainty and separate evicted-training-cohort diagnostics.
+- Observed sample-equivalence crossings against the one common target, with
+  grid and digit-pair units and measured matched-quality compute.
+- $S$ versus STM parameter count, marking head-only distinctly and connecting
+  only the three all-location ranks; include same-chart replay effects or costs
+  in a companion panel so the plot does not credit FD for a generic size effect.
+- A small predictive/retention table and a headline efficiency table showing
+  **$S$ with nominal 95% intervals**, saved percentage, matched novel grids/digit
+  pairs, matched-quality/equal-budget compute, retention qualification and
+  unresolved inverse counts. Keep paired differences from current rank-two FD
+  visible without a paragraph of numbers.
+
+Interpret whether a smaller/larger STM is a supported improvement, a promising
+but uncertain trade-off, or an unsuccessful reduction. Head-only findings do
+not isolate dimension; the all-location results still concern calibrated,
+regularized policies, not an architecture-independent law. Better $S$ without
+valid retention is not the desired win. No information-transfer claim follows
+from parameter counts, Fisher traces or a positive efficiency result alone.
+
+The notebook loads compact artifacts only. Run evaluation, numerical audits and
+bootstrapping in the Python driver; refresh the bounded report at most once per
+fifteen active minutes and at stage boundaries/safe pauses. Inspect figures and
+legends before closeout. Do not rebuild historical reports on every resume.
+
+#### Phase 12 Recovery, Autonomy, And Wall-Clock Forecast
+
+Require `--resume`, `--clear-stop`, `--max-units` and a persisted active-time
+limit. Inherit atomic accepted-update/pretraining checkpoints, immutable
+completion seals, single-writer leases, RNG states, FIFO/retirement ledgers,
+bounded bootstrap checkpoints, frozen decisions and source/configuration checks.
+Test graceful stop through validation, compression, reporting and training with
+the inherited one-minute target and disclose the longest noninterruptible kernel.
+Abrupt interruption should lose at most one arrival or bounded initialization/
+analysis chunk. Reboots require resume, not reconstruction from agent memory.
+
+Preserve all Phase 11 code and data. Share sealed source plans, pretrained assets
+and initial matrices where scientifically identical; store only bounded rotating
+incomplete checkpoints and required completed summaries. Forecast **5--15 GB of
+new artifacts**, replaced by measurements in 12B. Enforce the shared
+500,000,000,000-byte ceiling including dependencies, temporary copies and
+finalization/free-space reserves. No pruning or external migration is authorized
+by this phase. Timing, storage, optional-proposal and cohort ledgers survive
+every restart. Leave concise continuation notes at pauses and completion.
+
+Phase 11 measured about 447 seconds of learning per selected Replay/EWC trajectory
+and 548 seconds per selected FD trajectory. At those rates, sixty-four
+confirmation trajectories alone take about 8.8 hours, before new initialization
+and overhead. New ranks and weaker regularization can change solver costs.
+Use measured full trajectories, not GPU temperature, to revise this forecast.
+
+| Sub-phase | Operator after authorization | Provisional active wall-clock compute | Deliverable |
+| --- | --- | ---: | --- |
+| 12A: implementation acceptance | Sol | 0.4--0.8 h | Chart/parity tests, CPU/CUDA recovery, pending report |
+| 12B: initialization and numerical/cost audits | Sol | 0.8--1.5 h | Valid FD scaling, numerical policy and resource forecast |
+| 12C: mandatory bounded policy screen | Sol | 5.5--7.5 h | 46 trajectories including the 12B pilots; frozen policies |
+| 12D: fresh confirmation | Sol | 9--12 h | Eight paired replicas across eight arms, shared initialization |
+| 12E: inference and closeout | Sol | 0.3--0.7 h | Paired effects, common-reference $S$ and concise conclusions |
+| **Mandatory-work planning range** | **Sol** | **16--22.5 h** | Optional development/cohort expansion is not included |
+| **Proposed cumulative ceiling** | **Sol** | **20 h** | Includes tests, failed work, repairs, I/O, reporting and restarts |
+
+Initial engineering effort is estimated separately at **3--6 hours**; its tests
+count toward active compute. Do not promise that the upper planning range fits
+the ceiling. Charge 12B's reusable full trajectories to the 12C row only, and
+reserve measured remaining confirmation/report cost with 25% contingency before
+optional work. Omit unstarted optional refinement or extra development before
+considering a larger allocation. Protect all four STM configurations, their
+controls and the full 100-grid horizon. Expose an unaffordable mandatory forecast
+early; a resource-limited partial result is not evidence of no benefit.
+
+Sol may make documented correctness/engineering repairs and the bounded choices
+above without waiting for the user. Version material changes, preserve earlier
+evidence and validate affected controls together. The runner must be capable of
+finishing without ongoing model switching or agent polling. Changing the common
+reference, task, likelihood, retention margins or target to rescue an outcome
+requires a new scientific amendment, not a quiet implementation adjustment.
+
 ## Statistical Reporting
 
-For Phases 5B/5C, 7, 8, 8.1, 9, 10, and 11, their phase-specific
+For Phases 5B/5C, 7, 8, 8.1, 9, 10, 11, and 12, their phase-specific
 acquisition scores and primary contrasts above supersede the earlier phases'
 outcome defaults below. Phase 8
 uses Gaussian regression, MSE/RMSE, and its prospectively selected sample-budget
@@ -5010,6 +5492,10 @@ Phase 11 uses full-grid registration with risk averaged over 27 landmarks,
 whole-grid sample budgets and the same observed-curve efficiency rules. Its
 54-coordinate likelihood sums contributions per grid; its matched-budget score
 does not treat constituent digits as independent replica trajectories.
+Phase 12 keeps Phase 11's task and the frozen rank-two Replay/EWC policy as its
+common reference while comparing calibrated STM sizes and one placement change.
+Its headline $S$ values share a target; within-size controls are explicitly
+distinguished. Historical confirmation is not pooled into the new paired cohort.
 
 Primary predictive outcomes are exposure-normalized current holdout NLL AUC
 and post-eviction historical holdout NLL AUC. For retention, time zero is the

@@ -1,6 +1,72 @@
 # Plan 15 Handoff
 
-## Current Phase 11 Command
+## Current Phase 12
+
+Execution authorized 2026-10-29: four STM charts (`head_r1`, `all_r1`, `all_r2`,
+`all_r4`) and matched FD/Replay-EWC arms. The frozen rank-two Replay/EWC policy
+is the shared headline S reference. All 3,268 LTM parameters remain trainable.
+The new implementation is `fisher_memory_stm_capacity/`, with preferred command
+module `mnist_experiment.plan15_stm_capacity_records`. It reuses the frozen Phase 11 engine
+through scoped bindings; previous sources and results remain unchanged.
+
+The initial acceptance passed 226 checks plus full CPU/CUDA scheduler smokes.
+A late fresh-return versus sealed-record regression then exposed missing chart
+metadata in fresh returns. Numerical learning and the sealed artifacts were
+correct; mixing fresh/resumed records could fail analysis. The initial production
+root `stm_capacity_v1` was stopped cleanly before completing a trajectory. Its
+checkpoint and original source remain preserved. The separately versioned
+`plan15_stm_capacity_records` wrapper always returns the sealed record, with
+146 focused unit tests passing. New CPU/CUDA scheduler smokes both passed
+44 trajectories after an actual completed-unit restart. The v2 source map
+inherits every v1 scientific file unchanged and adds only the normalization
+wrapper. Accepted source hash:
+`2a5a3a7b16316c171573a6024b18ddf534149b03717994e0fc8ea81d16382682`.
+All acceptance/repair versions total approximately 0.97 active hours before
+the new production launch, leaving about 19.03 of the original twenty hours.
+Production restarted in tmux `plan15-phase12`; root is `stm_capacity_records_v2`;
+log is `stm_capacity_records_v2.log`. Its acceptance
+root is `stm_capacity_records_acceptance_v2`. Do not confuse smoke/debug roots with
+scientific replicas. Pending progress is visible at the top of the main notebook.
+
+**Latest restart: 19:41 PDT, 2026-10-29.** After a node reboot, CUDA and the
+accepted scientific source hash were reverified, and no previous runner was
+active. The unchanged v2 command resumed in tmux `plan15-phase12`, appending
+to the existing log. Thirty of 110 mandatory trajectories are complete, all
+development; the scheduler is in **12C bounded ridge and strength screen**.
+The interrupted `all_r1` Replay/EWC development replica 1 recovered at novel
+count 53 and was observed advancing to 55. Cumulative active time is about
+5.72 hours, leaving about 14.28 hours of the original allowance. Offline time
+was not charged; the last bounded timing lease was preserved. No scientific
+code, configuration, or completed artifacts changed for this restart. There
+are no confirmation results yet. Live status supersedes this paragraph.
+Initial implementation is complete and the scheduler advances through all
+remaining stages without an agent connection. The optional extra development
+cohort is omitted to protect the eight fresh eight-arm confirmation blocks.
+
+The accepted production command is:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.plan15_stm_capacity_records \
+  --root cache/mnist_experiment/plan15/stm_capacity_records_v2 \
+  --acceptance-root cache/mnist_experiment/plan15/stm_capacity_records_acceptance_v2 \
+  --notebook mnist_experiment/fisher_memory_results.ipynb
+```
+
+Resume uses the same command plus `--resume --clear-stop`. Status and graceful
+stop use the same module/root with `--stage status` or `--stage stop`; no active
+agent is needed for scheduler transitions. Inspect status/process/lease before
+starting a writer. The single 20-hour cumulative allowance includes acceptance,
+failed versions and restart overhead; resumes do not renew it. The shared
+500 GB Plan 15 artifact ceiling remains enforced. Freeze policies and eight
+fresh paired confirmation blocks before outcomes; do not change the baseline
+or stop for significance. The requested head-only case must remain included.
+
+Phase 11 is complete: 80 trajectories and ten fresh replicas per method,
+13.17 active hours, S=0.493, 38.2% novel-grid savings and a 0.775 matched-quality
+compute ratio, with retention supported. Its old operational notes below are
+historical and must not trigger another Phase 11 run.
+
+## Historical Phase 11 Command (completed)
 
 **The active execution path is now the accepted subspace wrapper**, not the
 original exact entry point below. Both numerical versions, assessments and
