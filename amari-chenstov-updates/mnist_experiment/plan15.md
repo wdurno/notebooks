@@ -20,7 +20,9 @@ data, alongside resource cost, remains the basis for judging practical value.
 > Replay supplies predictive pressure during consolidation; long-term-memory
 > EWC protects the evicted information approximately, not perfectly.
 
-**Status:** Phases 9, 10, and 11 are complete. Phase 10 finished on 2026-10-27 with
+**Status: Closed on 2026-10-31 at the user's request.** Phases 9, 10, 11, and 12
+are complete; provisional questions do not require further execution.
+Phase 10 finished on 2026-10-27 with
 230 trajectories, including 12 fresh paired replicas per task. Both registration
 tasks show small positive budget-averaged acquisition effects with full-budget
 retention supported; matched-quality sample savings remain inferentially
@@ -31,10 +33,14 @@ including ten fresh paired replicas per method, in 13.17 active hours. Against
 Replay/EWC, FD KL saved an estimated 38.2% of novel grids at 0.775 times
 matched-quality learning compute, giving $S=0.493$ (nominal 95% interval
 $[0.345,0.821]$), with full- and matched-budget retention supported.
-Phase 12's STM-capacity follow-up was authorized on 2026-10-29. Implementation
-and CPU/CUDA acceptance are complete. The accepted record-consistency wrapper
-is running production calibration in `stm_capacity_records_v2`; its correction,
-resource ledger and restart procedure are recorded below and in the handoff.
+Phase 12 completed on 2026-10-30 in `stm_capacity_records_v2`: 46 development
+and 64 confirmation trajectories (eight fresh paired replicas across eight arms),
+using 17.30 cumulative active hours. Head r1 FD saved an estimated 41.4% of novel
+grids at 0.685 times matched-quality learning compute, giving $S=0.605$
+(nominal 95% interval $[0.447,0.672]$), with full- and matched-budget retention
+supported. The notebook's final Conclusion describes the practical recipe,
+score interpretation and limitations. No further experiment was launched for
+closeout; proposed robustness and resource-allocation studies remain future work.
 
 **Scope:** paired LoRA-shaped STM and trainable LTM, three curvature strategies,
 an otherwise identical replay/EWC control, and an explicit distillation control.
@@ -4992,7 +4998,7 @@ earlier results, validate controls together and label outcome-informed changes
 as development. This autonomy does not authorize selective replica exclusion,
 unrecorded estimand changes or retrospective confirmation.
 
-### Phase 12: STM Capacity, Placement, And Sample Efficiency
+### Phase 12: STM Capacity, Placement, And Sample Efficiency (completed)
 
 **Execution authorized 2026-10-29.** Sol owns 12A--12E, including implementation, numerical
 repairs, bounded calibration, confirmation and closeout without intermediate

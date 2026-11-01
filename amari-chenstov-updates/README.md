@@ -52,6 +52,20 @@ remains open.
 
 ## Repository map
 
+### New study reports
+
+New studies use `mnist_experiment/plan<N>_results.ipynb` as their canonical
+report path, directly beside the corresponding plan. Reports are created during
+implementation and show progress near the top; historical notebooks keep their
+existing names.
+
+| Study | Plan | Reporting notebook | Status |
+| --- | --- | --- | --- |
+| Paired diagonal Fisher updates | [Plan 16](mnist_experiment/plan16.md) | [Plan 16 results](mnist_experiment/plan16_results.ipynb) | Completed; acquisition/retention trade-off |
+| Observation-clock adaptive pi | [Plan 17](mnist_experiment/plan17.md) | `mnist_experiment/plan17_results.ipynb` | Draft; notebook pending implementation |
+
+### Files and directories
+
 - `mnist-findings.ipynb`: concise experimental synthesis with artifact-backed
   figures and evidence strength.
 - `mathematical_overview.ipynb`: concise theory with rigorous appendices.

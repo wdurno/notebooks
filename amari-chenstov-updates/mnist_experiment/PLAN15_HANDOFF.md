@@ -1,6 +1,22 @@
 # Plan 15 Handoff
 
-## Current Phase 12
+## Plan 15 Closed
+
+The user closed Plan 15 on 2026-10-31. Phase 12 completed on 2026-10-30 in
+`stm_capacity_records_v2`: 46 development trajectories and 64 confirmation
+trajectories, covering all eight fresh eight-arm paired blocks, in 17.30
+cumulative active hours. Status and the sealed analysis/closeout are complete.
+There is no pending execution; do not resume the completed production command.
+
+Head r1 FD achieved 41.4% estimated novel-grid savings (nominal 95% interval
+34.4--44.0%), a matched-quality compute ratio of 0.685, and S=0.605
+(0.447--0.672), with retention supported. S is a savings/relative-compute score,
+not a second percentage of samples saved. The main notebook ends with a concise
+plan-wide Conclusion, stored as a standalone editorial cell outside the phase
+generator's ownership so report refreshes preserve it. Future robustness,
+compute-matched replay and transfer questions remain unexecuted proposals.
+
+## Historical Phase 12 Execution And Restart Notes
 
 Execution authorized 2026-10-29: four STM charts (`head_r1`, `all_r1`, `all_r2`,
 `all_r4`) and matched FD/Replay-EWC arms. The frozen rank-two Replay/EWC policy
