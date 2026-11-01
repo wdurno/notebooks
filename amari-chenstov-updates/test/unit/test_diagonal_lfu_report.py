@@ -167,7 +167,7 @@ def test_duplicate_alias_and_pairing_identity_rejected():
         analysis.summarize([row, control])
 
 
-def test_report_publishes_six_real_pngs_three_tables_portable_outputs_and_no_scientific_writes(tmp_path):
+def test_report_publishes_six_real_pngs_four_tables_portable_outputs_and_no_scientific_writes(tmp_path):
     root, notebook = tmp_path / "study", tmp_path / "mnist_experiment" / "plan16_results.ipynb"
     rows = [trajectory(arm, stage=stage, schedule=schedule)
             for stage in ("development", "fresh") for schedule in ("main", "stationary")
@@ -200,7 +200,7 @@ def test_report_publishes_six_real_pngs_three_tables_portable_outputs_and_no_sci
         assert not any(word in cell.source for word in ("train", "torch", "summarize", "bootstrap", "download"))
         assert (notebook.parent / cell.source.split("filename=", 1)[1].split(")", 1)[0].strip("'\"")).is_file()
     text = "\n".join(c.source for c in book.cells if c.cell_type == "markdown")
-    assert sum(line.startswith("| ---") for line in text.splitlines()) == 3
+    assert sum(line.startswith("| ---") for line in text.splitlines()) == 4
     for phrase in ("Partial / incomplete", "Development", "Fresh Main", "Fresh Stationary", "unreliable",
                    "20.00", "497.00", "0.50", "Frozen initialization", "not pooled", "persisted seed: 123", "No efficacy gate"):
         assert phrase in text
@@ -490,6 +490,29 @@ def test_conclusion_separates_unpaired_development_controls_from_fresh_and_names
     assert "trade-off, not an improvement in both" in source
     assert "do not establish sample savings" in source
     assert "finite-tolerance solves" in source
+
+
+def test_conclusion_summary_uses_fresh_main_effects_and_converts_wall_ratio_to_percent():
+    rows = [trajectory(arm, replica=r) for r in range(4) for arm in ("ema", "paired_fd", "analytic_lfu")]
+    rows += [trajectory(arm, schedule="stationary", delta=.1) for arm in ("ema", "paired_fd")]
+    rows += [trajectory(arm, stage="development", delta=.15) for arm in ("ema", "paired_fd")]
+    result = analysis.summarize(rows, bootstrap_draws=200)
+    before = deepcopy(result)
+    source = report._conclusion(result).source
+    assert "4 complete paired replicas per method" in source
+    assert "observation-averaged over the full trajectory" in source
+    assert "| Paired FD | +3.40 [3.40, 3.40] | -0.85 [-0.85, -0.85] | 100.0% |" in source
+    assert source.index("| Paired FD |") < source.index("| Analytic LFU |")
+    assert "nominal 95% paired-bootstrap" in source
+    assert "not an isolated Fisher-update benchmark" in source
+    assert result == before
+
+
+def test_conclusion_summary_does_not_promote_development_or_stationary_evidence():
+    rows = [trajectory(arm, stage=stage, schedule=schedule)
+            for stage, schedule in (("development", "main"), ("fresh", "stationary"))
+            for arm in ("ema", "paired_fd")]
+    assert report._conclusion_summary(analysis.summarize(rows, bootstrap_draws=0)) == ""
 
 
 def test_undefined_precision_path_explained_without_pending_or_empty_legends(tmp_path, captured_plots):

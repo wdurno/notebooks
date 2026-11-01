@@ -102,10 +102,10 @@ def _recorded(value, *, missing="pending"):
     return missing if value is None else str(value)
 
 
-def _effect(value):
+def _effect(value, *, signed=False):
     if not value or value.get("mean") is None:
         return "pending"
-    result = _number(value["mean"])
+    result = f"{value['mean']:+.2f}" if signed else _number(value["mean"])
     if value.get("ci95") is not None:
         result += " [" + ", ".join(_number(v) for v in value["ci95"]) + "]"
     if not value.get("interval_reliable"):
@@ -569,6 +569,35 @@ def _paired_table(result):
         "figure and full analysis. Equal digit exposure is not equal compute.")
 
 
+def _conclusion_summary(result):
+    groups = [g for g in result["groups"] if _is_fresh(g) and g["schedule"] == "main"]
+    comparisons = [(g, c) for g in groups for c in sorted(
+        g["comparisons"], key=lambda c: (c["condition"] != "paired_fd", c["condition"])) if c["n_pairs"]]
+    if not comparisons:
+        return ""
+    counts = {c["n_pairs"] for _, c in comparisons}
+    rows = []
+    for group, contrast in comparisons:
+        label = NAMES.get(contrast["condition"], contrast["condition"])
+        if len(groups) > 1:
+            label += f" (c={group['c']:g}, r={group['ridge']:g})"
+        if len(counts) > 1:
+            label += f" (n={contrast['n_pairs']})"
+        wall = contrast["costs"].get("wall_seconds", {}).get("ratio", {}).get("mean")
+        effects = contrast["observation_mean_pp"]
+        rows.append((label, _effect(effects["nine_recall"], signed=True),
+                     _effect(effects["old_accuracy"], signed=True),
+                     "pending" if wall is None else f"{100 * (wall - 1):.1f}%"))
+    pairing = (f"{next(iter(counts))} complete paired replicas per method" if len(counts) == 1 else
+               "complete paired replicas (pair counts appear beside method names)")
+    return (f"Fresh changing-mixture results versus EMA, using {pairing}. Accuracy changes are "
+            "observation-averaged over the full trajectory, in percentage points (pp).\n\n" +
+            _table(("Method", "9 recall change (pp)", "0--8 retention change (pp)", "Extra wall time"), rows) +
+            "\n\nBrackets are exploratory, nominal 95% paired-bootstrap confidence intervals, unadjusted "
+            "for multiple comparisons or interim inspection. Extra wall time is the mean paired runtime "
+            "ratio minus one, expressed as a percentage; it is not an isolated Fisher-update benchmark.\n\n")
+
+
 def _conclusion(result):
     observations = []
     unmatched, incomplete = set(), result["counts"]["incomplete"]
@@ -599,7 +628,7 @@ def _conclusion(result):
         if statements:
             cohort = "Changing mixture" if group["schedule"] == "main" else "Stationary low prevalence"
             observations.append(f"**{cohort}:** " + " ".join(statements))
-    return _markdown("conclusion", "## Conclusion\n\n" + (
+    return _markdown("conclusion", "## Conclusion\n\n" + _conclusion_summary(result) + (
         "\n\n".join(observations[:6]) if observations else "No complete fresh paired evidence yet; development alone cannot establish fresh replication.") +
         "\n\nA recall gain with lower retention is a trade-off, not an improvement in both. "
         "See the paired summary for full-path effects, nominal intervals and measured overhead. "
