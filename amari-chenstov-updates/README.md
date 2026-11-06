@@ -62,7 +62,7 @@ existing names.
 | Study | Plan | Reporting notebook | Status |
 | --- | --- | --- | --- |
 | Paired diagonal Fisher updates | [Plan 16](mnist_experiment/plan16.md) | [Plan 16 results](mnist_experiment/plan16_results.ipynb) | Completed; acquisition/retention trade-off |
-| Observation-clock adaptive pi | [Plan 17](mnist_experiment/plan17.md) | `mnist_experiment/plan17_results.ipynb` | Draft; notebook pending implementation |
+| Observation-clock adaptive pi | [Plan 17](mnist_experiment/plan17.md) | [Plan 17 results](mnist_experiment/plan17_results.ipynb) | Phases 0--7 complete; modest velocity-Kalman tracking gains, discrepancy rule worse |
 
 ### Files and directories
 

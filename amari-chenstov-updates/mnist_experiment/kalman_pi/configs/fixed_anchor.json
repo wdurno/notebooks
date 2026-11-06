@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "protocol": "plan17-kalman-pi-v1",
+  "seed": 171101,
+  "anchor_refresh": 0
+}

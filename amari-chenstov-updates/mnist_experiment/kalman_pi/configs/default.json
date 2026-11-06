@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "protocol": "plan17-kalman-pi-v1",
+  "seed": 171101,
+  "pi_min": 0.0001,
+  "pi_max": 0.2,
+  "cold_start": 16,
+  "noise_half_life": 32.0,
+  "anchor_refresh": 64,
+  "observer_floor_relative": 0.000001,
+  "observer_floor_absolute": 1e-12,
+  "ema_half_lives": [8.0, 16.0, 32.0],
+  "process_scales": [0.0001, 0.001, 0.01],
+  "schedule_factors": [1.0, 1.25],
+  "calibration_size": 256,
+  "shadow_replicas": 1,
+  "candidates_per_family": 2,
+  "dev_replicas": 2,
+  "main_replicas": 8,
+  "stationary_replicas": 4
+}
