@@ -1,0 +1,13 @@
+{
+  "protocol": "plan18-retention-match-v1",
+  "schema_version": 1,
+  "seed": 18110806,
+  "device": "cuda",
+  "dtype": "float32",
+  "analysis_novel_count": 1216,
+  "main_replicas": 4,
+  "stationary_replicas": 2,
+  "fd_strength": 0.5691316767656495,
+  "development_replicas": 4,
+  "refinements_per_arm": 2
+}

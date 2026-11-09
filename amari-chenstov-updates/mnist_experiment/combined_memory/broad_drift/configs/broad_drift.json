@@ -1,0 +1,7 @@
+{
+  "protocol": "plan18-broad-drift-v1",
+  "schema_version": 1,
+  "seed": 18110705,
+  "device": "cuda",
+  "analysis_novel_count": 1216
+}

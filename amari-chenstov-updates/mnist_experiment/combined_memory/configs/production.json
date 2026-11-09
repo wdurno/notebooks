@@ -1,0 +1,4 @@
+{
+  "protocol": "plan18-combined-memory-v1",
+  "device": "cuda"
+}

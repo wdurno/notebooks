@@ -59,10 +59,14 @@ report path, directly beside the corresponding plan. Reports are created during
 implementation and show progress near the top; historical notebooks keep their
 existing names.
 
+Robotics studies follow the same naming convention under
+`numerical_experiment/picar/`, beside their plans.
+
 | Study | Plan | Reporting notebook | Status |
 | --- | --- | --- | --- |
 | Paired diagonal Fisher updates | [Plan 16](mnist_experiment/plan16.md) | [Plan 16 results](mnist_experiment/plan16_results.ipynb) | Completed; acquisition/retention trade-off |
 | Observation-clock adaptive pi | [Plan 17](mnist_experiment/plan17.md) | [Plan 17 results](mnist_experiment/plan17_results.ipynb) | Phases 0--7 complete; modest velocity-Kalman tracking gains, discrepancy rule worse |
+| Continual PiCar learning | [Plan 19](numerical_experiment/picar/plan19.md) | `numerical_experiment/picar/plan19_results.ipynb` (created during implementation) | Draft for review |
 
 ### Files and directories
 
@@ -71,6 +75,8 @@ existing names.
 - `mathematical_overview.ipynb`: concise theory with rigorous appendices.
 - `mnist_experiment/`: controlled experiments, plans, conditions, and results
   notebooks.
+- `numerical_experiment/picar/`: simulated robotics studies sharing interfaces
+  with future physical PiCar demonstrations.
 - `src/`: shared estimators, matrix representations, controllers, and artifact
   handling.
 - `test/`: deterministic unit and integration tests.
