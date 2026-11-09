@@ -10,8 +10,12 @@ computational efficiency are both objectives. A smaller training loss, a
 better Fisher estimate, or a more attractive theoretical interpretation is
 not sufficient evidence of practical success.
 
-**Status:** draft for review. This document authorizes neither execution nor
-physical robot motion. The theory below is provisional and belongs here until
+**Status:** Phase 0 bounded implementation acceptance passed on 2026-11-09:
+280 tests, paired CPU smoke/recovery, and actual quantized-Qwen CUDA checks.
+Phases 1--5 and physical robot motion have not been started. Full-workload
+resource admission, task readiness and scientific stage orchestration remain
+later-phase work. See `PLAN19_HANDOFF.md` for results and recovery notes. The theory below is
+provisional and belongs here until
 experiments establish its value. Do not modify
 [`mathematical_overview.ipynb`](../../mathematical_overview.ipynb).
 
@@ -20,10 +24,13 @@ implementation. Follow the concise, visual reporting style of Plan 13:
 progress near the top, phases in chronological order, and a conclusion at the
 bottom. The notebook reads artifacts only.
 
-**Operating model:** Astra writes the initial implementation and acceptance
-tests in Phase 0. Sol profiles, calibrates, runs, repairs, and closes out the
-experiment after handoff. Sol need not wait for model switching or routine
-user review. Record material mathematical or experimental changes explicitly.
+**Operating model:** Phase 0 uses Astra 6 Extra High for the numerical slice
+and Sol 6.1 Extra High for the surrounding implementation, integration, and
+operational tests. Prefer Sol as the coordinator, with bounded Astra
+assignments rather than Astra supervising every engineering step. Sol then
+profiles, calibrates, runs, repairs, and closes out the experiment. Explicit
+sub-agent model selection avoids requiring the user to switch models between
+assignments. Record material mathematical or experimental changes explicitly.
 
 **Resources:** aim for 20 cumulative active wall-clock compute hours, but
 reforecast after profiling rather than promising an unmeasured VLM runtime.
@@ -565,6 +572,15 @@ roles. Explicit role-specific adapters and heads isolate the frozen
 teacher/reward semantics from online learning. No implicit switch may leave
 learner adapters active during reward scoring. [Qwen model card][qwen]
 
+**Reproducibility amendment (2026-11-09):** the explicit model-loading command
+downloads the pinned revision into this project's ignored model cache by
+default, then reuses it. `--model-path` optionally points to an existing model;
+it is not required for a fresh clone. `--offline` must fail clearly on missing
+assets instead of downloading or silently changing models. No import or
+reporting operation downloads a model. Software dependencies must be installed
+from declared packages or provided by this repository, never imported from a
+sibling checkout or personal absolute path.
+
 Freeze the vision tower and lower transformer blocks. Restrict trainable LoRA
 to the top $L$ selected transformer blocks and explicitly listed heads.
 Profile $L\in\{1,2,4\}$ sequentially, not as a factorial search. PEFT supports
@@ -983,10 +999,12 @@ the declared practical tolerance.
 
 ## Experimental Phases
 
-### Phase 0: Astra Implementation And Acceptance
+### Phase 0: Model-Split Implementation And Acceptance
 
 **Purpose:** leave Sol a tested, executable experiment, not a collection of
 mathematical sketches that require the user to switch models while away.
+Reserve Astra's effort for translating the mathematical contract into correct
+numerical software; delegate the substantial surrounding engineering to Sol.
 
 Implement the simulator, shared protocol, lightweight Pi service with fake
 hardware tests, top-$L$ model/adapter wiring, one-time distillation path,
@@ -995,7 +1013,190 @@ returns, replay/context storage, scheduler, reporting, and resume mechanics.
 Keep modules small and reuse established project artifact/seeding utilities
 where appropriate. Document numerical conventions next to the implementation.
 
-Required fast tests include:
+#### Model Routing And Ownership
+
+Use these explicit agent settings, verified against the delegation interface
+when this amendment was written on 2026-11-09:
+
+| Requested model | Model identifier | Reasoning effort |
+|---|---|---|
+| Astra 6 Extra High | `gpt-6-astra` | `xhigh` |
+| Sol 6.1 Extra High | `gpt-6.1-sol` | `xhigh` |
+
+Set both fields on delegated assignments; do not rely on parent defaults or
+substitute an older Sol model. These settings choose sub-agents, not the model
+of an already-running parent conversation. Prefer a Sol parent for routine
+coordination; if the parent is Astra, still delegate the engineering work and
+avoid duplicative supervisory analysis. If an explicitly requested model is
+unavailable at execution time, report that limitation rather than silently
+substituting a different model or reasoning effort.
+
+Official [model identifiers][openai-models] and
+[model-selection guidance][openai-selection] are supporting references;
+availability of these overrides in the actual delegation tool is the
+operational check. This amendment changes work allocation, not experimental
+scope, numerical definitions, or the evidence required for acceptance.
+
+| Sub-phase | Owner | Deliverable and boundary |
+|---|---|---|
+| 0A: Numerical contracts | Astra 6 Extra High | Typed numerical inputs/outputs, detach/freeze rules, state-transition ordering, and tiny reference fixtures for integration |
+| 0B: Numerical implementation | Astra 6 Extra High | Joint NLL, exact KL, diagonal Fisher, STM FD, EWC/ridge objective, return/weight calculations, and mathematical unit tests |
+| 0C: Model and language plumbing | Sol 6.1 Extra High | Quantized loading, top-$L$ adapters, role isolation, recurrent model, context/cache lifecycle, and one-time distillation wiring |
+| 0D: Simulator and robot interface | Sol 6.1 Extra High | Shared protocol, dynamics/rendering, drift, terminal events, Pi service, fake hardware, safety and timing tests |
+| 0E: Data and execution reliability | Sol 6.1 Extra High | Transition/context store, pending labels, eviction transactions, checkpoints, resume, quotas, scheduling, and CLI |
+| 0F: Reporting and visualization | Sol 6.1 Extra High | Artifact-only summaries, progress, notebook, synchronized video, and statistical-analysis implementation against fixed definitions |
+| 0G: Integration and acceptance | Sol 6.1 Extra High; bounded Astra numerical review | End-to-end smoke/recovery tests, real-model resource admission, numerical-boundary audit, and execution handoff |
+
+#### Phase 0A: Astra Numerical Contracts
+
+Before consumers implement their numerical calls, specify tensor shapes,
+coordinate ordering, batch reduction, dtype, RNG ownership, and all fixed
+conditioning inputs. Cover the seven-logit action representation, categorical
+return bins, baseline/weight freezing, model-sampled detached score labels,
+LTM/STM masks, FD probe scaling, and numerical versus statistical ridge.
+
+Define the pure numerical interfaces separately from simulator, storage, and
+scheduler effects. For example, return construction consumes recorded reward,
+discount, and termination arrays; it does not inspect the simulator. The
+EWC kernel consumes accepted parameters and a declared eviction batch; it
+does not decide whether that batch has already been committed. The caller
+must satisfy a documented transaction order and eligibility contract.
+
+Provide tiny deterministic fixtures for NLL/KL, return telescoping, Fisher
+diagonal, FD gradients, EWC admission/no-admission, and the definitions of
+budget-averaged failure and $f,c,S$. These establish expected behavior without
+requiring Sol to rederive the theory. Keep this contract concise and versioned;
+do not create a second prose copy of this entire plan.
+
+**Exit:** stable callable contracts and fixtures sufficient for independent
+implementation. Reuse the same Astra numerical agent for 0B where practical.
+
+#### Phase 0B: Astra Numerical Implementation
+
+Implement and test the math-bearing slice: normalized joint likelihood and
+its constants, exact directed/symmetric KL, model-induced Fisher diagonal,
+per-record score sampling, FD perturbations and gradients, age weighting,
+ridge/EWC scaling, eviction EMA, and the weighted actor/critic objective.
+Include discount-product returns, return binning, frozen advantage weights,
+and teacher logit conversion where they determine the likelihood inputs.
+
+Use tiny models and float64 references to establish identities, then exercise
+the intended accumulation dtypes. Specify how an effective model is evaluated
+at perturbed adapter coordinates without detaching trainable dependencies.
+The production Qwen loader, queues, archive implementation, notebook layout,
+and Pi service belong to Sol, not this assignment.
+
+**Exit:** tested numerical functions and a small objective/gradient reference
+that Sol can run through the production adapter wrapper. Numerical acceptance
+must include failure cases, not merely agreement at one benign parameter value.
+
+#### Phase 0C: Sol Model And Language Plumbing
+
+Implement the actual Qwen loading/quantization, explicit top-$L$ selection,
+parallel adapters, role isolation, LSTM and conditioning path, recurrent-state
+reconstruction, and cache invalidation. Wire one-time distillation and online
+objective calls to the accepted numerical interfaces. Use separate source
+files and tests from the Astra kernels; do not recreate their formulas inside
+the training loop.
+
+Test trainable-parameter inventories, adapter effective weights, language
+conditioning, completed-instruction handling, role-specific gradients, and
+the frozen-prefix backward boundary. Compare objective values and gradients
+through the production wrapper against Astra's tiny-model fixtures. Unexpected
+gradient routing is a numerical-boundary defect to resolve explicitly, not
+an excuse to detach a costly branch.
+
+#### Phase 0D: Sol Simulator And Robot Interface
+
+Implement the backend-neutral protocol, primitive mapping, unit calibration,
+simulator, continuous drift, camera/rendering, terminal-event logic, and
+lightweight Pi service. Add watchdog, deduplication, authentication, timing,
+and fake-driver tests. This work can begin alongside 0A/0B because it need not
+wait for the numerical kernels.
+
+Expose recorded reward components and elapsed-time inputs; call the numerical
+return function instead of independently redefining discounting or episode
+termination. Keep privileged evaluation state out of learner observations.
+No physical robot connection or motor actuation is part of acceptance.
+
+#### Phase 0E: Sol Data And Execution Reliability
+
+Implement compact storage, replay/context eligibility, pending-return queues,
+the exactly-once eviction ledger, durable simulator recovery, atomic model
+publication, resource accounting, external-drive handling, and standalone
+resume/status/report/stop commands. Call the accepted EWC kernel inside the
+transaction contract; do not change its estimator to simplify persistence.
+
+Test forced interruptions around every scientific commit boundary, including
+the distinction between a repeated computation and a repeated admission of
+evidence. Integrate control-priority GPU scheduling and bounded work queues.
+This remains substantive engineering requiring tests, even though it does
+not need Astra to author it.
+
+#### Phase 0F: Sol Reporting And Visualization
+
+Implement the concise notebook, live progress summaries, artifact readers,
+held-out metric aggregation, paired intervals, sample-crossing/censoring
+analysis, and synchronized egocentric/top-down video. Use fixed schemas and
+synthetic fixtures while real trajectories are unavailable.
+
+Follow the metric definitions in this plan and 0A fixtures. Do not introduce
+different denominators, independent-frame uncertainty, or silent failed-crossing
+exclusions. Keep the numerical estimation rules distinct from presentation
+code so a targeted review does not require re-reading plotting machinery.
+
+#### Phase 0G: Sol Integration And Focused Astra Review
+
+Sol integrates the components, runs the acceptance suite, fixes routine
+integration defects, and produces the handoff. Astra performs one bounded
+review of the math-bearing integration: real adapter-coordinate gradients,
+frozen likelihood inputs, FD normalization, Fisher score sampling, and the
+eviction/update order. Include a compact check of the $f,c,S$ aggregation
+against reference cases. Give Astra the relevant diff, fixtures, and test
+results, not a request to reimplement the whole application.
+
+Numerical defects return to the numerical owner with a reproducible failing
+case. Sol owns repair of protocol, storage, CLI, renderer, and ordinary model
+wiring defects. The numerical gate must pass before scientific runs, but
+there is no requirement for Astra to supervise simulator profiling or each
+later experimental batch. Sol retains the autonomous repair authority stated
+below; material scientific changes still require versioning and disclosure.
+
+#### Delegation And Token Discipline
+
+Use bounded assignments with disjoint write sets, relevant plan sections,
+specific acceptance commands, and an explicit output contract. By default,
+start workers with a scoped brief rather than copying the entire conversation;
+pass broader context only when it is genuinely needed. Each worker should
+return changed paths, test results, unresolved limitations, and a short
+integration note, not a second narrative plan.
+
+Keep at most one Astra numerical worker active by default. Keep the number of
+Sol workers modest, initially two, and reuse them for related sequential
+assignments. Work packages are ownership units, not a requirement to spawn
+seven agents. After 0A, model and data consumers can use the shared contracts
+while 0B and the independent simulator work proceed. Reporting can start from
+sealed artifact schemas and synthetic examples. Reserve shared-schema edits
+for the coordinator to avoid conflicting patches.
+
+Do not ask every worker to review the whole repository, duplicate a worker's
+implementation in the parent, or run two independent full acceptance suites
+without a concrete reason. The coordinator should do useful non-overlapping
+work while delegates run, integrate each finished patch once, and close idle
+workers. Serialize resource-heavy GPU checks; CPU coding/test concurrency
+must also respect the node's current availability.
+
+Record requested model/effort, task ownership, retries, and reported token or
+credit usage where the harness exposes it. Mark unavailable usage as unknown;
+do not infer exact billing from output length. This split targets lower
+expensive-model usage, not a guaranteed reduction in total tokens: extra
+handoffs and Extra High reasoning still have costs. Preserve the explicitly
+requested reasoning levels unless the user changes them. No numerical
+accuracy or recovery test is dropped merely to save tokens.
+
+#### Common Acceptance And Handoff
+
+Required fast tests, implemented by the corresponding owners above, include:
 
 - Joint likelihood normalization and parameter-independent terms; fixed versus trainable weight misuse.
 - Exact KL against a small reference; symmetric FD convergence and gradients through both endpoints.
@@ -1026,6 +1227,36 @@ environment and record its relationship to the main environment.
 **Exit:** CPU acceptance, tested checkpoint recovery, working report skeleton,
 and a reproducible profiling entry point. Do not declare simulator research
 success because the smoke run produces a positive reward.
+
+#### Phase 0 Execution Record
+
+The immutable acceptance bundle is
+`cache/numerical_experiment/picar/phase0/acceptance-v3` (280 tests passed;
+no failures, errors, or skips). A fixed-seed synchronized scene preview was
+also inspected. The notebook is pre-rendered from scalar artifacts and
+does not require a model or training to open.
+
+The initial CUDA diagnostic exposed FD step-size sensitivity. Before any
+scientific runs, the adapted top transformer suffix and final norm were moved
+to FP32 computation over still-quantized frozen weights, and small-output KL
+arithmetic was stabilized. The frozen lower prefix remains BF16. A corrected
+half/base/double probe gave penalty ratio 1.0472 and gradient cosines above
+.9999, with gradients reaching both LTM and STM. Earlier diagnostics remain
+available rather than being overwritten. The final acceptance bundle repeated
+the corrected check against its fixed source snapshot.
+
+The small probe reserved about 6.7 GiB on the 12 GB GPU. It used one image and
+one history step, not the candidate context-8/batch-4 workload. Those larger
+resource and real-time control settings remain uncalibrated. The standalone
+smoke runner rejects production configuration; it is not a route for silently
+substituting accelerated clocks or fake teacher/evaluator roles into science.
+
+Other acceptance repairs covered independent paired optimizer/RNG state,
+zero-age indexing, exact observation-ID recovery, and immutable nested-run
+boundaries. A separate clocked physics worker and bounded control session keep
+acquisition progressing under delayed inference/updates. Fallback intervals
+are tagged, not invented as Gaussian policy labels. See the handoff for the
+remaining stage-integration and physical-readiness boundaries.
 
 ### Phase 1: Sol Physical Readiness And Resource Calibration
 
@@ -1203,6 +1434,10 @@ These are planning estimates, not measured Qwen timings. Engineering effort
 is distinct from experiment runtime; expected Phase 0 coding/debugging is
 roughly 6--14 hours of elapsed work and can exceed that if dependency or
 hardware issues arise. Do not charge idle user pauses as active compute.
+The Phase 0 model split changes who performs that work, not this unmeasured
+estimate or the experimental compute allowance. Reforecast engineering time
+and model usage from actual progress; do not promise a token-saving percentage
+before collecting usage evidence.
 
 | Phase | Active compute forecast | Initial share of 20-hour target |
 |---|---:|---:|
@@ -1420,3 +1655,5 @@ validation of this exact combination.
 [peft]: https://huggingface.co/docs/peft/en/package_reference/lora
 [autograd]: https://docs.pytorch.org/docs/stable/notes/autograd.html
 [bullet]: https://github.com/bulletphysics/bullet3
+[openai-models]: https://developers.openai.com/api/docs/models
+[openai-selection]: https://learn.chatgpt.com/docs/model-selection

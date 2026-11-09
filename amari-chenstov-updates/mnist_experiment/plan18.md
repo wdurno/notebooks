@@ -37,11 +37,21 @@ equivalence checks. The combined policy improves new-domain risk; STM alone
 does not improve it in this regime. Cumulative charge is about 19.58 hours.
 The user subsequently authorized a conditional 21.5-hour cumulative ceiling,
 only if calibration passes and the original allowance cannot fit confirmation.
-**Phase 7:** drafted for review, not executing. Fix the STM incumbent B at
-ridge ratio 1, recalibrate A/C/D/E to its retention, and run a larger fresh
-comparison. Preserve Phase 6 as a valid result at a different operating point.
-The proposed additional compute allowance is stated in Phase 7; it does not
+**Phase 7:** complete on 2026-11-09. B was fixed at ridge 1, the four-member
+development calibration passed, and all 50 confirmation trajectories finished.
+Fresh B-A retention meets both equivalence checks, but its acquisition-risk
+interval includes zero. Its endpoint-budget saving is .862% at 1.55x compute,
+not recovery of the large STM gains motivating this probe. Final acceptance,
+full-checksum/pairing audit and immutable reporting passed. Additional charged
+compute was about 6.22 hours. Phase 6 remains valid at its different operating point.
+The approved additional compute allowance is stated in Phase 7; it does not
 retroactively change the historical Phase 6 authorization.
+**Phase 8:** planned, not started. Reproduce the frozen Plan 15 STM-capacity
+result before testing its dependence on query-image blur. This phase explicitly
+restores the historical rank-64-plus-diagonal archive and data law; it is not
+another execution of the diagonal-only combined-memory protocol. Execution
+requires separate approval. See the reproduction and blur-dependence design
+at the end of this plan.
 **Agreed controller boundary:** retain Plan 17's velocity-Kalman observer and
 weight rule. Do not estimate the learner-error cross moment $C$ online or add
 a correlation-corrected controller to this experiment.
@@ -2528,8 +2538,8 @@ different retention operating point. A favorable result would identify useful
 conditions for the technology, not prove ridge 1 universally optimal or show
 that the difference between phase summaries is a causal ridge effect.
 
-**Status:** design for review; no execution is authorized by this draft alone.
-Astra supplies this design; after approval, Sol implements and executes the
+**Status:** execution authorized by the user on 2026-11-08; completed on 2026-11-09.
+Astra supplied this design; Sol implements and executes the
 whole phase, publishes rolling results, and records material corrections.
 No change to `mathematical_overview.ipynb` is part of this work.
 
@@ -2855,8 +2865,8 @@ audits, then update `PLAN18_HANDOFF.md`.
 
 This is additional work, not a request to fit a new experiment inside the
 roughly two hours remaining under the historical 21.5-hour ceiling. The
-**proposed Phase 7 allowance is up to 20 additional active compute hours**,
-available upon approval to execute this phase. Record the live family charge
+**approved Phase 7 allowance is up to 20 additional active compute hours**.
+Record the live family charge
 at launch and its additional allowance in an immutable authorization entry;
 retain the cumulative ledger rather than resetting prior usage. At the
 current approximately 19.6-hour baseline, that means a family ceiling of
@@ -2904,4 +2914,466 @@ development search. Never alter completed artifacts or silently change the
 fixed B recipe, data law, tolerance, five methods, confirmation allocation,
 or efficiency estimand. If a repair changes scientific outputs, version it
 and rerun affected development before freezing; do not mix incompatible
-trajectories. This draft neither starts GPU work nor modifies Phase 6.
+trajectories. Phase 6 remains completed historical evidence.
+
+### Phase 7 Execution Record
+
+The user authorized execution on 2026-11-08. The immutable phase-wide
+authorization pins the baseline at 70,504.28523658379 seconds and adds 72,000
+active seconds, giving a cumulative ceiling of 142,504.2852365838 seconds
+(39.5845 hours). This precedes Phase 7 acceptance compute and cannot reset
+on resume. All new roots, tests, failures and reports share this allowance.
+The separate `combined_memory.low_ridge` implementation reuses the frozen
+learner and keeps B at ridge 1, development retention reference B, and
+sample-equivalence reference A. Acceptance is in progress; no production
+confirmation has started.
+
+Acceptance completed: 106 pure calibration, 27 reporting and 19 scheduler/
+pairing/budget tests passed (152 total). The CPU lifecycle checks passed an
+actual SIGTERM/resume with bit-identical final theta/diagonal against an
+uninterrupted counterpart, historical/public-notebook preservation, and a
+deliberate calibration failure with zero confirmation launches. The completed
+CUDA smoke root is `phase7_smoke_cuda_v1`, with 40 development and 25 smoke
+confirmation paths and its final integrity audit. These are pipeline checks,
+not production efficacy evidence. Initial acceptance exposed an inherited
+budget-constructor cap, a reporter construction error, and a stop-status
+reentrancy bug; all were corrected before production and remain recorded in
+the acceptance ledger. Historical scientific sources were not modified.
+
+Production starts in detached tmux session `plan18-phase7`, root
+`cache/mnist_experiment/plan18/low_ridge_v1`. The append-only console log is
+`cache/mnist_experiment/plan18/phase7-execution.log`. Notebook updates are
+chronological in `plan18_results.ipynb`; no fresh trajectory may launch before
+the four-member B/ridge-1 reference, both all-arm ranges and the resource
+reservation pass. Source manifests are frozen at launch.
+
+Phase 7B completed both missing B/ridge-1 members and sealed the four-member
+reference: average old-RMS deterioration 2.44806470494988 pixels, endpoint
+deterioration 4.4734254567219285 pixels, acquisition MSE 9.229248138932489.
+These are development summaries, not fresh efficacy evidence. Phase 7C now
+completes and recalibrates the other arms; no fresh paths have started.
+
+Phase 7C passed on the starting set: A/B/C ridge ratios 1, D/E .1. There
+are 64 development trajectories (55 imported, nine new), with no additional
+refinement probes. The all-arm ranges are .07221489824451588 pixels for
+average retention and .05007968553186082 for endpoint retention. The frozen
+selection preserves B as retention reference and A as sample-equivalence
+reference. Visual review of the archived development figure confirmed the
+close old-error paths and the B1/B10 ridge response; historical outlying
+recipes remain visible as context. The fixed eight-changing/two-stationary
+confirmation has sufficient reserved compute: 6.75145 hours including 25%
+contingency and .5-hour closeout. Phase 7D has started its first initialization.
+
+### Phase 7 Outcome And Closeout
+
+The fixed allocation completed normally on 2026-11-09: eight changing and
+two stationary five-arm paired blocks, **50 confirmation trajectories**.
+Together with 64 development paths, including 55 verified historical imports,
+the study contains 114 trajectories. No refinement proposal or production
+repair was needed. Confirmation never changed the frozen recipes or allocation.
+
+The full final audit checked all ten paired blocks, exposure/retirement ledgers,
+finite archive diagonals, source identity and artifact checksums. Independent
+post-run validation verified all 85 completed units, all 51 frozen scientific
+sources, the public/sealed notebook, and preservation of all 31 historical
+notebook cells. `mathematical_overview.ipynb` is unchanged. Final focused unit
+acceptance passed **158 tests**; earlier CPU SIGTERM/resume and CUDA smoke
+acceptance remain valid. The worker exited and nothing remains to resume.
+
+Fresh paired results below use the prespecified 2,000 whole-replica,
+global-sign-stratified draws and nominal 95% percentile intervals. Lower
+acquisition MSE is better; these are not familywise significance claims.
+
+| Contrast | Acquisition MSE difference (px squared), nominal 95% interval |
+|---|---:|
+| B-A: STM FD versus Replay/EWC | -.00695 [-.01725, .00151] |
+| C-B: add LFU | .00951 [.00571, .01355] |
+| D-B: add adaptive pi | .07001 [.05933, .08118] |
+| E-B: add both | .09645 [.08731, .10683] |
+| E-A: combined versus Replay/EWC | .08950 [.07502, .10261] |
+
+B has lower acquisition risk in five of eight replicas, but the mean interval
+includes zero. Its average old-RMS gap is -.01243 [-.02166, -.00443] pixels,
+and its endpoint gap is -.00563 [-.02622, .02143]. Both intervals lie inside
+[-.10, .10], supporting the intended fresh B-A retention equivalence. Across
+all methods only 4/10 pairwise contrasts meet both two-sided equivalence
+checks: A/B/C among themselves, plus D-E. D/E retain old data more strongly
+while acquiring new data less well than B; development matching did not ensure
+equal fresh retention. Their one-sided sample-saving retention checks still
+pass, which must not be called two-sided equivalence.
+
+At A's 1,216-grid endpoint target, B's mean curve has its sustained crossing
+at 1,205.52 grids: **.862% [.050%, 1.280%] endpoint-budget saving**, at
+**1.553x [1.514x, 1.589x]** matched learning compute and
+**S=.00555 [.00032, .00826]**. A's own sustained crossing is 1,216 grids;
+its earlier first crossing is about 604, versus B's 617. This small sustained
+endpoint benefit is not faster first acquisition or recovery of historical
+40--50% STM savings. The large-gain ridge-suppression hypothesis was not
+supported in this regime at the fixed FD strength.
+
+D/E point savings against A are 1.13%/1.23%, with broad intervals extending
+to approximately 50% because bootstrap curves switch between early and late
+crossings. The E bootstrap median is 1.22%, not 50%. Histograms retain this
+instability. C has two unsupported draws out of 2,000; its inverse interval
+and matched-budget retention bound are withheld, not calculated after
+discarding those draws. No historical confirmation enters these estimates,
+and Phase 6/7 savings use different A targets.
+
+The final public report is generation `323e48802bd682803498a6e4`. A post-exit
+reporting-only clarification displays crossing counts to one decimal, states
+B's small benefit and compute cost explicitly, and distinguishes one-sided
+retention support from two-sided equivalence. Its entire `analysis.json` is
+byte-identical to the worker's final generation `e7c01902b890efcdd3f6783c`;
+both immutable generations remain available. The requested pi/gain/motion,
+effective-ridge and STM/LTM-movement plots are present and visually checked.
+
+Total additional charged compute, including acceptance, failed attempts,
+reports and closeout, is about **6.22 hours**, bringing the family total to
+**25.81 hours**, below the approved 39.5845-hour cumulative ceiling. The
+faster-than-forecast completion reflects the passing starting calibration and
+reuse of development artifacts. The family occupies less than 4 GB; actual
+free disk is about 574 GB. All artifacts and the incremental authorization
+remain intact. Further scientific exploration requires a new decision.
+
+## Phase 8: Reproduction And Blur Dependence
+
+**Motivation.** Establish whether the successful STM result is reproducible
+before interpreting its weak transfer to Plan 18. Plan 15 Phase 12's head-only
+rank-one FD policy saved 41.4% of novel grids (nominal 95% interval 34.4--44.0%)
+against its historical Replay/EWC reference. Plan 18 Phase 7 instead found
+only .862% endpoint-budget saving, with an acquisition-risk interval including
+zero despite comparable B-A retention. Restoring ridge to 1 did not restore
+the historical advantage. This warrants a reproducibility investigation,
+not another search for a favorable ridge or a presumption that STM failed.
+
+The two studies did not hold the experiment fixed. The successful Plan 15
+recipe used progressively blurred query images in a rare branch, rank-64-plus-
+diagonal EWC, smaller cell canvases, a different FD strength, and a different
+headline reference. Plan 18 changed the whole stream's rotation law, removed
+added blur, and used diagonal EWC. Blur is therefore a plausible explanation,
+not an established cause. Separate three questions:
+
+1. Can the historical computation and statistics be reproduced?
+2. Does the frozen historical policy retain its advantage on fresh replicas?
+3. Does removing blur change its advantage over the same-chart Replay/EWC policy?
+
+Do not require exactly 41.4% savings or a particular p-value to proceed. An
+uncertain or negative fresh result is informative. Numerical fidelity is an
+execution prerequisite; favorable efficacy is not. Do not append replicas,
+retune recipes, or select a different historical seed because results disappoint.
+Diagonal-archive ablations, rotation-process changes, LFUs, adaptive pi, and
+new calibration searches are outside this phase.
+
+### Historical Contract And Conditions
+
+The source of truth is the completed
+`cache/mnist_experiment/plan15/stm_capacity_records_v2` study, including its
+resolved configuration, source/provenance manifests, selection decisions,
+per-replica artifacts, and final analysis. Follow its sealed parent links to
+`grid_registration_subspace_v2` where required. Import executed recipes, not
+earlier readiness defaults or current Plan 18 settings. Verify the recorded
+source identities before reuse; current filenames alone do not establish parity.
+
+Use these three policies with identifiers distinct from Phase 7's A--E:
+
+| ID | Historical policy | STM ranks: conv1, conv2, head | Ridge ratio | FD strength | Role |
+|---|---|---|---:|---:|---|
+| R2 | `all_r2--replay_ewc` | 2, 2, 2 | 3.1622776601683795 | 0 | Historical headline reference |
+| R1 | `head_r1--replay_ewc` | 0, 0, 1 | 3.1622776601683795 | 0 | Same-chart control |
+| F1 | `head_r1--fd_replay_ewc` | 0, 0, 1 | 1 | 3.34056320604949 | Historical successful treatment |
+
+R1 and F1 each have 3,268 LTM plus 108 STM parameters; R2 has the same LTM
+plus 344 STM parameters. Replay controls retain trainable STM factors but
+omit the age-dependent FD penalty. All use fixed $\pi=.025$, FIFO32 grids,
+two replay grids, and archive admission only on actual eviction after the
+initial summary. Preserve the historical incoming/replay weights, anchors,
+ridge scaling, age weights, optimizer, and nominal four-grid retirement clock.
+F1 retains FD step .01, two probes, and 100-iteration/150-closure solve limits.
+
+This is **policy replication**. R1 controls architecture relative to F1, but
+their historical ridge ratios differ. Neither F1-R1 nor its blur interaction
+isolates the FD term at a common ridge. Preserve that difference rather than
+silently turn replication into another calibration study.
+
+Restore the (4,6)-channel CNN, unrestricted 54-to-54 head, 45-epoch nominal
+pretraining, $4I_{54}$ Gaussian covariance, and original 84-by-84 two-channel
+grids with 28-pixel cells. Use the executed source allocation, affine law,
+support rejection, anchors, initialization/Fisher reference sizes, holdouts,
+and continuous branch/severity schedule. The novel branch rises to probability
+.1; query-cell Gaussian blur has maximum standard deviation 2.4 pixels.
+Reference images and labels are not blurred. Stop at 100 designated novel
+grids, retaining every intervening nominal arrival and the exact historical
+novel-count segmentation. This is not Phase 7's 1,216-grid outbound clock.
+
+**Explicit representation exception:** this phase restores Plan 15's
+rank-64-plus-diagonal LTM archive, exact-audited compressor, and numerical
+fallback policy. The earlier diagonal-only restriction remains valid for its
+original phases, not this reproduction. Keep the single likelihood Fisher,
+Gaussian label integration, and inherited normalization; do not substitute
+observed residual-gradient outer products. Do not insert newer theoretical
+or numerical changes into the historical learner under the name of replication.
+
+### Phase 8A: Implementation And Historical Fidelity
+
+Add a separately versioned, thin orchestration/reporting layer, provisionally
+`mnist_experiment/combined_memory/reproduction`, with new immutable artifacts
+under `cache/mnist_experiment/plan18/stm_reproduction_v1`. Reuse verified
+historical scientific helpers instead of porting the experiment through the
+Phase 7 learner. The historical scheduler/analysis expects eight arms; write
+an explicitly validated three-arm adapter, not duplicate records or relabel
+missing arms to satisfy its validators. Keep historical sources unmodified.
+Process-local chart bindings must not be used concurrently in threads.
+
+Before any fresh efficacy runs:
+
+1. Audit the completed historical manifests, selected recipes, source hashes,
+   named seeds, data-role disjointness, holdout isolation, chart mappings,
+   metric units and timing definitions. Bind a read-only historical input
+   manifest to the new study. Missing or incompatible artifacts are explicit
+   failures, not permission to silently reconstruct a different experiment.
+2. Independently recompute the historical headline from scalar trajectories,
+   including target, sustained crossing, matched learning time, retention
+   checks and bootstrap interval. Cross-check against the sealed report and
+   frozen analyzer; merely reopening its summary JSON is not an independent
+   check. Preserve the distinction between the 41.4% saving and $S\simeq.605$.
+3. Select historical confirmation replica 0 in advance and replay all three
+   listed policies with its recorded random components into new directories.
+   Regenerate and check the data plan/rendered inputs, pretraining, initial
+   predictions/Fisher and online paths; do not just load its final checkpoint.
+   Reference the originals without overwriting or counting reruns as fresh data.
+4. Compare fixed-state objective components, values and gradients, FD probe
+   ordering, parameter mappings, covariance/trace reconstruction, accepted
+   updates, FIFO/retirement ledgers, and held-out prediction trajectories.
+   Separate initialization divergence from subsequent learner divergence.
+
+Freeze metric-specific numerical tolerances and the software/device environment
+in an acceptance manifest before rerunning historical trajectories. Require
+exact discrete IDs, schedules, labels, counts and random-component mappings.
+Use explicit absolute/relative floating-point tolerances for tensors and risk;
+compare represented Fisher operators rather than arbitrary eigenvector signs.
+Timing is expected to differ and is not a parity criterion. A driver/library
+change may prevent bitwise equality, but does not justify unexplained predictive
+divergence or post-hoc widening of tolerances until the result passes.
+
+On failure, preserve the first divergent checkpoint and investigate within the
+allowance. Repair only with a versioned record and rerun the affected acceptance
+checks. If a mathematical defect is found in the historical implementation,
+report the faithful reproduction and corrected interpretation separately; do
+not label corrected results an exact replication or proceed as though fidelity
+passed. An unresolved fidelity failure ends production with an honest report.
+
+Acceptance tests also cover the three-arm analysis against the corresponding
+historical eight-arm summaries, replay/FD loss normalization, immutable-run
+collisions, seed isolation, report preservation, and actual interruption/resume
+through initialization, learning, retirement and analysis. Include tiny CPU
+and CUDA smoke configurations; smoke runs are not efficacy evidence. Publish
+run/resume/status/stop/report commands using `~/.venv/bin/python` and create the
+pending notebook section and progress entry before production starts.
+
+### Phase 8B: Fresh Statistical Replication
+
+Freeze eight fresh paired replica IDs, all three recipes, analysis settings
+and a new named-seed namespace after fidelity passes and before fresh runs.
+Run **24 trajectories**, sharing pretraining, initial LTM Fisher, data plans,
+holdouts and compatible random components within each replica. Preserve the
+historical nested adapter initialization across charts. Fresh means new random
+components and trajectories, not a claim of a newly collected MNIST dataset:
+source-image reuse across replicas follows the original finite-pool protocol.
+Do not pool historical confirmations or the same-seed rerun into fresh inference.
+
+There is **no calibration or recipe selection** in this phase. Report the fresh
+retention performance, including any failure of the historical requirements.
+Do not change a recipe to make fresh retention pass. A useful prediction gain
+with unequal retention must not be presented as a demonstrated advantage at
+equal retention. Any later recalibrated study needs its own specification.
+
+The headline comparison is F1-R2; F1-R1 is the same-chart secondary comparison.
+For each, report the average held-out novel-risk difference, endpoint risk,
+favorable-replica count, nominal 95% interval, old-domain RMS deterioration,
+and evicted-training-cohort error as a separately labelled diagnostic. Frozen
+initial predictions remain a reference. Prediction metrics are unregularized
+held-out losses, never training objectives including EWC, ridge or FD terms.
+Evaluation observations provide neither gradients nor Fisher updates.
+
+Preserve the historical headline sample-efficiency definition. For the fresh
+cohort let $\overline R_m(n)$ be mean fixed novel-panel risk after integrating
+$n$ designated novel grids, $N=100$, and
+
+$$
+\tau=\overline R_{\mathrm{R2}}(N),\qquad
+f=1-\frac{n_{\mathrm{F1}}(\tau)}{N},\qquad
+q=\frac{T_{\mathrm{F1}}(n_{\mathrm{F1}}(\tau))}{T_{\mathrm{R2}}(N)},\qquad
+S=\frac{f}{q}.
+$$
+
+Here $n_{\mathrm{F1}}(\tau)$ is the last linearly interpolated downward crossing
+that remains at or below target through the observed endpoint. Use the
+historical unsmoothed mean MSE curves and exact clock/interpolation rules;
+do not fit trends or extrapolate. Report risk as summed coordinate squared
+error divided by 27 landmarks, not by 54 coordinates. Report first crossings
+and multiple crossings as diagnostics, not alternative selected headlines.
+R2 uses budget $N$ by definition; no inversion of its own curve creates a
+reference saving. Any R1-target equivalence is separately labelled and must
+not replace the headline target.
+
+The matched time $T$ includes all intervening nominal arrivals, optimization,
+replay, FD, retirement, Fisher compression and inherited online preparation
+costs. Show equal-budget time separately. Pretraining, audits and reporting
+are charged to the experiment allowance but disclosed outside the historical
+online-time ratio. New timing is measured, not copied from Plan 15.
+
+Use 2,000 named-seed whole-replica paired bootstrap draws, recomputing the
+target, inverse, times and retention together. Retain the historical minimum
+5% reference-improvement diagnostic, .50-pixel retention ceiling and .10-pixel
+one-sided matching tolerance at full and matched budgets. These are not
+two-sided retention equivalence tests. Root replica risks before averaging
+retention summaries, as in the historical analysis. Preserve unresolved or
+already-met targets and all invalid inverse draws; withhold an ordinary inverse
+interval if any draw is unsupported instead of deleting it. Valid risk
+contrasts remain reportable even when savings cannot be estimated.
+
+Intervals describe random trajectories conditional on the source dataset and
+evaluation protocol, not independent landmark or checkpoint samples. They are
+nominal, not familywise-adjusted declarations. Compare historical and fresh
+effect magnitudes and uncertainty without calling overlapping intervals proof
+of equivalence. Do not add replicas or stop for significance. The eight-replica
+allocation runs irrespective of intermediate efficacy, subject to integrity
+and resource checks.
+
+### Phase 8C: Paired Removal Of Blur
+
+Add **16 trajectories**: R1 and F1 without blur for the same eight fresh
+replicas. Reuse each replica's pretraining, initial archive, source images,
+affine transforms, arrival/segment boundaries, replay draws and retirement
+schedule from 8B. Set query blur to zero, with no other intervention and no
+retuning. Keep all reference images and geometric labels identical. Preserve
+independently named FD/compressor random draws so different optimization costs
+cannot shift the stream or replay sequence.
+
+The original novel-membership flags now specify only a **paired schedule**.
+Keep their stopping horizon and segmentation to match exposure exactly, but
+do not call the zero-blur observations novel. This is a stationary nominal-law
+control, not a smaller rotation shift and not a replica of Plan 18 Phase 7.
+Use total integrated grids for its horizontal axis and **do not calculate or
+advertise novel-sample savings or $S$ for this control**.
+
+Construct paired held-out panels with identical source IDs, affine transforms
+and labels: the historical novel panel with its fixed blur-severity distribution,
+and its unblurred counterpart. The original nominal retention panel remains
+separate. The primary context comparison uses the corresponding panel for
+each context: blurred for 8B, unblurred for 8C. Explicitly state that both
+training and evaluation appearance change in this comparison. It estimates
+dependence on the blur context, not a pure training-blur causal effect at a
+common test distribution. A small same-panel cross-evaluation diagnostic at
+initialization and endpoint may clarify that distinction; label it separately.
+
+For replica $r$, let $T_r$ be its shared total-grid horizon. On the shared
+accepted checkpoints, integrate held-out risk over total incoming grids using
+a fixed trapezoidal rule and divide by $T_r$; call this $Q_{m,r}^{b}$ for
+blur context $b\in\{0,1\}$. This all-arrival average is separate from the
+historical novel-clock average in 8B. Compute
+
+$$
+\Delta_b=\frac18\sum_{r=1}^8
+\left(Q_{\mathrm{F1},r}^{b}-Q_{\mathrm{R1},r}^{b}\right),\qquad
+I_{\rm blur}=\Delta_1-\Delta_0.
+$$
+
+Negative $I_{\rm blur}$ means the F1 policy has a more favorable relative-risk
+effect in the blurred context. Bootstrap the complete four-path replica block
+jointly, retaining both within-context contrasts and their interaction; do not
+infer interaction from one significant and one nonsignificant result. Plot
+the two learning/retention comparisons and report endpoint differences too.
+Use the same pixel-risk units, but acknowledge that context difficulty changes.
+The recipes include different ridge values, so the interaction is between
+**frozen policies and blur context**, not a proof of an isolated FD mechanism,
+STM-to-LTM transfer, or the cause of Plan 18's entire performance gap.
+
+Execute 8C after numerical fidelity regardless of whether 8B is significant;
+reserve its compute in advance. If fresh replication is weak, the blur contrast
+still helps distinguish context sensitivity from a failure to recover the
+original effect. Do not select a new severity or replace blur with rotations
+after inspecting the result.
+
+### Phase 8D: Human-Readable Closeout
+
+Append a chronological Phase 8 section to `plan18_results.ipynb`, preserving
+all earlier sections and the original Plan 15 notebook. Follow the concise
+Plan 13 reporting style: motivation, progress, settings, a few figures, a compact
+table, and a conclusion. Show progress near the top as fidelity status,
+completed fresh blocks out of eight, 8B trajectories out of 24, 8C trajectories
+out of 16, charged compute and remaining forecast. Mark partial results
+provisional and summarize complete paired blocks rather than unmatched paths.
+
+The main story should contain:
+
+1. A small historical-fidelity pass/fail table with links to detailed audits.
+2. Fresh blurred-task learning and old-data retention curves, alongside the
+   frozen reference, plus a table of F1-R2/F1-R1 paired effects and the supported
+   historical-definition savings, compute ratio and $S$.
+3. Paired blur/no-blur learning curves and the policy-by-context interaction,
+   using all-arrival clocks and no misleading novel-savings label for no blur.
+4. A conclusion distinguishing computational reproduction, fresh statistical
+   replication, blur dependence, retention limitations and unresolved questions.
+
+Explain $S$ in one sentence: **sample fraction saved divided by the compute
+ratio needed to reach the same predictive quality**. Always show its two
+components. Savings are conditional on initialization, background arrivals,
+drift history and the endpoint target, not a general causal estimate of deleting
+labels. Do not equate $S\simeq.60$ with 60% sample savings.
+
+The notebook only loads validated scalar artifacts and renders lightweight
+summaries. It must not train, reconstruct large Fishers, repair runs, or silently
+drop incomplete data. Heavy bootstrap work belongs in the resumable entry point.
+Keep per-replica details, crossing diagnostics and numerical logs in artifacts
+instead of a wall of notebook tables. Finish with a full integrity/pairing audit
+and restart/closeout notes, including whether anything actually remains pending.
+
+### Resources, Recovery And Authority
+
+The following **6--11-hour active wall-clock forecast** is provisional, based
+on historical trajectory costs of roughly 7--8 minutes before initialization,
+acceptance and reporting. It is not a guarantee of current hardware timing.
+
+| Subphase | Scope | Expected active wall clock |
+|---|---|---:|
+| 8A | Implementation acceptance, artifact/statistics audit, three historical-seed replay paths | 1--2 h |
+| 8B | Eight fresh initializations and 24 blurred-task paths | 3--5 h |
+| 8C | 16 paired no-blur paths, reusing initialization | 1.5--3 h |
+| 8D | Final inference, concise report and integrity audit | .5--1 h |
+| Total | 40 fresh paths plus three historical reruns and small acceptance runs | 6--11 h |
+
+Propose a **20-hour additional active-compute ceiling**, beginning only after
+execution approval; this planning amendment does not authorize launching jobs
+or spend unused historical allowances. Record the cumulative family baseline
+at authorization and charge all new roots, failures, acceptance, bootstrap and
+reports against one nonrenewing allowance. After 8A, replace the forecast with
+measured times, reserve both fixed fresh allocations plus 25% contingency on
+remaining trajectory/initialization costs and .5 h for closeout. If they cannot
+fit, report the shortfall before fresh execution; do not silently shrink the
+cohort, drop the contrast or exceed the cap.
+
+Retain the 500 GB family-wide artifact ceiling and 20 GB free-disk reserve.
+Account for all new rank-64 artifacts, avoid unnecessary dense/stream dumps,
+and reference immutable historical assets rather than copying the study.
+Measure storage growth during acceptance. New protocol/source/configuration,
+recipe, chart and context hashes must enter unit/checkpoint identities.
+
+Require `--resume`, atomic checkpoints, a single-writer lease, clean signal
+handling and immutable completed units. Persist model/optimizer state, all
+named RNG states, replay/retirement state, pretraining progress, numerical
+audit state, decisions, bootstrap chunks and resource ledgers. A restart must
+not repeat completed trajectories, change the fixed seed list, recalibrate,
+or reset either budget. Resume checks must cover changed source/configuration
+identities and interrupted initialization, fits, eviction, reporting and
+analysis. Refresh reports at completed blocks and at least the existing
+15-minute heartbeat without rebuilding historical analyses on every unit.
+
+After execution approval, Sol may implement and complete the phase without
+intermediate user review, including documented engineering repairs. Preserve
+the frozen scientific contract, seeds, policies, allocation and estimands.
+Material changes receive a new version and a clear notebook note; scientific
+defects cannot be hidden as maintenance. A failed fidelity check or insufficient
+resources is a legitimate closeout, while an unfavorable statistical result
+is not a reason to invent another experiment. Leave `mathematical_overview.ipynb`
+and completed historical artifacts unchanged.

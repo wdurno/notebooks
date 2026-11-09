@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "experiment": "plan19",
+  "version": "phase0-v1",
+  "mode": "smoke",
+  "seed": 190001,
+  "replicas": 1,
+  "transitions": 12,
+  "bootstrap_transitions": 8,
+  "episode_steps": 4,
+  "simulation_period_s": 0.1,
+  "image_width": 64,
+  "image_height": 48,
+  "conditions": ["replay_ewc", "stm_fd"],
+  "model": {"kind": "tiny", "hidden_size": 16, "context_length": 4},
+  "learning": {"replay_capacity": 8, "replay_batch": 2},
+  "runtime": {"device": "cpu", "threads": 1, "wall_clock_limit_s": 3600}
+}

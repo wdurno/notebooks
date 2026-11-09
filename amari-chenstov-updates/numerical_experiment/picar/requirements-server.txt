@@ -1,0 +1,8 @@
+-r requirements.txt
+-r requirements-report.txt
+torchvision==0.25.0
+transformers==5.2.0
+bitsandbytes==0.49.2
+accelerate==1.12.0
+safetensors==0.7.0
+huggingface-hub==1.5.0

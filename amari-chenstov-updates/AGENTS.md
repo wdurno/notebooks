@@ -100,6 +100,11 @@ The previous synthetic numerical experiment has been retired because its Gaussia
 
 ## Engineering requirements
 
+- Keep runtime software dependencies self-contained in this checkout or declared
+  package dependencies. Do not import code from sibling projects or personal
+  absolute paths. Model loaders should download a pinned revision into the
+  project's ignored cache by default; an explicitly supplied model path is an
+  optional reuse/offline override, not a prerequisite for a fresh clone.
 - Prefer existing project patterns and PyTorch functionality over new abstractions.
 - Keep mathematical conventions explicit in code. In particular, document whether a formula uses scores $s$ or loss gradients $g=-s$.
 - Compute per-sample gradients where required. A batch-mean outer product is not a mean of per-sample outer products.

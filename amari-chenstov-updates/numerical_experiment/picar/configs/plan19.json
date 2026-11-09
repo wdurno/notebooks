@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "experiment": "plan19",
+  "version": "development-v1",
+  "mode": "production",
+  "seed": 191001,
+  "replicas": 6,
+  "transitions": 2400,
+  "bootstrap_transitions": 600,
+  "episode_steps": 40,
+  "simulation_period_s": 0.5,
+  "image_width": 160,
+  "image_height": 120,
+  "conditions": ["replay_ewc", "stm_fd"],
+  "model": {"kind": "qwen", "hidden_size": 64, "context_length": 8, "top_layers": 1},
+  "learning": {"replay_capacity": 128, "replay_batch": 4, "sleep_every": 400, "sleep_batch": 32},
+  "runtime": {"device": "cuda", "threads": 2, "wall_clock_limit_s": 72000}
+}

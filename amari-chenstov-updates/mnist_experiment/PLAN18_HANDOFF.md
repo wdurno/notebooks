@@ -2,21 +2,75 @@
 
 ## Current Terminal State
 
-PHASE 6 IS COMPLETE (2026-11-08T22:35:29Z). Nothing needs resuming, and no
-experiment/tmux worker remains running. Do not restart historical commands
-below for new work.
+PHASE 7 IS COMPLETE. The worker exited normally; do not resume scientific
+computation or launch another writer. Phases 0--6 remain immutable history.
 
-Root: cache/mnist_experiment/plan18/retention_match_v1.
-Report: mnist_experiment/plan18_results.ipynb, chronological Phase 6 at bottom.
-Latest immutable report: 8960658bfe81951b6668b306.
-Completion marker: study_completed.json under the root.
+Root: cache/mnist_experiment/plan18/low_ridge_v1.
+Report: mnist_experiment/plan18_results.ipynb, chronological Phase 7 at bottom.
+Current immutable report pointer: low_ridge_v1/report/latest.json.
+Console log: cache/mnist_experiment/plan18/phase7-execution.log.
+Completion: low_ridge_v1/study_completed.json, 2026-11-09T09:20:43Z.
+All 114 trajectories are available: 64 development (55 imported, 9 new),
+40 fresh and 10 stationary. Eight changing plus two stationary five-arm blocks
+are complete. Final independent validation verified 85 completed units with
+full checksums, all 51 frozen scientific sources, all 31 historical notebook
+cells, public/sealed notebook agreement, and exact paired/exposure ledgers.
+The protected mathematical notebook is unchanged. Nothing is pending.
 
-Phase 7, "Low-Ridge STM With Recalibrated Retention", is drafted in plan18.md
-for review only. B is fixed at c=1; A/C/D/E are recalibrated against its
-retention. Proposed confirmation is eight new changing and two stationary
-five-arm blocks. Expected additional compute is 9--15 hours, with a proposed
-20-hour incremental allowance upon execution approval. No Phase 7 code or run
-has been started; do not treat this draft as an instruction to resume Phase 6.
+The four-member calibration passed without refinements: A/B/C ridge1, D/E .1,
+B fixed at 1, FD strength .5691316767656495, D/E process scale 1e-5.
+Both all-arm development retention ranges passed (.072215/.050080 px).
+B remains the development retention reference; A is the efficiency reference.
+No production repair, retuning, extra replica or allocation change occurred.
+
+Final nominal paired 95% results (eight fresh replicas, four per sign):
+- B-A acquisition MSE: -.006947 [-.017254, .001510] px squared; 5/8 favorable.
+- B-A Havg: -.012435 [-.021655, -.004428] px. Endpoint H1216:
+  -.005625 [-.026220, .021425]. Both support .10-pixel two-sided equivalence.
+- B endpoint-budget saving: .862% [.050%, 1.280%], matched compute 1.553x
+  [1.514x, 1.589x], S=.005546 [.000318, .008261]. B's sustained crossing is
+  1205.52 grids versus A's own 1216. First crossings are B616.80/A603.99.
+  This is a small sustained endpoint benefit, not restored large STM savings.
+- C-B acquisition MSE: +.00951 [.00571, .01355]; E-B +.09645
+  [.08731, .10683]. D/E retain more old data while acquiring less well.
+  Only 4/10 pairwise fresh contrasts support both retention-equivalence checks.
+  One-sided retention support in the efficiency table is not equivalence.
+- D/E point savings against A are 1.13%/1.23%; broad inverse intervals reach
+  ~50% through early/late crossing switches. E bootstrap median is 1.22%.
+  C has two unsupported draws out of 2000; inverse CI is withheld, not repaired
+  by discarding them. Do not pool Phase 6/7 targets or historical confirmation.
+
+Current report generation: 323e48802bd682803498a6e4. It preserves byte-identical
+analysis.json from worker-final generation e7c01902b890efcdd3f6783c. Post-exit
+report-only clarification exposes precise crossing counts, B's small saving
+and cost, and the one-/two-sided retention distinction. All earlier report
+generations remain intact. Prediction/bootstrap and requested pi/gain/motion
+and effective-ridge/movement figures were visually checked.
+
+Final unit acceptance: 158 passed, including 33 reporting tests. Earlier
+CPU actual-SIGTERM/resume parity, failed-calibration gate and completed CUDA
+smoke phase7_smoke_cuda_v1 passed. All needed test/report sessions have exited.
+Additional charged compute is 6.22 hours; cumulative family charge 25.81 hours.
+The immutable authorization baseline is 70,504.28523658379 seconds, additional
+allowance 72,000 seconds, cumulative ceiling 142,504.2852365838 seconds.
+Never reset it. Family artifacts remain below 4 GB, with about 574 GB free.
+
+Optional artifact-only report rebuild, from the repository root:
+
+```bash
+~/.venv/bin/python -m mnist_experiment.combined_memory.low_ridge.run \
+  --config mnist_experiment/combined_memory/low_ridge/configs/production.json \
+  --root cache/mnist_experiment/plan18/low_ridge_v1 --report-only
+```
+
+Keep the sealed authorization, historical dependencies and completed units.
+Further scientific exploration requires a new user decision, not a resume.
+
+## Historical Phase 6 Completion
+
+Phase 6 completed at 2026-11-08T22:35:29Z under retention_match_v1. Its latest
+immutable report is 8960658bfe81951b6668b306; study_completed.json seals its
+final outcome. No further Phase 6 computation is queued.
 
 All 30 confirmation paths completed: four fresh changing and two stationary
 five-arm blocks. Development has 55 paths (37 imports, 18 new); total available
