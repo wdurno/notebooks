@@ -378,9 +378,11 @@ def test_default_cache_is_project_local_independent_of_working_directory(monkeyp
         models.load_qwen_model(tmp_path / "missing-checkpoint")
 
 
-def test_bf16_frozen_qwen_prefix_fp32_top_masks_rotary_and_fd(miniature_qwen, monkeypatch):
+@pytest.mark.parametrize("enable_prefix_cache", [False, True])
+def test_bf16_frozen_qwen_prefix_fp32_top_masks_rotary_and_fd(miniature_qwen, monkeypatch, enable_prefix_cache):
     qwen = miniature_qwen.bfloat16()
-    encoder = models.QwenContextEncoder(qwen, None, top_layers=1, ltm_rank=2)
+    encoder = models.QwenContextEncoder(qwen, None, top_layers=1, ltm_rank=2,
+                                        enable_prefix_cache=enable_prefix_cache)
     text = qwen.model.language_model
     assert text.embed_tokens.weight.dtype == torch.bfloat16
     assert all(p.dtype == torch.bfloat16 for p in text.layers[0].parameters())
@@ -427,6 +429,8 @@ def test_bf16_frozen_qwen_prefix_fp32_top_masks_rotary_and_fd(miniature_qwen, mo
     assert all(p.grad is None for p in text.layers[0].parameters())
     assert encoder.compute_policy["prefix_dtype"] == "torch.bfloat16"
     assert encoder.compute_policy["top_dtype"] == "torch.float32"
+    if enable_prefix_cache:
+        assert encoder.prefix_cache_stats["hits"] > 0
 
 
 def test_real_bnb_top_configuration_keeps_packed_weight_bytes(miniature_qwen):
@@ -474,3 +478,275 @@ def test_loader_pin_checks_before_any_model_access():
         small_model(top_layers=3)
     with pytest.raises(ValueError, match="history exceeds"):
         small_model(context_length=1)(batch())
+
+
+def processed_images():
+    return {"input_ids": torch.tensor([[0, 1, 37, 35, 38, 3], [1, 37, 35, 38, 4, 5]]),
+            "attention_mask": torch.tensor([[0, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1]]),
+            "image_grid_thw": torch.tensor([[1, 2, 2], [1, 2, 2]]),
+            "pixel_values": torch.linspace(0, 1, 8 * 12).reshape(8, 12)}
+
+
+def test_prefix_cache_is_opt_in_cpu_only_and_never_caches_adapted_suffix(miniature_qwen):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, ltm_rank=2)
+    nonzero_factors(encoder)
+    inputs = processed_images()
+    reference = encoder.encode_processed(inputs, role="learner")
+    assert encoder.prefix_cache_stats["entries"] == 0
+    assert not encoder.enable_prefix_cache and not encoder.enable_cache
+    encoder.enable_prefix_cache = True
+    calls = []
+    layers = miniature_qwen.model.language_model.layers
+    hooks = [layer.register_forward_hook(lambda module, args, out, i=i: calls.append(i))
+             for i, layer in enumerate(layers)]
+    try:
+        first = encoder.encode_processed(inputs, role="learner")
+        second = encoder.encode_processed(inputs, role="learner")
+    finally:
+        for hook in hooks:
+            hook.remove()
+    assert calls == [0, 1, 1]
+    assert encoder.prefix_cache_stats["hits"] == encoder.prefix_cache_stats["misses"] == 1
+    for output in (first, second):
+        torch.testing.assert_close(output, reference, rtol=0, atol=0)
+        assert output.requires_grad
+    cache_x, cache_positions = next(iter(encoder._prefix_cache.values()))
+    assert cache_x.device.type == cache_positions.device.type == "cpu"
+    assert cache_x.dtype == torch.float32 and cache_positions.dtype == torch.int64
+    assert not cache_x.requires_grad and cache_x.grad_fn is None
+    assert encoder.prefix_cache_stats["bytes"] == sum(x.numel() * x.element_size() for x in (cache_x, cache_positions))
+    assert encoder.prefix_cache_stats["max_entries"] == 2
+    assert encoder.prefix_cache_stats["max_bytes"] == 256 * 1024**2
+    assert encoder.provenance["prefix_memoization"]["suffix_and_fd_endpoints"] == "never_cached"
+    with torch.no_grad():
+        layers[-1].self_attn.q_proj.banks.ltm.B.add_(.2)
+    changed = encoder.encode_processed(inputs, role="learner")
+    assert not torch.equal(changed, second)
+    assert encoder.prefix_cache_stats["hits"] == 2
+    encoder.enable_cache = False
+    assert encoder.prefix_cache_stats["entries"] == 0
+    with pytest.raises(TypeError, match="boolean"):
+        encoder.enable_prefix_cache = 1
+
+
+def test_prefix_cache_fd_and_replay_nll_match_values_and_both_bank_gradients(miniature_qwen, monkeypatch):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, ltm_rank=2)
+    inputs = processed_images()
+    replay, fresh = batch(1, count=2), batch(1, count=2)
+    replay["elapsed"].fill_(.5)
+    fresh["elapsed"].fill_(.75)
+
+    def prepare(data, **kwargs):
+        prepared = {k: v.clone() for k, v in inputs.items()}
+        # Model the prompt-token consequence of binary-exact distinct clocks.
+        if data["elapsed"][0, 0, 0] == .75:
+            prepared["input_ids"][:, -1] = 7
+        return prepared, (2, 1)
+
+    monkeypatch.setattr(encoder, "prepare", prepare)
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(24)
+        model = models.PiCarStudent(encoder, hidden_size=5, return_bins=3, factor_seed=7)
+    nonzero_factors(model)
+    params = {name: p for name, p in model.named_parameters() if p.requires_grad}
+    banks = model.parameter_banks()
+    fixed = numerics.LikelihoodDesign(torch.tensor([-1., 0., 1.]), torch.zeros(2), 1., torch.eye(7))
+    probes = numerics.rademacher_probes(params, banks["stm"], 1, generator=torch.Generator().manual_seed(98))
+    buffers = {name: value.clone() for name, value in model.named_buffers()}
+    results = []
+    prefix_calls = []
+    hook = miniature_qwen.model.language_model.layers[0].register_forward_hook(
+        lambda *args: prefix_calls.append(1))
+    try:
+        for enabled in (False, True):
+            encoder.enable_prefix_cache = enabled
+            encoder.clear_caches()
+            prefix_calls.clear()
+            predict = lambda p: numerics.functional_predict(model, p, (replay,))
+            output = predict(params)
+            nll = numerics.joint_nll(output, torch.tensor([1, 2]), torch.zeros(2, 7), fixed).mean()
+            fd = numerics.stm_fd_penalty(predict, params, fixed, banks["stm"], probes, torch.ones(2), .01)
+            nll_grad = torch.autograd.grad(nll, tuple(params.values()))
+            fd_grad = torch.autograd.grad(fd, tuple(params.values()))
+            numerics.functional_predict(model, params, (fresh,))
+            predict(params)
+            results.append((output, nll, fd, nll_grad, fd_grad))
+            assert len(prefix_calls) == (2 if enabled else 5)
+    finally:
+        hook.remove()
+    for key in results[0][0]:
+        torch.testing.assert_close(results[0][0][key], results[1][0][key], rtol=0, atol=0)
+    for left, right in zip(results[0][1:3], results[1][1:3]):
+        torch.testing.assert_close(left, right, rtol=0, atol=0)
+    for left, right in zip(results[0][3:], results[1][3:]):
+        for actual, expected in zip(left, right):
+            torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    for gradients in results[1][3:]:
+        named = dict(zip(params, gradients))
+        for bank in banks.values():
+            assert any(named[name].abs().sum() > 1e-12 for name in bank)
+    assert encoder.prefix_cache_stats["misses"] == 2 and encoder.prefix_cache_stats["hits"] == 3
+    for name, value in model.named_buffers():
+        torch.testing.assert_close(value, buffers[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("field", ["input_ids", "attention_mask", "pixel_values", "image_grid_thw", "token_type_ids"])
+def test_prefix_cache_keys_every_prepared_tensor(miniature_qwen, field):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    inputs = processed_images()
+    inputs["token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+    encoder.encode_processed(inputs, role="learner")
+    changed = {k: v.clone() for k, v in inputs.items()}
+    if field == "input_ids":
+        changed[field][0, -1] = 7
+    elif field == "attention_mask":
+        changed[field][0, 0] = 1
+    elif field == "pixel_values":
+        changed[field][0, 0] += .125
+    elif field == "image_grid_thw":
+        changed[field] = changed[field].to(torch.int32)
+    else:
+        changed[field][0, 0] = 1
+    encoder.encode_processed(changed, role="learner")
+    assert encoder.prefix_cache_stats["misses"] == 2 and encoder.prefix_cache_stats["hits"] == 0
+
+
+@pytest.mark.parametrize("entries,byte_limit,expected_entries", [(2, 100_000, 2), (2, 1500, 1), (2, 1, 0)])
+def test_prefix_cache_respects_entry_byte_limits_and_lru(miniature_qwen, entries, byte_limit, expected_entries):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True,
+        prefix_cache_max_entries=entries, prefix_cache_max_bytes=byte_limit)
+    inputs = processed_images()
+    for token in (3, 4, 5):
+        inputs["input_ids"][0, -1] = token
+        encoder.encode_processed(inputs, role="learner")
+        assert encoder.prefix_cache_stats["bytes"] <= byte_limit
+    assert encoder.prefix_cache_stats["entries"] == expected_entries
+    if expected_entries:
+        hits = encoder.prefix_cache_stats["hits"]
+        inputs["input_ids"][0, -1] = 5
+        encoder.encode_processed(inputs, role="learner")
+        assert encoder.prefix_cache_stats["hits"] == hits + 1
+        inputs["input_ids"][0, -1] = 3
+        misses = encoder.prefix_cache_stats["misses"]
+        encoder.encode_processed(inputs, role="learner")
+        assert encoder.prefix_cache_stats["misses"] == misses + 1
+
+
+def test_prefix_cache_clear_publication_reload_dtype_and_provenance(miniature_qwen):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    inputs = processed_images()
+    encoder.encode_processed(inputs, role="learner")
+    encoder.mark_published()
+    encoder.encode_processed(inputs, role="learner")
+    assert encoder.prefix_cache_stats["hits"] == 1
+    encoder.clear_caches()
+    assert encoder.prefix_cache_stats["entries"] == encoder.prefix_cache_stats["bytes"] == 0
+    assert encoder.prefix_cache_stats["hits"] == 1
+    encoder.encode_processed(inputs, role="learner")
+    encoder.provenance["checkpoint"] = "changed"
+    encoder.encode_processed(inputs, role="learner")
+    assert encoder.prefix_cache_stats["misses"] == 3
+    encoder.load_state_dict(encoder.state_dict())
+    assert encoder.prefix_cache_stats["entries"] == 0
+    encoder.encode_processed(inputs, role="learner")
+    encoder.to(dtype=torch.float64)
+    assert encoder.prefix_cache_stats["entries"] == 0
+
+
+@pytest.mark.parametrize("requires_grad", [False, True])
+def test_frozen_prefix_functional_parameter_overrides_never_hit_stale_cache(miniature_qwen, monkeypatch, requires_grad):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    inputs = processed_images()
+    monkeypatch.setattr(encoder, "prepare", lambda data, **kwargs: (inputs, (2, 1)))
+    data = batch(1, count=2)
+    baseline = encoder(data)
+    name = "qwen.model.language_model.embed_tokens.weight"
+    original = dict(encoder.named_parameters())[name]
+    override = (original.detach().clone() * 2).requires_grad_(requires_grad)
+    expected = None
+    for enabled in (False, True):
+        encoder.enable_prefix_cache = enabled
+        encoder(data)
+        output = torch.func.functional_call(encoder, {name: override}, (data,))
+        if not enabled:
+            expected = output
+        else:
+            torch.testing.assert_close(output, expected, rtol=0, atol=0)
+            assert encoder.prefix_cache_stats["hits"] == 0
+            if requires_grad:
+                assert encoder.prefix_cache_stats["bypasses"] == 1
+    assert not torch.equal(output, baseline)
+
+
+def test_prefix_cache_detects_frozen_inplace_mutation_and_buffer_override(miniature_qwen, monkeypatch):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    inputs = processed_images()
+    monkeypatch.setattr(encoder, "prepare", lambda data, **kwargs: (inputs, (2, 1)))
+    data = batch(1, count=2)
+    encoder(data)
+    with torch.no_grad():
+        miniature_qwen.model.language_model.layers[0].self_attn.q_proj.weight.mul_(2)
+    encoder(data)
+    assert encoder.prefix_cache_stats["misses"] == 2
+    key = "qwen.model.language_model.rotary_emb.inv_freq"
+    replacement = dict(encoder.named_buffers())[key].clone() * .7
+    cached = torch.func.functional_call(encoder, {key: replacement}, (data,))
+    assert encoder.prefix_cache_stats["misses"] == 3
+    encoder.enable_prefix_cache = False
+    uncached = torch.func.functional_call(encoder, {key: replacement}, (data,))
+    torch.testing.assert_close(cached, uncached, rtol=0, atol=0)
+
+
+def test_cached_prefix_does_not_alias_decoder_inputs_and_bypasses_stochastic_training(miniature_qwen):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    inputs = processed_images()
+    expected = encoder.encode_processed(inputs, role="learner")
+    stored = [v.clone() for v in next(iter(encoder._prefix_cache.values()))]
+
+    def overwrite(module, args):
+        args[0].zero_()
+
+    hook = miniature_qwen.model.language_model.layers[-1].register_forward_pre_hook(overwrite)
+    encoder.encode_processed(inputs, role="learner")
+    hook.remove()
+    for actual, reference in zip(next(iter(encoder._prefix_cache.values())), stored):
+        torch.testing.assert_close(actual, reference, rtol=0, atol=0)
+    torch.testing.assert_close(encoder.encode_processed(inputs, role="learner"), expected, rtol=0, atol=0)
+    encoder.train()
+    encoder.encode_processed(inputs, role="learner")
+    assert encoder.prefix_cache_stats["bypasses"] == 1 and encoder.prefix_cache_stats["entries"] == 0
+
+
+def test_prefix_cache_preserves_frozen_role_bank_isolation(miniature_qwen):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    adapter = miniature_qwen.model.language_model.layers[-1].self_attn.q_proj
+    with torch.no_grad():
+        adapter.banks.teacher.B.fill_(.2)
+        adapter.banks.evaluator.B.fill_(-.1)
+    inputs = processed_images()
+    references = {role: encoder.encode_processed(inputs, role=role) for role in ("teacher", "evaluator")}
+    nonzero_factors(encoder)
+    for role, expected in references.items():
+        actual = encoder.encode_processed(inputs, role=role)
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        assert not actual.requires_grad
+    assert not torch.equal(references["teacher"], references["evaluator"])
+    assert encoder.prefix_cache_stats["misses"] == 1 and encoder.prefix_cache_stats["hits"] == 3
+
+
+def test_prefix_populated_in_inference_mode_remains_usable_for_learner_gradients(miniature_qwen):
+    encoder = models.QwenContextEncoder(miniature_qwen, None, enable_prefix_cache=True)
+    inputs = processed_images()
+    with torch.inference_mode():
+        encoder.encode_processed(inputs, role="teacher")
+    output = encoder.encode_processed(inputs, role="learner")
+    output.square().sum().backward()
+    assert encoder.prefix_cache_stats["hits"] == 1
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in encoder.parameters() if p.requires_grad)
+
+
+@pytest.mark.parametrize("limits", [{"prefix_cache_max_entries": 0}, {"prefix_cache_max_bytes": 0},
+                                  {"prefix_cache_max_entries": True}])
+def test_prefix_cache_limits_require_positive_integers(miniature_qwen, limits):
+    with pytest.raises(ValueError, match="positive integer"):
+        models.QwenContextEncoder(miniature_qwen, None, **limits)

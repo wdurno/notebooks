@@ -134,3 +134,111 @@ both-bank finite-difference gradients, zero-retirement anchors, and shaping
 telescoping. Efficiency fixtures include 50% samples saved at 2x compute giving
 `S=0.25`. Invalid shapes, ranges, covariance, designs, and incomplete returns
 must fail explicitly. No LFU, dense parameter Hessian/Fisher, or persistence.
+
+## Revision 2: Fix 2 Dense Visual Reward And Task Sidecar
+
+This additive revision introduces `DENSE_VISUAL_REWARD_VERSION =
+"dense-visual-v1"`. The likelihood, score sign, Fisher, FD, joint KL, existing
+`CONTRACT_VERSION = 1` and historical `shaped_rewards` behavior are unchanged.
+Task/reward identities and the corresponding bin/baseline/temperature/critic
+design must be recorded together by the caller for new runs. No historical
+labels, completed artifacts, checkpoints or initial Fisher summaries are
+modified or silently reused for this new recipe.
+
+### Dense Reward API
+
+`dense_visual_rewards(elapsed, visual_scores, terminal_bonus, terminated)`
+accepts equal, nonempty recorded `[T]` tensors on one device. Numeric inputs
+must be floating point and finite; `terminated` must be boolean. Output is
+detached, on elapsed's device and in its accumulation dtype (float64 remains
+float64, otherwise float32). Scores are frozen **post-action** RGB-only
+evaluator outputs strictly in `[0,10]`, including on terminal records. They
+are validated before dtype conversion; no clipping or fabricated zeros.
+
+The fixed versioned formula is exactly
+
+```
+r = 2 * elapsed / 20 * (visual_scores / 10) - .02 * elapsed / .5 + terminal_bonus
+```
+
+Elapsed times must be positive; summed recorded duration between true
+terminals must not exceed 20 seconds, allowing only floating-point roundoff.
+Multiple episodes may share an input batch. Incomplete suffixes may be scored
+but not assigned complete returns. With slices, the caller still owns the
+full episode clock; the kernel cannot infer an unrecorded prefix or certify
+the timestamp of a deadline bonus.
+
+Nonterminal bonuses must be zero. Each terminal must carry exactly one of
+`+10` (success), `-5` (unsafe collision), `-1` (deadline). Bonuses are neither
+elapsed-weighted nor discounted inside this kernel. The caller owns
+exactly-once record admission and the correspondence between terminal bonuses
+and authoritative outcomes. Zero-duration repeated terminal captures are not
+new reward records. The simulator emits each terminal bonus once, preserving
+that state in snapshots both before and after capture.
+
+Use unchanged `time_discounts(elapsed, gamma0=.99, reference_duration=.5)` and
+`discounted_returns(...)` to construct complete labels. Do not discount stage
+rewards a second time, zero terminal visual scores, or apply potential
+differences. `RewardComponents.terminal_potential_zero` is a retained legacy
+flag, not an instruction to zero dense visual scores. Infrastructure
+truncations remain incomplete, not fake task
+terminals. Maximum undiscounted visual exposure is two units per 20-second
+episode, independent of picture count; discretized discounted returns need
+not be identical after a cadence change.
+
+`dense_visual_return_bounds() -> (-6.0, 12.0)` returns the enclosing range
+derived from `-5 - .02*20/.5 = -5.8` and `10 + 2 = 12`. Nonnegative visual
+rewards and discounts in `(0,1]` preserve these conservative bounds for all
+complete suffix returns. Use existing `return_bin_values` and `bin_returns`;
+out-of-range labels still raise. Configuration/orchestration owns the new
+41-bin default and bounded 81/161-bin audit, raw differences and ties,
+advantage-weight concentration/cap hits, and the log-weight approximation
+bound `max_bin_width / (2 * temperature)`. These helpers do not alter the
+likelihood or silently replace historical `[-8,11]` designs.
+
+### Simulator Task Sidecar
+
+`SimulatorConfig.task_version` accepts `"safe-stop-v1"` (historical default)
+or `"ball-contact-v1"`. The latter uses
+`geometry.contact_terminal_event(target_contact, unsafe_contact, elapsed_s,
+deadline_s)`: unsafe wall/obstacle contact is collision even when simultaneous
+with target contact; otherwise target contact is immediate success; otherwise
+the deadline terminates. Contact success precedes deadline on the final tick.
+Floor support is excluded; chassis and wheel links both count. There are no
+clearance, heading, speed or stopped-hold requirements for contact success.
+The drive stops on any task terminal, with unchanged `+10/-5/-1` bonuses.
+The original `TerminalGeometry`, `target_geometry`, `in_success_region` and
+`terminal_event` retain their schema and safe-stop semantics.
+
+`SimulatorConfig.obstacle_enabled: bool = True` is administrative only. Setting
+it false removes both obstacle collision and rendering for the explicitly
+separate unobstructed diagnostic. Seeded layout draws, target, arena and drift
+are unchanged; this is not an alternate primary-task default. Privileged
+`diagnostics()` adds `task_version`, `obstacle_enabled`, `target_contact` and
+`unsafe_contact`; the two contact flags report current physical contacts.
+They are never added to policy observations, RGB features or timing fields.
+Terminal outcomes/bonuses remain the declared hybrid supervision, not a
+claim that RGB certifies physical contact.
+The existing `SimulatorWorker.diagnostics()` RPC forwards these administrative
+fields without adding them to `harvest()` observations or timing fields.
+
+Snapshot schema 1 remains readable: only missing `task_version` and
+`obstacle_enabled` default to `safe-stop-v1` and true. `SimulatorConfig.from_dict`
+rejects unknown fields, missing historical fields and invalid task/flag values.
+Restore verifies the original checksum before normalizing the serialized config
+in memory, then requires exact resolved config and run identity, as well as
+the existing Bullet/schema compatibility. Task or obstacle mismatches fail.
+No saved payload is edited; newly emitted snapshots explicitly include both
+fields and retain replay-based solver/contact reconstruction.
+
+Focused CPU acceptance:
+
+```
+OMP_NUM_THREADS=1 ~/.venv/bin/python -m pytest -q test/unit/test_picar_fix2_rewards.py test/unit/test_picar_contact.py test/unit/test_picar_math_rewards.py test/unit/test_picar_math.py test/unit/test_picar_math_precision.py test/unit/test_picar_robot_protocol.py
+```
+
+Fixtures cover finite/range/temporal/bonus validation, partial intervals,
+elapsed exposure budgets, terminal score retention, conservative return bounds,
+success-delay/loiter/disappearance/collision arithmetic, retained graded history,
+bin-to-weight resolution, contact type/precedence, old geometry, actual CPU
+Bullet dynamics and exact replay restore before/after terminal bonus capture.

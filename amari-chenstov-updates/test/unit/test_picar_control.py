@@ -227,8 +227,10 @@ def test_model_access_prioritizes_waiting_inference_and_never_overlaps_update():
             session.start(seed=3)
             until(lambda: access._waiting_inference == 1)
             two.start()
-            first = session.next_interval(timeout=1)
-            assert first.command.controls.drive_mps == 0 and worker.ticks > 0
+            # Release within the prediction deadline. Expired requests now
+            # correctly skip inference rather than consuming priority work.
+            until(lambda: worker.ticks > 0)
+            assert worker.controls.drive_mps == 0
             release_update.set()
             assert inference_entered.wait(1)
             assert not second_update.is_set()

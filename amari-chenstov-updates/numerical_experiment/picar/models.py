@@ -11,6 +11,7 @@ The action readout is a Gaussian mean, not eight categorical action logits.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
@@ -24,6 +25,7 @@ import re
 import threading
 import time
 from typing import Any
+import weakref
 
 import torch
 from torch import Tensor, nn
@@ -34,6 +36,7 @@ from src.seeding import derive_component_seed
 
 MODEL_SCHEMA_VERSION = 1
 CONTEXT_SCHEMA_VERSION = 1
+EXTENDED_CONTEXT_SCHEMA_VERSION = 2
 QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
 QWEN_REVISION = "66285546d2b821cf421d4f5eb2576359d3770cd3"
 QWEN_CACHE_DIR = str(Path(__file__).resolve().parents[2] / "cache/numerical_experiment/picar/models")
@@ -212,6 +215,28 @@ def validate_batch(batch: Mapping[str, Any], max_history: int) -> tuple[int, int
         start = batch["start_time"]
         if start.shape != (b,) or not bool(torch.isfinite(start).all()) or bool((start < 0).any()):
             raise ValueError("start_time must have shape [B] with finite nonnegative seconds")
+    if "episode_deadline" in batch:
+        deadline = batch["episode_deadline"]
+        if deadline.shape != (b,) or not bool(torch.isfinite(deadline).all()) or bool((deadline <= 0).any()):
+            raise ValueError("episode_deadline must contain B positive absolute task deadlines")
+    if "decision_time" in batch:
+        decision = batch["decision_time"]
+        capture = elapsed[..., 0].cumsum(1) + batch.get("start_time", elapsed.new_zeros(b))[:, None]
+        tolerance = max(1e-6, 8 * torch.finfo(capture.dtype).eps * max(1., float(capture.abs().max())))
+        if (decision.shape != (b, t) or not bool(torch.isfinite(decision).all())
+                or bool((decision < capture - tolerance).any())
+                or bool((decision[:, 1:] < decision[:, :-1]).any())):
+            raise ValueError("decision_time must be chronological [B,T] and not precede captures")
+    if "status_events" in batch:
+        if len(batch["status_events"]) != b:
+            raise ValueError("status_events must contain B event histories")
+        for events in batch["status_events"]:
+            for event in events:
+                if (not isinstance(event, Mapping) or set(event) != {"text", "available_at", "kind"}
+                        or not isinstance(event["text"], str) or not event["text"].strip()
+                        or event["kind"] not in {"robot_status", "visual_score"}
+                        or not math.isfinite(event["available_at"]) or event["available_at"] < 0):
+                    raise ValueError("invalid causal status event")
     return b, t
 
 
@@ -226,6 +251,8 @@ def render_context(batch: Mapping[str, Any], item: int, step: int, *,
     elapsed = batch["elapsed"][item, :step + 1, 0].detach().cpu()
     start = float(batch["start_time"][item]) if "start_time" in batch else 0.
     now = start + float(elapsed.sum())
+    if "decision_time" in batch:
+        now = float(batch["decision_time"][item, step])
     active, completed = [], []
     for e in _events(batch["contexts"][item]):
         if e.issued_at > now:
@@ -239,6 +266,14 @@ def render_context(batch: Mapping[str, Any], item: int, step: int, *,
     actions = batch["executed_actions"][item, :step + 1].detach().cpu().tolist()
     fixed = {"schema": CONTEXT_SCHEMA_VERSION, "now": now,
              "executed_actions": actions, "elapsed": elapsed.tolist()}
+    extended = any(key in batch for key in ("episode_deadline", "decision_time", "status_events"))
+    if extended:
+        fixed["schema"] = EXTENDED_CONTEXT_SCHEMA_VERSION
+    if "episode_deadline" in batch:
+        fixed["time_remaining_s"] = max(0., float(batch["episode_deadline"][item]) - now)
+    if "status_events" in batch:
+        fixed["status_events"] = [dict(e) for e in batch["status_events"][item]
+                                  if e["available_at"] <= now]
 
     def serialize(rows):
         return json.dumps({**fixed, "instructions": sorted(rows, key=lambda r: r["issued_at"])},
@@ -257,10 +292,10 @@ def batch_digest(batch: Mapping[str, Any], steps: int | None = None) -> str:
     """Content key, not a caller-supplied observation id or stale feature id."""
     digest = hashlib.sha256()
     t = batch["images"].shape[1] if steps is None else steps
-    for key in ("images", "executed_actions", "elapsed", "start_time"):
+    for key in ("images", "executed_actions", "elapsed", "start_time", "episode_deadline", "decision_time"):
         if key not in batch:
             continue
-        x = batch[key] if key == "start_time" else batch[key][:, :t]
+        x = batch[key] if key in ("start_time", "episode_deadline") else batch[key][:, :t]
         x = x.detach().cpu().contiguous()
         digest.update(f"{key}:{x.dtype}:{tuple(x.shape)}".encode())
         digest.update(x.view(torch.uint8).numpy().tobytes())
@@ -313,7 +348,7 @@ def _float32_top(text, selected_layers):
 
 
 class ContextEncoder(nn.Module):
-    """Per-role, one-entry inference caches. Training/FD never consult caches.
+    """Per-role, one-entry final-feature caches, never used by training/FD.
 
     No KV caches are used: full multimodal positions are rebuilt per request.
     A cache covers identical raw inputs plus immutable processor/backbone
@@ -465,11 +500,14 @@ class QwenContextEncoder(ContextEncoder):
     The split follows installed Transformers 5.2 Qwen2.5-VL source, using its
     own vision, rotary, causal-mask and decoder implementations. No full
     per-layer hidden-state tuple or vocabulary logits are produced for learners.
+    Opt-in CPU memoization stores only the frozen split activation/positions;
+    adapted blocks, role banks, final features and FD endpoints are recomputed.
     """
 
     def __init__(self, qwen: nn.Module, processor, *, top_layers=1, ltm_rank=4,
                  stm_rank=1, context_length=8, max_context_chars=4096,
-                 max_tokens=2048, factor_seed=0):
+                 max_tokens=2048, factor_seed=0, enable_prefix_cache=False,
+                 prefix_cache_max_entries=2, prefix_cache_max_bytes=256 * 1024**2):
         super().__init__(context_length=context_length, max_context_chars=max_context_chars)
         self.qwen = qwen.requires_grad_(False).eval()
         self.processor = processor
@@ -483,18 +521,140 @@ class QwenContextEncoder(ContextEncoder):
             "top_dtype": "torch.float32", "top_rotary": "recomputed_float32_at_split",
             "autocast": "disabled", "quantized_weight_storage": "unchanged"}
         self.provenance = {"compute_policy": self.compute_policy}
+        _positive_int(prefix_cache_max_entries, "prefix_cache_max_entries")
+        _positive_int(prefix_cache_max_bytes, "prefix_cache_max_bytes")
+        self._prefix_cache: OrderedDict[str, tuple[Tensor, Tensor]] = OrderedDict()
+        self._prefix_cache_bytes = 0
+        self._prefix_cache_identity = None
+        self._prefix_parameter_refs = ()
+        self._prefix_cache_max_entries = prefix_cache_max_entries
+        self._prefix_cache_max_bytes = prefix_cache_max_bytes
+        self._prefix_stats = dict(hits=0, misses=0, bypasses=0, evictions=0)
+        self.prefix_cache_policy = {"version": 1, "kind": "exact_frozen_prefix_cpu_lru",
+            "payload": "fp32_split_activation_and_multimodal_positions",
+            "max_entries": prefix_cache_max_entries, "max_bytes": prefix_cache_max_bytes,
+            "default_enabled": False, "suffix_and_fd_endpoints": "never_cached"}
+        self.provenance["prefix_memoization"] = self.prefix_cache_policy
+        self._enable_prefix_cache = False
+        self.enable_prefix_cache = enable_prefix_cache
+        self.register_load_state_dict_post_hook(self._loaded_prefix)
 
-    def encode_processed(self, inputs: Mapping[str, Tensor], *, role: str) -> Tensor:
-        """Stateless full hidden sequence, also used for frozen role scoring."""
+    @property
+    def enable_prefix_cache(self) -> bool:
+        return self._enable_prefix_cache
+
+    @enable_prefix_cache.setter
+    def enable_prefix_cache(self, enabled: bool) -> None:
+        if type(enabled) is not bool:
+            raise TypeError("enable_prefix_cache must be boolean")
+        with self._lock:
+            self.clear_caches()
+            self._enable_prefix_cache = enabled
+
+    @property
+    def enable_cache(self) -> bool:
+        """Compatibility alias; only frozen-prefix memoization is enabled."""
+        return self.enable_prefix_cache
+
+    @enable_cache.setter
+    def enable_cache(self, enabled: bool) -> None:
+        self.enable_prefix_cache = enabled
+
+    @property
+    def prefix_cache_stats(self) -> dict:
+        """Counters are cumulative across cold clears; use deltas per event."""
+        with self._lock:
+            return {**self._prefix_stats, "enabled": self.enable_prefix_cache,
+                    "entries": len(self._prefix_cache), "bytes": self._prefix_cache_bytes,
+                    "max_entries": self._prefix_cache_max_entries, "max_bytes": self._prefix_cache_max_bytes}
+
+    def clear_caches(self) -> None:
+        with self._lock:
+            super().clear_caches()
+            self._prefix_cache.clear()
+            self._prefix_cache_bytes = 0
+            self._prefix_cache_identity = None
+            self._prefix_parameter_refs = ()
+
+    def _loaded_prefix(self, module, incompatible_keys):
+        self.clear_caches()
+
+    @staticmethod
+    def _tensor_digest(values) -> str:
+        digest = hashlib.sha256()
+        for name, value in sorted(values):
+            value = value.detach().cpu().contiguous()
+            digest.update(json.dumps((name, str(value.dtype), tuple(value.shape))).encode())
+            digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+        return digest.hexdigest()
+
+    def _prefix_key(self, inputs):
+        if not self.enable_prefix_cache:
+            return None
+        core, text = self.qwen.model, self.qwen.model.language_model
+        modules = (core.visual, core.get_input_embeddings(), text.rotary_emb,
+                   *text.layers[:self.selected_layers[0]])
+        parameters = tuple(p for module in modules for p in module.parameters())
+        if any(p.requires_grad for p in parameters) or any(module.training for root in modules for module in root.modules()):
+            self.clear_caches()
+            self._prefix_stats["bypasses"] += 1
+            return None
+        try:
+            parameter_state = tuple((id(p), p._version, str(p.device), str(p.dtype), tuple(p.shape))
+                                    for p in parameters)
+        except RuntimeError:  # Inference tensors have no mutation version.
+            self.clear_caches()
+            self._prefix_stats["bypasses"] += 1
+            return None
+        # Buffers are content-keyed: functional_predict clones them for each FD
+        # endpoint. Parameter identities/versions still detect frozen overrides.
+        buffers = ((f"{i}.{name}", value) for i, module in enumerate(modules)
+                   for name, value in module.named_buffers())
+        identity = (id(self.qwen), tuple(id(module) for module in modules), self.selected_layers,
+                    parameter_state, self._tensor_digest(buffers),
+                    json.dumps(self.provenance, sort_keys=True),
+                    json.dumps(self.qwen.config.to_dict(), sort_keys=True), text.rotary_emb.attention_scaling)
+        same_parameters = (len(parameters) == len(self._prefix_parameter_refs)
+                           and all(ref() is p for ref, p in zip(self._prefix_parameter_refs, parameters)))
+        if identity != self._prefix_cache_identity or not same_parameters:
+            self.clear_caches()
+            self._prefix_cache_identity = identity
+            # Weak references prevent recycled Python ids from validating a
+            # temporary functional override, without retaining its GPU storage.
+            self._prefix_parameter_refs = tuple(weakref.ref(p) for p in parameters)
+        return self._tensor_digest(inputs.items())
+
+    def _store_prefix(self, key, x, positions):
+        size = sum(value.numel() * value.element_size() for value in (x, positions))
+        if size > self._prefix_cache_max_bytes:
+            return
+        while self._prefix_cache and (len(self._prefix_cache) >= self._prefix_cache_max_entries
+                                     or self._prefix_cache_bytes + size > self._prefix_cache_max_bytes):
+            _, evicted = self._prefix_cache.popitem(last=False)
+            self._prefix_cache_bytes -= sum(value.numel() * value.element_size() for value in evicted)
+            self._prefix_stats["evictions"] += 1
+        self._prefix_cache[key] = tuple(value.detach().to(device="cpu", copy=True) for value in (x, positions))
+        self._prefix_cache_bytes += size
+
+    @staticmethod
+    def _qwen_masks(text, x, attention, cache_position):
         from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 
+        kwargs = dict(config=text.config, inputs_embeds=x, attention_mask=attention,
+                      cache_position=cache_position, past_key_values=None, position_ids=None)
+        masks = {"full_attention": create_causal_mask(**kwargs)}
+        if text.has_sliding_layers:
+            masks["sliding_attention"] = create_sliding_window_causal_mask(**kwargs)
+        return masks
+
+    def encode_processed(self, inputs: Mapping[str, Tensor], *, role: str) -> Tensor:
+        """Full hidden sequence; optional cache covers ONLY the frozen prefix."""
         if role not in ROLES:
             raise ValueError("unknown model role")
         if any(k in inputs for k in ("past_key_values", "inputs_embeds", "pixel_values_videos")):
             raise ValueError("only fresh RGB/text context is supported, never cross-role KV caches")
         core, text = self.qwen.model, self.qwen.model.language_model
         device = text.embed_tokens.weight.device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
         ids, attention = inputs["input_ids"], inputs["attention_mask"]
         if ids.ndim != 2 or attention.shape != ids.shape or not bool(attention.bool().any(-1).all()):
             raise ValueError("input_ids and attention_mask must be nonempty [B,S]")
@@ -502,46 +662,57 @@ class QwenContextEncoder(ContextEncoder):
             raise ValueError("processed context exceeds max_tokens; no implicit instruction truncation")
         with self._lock, _role_scope(role), torch.autocast(device_type=device.type, enabled=False):
             with torch.no_grad():
-                x = core.get_input_embeddings()(ids)
-                grid = inputs.get("image_grid_thw")
-                if "pixel_values" in inputs:
-                    vision = core.get_image_features(inputs["pixel_values"], grid, return_dict=True)
-                    image = torch.cat(vision.pooler_output, 0).to(x.device, x.dtype)
-                    image_mask, _ = core.get_placeholder_mask(ids, x, image_features=image)
-                    x = x.masked_scatter(image_mask, image)
-                positions, _ = core.get_rope_index(ids, image_grid_thw=grid,
-                                                  attention_mask=attention)
+                key = self._prefix_key(inputs)
+                cached = self._prefix_cache.get(key) if key is not None else None
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                ids, attention = inputs["input_ids"], inputs["attention_mask"]
                 cache_position = torch.arange(ids.shape[1], device=device)
-                mask_kwargs = dict(config=text.config, inputs_embeds=x, attention_mask=attention,
-                                   cache_position=cache_position, past_key_values=None, position_ids=None)
-                masks = {"full_attention": create_causal_mask(**mask_kwargs)}
-                if text.has_sliding_layers:
-                    masks["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
-                rotary = text.rotary_emb(x, positions)
-                layer_kwargs = dict(position_embeddings=rotary, position_ids=None,
+                layer_kwargs = dict(position_ids=None,
                                     past_key_values=None, use_cache=False,
                                     cache_position=cache_position, output_attentions=False)
-                for layer in text.layers[:self.selected_layers[0]]:
-                    x = layer(x, attention_mask=masks[layer.attention_type], **layer_kwargs)[0]
-                x = x.detach().float()
+                if cached is None:
+                    if key is not None:
+                        self._prefix_stats["misses"] += 1
+                    x = core.get_input_embeddings()(ids)
+                    grid = inputs.get("image_grid_thw")
+                    if "pixel_values" in inputs:
+                        vision = core.get_image_features(inputs["pixel_values"], grid, return_dict=True)
+                        image = torch.cat(vision.pooler_output, 0).to(x.device, x.dtype)
+                        image_mask, _ = core.get_placeholder_mask(ids, x, image_features=image)
+                        x = x.masked_scatter(image_mask, image)
+                    positions, _ = core.get_rope_index(ids, image_grid_thw=grid, attention_mask=attention)
+                    masks = self._qwen_masks(text, x, attention, cache_position)
+                    layer_kwargs["position_embeddings"] = text.rotary_emb(x, positions)
+                    for layer in text.layers[:self.selected_layers[0]]:
+                        x = layer(x, attention_mask=masks[layer.attention_type], **layer_kwargs)[0]
+                    x = x.detach().float()
+                    if key is not None:
+                        self._store_prefix(key, x, positions)
+                else:
+                    self._prefix_stats["hits"] += 1
+                    self._prefix_cache.move_to_end(key)
+                    # Copy even on CPU: decoder code must never alias or mutate
+                    # the detached cached snapshot.
+                    x = cached[0].to(device=device, dtype=torch.float32, copy=True)
+                    positions = cached[1].to(device=device, copy=True)
                 # Recompute, rather than upcast rounded BF16 trigonometric values.
                 layer_kwargs["position_embeddings"] = text.rotary_emb(x, positions)
-                mask_kwargs["inputs_embeds"] = x
-                masks = {"full_attention": create_causal_mask(**mask_kwargs)}
-                if text.has_sliding_layers:
-                    masks["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
+                masks = self._qwen_masks(text, x, attention, cache_position)
             with nullcontext() if role == "learner" else torch.no_grad():
                 for layer in text.layers[self.selected_layers[0]:]:
                     x = layer(x, attention_mask=masks[layer.attention_type], **layer_kwargs)[0]
                 return text.norm(x)
 
-    def prepare(self, batch, *, suffix: str = "") -> tuple[dict[str, Tensor], tuple[int, int]]:
+    def prepare(self, batch, *, suffix: str = "", last_only: bool = False) -> tuple[dict[str, Tensor], tuple[int, int]]:
+        """Independent RGB rows; last_only retains the full last-row history."""
         b, t = validate_batch(batch, self.context_length)
+        if type(last_only) is not bool:
+            raise TypeError("last_only must be boolean")
         if self.processor is None:
             raise RuntimeError("raw multimodal inference requires the checkpoint's pinned processor")
         messages, images = [], []
         for i in range(b):
-            for j in range(t):
+            for j in ((t - 1,) if last_only else range(t)):
                 context = render_context(batch, i, j, max_chars=self.max_context_chars)
                 conversation = [{"role": "user", "content": [
                     {"type": "image"}, {"type": "text", "text": context + suffix}]}]
@@ -550,7 +721,7 @@ class QwenContextEncoder(ContextEncoder):
                 images.append(batch["images"][i, j].detach().cpu())
         processed = dict(self.processor(text=messages, images=images, padding=True,
                                        return_tensors="pt", do_rescale=False))
-        return processed, (b, t)
+        return processed, (b, 1 if last_only else t)
 
     def forward(self, batch, *, role="learner") -> Tensor:
         inputs, (b, t) = self.prepare(batch)
@@ -577,9 +748,10 @@ class StaleStateError(ValueError):
 class PiCarStudent(nn.Module):
     """Shared encoder, dense LTM recurrence/readouts, additive STM matrices.
 
-    forward is pure with respect to module state and supports functional_call
-    on every trainable coordinate. predict is a separate inference-only API;
-    stale streaming states fail, and predict(batch) reconstructs from zero.
+    forward never mutates parameters/buffers and supports functional_call on
+    every trainable coordinate; optional Qwen memoization is detached and frozen.
+    predict is a separate inference-only API; stale streaming states fail,
+    and predict(batch) reconstructs from zero.
     """
 
     def __init__(self, encoder: ContextEncoder, *, hidden_size=64, return_bins=21,
@@ -788,5 +960,6 @@ def load_qwen_model(model_path: str | Path = QWEN_MODEL_ID, *, revision: str | N
         "adapter_targets": list(ADAPTER_TARGETS), "factor_scales": {"ltm": 1., "stm": 1.},
         "initialization": "random_A_zero_B", "model_schema": MODEL_SCHEMA_VERSION,
         "compute_policy": encoder.compute_policy,
+        "prefix_memoization": encoder.prefix_cache_policy,
         "trainable_inventory": student.trainable_inventory(), "kv_cache": "disabled"}
     return student

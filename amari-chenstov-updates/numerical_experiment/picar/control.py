@@ -89,7 +89,7 @@ class ControlSession:
         self.pending_capacity, self.own_worker = pending_capacity, own_worker
         self._condition = threading.Condition(threading.RLock())
         self._cycle_lock = threading.RLock()
-        self._model_events = threading.Lock()
+        self._model_events = threading.RLock()
         self._stop = threading.Event()
         self._inference_stop = threading.Event()
         self._inference_queue: queue.Queue = queue.Queue(maxsize=1)
@@ -176,7 +176,8 @@ class ControlSession:
                 return
             job = {"observation": observation, "requested_at": time.monotonic(),
                    "deadline": self._deadline, "completed_at": None, "outcome": None,
-                   "error": None, "done": threading.Event(), "lease_wait_s": 0., "compute_s": 0.}
+                   "error": None, "fallback_reason": None, "done": threading.Event(),
+                   "lease_wait_s": 0., "compute_s": 0.}
             self._job = job
             self._inference_queue.put_nowait(job)
 
@@ -187,15 +188,25 @@ class ControlSession:
             except queue.Empty:
                 continue
             try:
+                if time.monotonic() >= job["deadline"]:
+                    job["fallback_reason"] = "inference_expired"
+                    continue
                 with self.access.inference() as version:
                     entered = time.monotonic()
                     job["lease_wait_s"] = entered - job["requested_at"]
+                    if entered >= job["deadline"]:
+                        job["fallback_reason"] = "inference_expired"
+                        continue
                     if self.infer is not None:
                         action = self.infer(job["observation"], version)
                     else:
                         if self.learner.version != version:
                             raise ControlSessionError("learner and leased model versions differ")
                         history = self.history_builder(job["observation"])
+                        if time.monotonic() >= job["deadline"]:
+                            job["compute_s"] = time.monotonic() - entered
+                            job["fallback_reason"] = "inference_expired"
+                            continue
                         action = self.learner.choose_action(history, explore=self.explore)
                     if isinstance(action, Control):
                         action = {"controls": action, "model_version": version}
@@ -237,6 +248,8 @@ class ControlSession:
                     raise ControlSessionError(f"inference failed: {job['error']}")
                 if job["observation"].session_id != observation.session_id:
                     reason = "stale_session_prediction"
+                elif job.get("fallback_reason"):
+                    reason = job["fallback_reason"]
                 elif job["completed_at"] > job["deadline"]:
                     reason = "inference_expired"
                 elif now > job["deadline"] + self.period_s:
@@ -354,23 +367,47 @@ class ControlSession:
                 raise TimeoutError("no completed control interval before timeout")
             raise ControlSessionError("no active control interval")
 
-    def update(self, callback: Callable[[], Any] | None = None, **fit_kwargs) -> Any:
+    def _cooperate_update(self) -> bool:
+        device = getattr(self.learner, "device", None)
+        if getattr(device, "type", None) == "cuda":
+            def barrier() -> None:
+                import torch
+                torch.cuda.synchronize(device)
+            return self.access.cooperate(barrier=barrier)
+        return self.access.cooperate()
+
+    def update(self, callback: Callable[[], Any] | None = None, *,
+               cooperative: bool = False, **fit_kwargs) -> Any:
         """Publish a successful callback/fit once; never pause for a model lease.
 
         Callbacks must roll back mutations on failure. With a MemoryLearner,
         callbacks must use its own publication/version contract (e.g. fit()).
+        Opt-in cooperative fitting passes a no-argument cooperate callback to
+        learner.fit, synchronizing a CUDA learner's device only on handoffs.
+        Callbacks can call access.cooperate directly. Only the learner/callback
+        can certify graph-safe boundaries before optimizer mutation.
         """
         self._check()
         if callback is None and self.learner is None:
             raise ValueError("callback required without a learner")
         if callback is not None and fit_kwargs:
             raise ValueError("choose callback or learner.fit keyword arguments")
+        if type(cooperative) is not bool:
+            raise ValueError("cooperative must be a boolean")
+        if cooperative and "cooperate" in fit_kwargs:
+            raise ValueError("cooperative fitting supplies its own cooperate callback")
+        if threading.current_thread() is self._inference_thread:
+            raise ControlSessionError("cannot update inside inference")
         with self._model_events:
+            if self._updating:
+                raise ControlSessionError("nested control updates are not allowed")
             self._updating = True
             started = time.monotonic()
             try:
                 with self.access.update() as publish:
                     before = self.access.version
+                    if cooperative and callback is None:
+                        fit_kwargs["cooperate"] = self._cooperate_update
                     result = callback() if callback is not None else self.learner.fit(**fit_kwargs)
                     if self.learner is not None and self.learner.version != before + 1:
                         raise ControlSessionError("learner update must publish exactly one new model version")
@@ -408,7 +445,11 @@ class ControlSession:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("snapshot timeout must be finite and positive")
         self._check(allow_failed=True)
+        if threading.current_thread() is self._inference_thread:
+            raise ControlSessionError("cannot snapshot inside inference")
         with self._model_events:
+            if self._updating:
+                raise ControlSessionError("cannot snapshot inside an update")
             self._quiescing = True
             try:
                 with self._condition:

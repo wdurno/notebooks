@@ -622,3 +622,62 @@ def efficiency_metrics(control_samples: float, fd_samples: float,
     if not all(math.isfinite(value) for value in result.values()):
         raise ValueError("efficiency ratios overflowed or underflowed")
     return result
+
+
+DENSE_VISUAL_REWARD_VERSION = "dense-visual-v1"
+
+
+def dense_visual_return_bounds() -> tuple[float, float]:
+    """Enclose -5 - .02*20/.5 <= G <= 10 + 2 for dense-visual-v1.
+
+    Nonnegative visual rewards have at most two undiscounted units per
+    20-second episode. Discounting in (0,1] cannot widen these bounds.
+    """
+    return float(math.floor(-5. - .02 * 20. / .5)), 10. + 2.
+
+
+def dense_visual_rewards(elapsed: Tensor, visual_scores: Tensor,
+                         terminal_bonus: Tensor, terminated: Tensor) -> Tensor:
+    """Fixed dense-visual-v1 stage rewards from recorded post-action scores.
+
+    Equal nonempty [T] tensors give 2*dt/20*(score/10) - .02*dt/.5 + bonus.
+    Scores remain in [0,10] even at terminals; there is no potential difference
+    or discount in this stage reward. Use time_discounts and discounted_returns
+    for complete labels. Inputs are detached, with elapsed's accumulation dtype.
+
+    A true terminal carries exactly one of +10/-5/-1; other bonuses are zero.
+    Recorded duration between terminals cannot exceed 20 seconds. Incomplete
+    suffixes are allowed here, but not by discounted_returns. The caller owns
+    exactly-once record admission and the outcome/clock provenance of bonuses.
+    """
+    elapsed = _accumulate(elapsed.detach())
+    if elapsed.ndim != 1 or elapsed.numel() == 0 or bool((elapsed <= 0).any()):
+        raise ValueError("elapsed must be positive nonempty [T]")
+    if (terminated.shape != elapsed.shape or terminated.dtype != torch.bool
+            or terminated.device != elapsed.device):
+        raise ValueError("terminated must be boolean [T] on the elapsed device")
+    fixed = []
+    for name, value in (("visual_scores", visual_scores), ("terminal_bonus", terminal_bonus)):
+        value = _accumulate(value.detach())
+        if value.shape != elapsed.shape or value.device != elapsed.device:
+            raise ValueError(f"{name} must have elapsed's [T] shape and device")
+        # Validate before converting to elapsed's dtype: rounding is not clipping.
+        if name == "visual_scores" and bool(((value < 0) | (value > 10)).any()):
+            raise ValueError("visual_scores must be in [0,10]")
+        if name == "terminal_bonus":
+            valid = torch.where(terminated, (value == 10) | (value == -5) | (value == -1), value == 0)
+            if not bool(valid.all()):
+                raise ValueError("terminal_bonus must be +10/-5/-1 at terminals and zero elsewhere")
+        fixed.append(value.to(elapsed.dtype))
+    # Float64 sums avoid cadence-dependent accumulation error in float32 input.
+    start = 0
+    tolerance = max(1e-10, 40 * torch.finfo(elapsed.dtype).eps)
+    for end in [index + 1 for index in terminated.nonzero().flatten().tolist()] + [elapsed.numel()]:
+        duration = float(elapsed[start:end].to(torch.float64).sum())
+        if duration > 20. + tolerance:
+            raise ValueError("recorded episode duration exceeds 20 seconds")
+        start = end
+    scores, bonus = fixed
+    result = 2. * elapsed / 20. * (scores / 10.) - .02 * elapsed / .5 + bonus
+    _finite(result, "dense visual rewards")
+    return result

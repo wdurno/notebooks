@@ -46,12 +46,13 @@ full-checksum/pairing audit and immutable reporting passed. Additional charged
 compute was about 6.22 hours. Phase 6 remains valid at its different operating point.
 The approved additional compute allowance is stated in Phase 7; it does not
 retroactively change the historical Phase 6 authorization.
-**Phase 8:** planned, not started. Reproduce the frozen Plan 15 STM-capacity
-result before testing its dependence on query-image blur. This phase explicitly
-restores the historical rank-64-plus-diagonal archive and data law; it is not
-another execution of the diagonal-only combined-memory protocol. Execution
-requires separate approval. See the reproduction and blur-dependence design
-at the end of this plan.
+**Phase 8:** complete on 2026-11-10. Historical numerical/statistical fidelity,
+all 40 fresh paths, and the final pairing/integrity audit passed, using 6.63
+additional charged hours. F1 improves average novel risk against both replay
+policies; its advantage is larger in the blurred context. The 60.4% sample-saving
+point remains exploratory because 107/2000 inverse draws are unsupported.
+This phase restores the historical rank-64-plus-diagonal archive and data law.
+See the reproduction and blur-dependence design and execution record below.
 **Agreed controller boundary:** retain Plan 17's velocity-Kalman observer and
 weight rule. Do not estimate the learner-error cross moment $C$ online or add
 a correlation-corrected controller to this experiment.
@@ -3377,3 +3378,82 @@ defects cannot be hidden as maintenance. A failed fidelity check or insufficient
 resources is a legitimate closeout, while an unfavorable statistical result
 is not a reason to invent another experiment. Leave `mathematical_overview.ipynb`
 and completed historical artifacts unchanged.
+
+### Phase 8 Execution Record
+
+The user authorized execution on 2026-11-09. The immutable
+`cache/mnist_experiment/plan18/phase8_authorization.json` records the prior
+family charge of 92,898.41614728434 seconds and an additional 72,000-second
+allowance, giving a cumulative ceiling of 164,898.41614728433 seconds.
+Preflight verified all 69 historical scientific source hashes without a
+mismatch. The recorded and current PyTorch 2.10.0+cu128/CUDA 12.8 software
+match; CUDA tensor execution passed through the direct execution path.
+The robotics work present in the checkout is outside this phase's edit scope.
+The thin `combined_memory.reproduction` driver preserves the historical
+learner and uses separate historical/fresh/context artifact identities.
+CPU interruption/recovery and analysis/report acceptance are in progress.
+No fresh production efficacy trajectory has started.
+
+Final acceptance passed 93 focused unit tests, an actual SIGTERM/resume test
+with identical final model/Fisher state, and full source-matched CPU/CUDA smoke
+runs. An initial report/analysis schema mismatch was repaired and retested
+before production; its artifacts and compute are retained. The independent
+historical audit passed 218 checks and reproduced the original 41.443273%
+savings, nominal interval and S=.604889247383 from scalar trajectories.
+Scientific source hash is
+`11b110408f31b3928ecff982a5d75656a575ecedfd67f9199227e230f7d27ea6`.
+`phase8_acceptance.json` seals the evidence and `phase8_preparation_compute.json`
+charges preparatory wall time net of separately tracked smoke runs.
+Production launched in tmux session `plan18-phase8`, logging to
+`cache/mnist_experiment/plan18/phase8-execution.log`. Original confirmation
+replica 0 is replayed first; fresh trajectories remain gated on that fidelity
+check. The notebook preserves all 43 prior cells and shows Phase 8 progress
+near the top. All historical scientific sources remain unchanged.
+
+Phase 8A passed all three original-replica-0 policy replays. Each policy's
+15 numerical comparisons have zero absolute discrepancy, including complete
+risk curves, objective/gradient values, initial/final parameters and represented
+Fisher checks. Each also reproduced 298 accepted updates and 853 retirements
+exactly. The historical computation is reproducible on the checked block;
+this is distinct from statistical replication on new trajectories. Phase 8B
+has started the eight fixed fresh replicas. Its sealed reservation covers all
+40 fresh paths, initialization, 25% contingency and closeout: about 6.724 h,
+against about 19.306 h remaining. No policy or scientific source was retuned.
+
+After two complete fresh paired blocks, the worker was gracefully restarted
+to load reporting-only clarifications. The scientific source hash, recipes,
+cohort and completed artifacts are unchanged; the same root resumed normally.
+The reporter now distinguishes an unavailable matched-retention bound from
+an empirical retention failure and supplies a concise final outcome. Some
+partial inverse draws have targets already met at initialization or not reached
+at the FD endpoint, so their ordinary inverse intervals are withheld. These
+interim observations do not alter the fixed allocation or trigger retuning.
+
+At the four-block interim look (12/24 blurred paths), the reference's endpoint
+improvement from initialization was only 2.48%, below the fixed 5% usefulness
+diagnostic. A second clean reporting-only reload made this diagnostic explicit
+beside the inverse-efficiency table. Neither reload changed mathematical code,
+hyperparameters, seeds, completed trajectories or the fixed confirmation size.
+Large provisional saving/S point estimates remain unqualified while the target
+or inverse bounds are unsupported. Continue all eight replicas and the planned
+blur contrast without a favorable-result gate.
+
+**Final closeout, 2026-11-10:** all 43 trajectories completed: three historical
+acceptance replays and 40 fresh paths across eight paired replicas. The final
+full-checksum audit verified 90 units before sealing its own result, paired
+exposure clocks and unique retirement ledgers. Additional charged compute was
+23,874.29 seconds (6.632 hours); all 96 current focused unit tests passed during
+reboot recovery. The fixed policies, allocation and scientific sources remained
+unchanged. Earlier progress entries above are historical.
+
+Fresh F1-R2 average novel-risk difference is -0.058952 square pixels per
+landmark, nominal paired 95% CI [-0.097241, -0.022023], favorable in 7/8
+replicas. F1-R1 is -0.050913 [-0.089821, -0.015645]. The all-arrival
+blur-context interaction is -0.031769 [-0.066725, -0.004184], supporting a
+larger policy advantage under blur. The historical-definition sample-saving
+point is 60.4296%, matched compute .472868x, S=1.27794; equal-budget compute
+is 1.15399x. Full-budget retention passes. Ordinary inverse intervals and
+matched-budget retention bounds are unavailable because 107/2000 bootstrap
+targets are already met at initialization. This limits the sample-saving
+claim despite the positive predictive-risk evidence. Different historical
+ridges continue to limit attribution to the FD term alone.

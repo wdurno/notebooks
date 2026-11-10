@@ -12,9 +12,19 @@ not sufficient evidence of practical success.
 
 **Status:** Phase 0 bounded implementation acceptance passed on 2026-11-09:
 280 tests, paired CPU smoke/recovery, and actual quantized-Qwen CUDA checks.
-Phases 1--5 and physical robot motion have not been started. Full-workload
-resource admission, task readiness and scientific stage orchestration remain
-later-phase work. See `PLAN19_HANDOFF.md` for results and recovery notes. The theory below is
+Phase 1 diagnostics and two Fix 1 passes are recorded. Native/split parity,
+revised instruction contrasts, and short cooperative timing pilots pass;
+navigation and reward readiness remain unresolved. **Phase 1 Fix 2** is now
+implemented and its bounded diagnostics are complete. Generated rewards are
+valid but coarse; ported Qwen reached the ball in 3/6 unobstructed trials and
+the obstacle task achieved 0/12 across two interfaces. Both real-time student
+pilots had zero non-startup fallbacks. These are readiness checks, not learning
+results. The versioned task/reward revision leaves earlier artifacts intact.
+Phases 2--5 and physical robot motion have not started. Revised conditional
+whole-study forecasts are 21.4--30.8 h nominal, or 11.6--17.2 h at the smaller
+permitted size. Task readiness is not yet established; neither forecast is
+authorization to proceed. See the Phase 1 execution
+record and `PLAN19_HANDOFF.md` for findings and recovery notes. The theory below is
 provisional and belongs here until
 experiments establish its value. Do not modify
 [`mathematical_overview.ipynb`](../../mathematical_overview.ipynb).
@@ -552,6 +562,8 @@ may trigger physical motion.
 | `src/picar_kl/models/phase2.py` | Student construction | Current prefix head is not the required language path |
 | `src/picar_kl/models/lstm_policy.py` | Small recurrent policy | Explicit recurrent-state and model-version handling |
 | `src/picar_kl/context/state.py` | Language/action history | Executed actions and instruction completion, not repeated commands |
+| `src/picar_kl/reward/prompts.py`, `reward/scoring.py` | Explicit graded visual reward and generated numeric JSON | Reproduce RGB scoring before adapting the rubric; completion-token probability is a different quantity |
+| `src/picar_kl/context/messages.py`, `vlm/control.py` | System/user roles, operator corrections, action/status messages | Port causal semantics into this repository; preserve the executed weighted control |
 | `src/picar_kl/io/observation_store.py` | Per-frame storage and metadata | Checksums, deduplication, bounded caches, archive eligibility |
 | `src/picar_kl/legacy/robot_demo/src/model/replay_buffer.py` | Transition replay semantics | Replace bulky tuple duplication and unbounded serialization |
 | `src/picar_kl/legacy/robot_demo/src/model/backbones.py` | Quantized Qwen loading | Top-$L$ restriction and verified gradient boundary |
@@ -645,14 +657,27 @@ experimental design; this is not a claim that natural drift stops while a
 physical robot charges. During a declared sleep interval the controller is
 stopped, not pretending to meet active-task deadlines.
 
-Reusing already retired observations during sleep is an implemented,
-default-off option. Enabling it is a separately versioned experimental
+Reusing already retired observations during sleep is a required future,
+default-off option. **Implementation status:** `LearningConfig.validate`
+currently rejects `retired_archive_replay=True`; this option has not yet been
+implemented. Finish its explicit evidence-accounting protocol before claiming
+support. Enabling it is a separately versioned experimental
 condition, requiring an explicit accounting rule for repeated evidence and
 archived EWC; it is not an autonomous performance rescue in the primary pair.
+The later Phase 1 Fix 2, item 5, now assigns implementation and acceptance of
+that default-off option; this paragraph records its pre-Fix-2 status.
 
 ## Simulator And Continuous Drift
 
 ### Task And Geometry
+
+**Revision notice:** the specification below defines the original
+`safe-stop-v1` task used by the completed readiness artifacts. The pending
+Phase 1 Fix 2 proposes `ball-contact-v1` for future acquisition:
+target contact is success; obstacle/wall contact is failure. Its diagnostic
+ladder and precedence rules are specified there. Do not relabel earlier
+collisions as successes or silently combine task versions. The obstacle,
+action interface and continuous drift remain part of the proposed full task.
 
 Use PyBullet for dynamics and Gymnasium-compatible episode conventions,
 rather than a hand-written kinematic game engine. The robot must navigate
@@ -738,6 +763,13 @@ time, simulator time, wall time, and acquisition count separately.
 
 ### Reward And Return Labels
 
+**Revision notice:** the equations immediately below describe the retained
+`potential-v1` reward used in earlier implementation/diagnostics. The pending
+Phase 1 Fix 2 defines `dense-visual-v1` for new runs, together with
+revised return bounds and a bin-resolution audit. Changing only the evaluator
+prompt would not implement that amendment. No scientific learning results
+have yet been produced under either reward version.
+
 A frozen evaluator scores a potential $\Phi(h)\in[0,1]$ from a short RGB
 history with timestamps and a fixed prompt. It must not read privileged state
 or future frames. Cache each endpoint potential once per model/prompt/history
@@ -794,6 +826,12 @@ coaching, including recovery, stopping, and completion cases. Autonomous
 runs use a fixed, visible-history-based coaching script; user participation
 is optional and never a dependency for finishing the simulator study.
 Human-assisted data, if added, is tagged and shared across conditions.
+
+For the pending Fix 2 revision, bind this collection to the newly admitted
+task/reward/coaching identities. Reuse neither a historical completion-score
+dataset nor a legacy critic merely because its dimensions match. Publish
+assisted and unassisted readiness separately. The new dense visual rewards
+must survive return discretization before fitting the shared initial model.
 
 Start with 300--600 transitions and a provisional ceiling of 1,200 before
 reforecasting. Store the teacher's eight-action distribution and its actually
@@ -905,6 +943,12 @@ Use held-out reset/layout panels that never enter training, replay, EWC,
 reward calibration, or hyperparameter selection after the development split.
 Frozen A and B panels hold the environment fixed across checkpoints; a
 current-regime panel is useful diagnostically but cannot substitute for them.
+
+All success/collision metrics carry the admitted task version. Under the
+proposed `ball-contact-v1`, target contact is successful acquisition, while
+wall/obstacle contact is an unsafe collision. Do not use the old aggregate
+contact-as-failure statistic or pool it with `safe-stop-v1` outcomes. Show
+visual reward separately from this held-out operational capability.
 
 Let $p_m^B(n)$ be B-panel task success after $n$ unique new transitions under
 method $m$, and $F_m^B(n)=1-p_m^B(n)$. Define budget-averaged failure
@@ -1293,6 +1337,682 @@ physical assumptions, and measured cost ranges. If no feasible configuration
 exists, preserve diagnostics and request a concrete scope/resource decision;
 do not silently turn the experiment into offline imitation.
 
+#### Phase 1 Execution Record (2026-11-09)
+
+The diagnostic campaign `cache/numerical_experiment/picar/phase1/resource-v2`
+finished and stopped for the requested resource check-in. Nine staged CUDA
+probes, the scene audit, frozen-role checks, and an independent-clock pilot
+are sealed as separate immutable units. The main campaign took 6.1 minutes
+of active execution; earlier diagnostics, implementation, and tests are
+additional. No Phase 2--5 learning or physical robot motion occurred.
+**The profiling work is finished, but task/online-readiness exit gates have
+not passed.**
+
+The memory shortlist is top-$L=1$, LSTM width 64, LTM/STM ranks 4/1,
+history 8, replay batch 1, one FD probe and one eviction score draw. Inputs
+are 160x120 RGB with a 19,200-pixel processor limit. It reserved 7.11 GiB
+on the 12 GB card, leaving 3.85 GiB after initial non-PyTorch use. Top-$L=2$,
+batch 4, and context 16 ran out of memory; top-4 and batch-8 were consequently
+skipped. Width 128, rank 8, two FD probes and two/four Fisher draws were
+measured successfully, but did not justify enlarging the resource shortlist.
+This is not yet a competence-selected model.
+
+| Operation, selected shortlist | Median seconds |
+|---|---:|
+| Cold action inference, history 8 | 0.790 |
+| Control fit: one new plus one replay transition | 1.714 |
+| FD fit: same new/replay allocation | 1.980 |
+| One retired-transition Fisher, history 8 | 0.866 |
+| Frozen teacher / evaluator | 0.172 / 0.169 |
+| Durable checkpoint transaction, 8.22 MB learner state | 0.056 |
+
+Fits include their own NLL/FD work; do not add the isolated backward probes
+to these fit timings. Every event begins with a cold encoder cache and the
+new/replay inputs differ. An exact, bounded CPU cache reuses only frozen
+prefix activations within an event: adapted suffixes and FD endpoints remain
+differentiated. Frozen roles now encode only the final independent RGB row,
+whose recorded text/action context is unchanged; previously computed earlier
+role rows were discarded. CPU output/gradient equivalence tests cover both
+optimizations. The initial uncached diagnostic remains in `resource-v1`.
+The smoke FD coefficient is not a selected scientific penalty strength.
+
+| Readiness check | Finding |
+|---|---|
+| Privileged scripted controller, actual calibrated action mixtures | 10/10 A/B/mirrored layouts succeeded; valid stopped hold |
+| Camera/control mapping | Passed; synchronized ego/top-down clips inspected |
+| Frozen Qwen teacher | 0/2 A and 0/2 B diagnostic rollouts succeeded; all collided |
+| Frozen completion potential | Did not order success above far failure; collision panels scored highest |
+| Independent-clock pilot | Physics continued through two ~2.1 s updates, but 6/17 non-startup control intervals used safe fallback at a 1.25 s period |
+| Physical PiCar measurements | Not supplied; no hardware validation claimed |
+
+Four teacher rollouts are a readiness warning, not a precise success-rate
+estimate or proof that Qwen cannot learn/control this task. Likewise, the
+two-update pilot does not admit continuous one-update-per-acquisition
+operation. Resolve teacher/reward extraction and the action/update scheduling
+envelope before collecting scientific bootstrap data. A safe fallback is
+tagged as such, never relabeled as a valid sampled Gaussian policy action.
+
+| Conditional whole-study scope | Bootstrap | Development | Fresh pairs | Closeout | Total, including recorded early work |
+|---|---:|---:|---:|---:|---:|
+| Nominal: 6 pairs, 2,400 new transitions/arm | 0.6--0.9 h | 5.8--9.3 h | 32.1--44.5 h | 0.25--0.75 h | **38.9--55.7 h** |
+| Smaller permitted size: 4 pairs, 1,200/arm | 0.6--0.9 h | 5.8--9.3 h | 12.1--16.8 h | 0.25--0.75 h | **19.0--28.0 h** |
+
+These are engineering allowances, not confidence intervals or authorization
+to exceed 20 hours. They include shared 600-transition bootstrap, 8--12 short
+development trajectories, seven held-out checkpoints/72 evaluation episodes
+per arm, sleep and checkpoint I/O. They assume one optimizer event and one
+eviction Fisher per new transition; larger sleep batches, teacher rescue and
+additional solver steps need remeasurement. Full-history Fisher timing is
+conservative when FIFO eviction masks already-retired context. Physics and
+GPU time overlap rather than being counted twice. No affordable sound
+whole-study configuration is yet guaranteed.
+
+Storage is another admission issue: raw training frames/records project to
+13.5 GB nominal or 4.7 GB smaller, but retaining every full transaction
+snapshot projects to **1.55 TB / 393 GB** respectively, before development,
+videos and failed attempts. The nominal policy exceeds the proposed 1 TB
+archive quota; either exceeds the 100 GB local quota. Before learning, use a
+bounded recovery-checkpoint policy with append-only event records and an
+explicit archive root. Do not silently consume the external drive or prune
+completed artifacts. The Phase 1 artifacts themselves occupy about 95 MB.
+
+#### Phase 1 Fix 1: Grounded Roles And Feasible Online Execution
+
+**Motivation:** the initial resource campaign exposed readiness defects, not
+an STM learning result. Scripted control succeeded on 10/10 layouts, but Qwen
+teacher rollouts all collided, the completion potential ranked collisions
+above success, and whole-update model exclusion caused 6/17 non-startup
+intervals to fall back. Repair the interface and execution envelope before
+spending the scientific learning budget. Preserve every original artifact.
+
+**Scope and autonomy:** Sol implements and runs a separately versioned,
+resumable readiness pass under `cache/numerical_experiment/picar/phase1/`.
+No Phase 2--5 learning or physical actuation is authorized by this repair.
+Aim for at most three additional active compute hours, including failed
+attempts, with engineering time reported separately. Start with small stored
+development panels, permit two bounded role rescue attempts, and stop with
+clear diagnostics if useful task competence is still absent. Do not turn
+weak teacher behavior into an apparent negative STM result. Update the
+concise results notebook after each completed diagnostic unit.
+
+1. **Audit the model interface before tuning it.** Compare native Qwen
+   forward/generation with the split encoder on identical RGB/text inputs,
+   accounting explicitly for the FP32 adapted suffix. Check selected-token
+   logits, precision, preprocessing, positional masks, and batch isolation.
+   Record unconstrained descriptions, total probability on permitted answers,
+   and mirrored-image/contrasting-instruction responses. Restricted digit
+   softmax is an unvalidated decision interface, not calibrated uncertainty.
+   Native generation and multi-image input are supported reference routes,
+   not assumptions about task competence. [Qwen interface][qwen]
+2. **Ground the teacher and visual potential.** State each primitive's real
+   drive/steering/camera effect and the units/order of recorded controls.
+   Explicitly name the neutral command's stopping effect rather than only
+   calling it "look-forward." Compare the retained legacy interface against
+   clearer constrained answers, a short timestamped RGB sequence and a
+   modestly higher frozen-role resolution. Keep privileged state, panel IDs,
+   desired labels and future frames out of model inputs. Preserve the
+   probability-weighted control map. If hard generated choices are softened
+   for execution/distillation, apply the probability floor before execution
+   and label them `hard_engineered`, never calibrated soft probabilities.
+   Describe visible completion/progress explicitly and test its ranking on
+   separate layouts; monocular images cannot certify exact physical distance.
+   Select using development only, then audit a fresh A readiness panel of
+   20 layouts and report B behavior separately. Existing 70% teacher guidance
+   remains a readiness guide, not a significance claim. No teacher or reward
+   fitting may consume the future scientific confirmation panel.
+3. **Make scheduling genuinely inference-priority.** Drop expired work before
+   expensive inference. Permit cooperative yields only at graph-safe boundaries
+   where no functional parameter override remains installed and actor-visible
+   parameters have not changed. Serialize GPU work; do not claim thread-level
+   overlap removes its cost. Inference may read the last published parameters
+   while gradients are being accumulated, but publication/optimizer mutation
+   remains atomic, with exactly one publication per accepted event. Preserve
+   actor exploration RNG consumption if a yielded update rolls back. Test
+   gradient equivalence, failures, competing writers, expiry and recovery.
+   Profile cold action latency, maximum uninterruptible work, fallback rate,
+   update throughput and bounded deferred-label work. Recheck scripted
+   controllability before selecting a slower common control period or shorter
+   context. Do not pause physics, fabricate policy actions, or silently move
+   all learning to episode boundaries to pass a deadline test.
+4. **Bound persistence rather than repeatedly copying history.** Offer a
+   separately versioned checkpoint/journal policy with current/previous
+   recovery state, explicit milestones and compact append-only evidence and
+   transaction records. Validate atomic publication, halt recovery, idempotent
+   retirement/event handling and quota accounting before using it. No old
+   completed artifact may be rewritten or pruned. Keep legacy storage readable
+   and default behavior explicit. Archive roots remain arguments; no personal
+   paths or external source-tree imports enter project code.
+
+The simulator's terminal success/collision/deadline labels are distinct from
+the VLM shaping potential. Because complete-return shaping telescopes as
+derived above, a no-shaping variant is a legitimate **explicitly versioned
+fallback for review**, not permission to silently replace the primary reward.
+Likewise, a between-episode-only update variant must be proposed and labeled,
+not passed off as successful between-action online execution. Implementing
+diagnostic alternatives does not select them for the later learning study.
+
+**Deliverables:** tested repair code and `--resume` entry point; immutable
+native/custom audits, role panels/rollouts and real-time scheduling diagnostics;
+before/after readiness summary and progress in `plan19_results.ipynb`; amended
+resource/storage forecast only after a feasible common recipe is identified.
+Keep failed attempts visible. Report unresolved gates without inventing a
+competent teacher or an affordable full study. The mathematical likelihood,
+diagonal eviction-only EWC, STM FD objective and
+`mathematical_overview.ipynb` remain unchanged.
+
+**Implementation refinements:** preserve the initial Fix 1 revision, including
+its failed role tests. The follow-up revision keeps the original grounded
+prompt available (`prompt_version=1`) and explicitly appends current active
+instructions in version 2, without reactivating completed instructions or
+repeating a competing default mission. An optional cadence-aware braking
+rule retimes only the privileged feasibility controller: cap approach speed
+by the distance to the stopping neighborhood divided by the control period.
+It changes neither robot dynamics nor learner controls and supplies no
+primary demonstrations. History-4 scheduling alternatives remain common-model
+development candidates, not an automatically selected scientific condition.
+Compare shorter periods with controllability before accepting long deadlines
+that happen to eliminate missed inference. Both repair revisions count toward
+the same three-hour compute allowance.
+
+**Fix 1 execution record (2026-11-09):** implementation and bounded diagnostics
+are complete in immutable `phase1/fix1-v1` and `phase1/fix1-v2` campaigns.
+The two campaigns consumed 9.8 recorded active compute minutes, excluding
+implementation/unit-test time. Neither starts Phase 2--5. The newer campaign
+contains a checksummed source bundle and operational recovery notes; original
+failures remain archived and are not pooled with its revised role interface.
+
+| Repair check | Observed result |
+|---|---|
+| Native versus split Qwen, matched precision | Exact hidden-state agreement on all four diagnostic scenes |
+| Restricted answer validity | About 99.8% vocabulary mass on the permitted digits; rare-token normalization was not the failure |
+| Live language wiring, revised interface | Stop, left and right contrasts pass for both revised restricted and generated interfaces; original grounded prompt remains available |
+| Context-4 cooperative timing, periods 0.75 / 1.0 / 1.25 s | 0/20, 0/15 and 0/13 non-startup fallbacks, respectively; two diagnostic optimizer events per pilot |
+| Context-4 atomic comparison, same periods | 4/24, 2/17 and 0/12 fallbacks; denominators differ because these are closed-loop timing pilots, not a paired task-effect estimate |
+| Cadence-aware scripted feasibility | 10/10 layouts at 0.75 s and 1.0 s; 8/10 at 1.25 s |
+| Revised teachers, closed-loop development | Both interfaces still failed their two A and two B rollouts; 20-layout fresh validation was therefore not attempted |
+| Visual completion potential | Still failed the success-versus-far/collision ordering check |
+| Storage and recovery | Opt-in `journal-v1` passes crash/idempotency/legacy compatibility tests and is used by repair runs; existing completed data is untouched |
+
+Context 4 with a 1.0 s control period is a promising **burst-timing candidate**,
+not a selected complete learning recipe. Two optimizer events do not prove
+sustained one-update-per-observation throughput, deferred-label capacity, or
+student competence. No favorable runtime revision is claimed until those
+questions and teacher readiness are settled. Current blockers are teacher
+navigation skill and visual reward quality, not native/split forward parity
+or the basic verbal instruction connection. A different bootstrap/control
+strategy or explicit reward fallback requires the subsequent scope discussion.
+
+A Tk GUI backend abort interrupted the second pass. Headless Agg rendering
+was enabled, completed units were verified/skipped with `--resume`, and the
+incomplete short timing pilot was retried. No scientific settings changed for
+that recovery. This operational event is also recorded in the notebook and
+the source-bundle artifact.
+
+#### Phase 1 Fix 2: Restore Dense Visual Rewards And The Robot Workflow
+
+**Status and motivation (2026-11-09):** drafted by Astra for review; Sol
+implements and executes after authorization. This is a separate amendment
+following the completed **Phase 1 Fix 1**, not a replacement of that work.
+The initial, unexecuted draft was nested under Fix 1; the user corrected its
+name to Fix 2 and requested explicit inclusion of the related corrections.
+Keep Fix 1's specification, execution record and artifacts intact. Future
+material revisions should append a numbered amendment and an execution
+record, with only status/index pointers maintained in earlier sections.
+The user reports
+successful frozen, quantized Qwen guidance and graded red-ball rewards on the
+physical robot. Inspection found three departures in this implementation:
+binary completion-token scoring replaced explicit numeric visual progress;
+potential differences replaced accumulated visual reward; and readiness
+required obstacle avoidance plus precise stopping from the outset. The
+failed diagnostics therefore do not establish that Qwen cannot provide the
+intended teacher or reward. Reproduce the simpler behavior before making that
+claim or studying STM efficacy.
+
+The earlier project's `src/picar_kl/reward/prompts.py` and `reward/scoring.py`
+provide the implementation reference: generated `{"reward": number}` in
+[0,10], with zero for an absent ball and graded values as it approaches.
+The checked-in prompt peaks at a large, fully visible ball and penalizes an
+overfilled image; it does **not** explicitly reward contact. The user's live
+experience may have used another configuration. Record this distinction;
+describe the contact task below as a proposed revision matching the user's
+stated intent, not an exact recovery of an identified old run. Copy necessary
+code/prompts with provenance into this repository; another checkout is never
+a runtime dependency or required installation asset.
+
+**Scope:** repair and verify the common acquisition/reward system, implement
+the missing default-off retired-sleep option and physical/speech interfaces,
+then stop for the resource check-in. Physical interface acceptance uses
+injected drivers and recorded inputs. Do not launch Phases 2--5, enable retired
+replay in the primary experiment, or operate the physical robot.
+Retain the shared quantized backbone, top-$L$ adaptation, additive STM/LTM,
+eight-action weighted mapping, one-time distillation, normalized joint NLL,
+diagonal eviction-only EWC and symmetric STM FD-KL. New task/reward semantics
+receive new identities; historical artifacts remain readable and immutable.
+The following instructions supersede the earlier Fix 1 binary-potential
+readiness criterion and task/reward defaults for the new revision only.
+
+| Correction | Fix 2 implementation and acceptance |
+|---|---|
+| Graded visual rewards and return resolution | Items 1 and 3: generated scores, accumulated rewards, bounds, bins and weight diagnostics |
+| Target contact versus unsafe collision | Item 2: explicit task version, event precedence and separate reported outcomes |
+| Instructions, corrections and completed-action history | Items 2 and 6: causal conversational context, timestamped text/speech events and replay/resume tests |
+| Public time remaining | Item 2: explicit countdown in actor/teacher inputs, context identity and reconstruction |
+| Retired-data replay during sleep | Item 5: functioning default-off option with an explicit evidence-accounting rule |
+| Real Pi actuator/camera and live speech interfaces | Item 6: project-local implementations, declared optional dependencies and no-hardware acceptance tests |
+
+All six are deliverables, not observations left in an audit table. Actual
+physical calibration/operation and scientific use of retired replay remain
+separate follow-on work. The implementation status below is not a claim that
+these features already exist.
+
+**1. Reproduce and diagnose the role interfaces.**
+
+Port the earlier system/user message separation, numeric JSON reward prompt,
+and named-action JSON generation before adding new abstractions. Preserve
+raw generated text, parse outcome, prompt hash, preprocessing, input tokens,
+model revision and latency. Reject nonfinite/out-of-range or malformed
+scores; bounded retries are recorded and never fabricate reward zero.
+Compare the exact old score rubric with one clearly versioned task-aligned
+rubric. Ordinary generated action choices remain `hard_engineered` after
+the declared probability floor, applied before execution/distillation.
+Keep the probability-weighted control vector, including camera channels.
+
+Use existing RGB artifacts first, then a compact development panel with
+four layouts and six visible situations per layout: absent target, far,
+intermediate, close, partly occluded, and excessively cropped/too close.
+Include mirrored views and A/B textures. Construct a disjoint four-layout
+validation panel before selecting the interface. Privileged geometry may
+construct/audit these panels but cannot enter model prompts, file captions,
+features or reward values. Do not give Qwen the intended order or state name.
+The exact legacy rubric may decrease at excessive proximity; test that
+separately from the valid approach interval.
+
+Show a small contact sheet with raw scores and an approach-distance versus
+score plot. Require finite valid output, a useful absent/present separation,
+and mostly correct far-to-near ordering within matched views. Use 80% correct
+strict order on clearly separated approach pairs as an engineering guide;
+report ties and the denominator, and inspect failures rather than treating
+this small panel as a significance test. Do not require every success image
+to outscore every collision image: visible proximity and physical safety are
+different components. A car close to an obstacle may still see a close ball.
+The separate terminal penalty handles that event. Compare the new score with
+the archived completion probability without treating their scales as equal.
+
+**2. Give navigation a diagnostic ladder and a coherent task definition.**
+
+The proposed new full task, `ball-contact-v1`, keeps the existing arena,
+obstacle, camera/controls and continuous texture/steering drift. Target
+contact ends the episode successfully and stops the drive; wall or obstacle
+contact is failure and takes precedence if simultaneous. Floor/wheel support
+contact is not a terminal event. Retain the 20-second deadline and +10/-5/-1
+success/collision/deadline bonuses. Do not impose the old clearance band,
+heading tolerance or one-second stopped hold on target-contact success.
+Retain `safe-stop-v1` and its tests for old runs and optional diagnostic
+comparison. Report target contact and unsafe contact as separate events.
+The future real backend needs an explicitly validated contact observation
+(sensor or operator annotation); RGB alone is not assumed to certify it.
+This remains a hybrid simulator reward, with Qwen supplying dense visual
+scores and simulator contacts supplying terminal events.
+
+Run at most six development layouts at each of two stages: unobstructed
+ball approach, then the full obstacle task. Keep tasks/denominators separate.
+Test the direct port first; allow one targeted correction informed by the
+failure clips, such as clearer action semantics, history or image resolution.
+Avoid an open-ended prompt search. Passing the unobstructed stage alone
+does not admit the full task. If it alone works, finish with an explicit
+recommendation to simplify the later experiment; do not silently collect
+primary bootstrap data on an easier task.
+
+Use the earlier conversational context pattern as well as the visual input.
+The current `phase1_roles._batch` always supplies one fixed instruction:
+replace that assumption in the new runner with an explicit, timestamped
+instruction/history argument. Test a new instruction, a correction after
+executed actions, and a completed instruction that must not restart.
+Retain short prior robot status messages as fallible history, not new ground
+truth. Include previous available visual scores if the ported interface uses
+them, respecting their actual availability timestamps. No future reward or
+terminal result may appear in pre-action context. A visible-history-based
+coaching policy is allowed, fixed in development and reported separately from
+unassisted teacher performance. It may not read simulator pose or an oracle
+controller. Human coaching remains optional and explicitly tagged.
+
+Expose episode time remaining explicitly to the actor/teacher context:
+`models.render_context` currently supplies timestamps but no deadline field.
+Version the context schema and include this known task clock in cache keys,
+replay reconstruction and resume tests. It is public task information, not
+future outcome leakage. Preserve the finite-horizon likelihood assumptions.
+
+If the full task becomes usable, freeze the selected interface/coaching
+recipe and run the existing 20-layout fresh A readiness check; report B
+diagnostics separately. Preserve the 70% teacher guide and every failure.
+Coaching-assisted success must be named as such, and no fresh-panel feedback
+may tune that recipe. Inspect synchronized ego/top-down clips at both stages.
+
+**3. Restore reward density through the entire return pipeline.**
+
+Let the frozen, RGB-only evaluator generate $v(h)\in[0,10]$. For the new
+`dense-visual-v1` reward, propose
+
+$$
+r_t=\beta\frac{\Delta t_t}{T_{\max}}\frac{v(h_{t+1})}{10}
+     -c\frac{\Delta t_t}{\Delta t_0}+b_t,
+\qquad
+\gamma_t=\gamma_0^{\Delta t_t/\Delta t_0},
+$$
+
+with $T_{\max}=20$ s, $\Delta t_0=0.5$ s, $\gamma_0=.99$,
+$\beta=2$, $c=.02$, and the terminal bonus $b_t$ specified above. This
+normalizes the visual reward into at most two undiscounted units over a full
+episode, leaving successful completion substantially more valuable. It is
+an explicit scale choice for the new task, not a claim that the earlier robot
+used these weights. Actual elapsed time, including a partial final interval,
+sets the exposure weight. The undiscounted visual reward budget depends on
+elapsed time, not picture count. Keep control cadence common across methods;
+this weighting does not assert identical trajectories or exactly identical
+discretized discounted returns after changing cadence. Do not multiply
+terminal bonuses by elapsed time or zero the visual score solely because an
+episode terminates.
+
+Keep cached evaluator outputs frozen per RGB/history/prompt/model identity.
+Use recorded post-action observations only, without future frames. Deferred
+scoring/labeling does not invent new acquisitions. The visual score is now a
+stage reward, not $\gamma_t\Phi_{t+1}-\Phi_t$. Thus it remains in the complete
+return instead of telescoping to a starting-state offset. Potential-based
+policy invariance does not apply to this deliberate objective revision.
+Both learning conditions must use the same revised reward. [Original
+potential-based shaping rationale][shaping]
+
+Positive progress rewards can encourage lingering. Before admission, test
+scripted reward sequences for immediate success, delayed success while
+maximizing visual score, visible-ball loitering until deadline, disappearance,
+and collision. With the proposed scales, prolonged maximum visibility must
+not beat timely success. These are reward-arithmetic audits, not primary
+demonstrations. Report actual teacher behavior as well: a bounded reward
+does not guarantee that the learned policy optimizes it well. If a scale
+correction is necessary, freeze it from these common development diagnostics,
+record the reason, recompute bounds, and do not tune it separately by method.
+
+Derive bounds before any new initial likelihood fit. For these defaults,
+conservative bounds are
+
+$$
+-5-cT_{\max}/\Delta t_0\leq G_t\leq10+\beta,
+\quad\text{so use an enclosing range }[-6,12].
+$$
+
+The existing `LearningConfig` range [-8,11] must not be inherited by accident.
+Keep out-of-range returns as errors, never silent clipping. Start the new
+recipe with 41 bins and inspect 81, then at most 161 only if needed; this is
+a bounded resolution check, not a treatment factorial. On recorded or
+constructed paired sequences with the same terminal outcome/time and visibly
+different approach histories, report raw return differences, bin ties and
+the resulting advantage-weight differences. Ensure useful graded differences
+survive discretization before declaring reward density restored. Also report
+the log-weight error bound (half the maximum bin width divided by $\tau$),
+weight concentration and any cap hits. If no affordable resolution preserves
+the signal, report the issue rather than change the likelihood family.
+
+The categorical-return/Gaussian-action likelihood, score definition, Fisher
+and exact joint KL formulas remain valid with this new fixed label recipe.
+However, bins, baseline scale, temperature and critic initialization must
+match the new reward. Version all of them together; rebuild the shared
+bootstrap/initial Fisher when Phase 2 is later authorized. No old return
+labels, critic states or EWC summaries are silently reused across versions.
+The raw observations may be explicitly re-scored into separate derived
+artifacts with parent checksums, never edited in place.
+
+**4. Implement narrowly, verify the chain, and reforecast.**
+
+| Component | Sol implementation instruction |
+|---|---|
+| `role_repair.py`, `teacher.py` | New generated numeric scorer and versioned conversational teacher; preserve old role implementations |
+| `src/robotics/geometry.py`, `simulator.py` | Explicit task version; distinguish target versus unsafe contact, terminal precedence and exact resume |
+| `models.py`, role history builders | Actual causal instruction/status history and public time remaining; cache/replay identity includes both |
+| `src/continual/picar_math.py`, `NUMERICAL_CONTRACT.md` | Add a separate dense-reward helper and documented contract; retain `shaped_rewards` and its historical telescoping tests |
+| `config.py`, return-label orchestration, `learner.py` | Reward/task versions, derived bounds/bins and scale provenance; audit label-to-weight-to-gradient behavior |
+| `phase1_fix*.py`, schema/reporting | New resume-safe campaign identity and explicit raw score, stage reward, terminal reward and return fields |
+
+Add focused tests for strict numeric parsing, frozen evaluator isolation,
+causal language/deadline handling, contact types, reward bounds, partial
+intervals, no terminal-bonus duplication, bin/weight resolution, and exact
+recovery before/after label commits. Keep the normalized-NLL, KL, both-bank
+FD gradient and eviction-only tests passing. Compare teacher/evaluator native
+and custom routes only where changed preprocessing or generation warrants
+it; do not rerun every completed resource sweep. Never modify
+`mathematical_overview.ipynb`.
+
+Profile generation cost again: the earlier ~0.17-second restricted-token
+role timings do not forecast full JSON generation. Run a short multi-episode
+independent-clock diagnostic that includes actual frozen reward calls,
+completed-return labeling, bounded learner updates and eviction work for
+both loss settings. It is a pipeline/timing test, not a learning comparison.
+Use the cooperative scheduler and measure queue growth/drain, fallback
+fraction, maximum uninterruptible work, update batch size and publication
+age. Do not claim sustained service from another two-update burst or hide
+deferred scoring/retirement after the timed window. If work exceeds the
+online window, use the declared bounded update/sleep schedule and report its
+actual service rate; do not silently freeze physics or label offline updates
+as between-action learning.
+
+Use new immutable units (suggested family `phase1/fix2-v1`), explicit
+`--resume`, journal checkpoints and a source snapshot. Store task, rubric,
+reward and coaching versions in the identity and reject incompatible resume.
+Reuse original RGB data read-only; use new layout seeds for validation.
+Refresh the notebook from artifacts as units finish, with a short explanation
+of why prior results did not test the intended dense reward. Show only a
+contact sheet, score plot, staged success table, timing/backlog summary and
+concise conclusion; link raw traces instead of adding a wall of numbers.
+Do not edit old numerical outputs or present planned corrections as results.
+
+**5. Complete the optional retired-data sleep path.**
+
+Implement `retired_archive_replay` as a working, explicitly versioned,
+default-off capability instead of an unconditional configuration rejection.
+The main Replay/EWC-versus-STM comparison continues to use eligible replay
+only, and its resolved configuration must reject accidental activation.
+This repair validates the option with tiny CPU fixtures, not an additional
+scientific treatment or performance rescue.
+
+Use a declared `supplemental-rehearsal-v1` protocol: during a stopped sleep
+interval, replay a bounded sample of archived, fully labeled transitions
+with their original frozen likelihood designs and reconstructible histories.
+Reject incompatible task, reward, model or label-design versions instead of
+mixing archived observations from a different experiment.
+Combine eligible and archived items in one replay batch mean, with a fixed
+configured archived fraction and the same total batch/step budget. Defaults
+for an explicitly enabled test are archived fraction 0.25 and age 1 for
+archived items' STM penalty; neither is selected for scientific efficacy.
+Report the realized source counts when a source has insufficient eligible
+records. Never replace missing archived data with fabricated observations
+or silently expand replay eligibility during ordinary online updates.
+
+These observations already contributed to EWC. Retain the existing EWC
+term, explicitly describing the extra likelihood exposure as supplemental
+rehearsal, not an independent new observation or an exact disjoint-data
+likelihood decomposition. Do not attempt to subtract a sample from an
+aggregate diagonal EMA without attribution information. Archived replays
+must not increment new-data/sample counts, drift exposure, retirement counts
+or EWC admissions, and must not recenter the archive or compute a second
+retirement Fisher. A later scientific study of this option must account for
+the deliberate repeated use of information; the default primary experiment
+does not incur it.
+
+Fetch archived context through an explicit permission/eligibility path.
+Charge frame/context bytes, read/decode time and optimizer work; retain only
+a bounded cache. Preserve checksums, labels, baselines and retirement IDs.
+Unavailable archive storage pauses the requested operation with a recorded
+reason. Persist source-sampling RNG, planned batch IDs and optimizer commit
+receipts so resume neither resamples committed work nor repeats admissions.
+Test default-off behavior, enabled selection, exact counts/EWC invariance,
+archive failures, bounded context access and halt/resume around sleep commits.
+Update CLI/configuration documentation and remove the blanket rejection only
+once these tests pass.
+
+**6. Complete the transferable robot and speech interfaces in software.**
+
+Provide a project-local physical driver implementing the existing
+`demo/picar/service.py` `Driver` contract (`apply`, `stop`, `capture_rgb`).
+Port the minimal actuator/camera functionality from the earlier project,
+recording provenance and any third-party license requirements. Its legacy
+`robot/legacy_car_env/car.py` performs setup, camera opening and servo writes
+at import: do not copy those side effects. Load hardware dependencies lazily
+and perform initialization only in an explicit physical-service launch.
+Keep fake-driver launch as the default for automated acceptance. Implement
+hardware-specific SI-to-servo/speed conversion through explicit calibration
+configuration; do not present guessed calibration constants as measurements.
+Camera conversion, resolution, timestamps, failed reads and shutdown must
+follow the same backend contract used by simulation.
+
+Keep the Pi's dependencies lightweight and declared separately; Qwen, Torch,
+learning and speech-model inference remain server-side. Document how a fresh
+clone installs the optional hardware dependencies without another checkout.
+Preserve service authentication, session/sequence deduplication, expiry,
+watchdog stopping and explicit arming. Write injected wheel/servo/camera
+tests covering signs, units, saturation, stop, capture failures, reconnect
+and shutdown. Do not import real hardware modules or connect to the robot
+during acceptance. Deliver an installation/calibration procedure for the
+later operator session and label physical behavior as unvalidated until then.
+
+Wire a common timestamped instruction-event interface from typed input and
+optional server-side speech transcription into the same history used by
+teacher, learner and replay. Reuse the earlier speech/stream design with
+project-local code and declared optional dependencies. Support recorded
+audio/transcripts for unattended tests; model assets download to this
+project's cache unless an explicit reuse path is supplied. User microphone
+input remains optional for completing simulated experiments. Speech inference
+must not block capture, control deadlines or the watchdog; include its cost
+if enabled in a later operational run.
+
+Store event IDs, utterance timestamps and the time a transcript became
+available. An utterance cannot influence actions before its text was available.
+Corrected, superseded and completed instructions retain causal provenance;
+resume must not inject the same speech event twice. Test typed/transcribed
+equivalence, delayed transcription, interruption/correction, completion,
+duplicate delivery and replay reconstruction. A transcript/status interface
+may support robot replies, but ordinary student motor actions continue to
+come directly from the LSTM; do not reintroduce per-action language generation
+after the one-time distillation. No microphone, speaker or robot access is
+needed for these acceptance tests.
+
+**Deliverables and time accounting:** include all six work items in the
+handoff and notebook progress summary. Mark software acceptance separately
+from physical validation, and mark default-off feature support separately
+from a scientifically executed treatment. Sol should finish the no-hardware
+interface tests even if navigation remains weak, preserving useful engineering
+results without claiming experiment readiness.
+
+| Work | Additional active wall-clock estimate |
+|---|---:|
+| Interface reproduction, RGB score panels and reward arithmetic | 0.1--0.3 h |
+| Staged teacher diagnostics and conditional fresh readiness | 0.3--0.8 h |
+| Return resolution, real-time pipeline and recovery checks | 0.3--0.8 h |
+| Retired-sleep and physical/speech interface acceptance, no hardware | 0.1--0.3 h |
+| Notebook, artifact audit and revised study forecast | 0.1--0.2 h |
+| **Total** | **0.9--2.4 h** |
+
+Allow roughly 4--9 hours of Sol implementation/debugging separately, revised
+from 2--5 hours to include items 5 and 6. These are planning estimates. Keep
+Fix 2's charges separate from the completed Fix 1 ledger while counting both
+against the existing three-hour repair envelope and overall study ledger.
+Fix 1 consumed 9.8 recorded minutes; renaming the new work does not reset the
+allowance or grant a fresh three hours per attempt. Show both phase totals
+and cumulative charges on resume. Report a measured reforecast if needed.
+Report the existing 39--56 / 19--28-hour study forecasts as superseded
+conditional estimates until the revised path is measured. Finish with a
+measured full-study proposal and remaining concerns, not automatic Phase 2.
+
+**Alignment audit and assigned corrections:**
+
+| User requirement | Current finding | Required disposition |
+|---|---|---|
+| Graded Qwen rewards for visible approach | Binary completion score plus telescoping shaping differed materially | Repair here, including return resolution and scales |
+| Reproduce useful initial Qwen control | Fixed-instruction tests omitted the planned coaching/conversation path; full stopping task was harder than simple approach | Repair and report staged, assisted/unassisted competence separately |
+| Contact as strong success evidence | Old task treats target contact as failure; checked-in old prompt itself does not specify contact | Proposed explicit `ball-contact-v1` revision above; preserve old task and label hybrid terminal supervision |
+| Language-conditioned LSTM, one initial distillation | Architecture/stage plan is aligned; conversational rollout integration is incomplete | Finish causal history here; complete distillation/student readiness in Phase 2 |
+| Small top-$L$ STM/LTM and eviction-only diagonal EWC | Implemented architecture/numerical path matches the intended design | Preserve; the readiness failures do not motivate changing STM mathematics |
+| Online updates plus recharge/sleep work | Cooperative machinery exists, but sustained load remains unmeasured | Measure here; carry the admitted service/sleep schedule into later runners |
+| Optional retired-data use during sleep | Config currently rejects it despite earlier prose claiming implementation | Fix 2 item 5 implements and CPU-tests the default-off supplemental-rehearsal protocol; primary scientific runs keep it off |
+| Maintained real Pi deployment | Shared client/service and fake-driver tests exist; actual actuator/camera adapter and live speech bridge are not delivered | Fix 2 item 6 implements both interfaces and no-hardware tests; real calibration/actuation follows separately |
+| Reproducibility, storage, reader-facing progress | Project-local model defaults and bounded journals are aligned | Preserve; use externally supplied archive paths and include all deferred work in forecasts |
+
+No additional architecture redesign is indicated by this audit. The primary
+repairs concern what the robot is asked to do, what is rewarded, how that
+reward reaches the likelihood, and which planned interfaces are actually
+connected in the acquisition loop.
+
+**Fix 2 execution record (2026-11-09):** all six implementation work items
+are delivered. The completed corrected campaign is
+`cache/numerical_experiment/picar/phase1/fix2-v2`; its software acceptance
+passed **637 tests**. The first attempt, `fix2-v1`, is retained with a stop
+request and immutable completed units. Its parser rejected otherwise valid
+JSON in a single Markdown fence. Version 2 accepts bare JSON or one exact
+JSON fence, retaining strict keys, types and score ranges. Its timing replay
+also masks retired recurrent predecessors. These changes have new source
+identities and exact-source snapshots; neither attempt was overwritten.
+
+| Deliverable | Executed result and remaining qualification |
+|---|---|
+| Dense visual rewards and contact semantics | Valid generated 0--10 scores; contact-aligned rubric correctly ordered 5/12 development and 8/12 held-out approach pairs, below the 80% guide. Absence/close separation passes, but far/intermediate ties remain common. Historical reward/task versions are unchanged. |
+| Staged teacher navigation and causal context | Ported interface reached the ball in 3/6 unobstructed episodes; longer grounded interface achieved 0/6. Full obstacle task achieved 0/12 across both interfaces. Rollouts used accelerated physics for diagnosis, not real-time teacher admission. |
+| Return likelihood and resolution | Constructed return/actor-gradient checks pass with 41 bins; no evidence in those checks requires 81 or 161. All scored returns use the revised bounded dense-reward definition. |
+| Multi-episode real-time pipeline | Each loss completed three episodes, 44 updates (28 online, 16 stopped drain/sleep), 36 retirements, and 0/44 non-startup fallbacks. Peak label backlog was 17; it drained to zero. These paired untrained pilots are timing acceptance, not evidence of task competence or uninterrupted one-update-per-observation service. |
+| Optional retired-data sleep | Implemented and CPU-tested, including exact crash recovery, immutable archive identity and explicit supplemental-rehearsal accounting. Default off; not used by either timing pilot or admitted as a primary treatment. |
+| Maintained Pi and speech interfaces | Actual calibrated actuator/camera adapter, causal instruction ledger and bounded speech bridge delivered and tested through injected hardware/recorded inputs. Real servo calibration, speech-model inference, microphone use and physical motion remain unvalidated. |
+
+Fresh 20-layout teacher validation was **not admitted** because the
+development full-task readiness guide failed. All failed/partial results
+remain in the notebook, including preselected ego/top-down videos. The
+longer prompt performed worse than the ported interface; this repair does
+not establish that the frozen Qwen model cannot navigate under other
+interfaces. Numeric rewards now provide a coarse approach signal, but do
+not yet reproduce the desired smoothly graded reward density.
+
+**Measured resource check-in:** version 2 charged 17.9 active minutes; both
+Fix 2 attempts charged 21.3 minutes. Including Fix 1, cumulative repairs
+charged **31.1 minutes**, within the existing three-hour repair envelope.
+The paired pipeline wall times were 84.5 s (control) and 84.2 s (FD), with
+median fit wall times near 0.60 s. These include cooperative scheduling
+waits and are not a controlled claim that FD is cheaper than the control.
+The timing recipe uses context 4, capacity 8, new/replay batches 1/1 and a
+one-second physical control period. A durable checkpoint transaction took
+0.057 s median; its 4.76 MB initial learner state does not include populated
+optimizer moments.
+
+Conditional whole-study forecasts, including earlier acceptance/profiling
+and all repair charges, are **21.4--30.8 h** for six pairs at 2,400 new
+transitions/arm, or **11.6--17.2 h** for four pairs at 1,200/arm. The sealed
+forecast originally charged repairs but omitted 10.6 minutes of earlier
+acceptance/profiling; reporting adds that time explicitly without changing
+the sealed artifact. These serialized operation estimates include measured
+cooperative waits, so they are conservative, but do not establish readiness
+or select a production replay/service recipe. Bootstrap/teacher rescue may
+change costs. **Execution stops here for the task/resource check-in; no
+Phase 2--5, physical actuation or STM efficacy experiment was started.**
+
+**Closeout integrity:** verified all 60 completed Fix 2 units and all three
+checksummed source archives without changing completion markers. Completed
+campaign resume verified/skipped in under one second without importing Torch.
+The final notebook's eight code cells execute artifact-only; 24 focused
+reporting tests pass after the reporting-only readability changes. Four
+preselected videos decode with the recorded frame counts and visible motion.
+Fix 1's section and `mathematical_overview.ipynb` retain their prior hashes.
+
+**Follow-up recognition diagnostic (2026-11-10, user requested):** frozen
+Qwen answered six independent questions on four saved initial frames (seeds
+601/611, with/without the obstacle) and one ball-absent control. All 30 raw
+answers and input/model provenance are sealed separately under
+`cache/numerical_experiment/picar/diagnostics/visual-questions-v1`; active
+compute was 89.3 seconds. No control prompt or prior answer primed a query.
+The open-ended question spontaneously identified the red sphere in all four
+positive images. Direct ball/sphere questions correctly rejected the absent
+control, but the two distance questions invented a sphere position there.
+Obstructed views were often described as a ball "on top of" the block, and
+distance replies used unsupported units/coordinates. This argues against
+basic recognition failing solely because of the synthetic appearance on
+these images; it does not establish reliable depth, navigation or use of
+vision under the control prompt. No existing run, task or readiness guide
+was changed, and no later learning phase was started.
+
 ### Phase 2: Sol Bootstrap And Student Readiness
 
 **Purpose:** give the continual learner a real initial capability to retain.
@@ -1332,6 +2052,9 @@ setting before treatment-specific regularization. If the common adaptation
 weight is plainly unsuitable, a bounded shared check at .01 and .05 is
 allowed and recorded. Do not tune it independently to favor an arm.
 
+Use the task, reward formula and bin resolution admitted by the latest
+versioned Phase 1 repair. Recheck return bounds and weight concentration on
+the actual Phase 2 bootstrap; old smoke scales are not selected hyperparameters.
 Calibrate the common RL scales before comparing FD strengths. Set the initial
 temperature from a robust spread of bootstrap returns/advantages, then check
 half/base/double temperature only if weight concentration or absent learning

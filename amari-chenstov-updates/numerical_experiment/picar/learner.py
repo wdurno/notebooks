@@ -22,6 +22,7 @@ class LearningBatch:
     labels: Tensor
     actions: Tensor
     arrivals: Tensor
+    archived: Tensor | None = None
 
     def __post_init__(self) -> None:
         count = len(self.histories)
@@ -31,6 +32,8 @@ class LearningBatch:
             raise ValueError("invalid action/arrival shapes")
         if any(history["images"].shape[0] != 1 for history in self.histories):
             raise ValueError("each raw history must have batch dimension one")
+        if self.archived is not None and (self.archived.shape != (count,) or self.archived.dtype != torch.bool):
+            raise ValueError("archived replay mask must be boolean [B]")
 
 
 def predict_histories(model, params: Mapping[str, Tensor], histories: Sequence[dict]) -> dict[str, Tensor]:
@@ -48,6 +51,13 @@ def predict_histories(model, params: Mapping[str, Tensor], histories: Sequence[d
             batch["start_time"] = torch.cat([
                 row.get("start_time", row["elapsed"].new_zeros(1)) for row in rows
             ])
+        for key in ("episode_deadline", "decision_time"):
+            if any(key in row for row in rows):
+                if not all(key in row for row in rows):
+                    raise ValueError(f"mixed context schemas: missing {key}")
+                batch[key] = torch.cat([row[key] for row in rows], 0)
+        if any("status_events" in row for row in rows):
+            batch["status_events"] = [row.get("status_events", [[]])[0] for row in rows]
         prediction = pm.functional_predict(model, params, args=(batch,))
         for offset, (index, _) in enumerate(group):
             outputs[index] = {key: value[offset:offset + 1] for key, value in prediction.items()}
@@ -81,6 +91,7 @@ class MemoryLearner:
         self.version = 0
         self.retired_count = 0
         self.update_count = 0
+        self._cooperate = None
         self.edges = torch.linspace(config.return_min, config.return_max, model.return_bins + 1,
                                     dtype=self.dtype, device=self.device)
 
@@ -91,7 +102,12 @@ class MemoryLearner:
         )
 
     def predict(self, params, batch: LearningBatch) -> dict:
-        return predict_histories(self.model, params, batch.histories)
+        result = predict_histories(self.model, params, batch.histories)
+        # functional_call has restored module parameters and released encoder
+        # locks here. Actor inference may read the unchanged published model.
+        if self._cooperate is not None:
+            self._cooperate()
+        return result
 
     def nll(self, params, batch: LearningBatch) -> Tensor:
         return pm.joint_nll(self.predict(params, batch), batch.labels.to(self.device),
@@ -133,9 +149,13 @@ class MemoryLearner:
         self.model.encoder.clear_caches()
 
     def fit(self, *, new: LearningBatch | None, replay: LearningBatch | None,
-            acquired_count: int, steps: int | None = None) -> dict[str, float]:
+            acquired_count: int, steps: int | None = None, cooperate=None) -> dict[str, float]:
         if new is None and replay is None:
             raise ValueError("empty optimizer event")
+        if cooperate is not None and not callable(cooperate):
+            raise TypeError("cooperate must be callable")
+        if self._cooperate is not None:
+            raise RuntimeError("nested cooperative learning event")
         rollback = self.state_dict()
         start = time.monotonic()
         cfg = self.config
@@ -143,6 +163,7 @@ class MemoryLearner:
         probes = pm.rademacher_probes(self.params, self.banks["stm"], cfg.fd_probes,
                     generator=self.generators["fd_probes"]) if replay is not None and cfg.fd_strength > 0 else None
         try:
+            self._cooperate = cooperate
             count = cfg.optimizer_steps if steps is None else steps
             if type(count) is not int or count < 1:
                 raise ValueError("optimizer steps must be positive")
@@ -150,12 +171,15 @@ class MemoryLearner:
                 self.optimizer.zero_grad(set_to_none=True)
                 fd = None
                 if probes is not None:
+                    ages = pm.replay_ages(acquired_count, replay.arrivals.to(self.device) + 1, cfg.replay_capacity)
+                    if replay.archived is not None:
+                        ages = torch.where(replay.archived.to(self.device), torch.ones_like(ages), ages)
                     fd = pm.stm_fd_penalty(
                         lambda p: self.predict(p, replay), self.params, self.design(replay),
                         self.banks["stm"], probes,
                         # Records carry zero-based indices; the age formula uses
                         # acquired-observation counts, so the newest item is age 0.
-                        pm.replay_ages(acquired_count, replay.arrivals.to(self.device) + 1, cfg.replay_capacity),
+                        ages,
                         cfg.fd_step,
                     )
                 losses = pm.regularized_objective(
@@ -167,9 +191,14 @@ class MemoryLearner:
                     fd_penalty=fd, fd_strength=cfg.fd_strength,
                 )
                 losses["total"].backward()
+                if self._cooperate is not None:
+                    self._cooperate()
                 for parameter in self.params.values():
                     if parameter.grad is not None and not bool(torch.isfinite(parameter.grad).all()):
                         raise FloatingPointError("nonfinite optimizer gradient")
+                # No yield after any parameter mutation until the whole event
+                # is published. Multi-step events retain atomic actor semantics.
+                self._cooperate = None
                 self.optimizer.step()
                 if any(not bool(torch.isfinite(p).all()) for p in self.params.values()):
                     raise FloatingPointError("nonfinite accepted parameter")
@@ -180,8 +209,13 @@ class MemoryLearner:
             metrics["update_seconds"] = time.monotonic() - start
             return metrics
         except BaseException:
+            actor_rng = self.generators["exploration"].get_state().clone()
             self.load_state_dict(rollback)
+            if cooperate is not None:
+                self.generators["exploration"].set_state(actor_rng)
             raise
+        finally:
+            self._cooperate = None
 
     def retire(self, batch: LearningBatch) -> dict[str, float]:
         rollback = self.state_dict()

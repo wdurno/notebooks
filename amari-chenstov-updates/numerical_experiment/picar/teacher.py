@@ -73,13 +73,14 @@ class FrozenQwenRole:
         self.provenance = {"kind": "real_qwen_frozen_role", "role": role,
             "extraction": "restricted_next_token_softmax_v1", "prompt": prompt,
             "labels": list(labels), "token_ids": list(self.token_ids),
+            "frame_extraction": "last_rgb_full_recorded_context_v2",
             "calibrated": False}
 
     @torch.no_grad()
     def probabilities(self, batch: Mapping[str, Any]) -> Tensor:
         # There is no inherited active adapter or shared generation/KV cache.
         with self.encoder._lock:
-            inputs, (b, t) = self.encoder.prepare(batch, suffix="\n" + self.prompt)
+            inputs, (b, t) = self.encoder.prepare(batch, suffix="\n" + self.prompt, last_only=True)
             hidden = self.encoder.encode_processed(inputs, role=self.role)
             mask = inputs["attention_mask"].to(hidden.device)
             last = (torch.arange(mask.shape[1], device=hidden.device)[None] * mask).max(-1).values

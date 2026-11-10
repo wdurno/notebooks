@@ -134,6 +134,12 @@ class StopController:
 class ModelAccess:
     """One GPU role at a time; queued control inference precedes new updates.
 
+    An update keeps its writer transaction across cooperate() calls. The owner
+    may yield only with unchanged actor parameters and no live functional
+    override. After optimizer mutation it must publish without yielding again.
+    Runtime owns no device API: callers supply a synchronization barrier when
+    asynchronous device work needs draining at either side of a handoff.
+
     This cannot preempt an in-flight GPU kernel. A separate physics worker must
     enforce command deadlines while either role holds the lease.
     """
@@ -141,43 +147,145 @@ class ModelAccess:
     def __init__(self):
         self._condition = threading.Condition()
         self._active = False
+        self._active_owner: int | None = None
+        self._update_owner: int | None = None
+        self._cooperating = self._published = False
         self._waiting_inference = 0
+        self._waiting_updates = 0
+        self._stats = {"inference_leases": 0, "update_leases": 0,
+                       "cooperate_calls": 0, "cooperative_yields": 0,
+                       "inference_wait_s": 0., "max_inference_wait_s": 0.,
+                       "update_wait_s": 0., "max_update_wait_s": 0.,
+                       "cooperate_wait_s": 0., "max_cooperate_wait_s": 0.}
         self.version = 0
+
+    def _reject_nested(self, owner: int) -> None:
+        if owner in (self._active_owner, self._update_owner):
+            raise RuntimeError("nested model leases are not allowed")
+
+    def _record_wait(self, role: str, started: float) -> None:
+        elapsed = time.monotonic() - started
+        self._stats[f"{role}_wait_s"] += elapsed
+        key = f"max_{role}_wait_s"
+        self._stats[key] = max(self._stats[key], elapsed)
+
+    def diagnostics(self) -> dict:
+        """Constant-space counters and total/max waits, plus current admission state."""
+        with self._condition:
+            return {**self._stats, "waiting_inference": self._waiting_inference,
+                    "waiting_updates": self._waiting_updates,
+                    "update_active": self._update_owner is not None,
+                    "inference_active": self._active and self._active_owner != self._update_owner,
+                    "version": self.version}
 
     @contextmanager
     def inference(self) -> Iterator[int]:
+        owner, started = threading.get_ident(), time.monotonic()
         with self._condition:
+            self._reject_nested(owner)
             self._waiting_inference += 1
             try:
                 self._condition.wait_for(lambda: not self._active)
                 self._active = True
+                self._active_owner = owner
+                self._stats["inference_leases"] += 1
+                self._record_wait("inference", started)
+                version = self.version
             finally:
                 self._waiting_inference -= 1
+                self._condition.notify_all()
         try:
-            yield self.version
+            yield version
         finally:
             with self._condition:
                 self._active = False
+                self._active_owner = None
                 self._condition.notify_all()
 
     @contextmanager
     def update(self) -> Iterator[Callable[[], None]]:
+        owner, started = threading.get_ident(), time.monotonic()
         with self._condition:
-            self._condition.wait_for(lambda: not self._active and not self._waiting_inference)
-            self._active = True
-        published = False
+            self._reject_nested(owner)
+            self._waiting_updates += 1
+            try:
+                self._condition.wait_for(lambda: not self._active and not self._waiting_inference
+                                         and self._update_owner is None)
+                self._active = True
+                self._active_owner = self._update_owner = owner
+                self._published = False
+                self._stats["update_leases"] += 1
+                self._record_wait("update", started)
+            finally:
+                self._waiting_updates -= 1
+
+        lease_active = True
         def publish() -> None:
-            nonlocal published
-            if published:
-                raise RuntimeError("an update lease may publish only once")
-            self.version += 1
-            published = True
+            with self._condition:
+                if (not lease_active or threading.get_ident() != owner or self._update_owner != owner
+                        or self._active_owner != owner or self._cooperating):
+                    raise RuntimeError("publication requires the active update owner")
+                if self._published:
+                    raise RuntimeError("an update lease may publish only once")
+                self.version += 1
+                self._published = True
+
         try:
             yield publish
         finally:
             with self._condition:
+                lease_active = False
                 self._active = False
+                self._active_owner = self._update_owner = None
                 self._condition.notify_all()
+
+    def cooperate(self, barrier: Callable[[], None] | None = None) -> bool:
+        """Drain queued inference at a caller-certified graph-safe boundary.
+
+        Only the active, unpublished update owner may call this. Return False
+        without invoking barrier when no inference is queued. Otherwise barrier
+        runs before releasing GPU access and after reclaiming it, if supplied.
+        The writer transaction remains exclusive, even on barrier/inference
+        failure; the caller regains GPU access before any exception propagates.
+        """
+        owner = threading.get_ident()
+        if barrier is not None and not callable(barrier):
+            raise TypeError("barrier must be callable")
+        with self._condition:
+            if self._update_owner != owner or self._active_owner != owner or self._cooperating:
+                raise RuntimeError("cooperate requires the active update owner and cannot be nested")
+            if self._published:
+                raise RuntimeError("cannot cooperate after publication")
+            self._stats["cooperate_calls"] += 1
+            if not self._waiting_inference:
+                return False
+            self._cooperating = True
+        try:
+            if barrier is not None:
+                barrier()
+            try:
+                with self._condition:
+                    started = time.monotonic()
+                    self._active = False
+                    self._active_owner = None
+                    self._stats["cooperative_yields"] += 1
+                    self._condition.notify_all()
+                    ready = lambda: not self._active and not self._waiting_inference
+                    try:
+                        self._condition.wait_for(ready)
+                    finally:
+                        # Rollback must not race inference, even on interruption.
+                        self._condition.wait_for(ready)
+                        self._active = True
+                        self._active_owner = owner
+                        self._record_wait("cooperate", started)
+            finally:
+                if barrier is not None:
+                    barrier()
+            return True
+        finally:
+            with self._condition:
+                self._cooperating = False
 
 
 class BoundedWorkQueue:

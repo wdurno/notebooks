@@ -22,6 +22,10 @@ from . import ARTIFACT_SCHEMA_VERSION, METRIC_SCHEMA_VERSION
 from . import analysis
 from .schemas import METRIC_COLUMNS
 
+# Artifact rendering must not create Tk objects that GPU/control threads can
+# later collect. Explicit notebook backends remain respected.
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "cache/numerical_experiment/picar"
 DEFAULT_NOTEBOOK = Path(__file__).with_name("plan19_results.ipynb")
@@ -198,6 +202,16 @@ def _diagnostic(path, *, completed=True):
 def load_report(root: str | Path | None = None) -> dict:
     """Load completed units plus live counts only, or a clearly pending report."""
     root = resolve_root(root)
+    phase_roots = sorted(path for path in root.glob("phase[0-9]*") if path.is_dir()) if root.is_dir() else []
+    if phase_roots and not (root / "config.json").exists():
+        parts = [load_report(path) for path in phase_roots]
+        units = [unit for part in parts for unit in part["complete_units"]]
+        diagnostics = [item for part in parts for item in part["diagnostics"]]
+        live = [item for part in parts for item in part["live"]]
+        return {"root": str(root), "complete_units": units, "diagnostics": diagnostics, "live": live,
+            "status": "available" if units or diagnostics else "pending",
+            "scientific_units": sum(not unit["smoke_only"] for unit in units),
+            "note": "Readiness and resource probes describe implementation and operating cost; learning results require fresh paired trajectories."}
     units, diagnostics, live = [], [], []
     if root.is_dir():
         for marker in sorted(root.rglob("COMPLETED")):
@@ -242,9 +256,11 @@ def load_report(root: str | Path | None = None) -> dict:
             if not isinstance(counts, dict) or any(type(v) is not int or v < 0 for v in counts.values()):
                 raise ArtifactError("live progress counts must be nonnegative integers")
             # Partial trajectories/NLL/success are deliberately not read.
+            stopped = any((parent / "STOP").is_file() for parent in (path, *path.parents)
+                          if parent == root or root in parent.parents)
             live.append({"path": str(path), "phase": _phase_number(value.get("phase", 0)),
                 "status": value.get("status", "incomplete"), "counts": counts,
-                "updated_at": value.get("updated_at")})
+                "updated_at": value.get("updated_at"), "stopped": stopped})
     return {"root": str(root), "complete_units": units, "diagnostics": diagnostics,
             "live": live, "status": "available" if units or diagnostics else "pending",
             "scientific_units": sum(not unit["smoke_only"] for unit in units),
@@ -256,6 +272,7 @@ def progress_rows(snapshot):
     for phase, name in enumerate(PHASES):
         units = [u for u in snapshot["complete_units"] if _phase_number(u["summary"].get("phase", 0)) == phase]
         live = [u for u in snapshot["live"] if u["phase"] == phase]
+        active = [u for u in live if not u.get("stopped", False)]
         diagnostics = len(snapshot["diagnostics"]) if phase == 0 else 0
         failed = sum(d["manifest"].get("status") == "failed" for d in snapshot["diagnostics"]) if phase == 0 else 0
         costs = [u["summary"]["active_seconds"] for u in units if "active_seconds" in u["summary"]]
@@ -264,10 +281,13 @@ def progress_rows(snapshot):
                          if "active_seconds" in d["summary"])
         rows.append({"phase": phase, "stage": name, "completed_units": len(units),
             "diagnostics": diagnostics, "incomplete_units": len(live),
+            "stopped_units": len(live) - len(active),
             "diagnostic_failures": failed,
             "scientific_units": sum(not u["smoke_only"] for u in units),
             "completed_active_s": sum(costs) if costs else None,
-            "status": "incomplete units" if live else "artifacts available" if units or diagnostics else "pending"})
+            "status": active[-1]["status"] if active else
+                "artifacts available; stopped attempts retained" if live else
+                "artifacts available" if units or diagnostics else "pending"})
     return rows
 
 
@@ -292,18 +312,20 @@ def media_links(snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
     """Read-only links; missing external clips do not block scalar reporting."""
     links = []
     project = Path(__file__).resolve().parents[2]
-    for unit in snapshot["complete_units"]:
+    for unit in sorted(snapshot["complete_units"], key=lambda u: u["manifest"].get("completed_at", ""), reverse=True):
         for clip in unit["summary"].get("videos", []):
             path = Path(clip["path"])
             path = path if path.is_absolute() else project / path
             selection = clip.get("selection", "unlabeled selection")
-            label = f"{path.name}: {selection}, seed={clip.get('seed', 'unavailable')}"
+            label = f"{path.parent.name}/{path.name}: {selection}, seed={clip.get('seed', 'unavailable')}"
             if not path.is_file():
                 links.append(f"<p>Missing external media: {html.escape(label)}</p>")
                 continue
             relative = os.path.relpath(path, notebook_dir)
             links.append(f'<p><a href="{quote(relative)}">{html.escape(label)}</a> '
                          '(top-down is reader-only)</p>')
+    if len(links) > 4:
+        return "\n".join(links[:4]) + f"<details><summary>{len(links) - 4} additional archived clips</summary>" + "\n".join(links[4:]) + "</details>"
     return "\n".join(links) or "<p>Stored behavior clips pending.</p>"
 
 
@@ -470,6 +492,19 @@ def assemble_video(frames, output: str | Path, *, seed: int, selection="preselec
             "frames": encoded, "fps": fps, "topdown_reader_only": True}
 
 
+def settings_rows(snapshot):
+    """Summarize recipe versions without a row for every diagnostic operation."""
+    groups = {}
+    for unit in snapshot["complete_units"]:
+        config = unit["config"]
+        key = (config.get("mode"), config.get("version"),
+               config.get("model", {}).get("kind"), unit["smoke_only"])
+        groups[key] = groups.get(key, 0) + 1
+    return [{"mode": mode, "version": version, "model": model,
+             "smoke_only": smoke, "completed_units": count}
+            for (mode, version, model, smoke), count in groups.items()]
+
+
 def make_notebook(root: str | Path | None = None):
     """Generate a short, unexecuted, artifact-only notebook with nbformat."""
     import nbformat
@@ -490,8 +525,7 @@ def make_notebook(root: str | Path | None = None):
         "if snapshot['live']:\n    display(pd.DataFrame(snapshot['live']))"),
         md("## Task and Setup\n\nThe learner receives RGB, language, executed controls, and elapsed time. "
            "Top-down views are for the reader only. Settings and scene media appear only when stored artifacts exist."),
-        code("settings = [{'unit': u['path'], 'mode': u['config'].get('mode'), 'version': u['config'].get('version'), "
-             "'model': u['config'].get('model', {}).get('kind'), 'smoke_only': u['smoke_only']} for u in snapshot['complete_units']]\n"
+        code("settings = report.settings_rows(snapshot)\n"
              "display(pd.DataFrame(settings)) if settings else print('Setup artifacts pending.')"),
         md("## Readiness and Bootstrap\n\nMeasured loading, inference, memory, and gradient checks are diagnostics. "
            "Language readiness and held-out initial capability remain separate requirements.\n\n"
@@ -546,9 +580,7 @@ def _populate_outputs(book, snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
                               stream(snapshot["note"]), table(progress_rows(snapshot))]}
     if snapshot["live"]:
         outputs["progress"].append(table(snapshot["live"]))
-    settings = [{"unit": Path(u["path"]).name, "mode": u["config"].get("mode"),
-        "version": u["config"].get("version"), "model": u["config"].get("model", {}).get("kind"),
-        "smoke_only": u["smoke_only"]} for u in snapshot["complete_units"]]
+    settings = settings_rows(snapshot)
     outputs["settings"] = [table(settings) if settings else stream("Setup artifacts pending.")]
     checks = readiness_rows(snapshot)
     outputs["readiness"] = [table(checks) if checks else stream("Readiness measurements pending.")]
@@ -577,6 +609,11 @@ def _populate_outputs(book, snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
                 "Full-workload timing, task competence, retention calibration, and sim-to-real "
                 "transfer remain to be assessed in the later phases.")
     outputs["learning"] = []
+    if snapshot["scientific_units"] == 0:
+        from .phase1_report import phase1_conclusion
+        conclusion = phase1_conclusion(snapshot)
+        if conclusion:
+            book.cells[-1].source = conclusion
     figure = plot_learning(snapshot)
     if figure is None:
         outputs["learning"].append(stream("Fresh held-out paired trajectories pending."))
@@ -606,11 +643,29 @@ def _populate_outputs(book, snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
 def build_notebook(root: str | Path | None, output: str | Path = DEFAULT_NOTEBOOK) -> Path:
     """Explicit report-generation command; notebook cells themselves are read-only."""
     import nbformat
-    book = _populate_outputs(make_notebook(root), load_report(root), notebook_dir=Path(output).parent)
+    snapshot = load_report(root)
+    book = _populate_outputs(make_notebook(root), snapshot, notebook_dir=Path(output).parent)
+    from .phase1_report import append_phase1
+    book = append_phase1(book, snapshot, notebook_dir=Path(output).parent)
+    from .phase1_fix_report import append_repair, repair_conclusion
+    book = append_repair(book, snapshot)
+    conclusion = repair_conclusion(snapshot)
+    from .phase1_fix2_report import append_fix2, conclusion as fix2_conclusion
+    book = append_fix2(book, snapshot)
+    conclusion = fix2_conclusion(snapshot) or conclusion
+    if conclusion:
+        book.cells[-1].source = conclusion
     nbformat.validate(book)
     output = Path(output)
     if any((parent / "COMPLETED").exists() for parent in (output.parent, *output.parents)):
         raise ArtifactError("cannot write a notebook inside a completed unit")
     output.parent.mkdir(parents=True, exist_ok=True)
-    nbformat.write(book, output)
+    fd, name = tempfile.mkstemp(prefix=".plan19-report-", suffix=".ipynb", dir=output.parent)
+    os.close(fd)
+    temporary = Path(name)
+    try:
+        nbformat.write(book, temporary)
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
     return output

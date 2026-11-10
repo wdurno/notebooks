@@ -1,0 +1,9 @@
+# Optional PiCar-V stack, installed on the Pi only. No Torch or speech inference.
+# Vendor distribution name verified from setup.py at this exact upstream commit.
+# Source is external, not vendored; installation and hardware remain unvalidated.
+SunFounder_PiCar @ git+https://github.com/sunfounder/SunFounder_PiCar.git@9890ab7d11dbce10c4bb6f0bffe61b7b08783c5e
+RPi.GPIO==0.7.1
+numpy>=1.26,<3
+opencv-python-headless>=4.10,<5
+# OS dependencies: I2C enabled, i2c-tools and python3-smbus (see README).
+# Optional SERVER speech dependencies are separate: requirements-speech.txt.

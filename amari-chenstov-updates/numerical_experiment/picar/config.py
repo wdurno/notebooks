@@ -78,6 +78,12 @@ class LearningConfig:
     sleep_steps: int = 2
     sleep_batch: int = 4
     retired_archive_replay: bool = False
+    retired_replay_protocol: str = "off"
+    retired_replay_fraction: float = 0.25
+    reward_version: str = "potential-v1"
+    visual_reward_budget: float = 2.0
+    reward_horizon_s: float = 20.0
+    step_cost: float = 0.02
 
     def validate(self) -> None:
         for name in ("replay_capacity", "replay_batch", "optimizer_steps", "fd_probes", "fisher_draws", "sleep_steps", "sleep_batch"):
@@ -95,8 +101,25 @@ class LearningConfig:
             raise ValueError("return bounds must be finite and ordered")
         if self.replay_batch > self.replay_capacity:
             raise ValueError("replay_batch cannot exceed replay_capacity")
-        if self.retired_archive_replay:
+        if not isinstance(self.retired_archive_replay, bool):
+            raise ValueError("retired_archive_replay must be boolean")
+        if not math.isfinite(self.retired_replay_fraction) or not 0 < self.retired_replay_fraction <= 1:
+            raise ValueError("retired replay fraction must be in (0,1]")
+        expected = "supplemental-rehearsal-v1" if self.retired_archive_replay else "off"
+        if self.retired_replay_protocol != expected:
             raise ValueError("retired archive replay requires a separately versioned scientific protocol")
+        if self.reward_version not in {"potential-v1", "dense-visual-v1"}:
+            raise ValueError("unsupported reward version")
+        _positive(self.visual_reward_budget, "learning.visual_reward_budget", zero=True)
+        _positive(self.reward_horizon_s, "learning.reward_horizon_s")
+        _positive(self.step_cost, "learning.step_cost", zero=True)
+        if self.reward_version == "dense-visual-v1":
+            if (self.visual_reward_budget, self.reward_horizon_s, self.step_cost, self.nominal_period_s) != (2., 20., .02, .5):
+                raise ValueError("dense-visual-v1 fixes its reward scales; changes require a new version")
+            lower = -5 - self.step_cost * self.reward_horizon_s / self.nominal_period_s
+            upper = 10 + self.visual_reward_budget
+            if self.return_min > lower or self.return_max < upper:
+                raise ValueError("dense visual reward return range must enclose conservative bounds")
 
 
 @dataclass(frozen=True)
@@ -135,6 +158,7 @@ class PicarConfig:
     bootstrap_transitions: int = 8
     episode_steps: int = 4
     simulation_period_s: float = 0.1
+    task_version: str = "safe-stop-v1"
     image_width: int = 64
     image_height: int = 48
     conditions: tuple[str, ...] = ("replay_ewc", "stm_fd")
@@ -159,6 +183,10 @@ class PicarConfig:
             raise ValueError("unrecognized condition")
         if self.mode == "production" and self.model.kind != "qwen":
             raise ValueError("production cannot silently use the tiny test model")
+        if self.task_version not in {"safe-stop-v1", "ball-contact-v1"}:
+            raise ValueError("unsupported task version")
+        if self.mode == "production" and self.learning.retired_archive_replay:
+            raise ValueError("primary production comparison keeps retired archive replay disabled")
         self.model.validate()
         self.learning.validate()
         self.runtime.validate()

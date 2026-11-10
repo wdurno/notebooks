@@ -1,10 +1,12 @@
-# PiCar Phase 0D
+# PiCar Runtime And Optional Sidecars
 
 Self-contained software runtime: run commands from this repository's root.
-Nothing imports another checkout, downloads a model, connects to a remote
-robot, or imports hardware drivers. The shipped service supports a fake driver
-only. Simulation parameters and SI mappings are **unvalidated engineering
-defaults**, not physical PiCar measurements.
+Nothing imports another checkout. Imports and construction of the fake service
+and speech wrapper do not download assets or open devices. Fake operation is
+the default; `hardware.py` adds an explicit physical launch and `speech.py`
+adds server-side recorded-audio transcription and a causal event ledger.
+Simulation parameters and SI mappings are **unvalidated engineering defaults**,
+not physical PiCar measurements. No physical validation is claimed.
 
 ## Installation
 
@@ -24,13 +26,184 @@ python -m demo.picar.service --fake-driver --port 8765
 ```
 
 This binds **127.0.0.1 only**. All endpoints require `Authorization: Bearer
-<token>`. For future deployment use an operator-created authenticated SSH
-tunnel, never a public HTTP port. No physical adapter or calibration routine
-is provided. Adding one requires a separate explicit hardware authorization
-and measured servo/speed calibration. Driver `apply` and `stop` must be bounded,
+<token>`. For deployment use an operator-created authenticated SSH
+tunnel, never a public HTTP port. Physical launch requires separate explicit
+hardware authorization and measured servo/speed calibration as described below.
+Driver `apply` and `stop` must be bounded,
 nonblocking local operations; a software watchdog cannot guarantee a stop
 against a wedged hardware driver or power electronics. A physical emergency
 stop must remain independent.
+
+## Optional Physical Driver
+
+`PiCarDriver` implements the existing `Driver` API with injected SunFounder
+rear wheels, front wheels, pan/tilt servos and an OpenCV camera. Only
+`open_physical_driver()` imports `picar`/`cv2`, calls setup, opens the camera
+and initializes actuators. Importing either module, asking for CLI help or
+starting a fake service cannot do this. No sibling project is required.
+
+For a later authorized PiCar-V operator session:
+
+1. With motor power isolated, install the Pi's I2C support (`i2c-tools` and
+   `python3-smbus`), enable I2C and grant the service account local camera/I2C
+   device access. Use a Pi-compatible OS and Python environment exposing the
+   OS SMBus package, for example a venv with `--system-site-packages`.
+2. Review the external SunFounder source/license, then install
+   `demo/picar/requirements-robot.txt` on the Pi. Its `SunFounder_PiCar`
+   distribution name and exact commit
+   `9890ab7d11dbce10c4bb6f0bffe61b7b08783c5e` were verified against primary
+   upstream metadata and Git refs. GPIO/OS compatibility and installation
+   have not been tested here. Do not install server speech,
+   Torch or Qwen on the Pi. See `PROVENANCE.md` before redistribution.
+   Installation command: `python -m pip install -r demo/picar/requirements-robot.txt`.
+3. Measure each servo's electrical zero, signed degrees per SI radian,
+   mechanical travel and link direction. SI pan is left-positive, tilt
+   up-positive, steering right-positive. Vendor offsets are reset to zero;
+   all offsets belong in this calibration, not personal vendor config files.
+   Wheel constructors use an empty config source (`/dev/null`), and the
+   underlying steering servo offset is cleared. The wrapper's default
+   +/-45 degree electrical clamp is replaced by the measured travel limits.
+   Vendor constructors initially command 90 electrical degrees; the physical
+   factory rejects calibration whose measured safe travel excludes that pose.
+   Tilt zero means chassis-level viewing, not the nominal -8 degree pose.
+4. In a separate controlled, authorized calibration session, measure forward
+   and reverse PWM per m/s, motor polarity and a conservative PWM limit.
+   This adapter assumes a linear open-loop speed mapping; validate the
+   usable range under the actual load or reduce it. It does not measure
+   achieved speed, compensate dead zones or establish physical safety.
+5. Store a local JSON calibration under ignored `cache/picar/`. Required
+   top-level fields are `pan`, `tilt`, `steering`, `forward_pwm_per_mps`,
+   `reverse_pwm_per_mps`, `pwm_limit` (1--100), and `drive_sign` (+1/-1).
+   Each servo object has `zero_deg`, signed `degrees_per_rad`, `min_deg`,
+   `max_deg`. Optional `control_limits` contains the shared `Calibration`
+   fields. Those defaults remain unvalidated; explicitly reduce them to the
+   measured safe envelope. `HardwareCalibration.from_dict()` rejects ranges
+   that would saturate servo/PWM travel, so receipts never silently report
+   an unreachable SI setpoint. No guessed physical calibration is shipped.
+6. Verify signs and stop with drive power isolated before any powered trial.
+   Keep an independent emergency stop available. Explicit physical launch
+   initializes servos and stops motors, but never arms drive automatically.
+
+```sh
+# Fake is still the default, including this new entry point:
+python -m demo.picar.hardware --port 8765
+# Later authorized physical deployment only, with PICAR_SERVICE_TOKEN set:
+python -m demo.picar.hardware --physical \
+  --calibration cache/picar/local-hardware-calibration.json \
+  --camera-device 0 --width 160 --height 120 --port 8765
+```
+
+`create_service(token=..., physical=True, calibration=...)` is the equivalent
+factory. It returns the existing service API with the same authentication,
+session/sequence deduplication, bounds, expiry, watchdog and explicit arming.
+`driver_factory` is an injection seam for tests. Closing this factory-created
+physical service stops actuators and releases the camera, including bind or
+startup failures in the CLI. The original `service --fake-driver` is unchanged.
+
+The driver converts BGR uint8 to packed RGB without resizing or overlays and
+rejects failed reads, unexpected dimensions/dtype and unavailable resolution.
+Service observations retain robot monotonic capture-start and separate wall
+timestamps; the driver does not replace them with inference/server time.
+Actuator, bounds and camera faults stop and latch this driver until restart.
+Stop holds camera pose and independently attempts motor stop, zero PWM and
+neutral steering. Motor polarity reversals stop at zero PWM first. Electrical
+servo outputs round to whole degrees for the vendor API; PWM is integer.
+Both have final defensive saturation; protocol SI violations
+are rejected, not silently clipped. A blocked camera read cannot hold the
+actuator lock. Camera backend reads/releases and vendor actuator calls may
+still hang; a software watchdog is not a hardware emergency stop.
+
+## Server Instruction And Speech API
+
+`speech.py` uses the standard library for typed/pretranscribed input and the
+ledger. Optional real inference runs on the server, not the Pi. Install its
+declared optional dependencies separately:
+
+```sh
+python -m pip install -r demo/picar/requirements-speech.txt
+```
+
+`FasterWhisperTranscriber(STTConfig(...))` loads only on the first worker
+transcription. The default pinned model downloads into this checkout's ignored
+`cache/picar/speech/hub/`. `STTConfig(model_path=Path(...))` reuses a local model
+without Hub access; `allow_downloads=False` requires cached assets. No sibling
+assets are required. The default model's commit comes from the prior design's
+locally recorded Hub ref; no new download or inference validation was performed.
+Asset/license checks remain part of deployment. CPU/int8 and two inference
+threads are default; GPU use must be selected explicitly and budgeted with
+learning. Construction does not load a model or start a worker.
+
+```python
+from pathlib import Path
+from demo.picar.speech import (
+    AudioUtterance, FasterWhisperTranscriber, InstructionLedger, SpeechBridge,
+)
+
+# All times below use the SAME absolute clock as decision_time, not wall time.
+history = InstructionLedger(clock_domain="episode_seconds")
+history.typed("operator-1", "Approach the red ball", at=1.)
+history.transcript("recorded-1", "No, the blue ball", utterance_start=2.,
+                   utterance_end=3., available_at=5., kind="correction",
+                   target_id="operator-1")
+history.typed("done-1", "Task complete", at=8., kind="completed", target_id="recorded-1")
+contexts = history.context(as_of=6.)
+statuses = history.model_status_events(as_of=6.)  # batch["status_events"]
+restored = InstructionLedger.from_snapshot(history.snapshot())
+
+# Real optional STT, for a finalized recorded file or an upstream audio producer:
+# bridge = SpeechBridge(FasterWhisperTranscriber(), clock=coordinator_clock).start()
+# bridge.submit(AudioUtterance("audio-2", Path("cache/picar/utterance.wav"), 9., 10.),
+#               ledger=history)
+# outcomes = bridge.drain(history)  # poll later, never wait in a control tick
+# bridge.close()                   # inspect bool result and abandoned_ids
+```
+
+Coordinator contract: `context(as_of)` exports **only** `text`, `issued_at`,
+`completed_at`, compatible with `models.LanguageEvent`. `issued_at` is text
+availability, never utterance start. Future events and future completion times
+are absent. Corrections close their target and add the replacement; interruption
+closes the target without inventing a new motor action. Completion, correction,
+interruption and reply/status text also export via `status_events(as_of)` as
+`{text, available_at, kind}` with their original ledger kinds. For the model
+batch use `model_status_events(as_of)`: it preserves text and availability
+but maps every kind to `robot_status`, matching the model's status whitelist.
+Neither export mutates the ledger. Original IDs, source, utterance start/end,
+availability and target IDs remain in `events(as_of)`, `get(id)` and the snapshot.
+Stable event IDs are the audio producer's utterance IDs; revisions use new IDs
+and `target_id`, not mutations. Identical deliveries deduplicate; conflicting
+IDs fail. Teacher, learner and replay should consume these same exports at each
+decision's recorded time and persist the ledger with the trajectory. This
+sidecar does not modify their model, runner or learner wiring.
+The ledger is coordinator-owned: serialize frontend admissions and snapshots
+there; the background worker only produces outcomes, never mutates history.
+
+`SpeechBridge` follows the earlier stream design's separation of ingestion
+and inference. A caller supplies finalized recorded audio or transcripts; no
+microphone or speaker is opened. `submit(utterance, ledger=history)` checks
+restored IDs and enqueues immediately; capacity includes in-flight and
+completed-but-undrained results. Full queues raise `queue.Full`, never silently
+drop instructions. `drain(history)` admits outcomes without waiting for STT;
+text becomes available only after the lazy segment iterator finishes.
+`TranscriptionOutcome` records queue/start/finish times, inference seconds and
+explicit errors. Include these costs and queue delays in later operational
+runs. Failed or empty transcripts are not instructions; retry is explicit.
+
+Run this worker outside capture/control/watchdog callbacks. The Pi watchdog
+remains in its separate service process. The server worker is a daemon thread,
+not hard realtime isolation; native inference cannot be forcibly cancelled.
+`close(timeout=...)` cancels queued admission, lists `abandoned_ids`, and returns
+false if inference still runs. Persist the ledger and finalized audio IDs at a
+drained boundary; after interruption resubmit unfinished IDs with the restored
+ledger. Worker queues are not durable checkpoints. Never reinterpret timestamps
+from a different machine or a restarted monotonic clock without an explicit
+coordinator clock mapping. This adds neither TTS nor per-action generation;
+ordinary student motor actions remain the LSTM's responsibility.
+
+Focused no-hardware acceptance (no sockets, models, microphone or network):
+
+```sh
+~/.venv/bin/python -m pytest -q test/unit/test_picar_hardware.py test/unit/test_picar_speech.py
+```
 
 ## Shared Contract
 

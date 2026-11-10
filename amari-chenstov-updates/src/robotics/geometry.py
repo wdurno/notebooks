@@ -46,3 +46,25 @@ def terminal_event(geometry: TerminalGeometry, held_s: float,
     if elapsed_s >= deadline_s - 1e-10:
         return "deadline"
     return None
+
+
+def contact_terminal_event(target_contact: bool, unsafe_contact: bool,
+                           elapsed_s: float, deadline_s: float) -> str | None:
+    """ball-contact-v1: unsafe contact precedes target contact, then deadline.
+
+    Contacts must exclude floor support and include chassis and wheel links.
+    No clearance, heading, speed or stopped-hold requirement applies here.
+    The original safe-stop-v1 geometry and terminal_event remain unchanged.
+    """
+    if type(target_contact) is not bool or type(unsafe_contact) is not bool:
+        raise ValueError("contact flags must be boolean")
+    if (not math.isfinite(elapsed_s) or elapsed_s < 0
+            or not math.isfinite(deadline_s) or deadline_s <= 0):
+        raise ValueError("elapsed/deadline must be finite, nonnegative/positive seconds")
+    if unsafe_contact:
+        return "collision"
+    if target_contact:
+        return "success"
+    if elapsed_s >= deadline_s - 1e-10:
+        return "deadline"
+    return None

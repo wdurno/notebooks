@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 import hashlib
 from importlib.metadata import version
 import json
@@ -19,7 +19,7 @@ from typing import Any
 
 from .actions import Calibration
 from .drift import drift_alpha, steering_gain
-from .geometry import in_success_region, target_geometry, terminal_event
+from .geometry import contact_terminal_event, in_success_region, target_geometry, terminal_event
 from .protocol import (
     CommandReceipt, Control, RewardComponents, RobotCommand, RobotObservation, StepResult,
 )
@@ -38,8 +38,14 @@ class SimulatorConfig:
     total_training_intervals: int = 1000
     realtime: bool = True
     calibration: Calibration = Calibration()
+    task_version: str = "safe-stop-v1"
+    obstacle_enabled: bool = True
 
     def __post_init__(self) -> None:
+        if type(self.task_version) is not str or self.task_version not in ("safe-stop-v1", "ball-contact-v1"):
+            raise ValueError("unsupported simulator task_version")
+        if type(self.obstacle_enabled) is not bool:
+            raise ValueError("obstacle_enabled must be boolean")
         for value in (self.physics_dt_s, self.control_interval_s, self.deadline_s):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError("timing must be finite and positive")
@@ -59,8 +65,15 @@ class SimulatorConfig:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> SimulatorConfig:
         value = dict(value)
-        value["calibration"] = Calibration(**value["calibration"])
-        return cls(**value)
+        names = {field.name for field in fields(cls)}
+        # Only these additive fields may be absent in historical snapshots.
+        if value.keys() - names or (names - {"task_version", "obstacle_enabled"}) - value.keys():
+            raise ValueError("unsupported or incomplete simulator configuration")
+        try:
+            value["calibration"] = Calibration(**value["calibration"])
+            return cls(**value)
+        except TypeError as exc:
+            raise ValueError("invalid simulator configuration") from exc
 
 
 def vertical_fov_deg(horizontal_deg: float, width: int, height: int) -> float:
@@ -177,7 +190,8 @@ class PyBulletBackend:
             self._box((1.8, .025, .175), (1.8, 1.225, .175), (.45, .5, .55, 1)),
         ]
         ox, oy = self._layout["obstacle"]
-        self.obstacle_id = self._box((.125, .25, .045), (ox, oy, .045), (.1, .25, .75, 1))
+        self.obstacle_id = (self._box((.125, .25, .045), (ox, oy, .045), (.1, .25, .75, 1))
+                            if self.config.obstacle_enabled else None)
         shape = p.createCollisionShape(p.GEOM_SPHERE, radius=.1, physicsClientId=cid)
         visual = p.createVisualShape(p.GEOM_SPHERE, radius=.1, rgbaColor=(.85, .08, .08, 1), physicsClientId=cid)
         self.target_id = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=shape,
@@ -323,13 +337,20 @@ class PyBulletBackend:
         if not self._replaying:
             self._events.append({"kind": "stop"})
 
-    def _geometry(self):
+    def _contact_types(self) -> tuple[bool, bool]:
+        contacts = self._p.getContactPoints(bodyA=self.vehicle_id, physicsClientId=self.client_id)
+        bodies = {contact[2] for contact in contacts}
+        unsafe_ids = set(self.wall_ids)
+        if self.obstacle_id is not None:
+            unsafe_ids.add(self.obstacle_id)
+        return self.target_id in bodies, bool(bodies & unsafe_ids)
+
+    def _geometry(self, *, contacts: tuple[bool, bool] | None = None):
         p, cid = self._p, self.client_id
         position, orientation = p.getBasePositionAndOrientation(self.vehicle_id, physicsClientId=cid)
         velocity, _ = p.getBaseVelocity(self.vehicle_id, physicsClientId=cid)
         yaw = p.getEulerFromQuaternion(orientation)[2]
-        contacts = p.getContactPoints(bodyA=self.vehicle_id, physicsClientId=cid)
-        contact = any(c[2] in (*self.wall_ids, self.obstacle_id, self.target_id) for c in contacts)
+        contact = any(self._contact_types() if contacts is None else contacts)
         return target_geometry(position[:2], yaw, math.hypot(*velocity[:2]), self._layout["target"], contact)
 
     def advance(self, physics_steps: int = 1, *, training: bool = True,
@@ -353,10 +374,15 @@ class PyBulletBackend:
             self._p.stepSimulation(physicsClientId=self.client_id)
             self._ticks += 1
             self._clock_ticks += 1
-            geometry = self._geometry()
+            contacts = self._contact_types()
+            geometry = self._geometry(contacts=contacts)
             self._held_s = self._held_s + self.config.physics_dt_s if in_success_region(geometry) else 0.
-            self._end_reason = terminal_event(geometry, self._held_s, self.episode_time_s,
-                                              self.config.deadline_s)
+            if self.config.task_version == "ball-contact-v1":
+                self._end_reason = contact_terminal_event(*contacts, self.episode_time_s,
+                                                          self.config.deadline_s)
+            else:
+                self._end_reason = terminal_event(geometry, self._held_s, self.episode_time_s,
+                                                  self.config.deadline_s)
             if self._end_reason:
                 self._control = self.config.calibration.neutral(self._control)
                 self._safety = "episode_ended"
@@ -456,8 +482,12 @@ class PyBulletBackend:
     def diagnostics(self) -> dict[str, Any]:
         self._check()
         position, orientation = self._p.getBasePositionAndOrientation(self.vehicle_id, physicsClientId=self.client_id)
+        target_contact, unsafe_contact = self._contact_types()
         return {"privileged": True, "position_m": tuple(position), "orientation_xyzw": tuple(orientation),
-                "layout": self._layout, "geometry": asdict(self._geometry()),
+                "layout": self._layout,
+                "geometry": asdict(self._geometry(contacts=(target_contact, unsafe_contact))),
+                "task_version": self.config.task_version, "obstacle_enabled": self.config.obstacle_enabled,
+                "target_contact": target_contact, "unsafe_contact": unsafe_contact,
                 "alpha": self.alpha, "steering_gain": steering_gain(self.alpha),
                 "exposure_intervals": self.exposure_intervals, "held_success_s": self._held_s,
                 "end_reason": self._end_reason, "physics_ticks": self._ticks,
@@ -509,7 +539,7 @@ class PyBulletBackend:
                 or value["bullet_api_version"] != self._p.getAPIVersion()
                 or value["bullet_package_version"] != version("pybullet")):
             raise ValueError("incompatible simulator snapshot schema or Bullet version")
-        if value["config"] != asdict(self.config) or value["run_id"] != self.run_id:
+        if SimulatorConfig.from_dict(value["config"]) != self.config or value["run_id"] != self.run_id:
             raise ValueError("snapshot configuration/run mismatch")
         self._clock_ticks = value["clock_start_ticks"]
         self._reset_count = value["reset_count"] - 1

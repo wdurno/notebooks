@@ -1,6 +1,134 @@
 # Plan 18 Restart Notes
 
-## Current Terminal State
+## Phase 8 Complete (Latest State)
+
+Phase 8 finished on 2026-11-10 at 18:39:31 UTC. Do not resume scientific
+computation: all three historical acceptance paths, 24 fresh blurred paths
+and 16 fresh no-blur paths are complete. The final full-checksum audit passed
+90 units before sealing its own result; all eight paired blocks and retirement
+ledgers passed. Completion is in stm_reproduction_v1/study_completed.json.
+Additional charged compute was 6.632 hours, within the 20-hour allowance.
+The final notebook generation is 77b57faab78ceaed7402f5f6.
+
+Fresh F1-R2 average novel-risk difference is -0.058952, nominal paired 95%
+CI [-0.097241, -0.022023], favorable in 7/8 replicas. F1-R1 also favors F1.
+The sample-saving point is 60.4296%, matched compute .472868x, S=1.27794,
+and equal-budget compute 1.15399x. Ordinary inverse intervals are withheld:
+107/2000 draws have a target already met at initialization. Matched-budget
+retention qualification remains unestablished; full-budget retention passes.
+The blur-context interaction is -0.031769 [-0.066725, -0.004184]. These are
+frozen policy comparisons with different ridge values, not isolated FD effects.
+
+Artifact review prompted by the user's frozen-retention question: the old
+holdout and unregularized metric are identical across policies and time.
+Mean per-replica initial old RMS is 1.361337 px. F1 endpoint change is
+-0.002134 px, exploratory paired 95% CI [-0.006119, 0.002964], under blur;
+without blur it is -0.008364 [-0.013293, -0.001425]. These endpoint contrasts
+reuse the final 2000 whole-replica bootstrap indices. Over the entire blurred
+path, the prespecified old RMS deterioration is instead +0.007790 px.
+The stream supplies 986.25 nominal grids on average alongside 100 novel grids,
+so improving the old-domain fit beyond finite pretraining is possible.
+No new training, retuning, or changes to sealed analysis were performed.
+
+The following recovery and launch entries are historical progress notes.
+
+Reboot recovery on 2026-11-10: CUDA is available on the RTX 4070 with
+PyTorch 2.10.0+cu128. Independently checked all 37 completed unit seals/file
+checksums and the interrupted fresh replica 4 R2 checkpoint (n=94); all passed.
+The scientific source hash still matches the acceptance record below. The old
+writer lock was free and no tmux server survived the reboot. Resumed the same
+production root in tmux `plan18-phase8`, appending to the existing log. The new
+worker advanced past n=94 and completed replica 4 R2, reaching 15/24 blurred
+and 0/16 no-blur paths complete. Fresh replica 5 initialization is underway;
+historical acceptance remains 3/3. All 96 current focused unit tests passed.
+The saved forecast is about 4.64 hours remaining, with 16.98 hours left in the
+incremental allowance and 566.8 GB free. No recipes, seeds, allocation or frozen
+scientific sources changed. Read live status.json for newer progress; the
+worker proceeds through 8B, 8C and 8D without another launch or approval.
+
+The user authorized Phase 8 on 2026-11-09: historical Plan 15 fidelity,
+eight fresh three-policy blurred blocks, then paired two-policy no-blur blocks.
+Read Phase 8 at the foot of plan18.md and reproduction/AGENTS.md. This phase
+explicitly restores the historical rank-64-plus-diagonal EWC and frozen recipes.
+Earlier Phase 7 is complete and must not be resumed as the Phase 8 experiment.
+
+Implementation: mnist_experiment/combined_memory/reproduction.
+Production root: cache/mnist_experiment/plan18/stm_reproduction_v1.
+Authorization: cache/mnist_experiment/plan18/phase8_authorization.json; additional
+72,000 seconds above the 92,898.41614728434-second family baseline. Budget
+survives restarts. Use ~/.venv/bin/python; CUDA works outside the sandbox.
+
+All 69 historical scientific source hashes match, as do the recorded/current
+PyTorch 2.10.0+cu128 and CUDA 12.8 versions. Final focused acceptance passed
+93 unit tests, actual SIGTERM/resume with bit-identical model and Fisher state,
+and complete source-matched CPU/CUDA smoke runs (25 units each). A preliminary
+report/analysis schema mismatch was repaired before source freeze; the failed
+attempt is preserved and charged. The independent historical statistics audit
+passed 218 checks, reproducing 41.443273% savings and S=.604889247383.
+Acceptance is sealed in phase8_acceptance.json with scientific source hash
+11b110408f31b3928ecff982a5d75656a575ecedfd67f9199227e230f7d27ea6.
+The preparation ledger charges all preparatory wall time once, net of the
+separately tracked smoke roots. The launch narrative below is historical;
+the reboot-recovery entry above and live status supersede its progress counts.
+
+Production launched in tmux session `plan18-phase8`; console output is
+cache/mnist_experiment/plan18/phase8-execution.log. The driver first reruns all
+three policies on original confirmation replica 0 and compares them with the
+immutable original. Fresh execution is gated on fidelity. It will then finish
+24 blurred and 16 no-blur paths automatically with notebook updates. Check
+status.json and the log for progress newer than these launch notes. Never
+launch a second writer; resume the same root after a halt.
+
+Phase 8A is complete: original replica 0 replay passed for R2, R1 and F1,
+all 15 numeric comparisons in each case with zero absolute discrepancy,
+including initial/final parameters, risk curves, objective/gradient values and
+represented Fisher checks. All 298 accepted updates and 853 retirements agree
+exactly in each policy. This verifies the historical computation; fresh
+statistical replication remains separate. Phase 8B has completed fresh replica 0
+(3/24 blurred paths); replica 1 initialization is underway. Its one-block mean
+novel risks are R2=2.02094793, R1=1.99384410, F1=1.93039504. These are descriptive
+health observations, not cohort inference or a reason to alter the allocation.
+The sealed fresh-manifest reserves 24,207.74 seconds (6.724 h), including
+contingency/closeout, against 69,502.63 seconds then remaining. Fixed allocation
+is 24 blurred plus 16 no-blur paths. A reporting-only refinement makes native fidelity rows and final closeout
+clearer (30 reporter tests passed); scientific source identity is unchanged.
+After the first two complete fresh blocks (6/24 blurred paths), a reporting-only
+restart loaded the tested native fidelity/outcome display and corrected an
+unsupported inverse being labelled a retention failure. SIGTERM exited cleanly,
+the same root resumed with unchanged scientific source hash/recipes, and the
+log remains append-only. See phase8_reporting_restart.json. No completed unit
+or scientific output was altered. The current reporter tests passed 32 cases.
+At four complete blurred blocks (12/24 paths), a second clean reporting-only
+reload displayed the reference-quality diagnostic beside the large point S.
+The reference improved only 2.48% from initialization at this interim look,
+below the fixed 5% diagnostic; do not promote the point saving to an established
+sample-efficiency result. See phase8_reporting_reload_2.json. Both reloads
+preserved the same scientific source identity and immutable completed paths.
+Fresh replica 4 is underway; use status.json for newer counts.
+Exploratory artifact context: original R2 frozen novel risks were
+[2.9577, 2.4373, 5.8618, 5.5447, 1.9722, 1.9974, 1.9958, 2.5458],
+mean 3.1641, SD 1.6056. The first four fresh values are
+[1.9664, 2.9152, 2.0121, 1.7898], mean 2.1709, SD .5054. Original replicas
+2/3 had nominal risks 2.0854/2.0155, so their large novel risks describe poor
+initial blur transfer rather than comparably poor nominal fits. Recompute
+the fresh distribution after all eight; keep this descriptive/post hoc and
+do not change seeds, pretraining or policies. It may contextualize limited
+reference learning headroom, but is not a demonstrated causal explanation.
+The partial inverse is unstable (some baseline targets are already met at
+initialization and some FD paths miss their endpoint targets); intervals remain
+withheld instead of dropping those draws. The fixed cohort continues unchanged.
+
+Runner:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.combined_memory.reproduction.run --resume
+```
+
+Use `--stage status`, `--stage stop`, or `--stage report` for operational commands.
+After a cooperative STOP, resume with `--resume --clear-stop`. Smoke runs must
+write a separate root and notebook. Preserve all unrelated robotics changes.
+
+## Phase 7 Terminal State (Historical)
 
 PHASE 7 IS COMPLETE. The worker exited normally; do not resume scientific
 computation or launch another writer. Phases 0--6 remain immutable history.
@@ -674,7 +802,7 @@ The reporting-only guard repair has handled subsequent publication normally;
 no further changes or numerical failures have been observed. Read status.json
 for progress newer than this milestone. Continue the remaining frozen blocks.
 
-## Final Closeout (Latest State)
+## Final Closeout (Original Study)
 
 Invocation 59952 completed normally with exit code 0. The study completion
 marker is cache/mnist_experiment/plan18/production_v1/study_completed.json,

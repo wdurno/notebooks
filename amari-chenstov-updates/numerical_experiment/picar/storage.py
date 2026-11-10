@@ -29,6 +29,9 @@ from .runtime import ArchiveUnavailable, BudgetExceeded, check_storage, runtime_
 from .schemas import METRIC_COLUMNS, TransitionRecord, metric_row
 
 STORAGE_SCHEMA_VERSION = 1
+JOURNAL_SCHEMA_VERSION = 1
+JOURNAL_CHECKPOINT_POLICY = {"name": "journal", "version": JOURNAL_SCHEMA_VERSION,
+                             "recovery_snapshots": 2}
 
 
 class IntegrityError(ValueError):
@@ -350,6 +353,15 @@ class RunStore:
     queues and cumulative clocks. records/metrics are JSON-only reporting data.
     Reuse an explicit transaction_id when retrying an interrupted publication.
     Root progress.json is a convenience mirror; CURRENT's progress is canonical.
+
+    checkpoint_policy="journal-v1" opts into a separately versioned, hash-linked
+    event journal. It adds checkpoint_policy to the resolved config identity;
+    config_hash, if supplied, must hash that resolved config (available as
+    store.config). Resume must explicitly select the same policy.
+    Only current/previous and explicit milestone state.pt payloads are retained.
+    Evidence, progress and transaction manifests are never pruned, nor are
+    uncommitted orphans. Quotas must allow staging one full state before pruning.
+    The default legacy layout and schema-1 reporting envelope are unchanged.
     """
 
     def __init__(self, root: str | Path, config: Mapping[str, Any], config_hash: str | None = None,
@@ -357,12 +369,22 @@ class RunStore:
                  archive_root: str | Path | None = None,
                  local_quota_bytes: int = 100_000_000_000,
                  archive_quota_bytes: int = 1_000_000_000_000, reserve_bytes: int = 0,
-                 allow_same_filesystem_archive: bool = False):
+                 allow_same_filesystem_archive: bool = False,
+                 checkpoint_policy: str = "legacy"):
         self.root = Path(root).absolute()
         sealed_parent = any((parent / "COMPLETED").exists() for parent in self.root.parents)
         if sealed_parent and not (resume and (self.root / "COMPLETED").is_file()):
             raise RunCollisionError("cannot create or resume incomplete data under a completed artifact")
         self.config = json.loads(canonical_json(dict(config)))
+        configured_policy = self.config.get("checkpoint_policy")
+        if checkpoint_policy not in {"legacy", "journal-v1"}:
+            raise ValueError("checkpoint_policy must be legacy or journal-v1")
+        if configured_policy is not None and (checkpoint_policy != "journal-v1"
+                                              or configured_policy != JOURNAL_CHECKPOINT_POLICY):
+            raise ValueError("incompatible checkpoint policy in resolved configuration")
+        self.checkpoint_policy = checkpoint_policy
+        if checkpoint_policy == "journal-v1":
+            self.config["checkpoint_policy"] = dict(JOURNAL_CHECKPOINT_POLICY)
         self.config_hash = _digest(canonical_json(self.config).encode())
         if config_hash is not None and config_hash != self.config_hash:
             raise ValueError("config hash does not match resolved configuration")
@@ -373,6 +395,8 @@ class RunStore:
         self._records: OrderedDict[str, TransitionRecord] = OrderedDict()
         self._metrics: list[dict] = []
         self._transactions: dict[str, dict] = {}
+        self._recovery: list[dict] = []
+        self._prunable: list[dict] = []
         self._verified_frames: set[str] = set()
         created = False
         try:
@@ -402,7 +426,8 @@ class RunStore:
                 if (resolved != self.config or manifest["config_hash"] != self.config_hash
                         or manifest["artifact_schema_version"] != ARTIFACT_SCHEMA_VERSION
                         or manifest["metric_schema_version"] != METRIC_SCHEMA_VERSION
-                        or manifest["storage_schema_version"] != STORAGE_SCHEMA_VERSION):
+                        or manifest["storage_schema_version"] != STORAGE_SCHEMA_VERSION
+                        or manifest.get("checkpoint_policy") != self.config.get("checkpoint_policy")):
                     raise RunCollisionError("run configuration or schemas differ")
                 self.completed = (self.root / "COMPLETED").exists()
                 if manifest["status"] == "completed" and not self.completed:
@@ -440,6 +465,8 @@ class RunStore:
                             "config_hash": self.config_hash, "started_at": utc_now(),
                             "completed_at": None, "status": "incomplete", "archive": archive_info,
                             "runtime": runtime_metadata(), "metadata": dict(metadata or {})}
+                if self.checkpoint_policy == "journal-v1":
+                    manifest["checkpoint_policy"] = dict(JOURNAL_CHECKPOINT_POLICY)
                 for name, value in (("config.json", self.config), ("manifest.json", manifest)):
                     self._write_root(name, _json_bytes(value))
             self.manifest = manifest
@@ -447,6 +474,8 @@ class RunStore:
                 self._load_current()
             if self.completed:
                 self.verify_completed()
+            elif self.checkpoint_policy == "journal-v1":
+                self._prune_journal()
         except BaseException:
             self.close()
             raise
@@ -463,13 +492,26 @@ class RunStore:
         path = self.root / name
         self._local_guard.check(len(data))
         previous = path.stat().st_size if path.exists() else 0
-        _atomic_bytes(path, data)
+        try:
+            _atomic_bytes(path, data)
+        except BaseException:
+            if self.checkpoint_policy == "journal-v1":
+                self._refresh_local_usage()
+            raise
         self._local_guard.used_bytes += len(data) - previous
+
+    def _refresh_local_usage(self) -> None:
+        # Failed writes/renames can leave partial or unpointed payloads behind.
+        self._local_guard.used_bytes = sum(path.stat().st_size for path in self.root.rglob("*")
+                                           if path.is_file() and not path.is_symlink())
 
     def _load_current(self) -> None:
         pointer = _read_json(self.root / "CURRENT.json")
         if pointer.get("storage_schema_version") != STORAGE_SCHEMA_VERSION:
             raise IntegrityError("incompatible checkpoint pointer schema")
+        if self.checkpoint_policy == "journal-v1":
+            self._load_journal_current(pointer)
+            return
         commit = pointer["commit_id"]
         if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{32}", commit):
             raise IntegrityError("invalid checkpoint ID")
@@ -492,6 +534,96 @@ class RunStore:
         self._transactions = manifest["transactions"]
         self._current = {"pointer": pointer, "manifest": manifest, "directory": directory}
 
+    def _load_journal_current(self, pointer: dict) -> None:
+        chain = []
+        seen = set()
+        while pointer is not None:
+            commit = pointer.get("commit_id")
+            if (pointer.get("storage_schema_version") != STORAGE_SCHEMA_VERSION
+                    or not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{32}", commit)
+                    or commit in seen):
+                raise IntegrityError("invalid or cyclic journal checkpoint pointer")
+            seen.add(commit)
+            directory = _safe_child(self.root, f"transactions/{commit}")
+            _verify_file(directory / "manifest.json", pointer["manifest"])
+            manifest = _read_json(directory / "manifest.json")
+            if (manifest.get("storage_schema_version") != STORAGE_SCHEMA_VERSION
+                    or manifest.get("journal_schema_version") != JOURNAL_SCHEMA_VERSION
+                    or manifest.get("checkpoint_policy") != JOURNAL_CHECKPOINT_POLICY
+                    or manifest.get("config_hash") != self.config_hash
+                    or manifest.get("commit_id") != commit
+                    or type(manifest.get("milestone")) is not bool
+                    or set(manifest["files"]) != {"records.json", "metrics.json", "progress.json"}):
+                raise IntegrityError("journal checkpoint schema/config identity mismatch")
+            for name, entry in manifest["files"].items():
+                _verify_file(_safe_child(directory, name), entry)
+            state_path = _safe_child(directory, "state.pt")
+            # Old non-milestone state is expendable; its sealed event is not.
+            if len(chain) < 2 or manifest["milestone"] or state_path.exists():
+                _verify_file(state_path, manifest["recovery_state"])
+            parent = manifest["parent"]
+            if manifest["parent_commit"] != (None if parent is None else parent.get("commit_id")):
+                raise IntegrityError("journal parent identity mismatch")
+            chain.append({"pointer": pointer, "manifest": manifest, "directory": directory})
+            pointer = parent
+        records: OrderedDict[str, TransitionRecord] = OrderedDict()
+        metrics = []
+        transactions = {}
+        for sequence, entry in enumerate(reversed(chain), start=1):
+            manifest, directory = entry["manifest"], entry["directory"]
+            tx = manifest["transaction_id"]
+            if (type(manifest["sequence"]) is not int or manifest["sequence"] != sequence
+                    or not isinstance(tx, str) or not 0 < len(tx) <= 160
+                    or tx in transactions or set(manifest["transactions"]) != {tx}):
+                raise IntegrityError("invalid journal sequence/transaction identity")
+            values = _read_json(directory / "records.json")
+            event_metrics = [metric_row(**row) for row in _read_json(directory / "metrics.json")]
+            fingerprint = _digest(_json_bytes({"state_sha256": manifest["recovery_state"]["sha256"],
+                "records": values, "metrics": event_metrics,
+                "progress": _read_json(directory / "progress.json"), "milestone": manifest["milestone"]}))
+            receipt = {"commit_id": manifest["commit_id"], "fingerprint": fingerprint}
+            if manifest["transactions"][tx] != receipt:
+                raise IntegrityError("journal transaction fingerprint mismatch")
+            incoming_ids = set()
+            for value in values:
+                record = TransitionRecord.from_dict(value)
+                old = records.get(record.transition_id)
+                if (record.transition_id in incoming_ids or old is not None and
+                        (old.ready or not record.ready
+                         or old.labeled(record.return_value, record.return_bin) != record)):
+                    raise IntegrityError("invalid journal transition finalization")
+                incoming_ids.add(record.transition_id)
+                records[record.transition_id] = record
+            metrics.extend(event_metrics)
+            transactions[tx] = receipt
+        self._records, self._metrics, self._transactions = records, metrics, transactions
+        self._current = chain[0]
+        self._recovery = list(reversed(chain[:2]))
+        self._prunable = [entry for entry in chain[2:] if not entry["manifest"]["milestone"]
+                          and (entry["directory"] / "state.pt").exists()]
+
+    def _prune_journal(self) -> None:
+        self._writable()
+        if not self._prunable:
+            return
+        # Re-establish durability even if a prior CURRENT replacement raised
+        # before its directory fsync. No pre-commit space reclamation is safe.
+        _fsync_directory(self.root)
+        while self._prunable:
+            entry = self._prunable[0]
+            path = _safe_child(entry["directory"], "state.pt")
+            try:
+                if path.exists():
+                    _verify_file(path, entry["manifest"]["recovery_state"])
+                    size = path.stat().st_size
+                    path.unlink()
+                    self._local_guard.used_bytes -= size
+                _fsync_directory(path.parent)
+            except BaseException:
+                self._refresh_local_usage()
+                raise
+            self._prunable.pop(0)
+
     def load_checkpoint(self, *, trusted: bool = False) -> dict | None:
         if not trusted:
             raise ValueError("Torch checkpoints are trusted-local-only; pass trusted=True explicitly")
@@ -499,7 +631,9 @@ class RunStore:
             return None
         # Verify again immediately before unpickling, not only during resume.
         path = self._current["directory"] / "state.pt"
-        _verify_file(path, self._current["manifest"]["files"]["state.pt"])
+        manifest = self._current["manifest"]
+        seal = manifest["recovery_state"] if self.checkpoint_policy == "journal-v1" else manifest["files"]["state.pt"]
+        _verify_file(path, seal)
         import torch
         state = torch.load(path, map_location="cpu", weights_only=False)
         if not isinstance(state, dict):
@@ -517,8 +651,10 @@ class RunStore:
 
     def checkpoint(self, state: dict, *, records: Sequence[TransitionRecord] = (),
                    metrics: Sequence[Mapping[str, Any]] = (), progress: dict | None = None,
-                   transaction_id: str | None = None) -> str:
+                   transaction_id: str | None = None, milestone: bool = False) -> str:
         self._writable()
+        if type(milestone) is not bool or milestone and self.checkpoint_policy != "journal-v1":
+            raise ValueError("milestone requires the journal checkpoint policy and a boolean flag")
         if not isinstance(state, dict):
             raise ValueError("checkpoint requires full runner state as a dictionary")
         tx = transaction_id or uuid.uuid4().hex
@@ -530,13 +666,18 @@ class RunStore:
         buffer = io.BytesIO()
         torch.save(state, buffer)
         state_data = buffer.getvalue()
-        fingerprint = _digest(_json_bytes({"state_sha256": _digest(state_data),
-                              "records": [record.to_dict() for record in records],
-                              "metrics": new_metrics, "progress": progress}))
+        event_identity = {"state_sha256": _digest(state_data),
+                          "records": [record.to_dict() for record in records],
+                          "metrics": new_metrics, "progress": progress}
+        if self.checkpoint_policy == "journal-v1":
+            event_identity["milestone"] = milestone
+        fingerprint = _digest(_json_bytes(event_identity))
         if tx in self._transactions:
             previous = self._transactions[tx]
             if previous["fingerprint"] != fingerprint:
                 raise ValueError("checkpoint transaction ID conflict")
+            if self.checkpoint_policy == "journal-v1":
+                self._prune_journal()
             return previous["commit_id"]
         new_records = OrderedDict(self._records)
         incoming_ids = set()
@@ -557,15 +698,26 @@ class RunStore:
             self.frames.verify(reference)
         commit = uuid.uuid4().hex
         transactions = {**self._transactions, tx: {"commit_id": commit, "fingerprint": fingerprint}}
+        journal = self.checkpoint_policy == "journal-v1"
         files = {"state.pt": state_data,
-                 "records.json": _json_bytes([record.to_dict() for record in new_records.values()]),
-                 "metrics.json": _json_bytes(self._metrics + new_metrics),
+                 "records.json": _json_bytes(event_identity["records"] if journal else
+                                            [record.to_dict() for record in new_records.values()]),
+                 "metrics.json": _json_bytes(new_metrics if journal else self._metrics + new_metrics),
                  "progress.json": _json_bytes(progress)}
         manifest = {"storage_schema_version": STORAGE_SCHEMA_VERSION, "config_hash": self.config_hash,
                     "commit_id": commit, "transaction_id": tx, "committed_at": utc_now(),
                     "parent_commit": None if self._current is None else self._current["pointer"]["commit_id"],
                     "transactions": transactions,
                     "files": {name: {"sha256": _digest(data), "bytes": len(data)} for name, data in files.items()}}
+        if journal:
+            manifest.update({"checkpoint_policy": dict(JOURNAL_CHECKPOINT_POLICY),
+                             "journal_schema_version": JOURNAL_SCHEMA_VERSION,
+                             "sequence": 1 if self._current is None else self._current["manifest"]["sequence"] + 1,
+                             "parent": None if self._current is None else self._current["pointer"],
+                             "milestone": milestone, "transactions": {tx: transactions[tx]},
+                             "recovery_state": {"sha256": _digest(state_data), "bytes": len(state_data)},
+                             "files": {name: {"sha256": _digest(data), "bytes": len(data)}
+                                       for name, data in files.items() if name != "state.pt"}})
         manifest_data = _json_bytes(manifest)
         incoming = sum(map(len, files.values())) + len(manifest_data)
         self._local_guard.check(incoming + 16384)
@@ -588,7 +740,9 @@ class RunStore:
         except BaseException:
             # No cleanup is needed for safety: unpointed directories are orphans.
             # Inventory their bytes now so retries cannot undercount the quota.
-            if temporary.exists():
+            if self.checkpoint_policy == "journal-v1":
+                self._refresh_local_usage()
+            elif temporary.exists():
                 self._local_guard.used_bytes += sum(path.stat().st_size for path in temporary.iterdir() if path.is_file())
             current_path = self.root / "CURRENT.json"
             if current_path.exists() and _read_json(current_path).get("commit_id") == commit:
@@ -598,6 +752,13 @@ class RunStore:
         self._transactions = transactions
         self._verified_frames.update(new_frame_refs)
         self._current = {"pointer": pointer, "manifest": manifest, "directory": destination}
+        if self.checkpoint_policy == "journal-v1":
+            self._recovery.append(self._current)
+            if len(self._recovery) > 2:
+                superseded = self._recovery.pop(0)
+                if not superseded["manifest"]["milestone"]:
+                    self._prunable.append(superseded)
+            self._prune_journal()
         # Non-authoritative mirror is recoverable from CURRENT on read. Its
         # failure must not turn a successful commit into a repeated event.
         try:
@@ -611,6 +772,8 @@ class RunStore:
         if self._current is None:
             raise ValueError("cannot complete a run without a committed checkpoint")
         self._load_current()
+        if self.checkpoint_policy == "journal-v1":
+            self._prune_journal()
         if any(not record.ready or record.truncated for record in self._records.values()):
             raise ValueError("pending/truncated transition labels prevent scientific completion")
         references = {reference for record in self._records.values() for reference in
