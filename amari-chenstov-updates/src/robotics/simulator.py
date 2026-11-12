@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from .actions import Calibration
+from .curriculum import LAYOUT_VERSION, sample_layout
 from .drift import drift_alpha, steering_gain
 from .geometry import contact_terminal_event, in_success_region, target_geometry, terminal_event
 from .protocol import (
@@ -40,6 +41,13 @@ class SimulatorConfig:
     calibration: Calibration = Calibration()
     task_version: str = "safe-stop-v1"
     obstacle_enabled: bool = True
+    layout_version: str = "legacy-v1"
+    barrier_sigma_easy: float = 1.
+    barrier_sigma_hard: float = .08
+    barrier_bounds: tuple[float, float] = (-.92, .92)
+    curriculum_total_intervals: int = 320
+    curriculum_exposure_override: float | None = None
+    domain_override: str | None = None
 
     def __post_init__(self) -> None:
         if type(self.task_version) is not str or self.task_version not in ("safe-stop-v1", "ball-contact-v1"):
@@ -61,13 +69,34 @@ class SimulatorConfig:
             raise ValueError("image/FOV exceeds supported bounds")
         if type(self.total_training_intervals) is not int or self.total_training_intervals <= 0:
             raise ValueError("total_training_intervals must be positive")
+        if self.layout_version not in ("legacy-v1", LAYOUT_VERSION):
+            raise ValueError("unsupported layout_version")
+        if (any(not math.isfinite(s) or s <= 0 for s in (self.barrier_sigma_easy, self.barrier_sigma_hard))
+                or self.barrier_sigma_easy < self.barrier_sigma_hard):
+            raise ValueError("barrier scales must be positive, finite and broad-to-narrow")
+        if (not isinstance(self.barrier_bounds, (tuple, list)) or len(self.barrier_bounds) != 2
+                or any(not math.isfinite(x) for x in self.barrier_bounds)
+                or not -.95 <= self.barrier_bounds[0] <= -.2 < .2 <= self.barrier_bounds[1] <= .95):
+            raise ValueError("barrier bounds must fit the walls and enclose all path centers")
+        object.__setattr__(self, "barrier_bounds", tuple(self.barrier_bounds))
+        if (type(self.curriculum_total_intervals) is not int or self.curriculum_total_intervals <= 0
+                or (self.layout_version == LAYOUT_VERSION and .7 * self.curriculum_total_intervals < 200)):
+            raise ValueError("curriculum ramp must span at least 200 intervals")
+        if self.curriculum_exposure_override is not None and (
+                not math.isfinite(self.curriculum_exposure_override) or self.curriculum_exposure_override < 0):
+            raise ValueError("curriculum override must be finite and nonnegative")
+        if self.domain_override not in (None, "A", "B"):
+            raise ValueError("domain_override must be A, B or None")
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> SimulatorConfig:
         value = dict(value)
         names = {field.name for field in fields(cls)}
         # Only these additive fields may be absent in historical snapshots.
-        if value.keys() - names or (names - {"task_version", "obstacle_enabled"}) - value.keys():
+        additive = {"task_version", "obstacle_enabled", "layout_version", "barrier_sigma_easy",
+                    "barrier_sigma_hard", "barrier_bounds", "curriculum_total_intervals",
+                    "curriculum_exposure_override", "domain_override"}
+        if value.keys() - names or (names - additive) - value.keys():
             raise ValueError("unsupported or incomplete simulator configuration")
         try:
             value["calibration"] = Calibration(**value["calibration"])
@@ -163,17 +192,20 @@ class PyBulletBackend:
         p.setPhysicsEngineParameter(fixedTimeStep=self.config.physics_dt_s, numSolverIterations=80,
                                    deterministicOverlappingPairs=1, numSubSteps=0, physicsClientId=cid)
         p.setGravity(0, 0, -9.81, physicsClientId=cid)
-        rng = self._np.random.default_rng(seed)
-        mirror = 1 if rng.integers(2) else -1
-        self._layout = {
-            "start": (float(rng.uniform(.4, .6)), mirror * float(rng.uniform(-.15, .15))),
-            "yaw": mirror * float(rng.uniform(-math.radians(10), math.radians(10))),
-            "target": (2.9, mirror * float(rng.uniform(-.2, .2))),
-            "obstacle": (1.575, mirror * float(rng.uniform(-.15, .15))),
-            "mirror": mirror,
-        }
-        if not self.feasible_layout(self._layout):
-            raise RuntimeError("reset violates the fixed geometry feasibility screen")
+        if self.config.layout_version == LAYOUT_VERSION:
+            self._layout = sample_layout(seed, self.exposure_intervals, self.config)
+        else:
+            rng = self._np.random.default_rng(seed)
+            mirror = 1 if rng.integers(2) else -1
+            self._layout = {
+                "start": (float(rng.uniform(.4, .6)), mirror * float(rng.uniform(-.15, .15))),
+                "yaw": mirror * float(rng.uniform(-math.radians(10), math.radians(10))),
+                "target": (2.9, mirror * float(rng.uniform(-.2, .2))),
+                "obstacle": (1.575, mirror * float(rng.uniform(-.15, .15))),
+                "mirror": mirror,
+            }
+            if not self.feasible_layout(self._layout):
+                raise RuntimeError("reset violates the fixed geometry feasibility screen")
         self.floor_id = self._box((1.8, 1.2, .025), (1.8, 0, -.025), (.6, .6, .6, 1))
         self._tiles = []
         for ix in range(12):
@@ -258,7 +290,9 @@ class PyBulletBackend:
         p.changeDynamics(self.vehicle_id, -1, linearDamping=.02, angularDamping=.05, physicsClientId=cid)
 
     def _update_drift(self) -> None:
-        self.alpha = drift_alpha(self.exposure_intervals, self.config.total_training_intervals)
+        self.alpha = ({"A": 0., "B": 1.}[self.config.domain_override]
+                      if self.config.domain_override is not None
+                      else drift_alpha(self.exposure_intervals, self.config.total_training_intervals))
         if self._last_alpha == self.alpha:
             return
         # Two procedural checker textures interpolate intensities, never geometry.

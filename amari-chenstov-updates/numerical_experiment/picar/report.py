@@ -653,6 +653,9 @@ def build_notebook(root: str | Path | None, output: str | Path = DEFAULT_NOTEBOO
     from .phase1_fix2_report import append_fix2, conclusion as fix2_conclusion
     book = append_fix2(book, snapshot)
     conclusion = fix2_conclusion(snapshot) or conclusion
+    from .phase1_fix3_report import append_fix3, conclusion as fix3_conclusion
+    book = append_fix3(book, snapshot, notebook_dir=Path(output).parent)
+    conclusion = fix3_conclusion(snapshot) or conclusion
     if conclusion:
         book.cells[-1].source = conclusion
     nbformat.validate(book)

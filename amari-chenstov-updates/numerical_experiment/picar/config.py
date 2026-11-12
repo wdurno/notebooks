@@ -108,12 +108,12 @@ class LearningConfig:
         expected = "supplemental-rehearsal-v1" if self.retired_archive_replay else "off"
         if self.retired_replay_protocol != expected:
             raise ValueError("retired archive replay requires a separately versioned scientific protocol")
-        if self.reward_version not in {"potential-v1", "dense-visual-v1"}:
+        if self.reward_version not in {"potential-v1", "dense-visual-v1", "dense-visual-centering-v1"}:
             raise ValueError("unsupported reward version")
         _positive(self.visual_reward_budget, "learning.visual_reward_budget", zero=True)
         _positive(self.reward_horizon_s, "learning.reward_horizon_s")
         _positive(self.step_cost, "learning.step_cost", zero=True)
-        if self.reward_version == "dense-visual-v1":
+        if self.reward_version in {"dense-visual-v1", "dense-visual-centering-v1"}:
             if (self.visual_reward_budget, self.reward_horizon_s, self.step_cost, self.nominal_period_s) != (2., 20., .02, .5):
                 raise ValueError("dense-visual-v1 fixes its reward scales; changes require a new version")
             lower = -5 - self.step_cost * self.reward_horizon_s / self.nominal_period_s

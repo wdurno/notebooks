@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ipynb_checkpoints/
+*.phase9e.lock
 .coverage
 htmlcov/
 

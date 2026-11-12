@@ -429,6 +429,21 @@ def test_invalid_inference_stays_incomplete_not_a_reward_or_action_parser_zero()
             session.next_interval(timeout=1)
 
 
+def test_snapshot_captures_external_history_under_quiesced_inference():
+    with ProtocolWorker() as worker, ControlSession(worker, ModelAccess(),
+            infer=lambda observation, version: Control()) as session:
+        session.start(seed=91)
+        session.next_interval(timeout=1)
+        def external():
+            assert session._quiescing
+            assert session._job is None or session._job["done"].is_set()
+            return {"history_ids": ["observed-frame"]}
+        state = session.snapshot(capture_external=external)
+        assert state["external"] == {"history_ids": ["observed-frame"]}
+        with pytest.raises(TypeError):
+            session.snapshot(capture_external={})
+
+
 def test_real_worker_physics_continues_while_update_holds_model_lease():
     pytest.importorskip("pybullet")
     from src.robotics.worker import SimulatorWorker

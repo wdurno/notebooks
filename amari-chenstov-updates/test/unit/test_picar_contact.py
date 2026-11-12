@@ -1,5 +1,6 @@
 """Task-version sidecar, contact precedence and bounded CPU Bullet recovery."""
 
+from copy import deepcopy
 from dataclasses import asdict, replace
 import json
 import math
@@ -50,7 +51,7 @@ def test_configuration_defaults_roundtrip_and_historical_additive_defaults():
     assert SimulatorConfig.from_dict(json.loads(json.dumps(asdict(current)))) == current
     legacy = asdict(default)
     del legacy["task_version"], legacy["obstacle_enabled"]
-    original = json.loads(json.dumps(legacy))
+    original = deepcopy(legacy)
     assert SimulatorConfig.from_dict(legacy) == default
     assert legacy == original
 

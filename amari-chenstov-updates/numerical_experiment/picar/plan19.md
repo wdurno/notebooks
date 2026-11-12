@@ -29,6 +29,10 @@ provisional and belongs here until
 experiments establish its value. Do not modify
 [`mathematical_overview.ipynb`](../../mathematical_overview.ipynb).
 
+**Next amendment:** Phase 1 Fix 3 (2026-11-11) is drafted below for review:
+modest centering rewards, a gradual barrier-placement curriculum and a bounded
+student trainability pilot. It has not been implemented or executed.
+
 **Report:** `numerical_experiment/picar/plan19_results.ipynb`, created during
 implementation. Follow the concise, visual reporting style of Plan 13:
 progress near the top, phases in chronological order, and a conclusion at the
@@ -2012,6 +2016,252 @@ basic recognition failing solely because of the synthetic appearance on
 these images; it does not establish reliable depth, navigation or use of
 vision under the control prompt. No existing run, task or readiness guide
 was changed, and no later learning phase was started.
+
+#### Phase 1 Fix 3: Centering Rewards And A Gradual Navigation Curriculum
+
+**Motivation and status (2026-11-11):** agreed design, drafted for review;
+implementation and execution are pending. Fix 2 produced useful straight
+approaches (3/6 unobstructed successes with the ported teacher), but no
+obstacle-task successes. Its follow-up recognition diagnostic identified the
+red sphere in every positive image while exposing unreliable spatial and
+distance descriptions. These findings motivate giving the **trainable policy**
+an easier starting distribution and a gradually increasing need to navigate.
+They do not establish that recognition is universally reliable or that the
+frozen teacher can acquire spatial skills from additional rewards.
+
+Qwen's demonstrator and evaluator remain frozen. Qwen supplies initial
+experience, followed by one-time student distillation; the student then learns
+from its own experience through the existing joint-likelihood update. The
+purpose of this amendment is to make that progression viable, not require
+the demonstrator to solve the eventual difficult task before learning starts.
+Preserve Fixes 1 and 2, their prompts, execution records and artifacts.
+
+**Scope and precedence:** version the common visual reward, navigation prompt
+and reset distribution. Keep `ball-contact-v1`, the eight-action weighted
+control mapping, top-$L$ architecture, STM/LTM parameterization and eviction-only
+diagonal EWC. For this revision, the curriculum and easier-task bootstrap
+below supersede Fix 2's requirement that frozen Qwen first pass full-obstacle
+readiness, and the original requirement to keep obstacle geometry fixed.
+The later Phase 2 skill/readiness checks apply to the admitted **initial easy
+distribution**, not the final obstacle distribution. Difficult-task competence
+is something the student is intended to learn. No claim of STM efficacy or
+full Phase 2--5 execution follows from this repair alone.
+
+**1. Add a small, auditable centering reward.**
+
+Keep proximity and terminal success dominant. Use one frozen-Qwen evaluation
+of each post-action image to obtain visible-ball status $V\in\{0,1\}$,
+proximity $p\in[0,10]$, and horizontal centering $c\in[0,1]$. The centering
+rubric should award 1 for roughly central placement and decrease smoothly
+toward 0 near the image edges; it must not penalize ordinary small offsets.
+Keep the semantic rubric short, with the strict output schema specified
+separately. Preserve raw responses and validate every component. These are
+visual judgments, not calibrated probabilities or geometric measurements.
+
+Use the recorded camera pan $\phi$, available through the shared robot
+interface, to discount centering obtained by looking sideways:
+
+$$
+w(\phi)=\max\!\left(0,1-\frac{|\phi|}{10^\circ}\right),
+\qquad
+v=V\min\{10,\;p+\eta w(\phi)c\},\qquad \eta=0.5.
+$$
+
+Use consistent angle units in code. This is at most half a point of bonus on
+the existing 0--10 visual scale; camera pan alone must not earn the full
+bonus. It is a practical mitigation, not a proof against every reward exploit.
+Qwen receives RGB for its scores, not simulator target position, distance,
+pose or the intended panel label. Pan affects only the transparent arithmetic
+above, and must be measured/recorded rather than inferred from a requested
+command when the backend can lag. Missing pan is a diagnostic failure, not
+an assumed forward view. Store proximity and awarded centering separately.
+
+Feed $v$ into Fix 2's elapsed-time-weighted `dense-visual-v1` formula under a
+new reward identity. Keep terminal bonuses, time cost and visual budget
+unchanged. The total centering addition is at most 0.1 undiscounted return
+units over a 20-second episode with those defaults; the enclosing return
+range remains [-6,12]. Near-contact crops retain their proximity reward even
+when centering is uncertain. A detour may temporarily lose the small bonus;
+there is no rule requiring the ball to remain centered during avoidance.
+
+Construct matched development images at comparable apparent ball size with
+central, moderately offset and edge positions. Include left/right mirrors,
+absent balls, close crops, obstacle detours and camera-pan-only contrasts.
+Show raw component scores and final rewards. Test that proximity ordering
+survives, absence gives zero, and central placement usually improves the score
+when proximity is matched. Validate the selected rubric on disjoint images;
+report ties and failures. Allow one targeted rubric repair, not a broad
+prompt search. Check that reward differences survive return binning and
+produce different likelihood weights, using Fix 2's bounded resolution audit
+if necessary. A requested bonus that disappears in scoring or discretization
+is not an implemented learning signal.
+
+**2. Give the teacher concise, consistent guidance.**
+
+Add the following semantic instruction to the versioned navigation prompt:
+
+> When the route is clear, steer toward the red ball and straighten as it
+> becomes centered. Prefer keeping it roughly centered while approaching.
+> When an obstacle blocks the route, go around it; temporarily moving the
+> ball away from the image center is acceptable.
+
+Retain the necessary action/output contract and causal instruction ledger.
+Supply the task guidance at every decision, as the existing interface does.
+Do not add verbose reasoning requests or require a reasoning transcript.
+Prompt revisions may change frozen-Qwen behavior, but reward feedback does
+not train its weights. After initial collection and one-time distillation,
+ordinary control belongs to the trainable student; neither teacher actions
+nor repeated distillation silently re-enter online learning.
+
+**3. Narrow barrier placement gradually while preserving feasible routes.**
+
+Keep the barrier's size and longitudinal coordinate fixed. At each reset,
+let $y_{\mathrm{path}}$ be the lateral coordinate of the start-to-target line
+at the barrier's longitudinal coordinate. Sample lateral placement from
+
+$$
+Y\mid n,\text{layout}\sim
+\operatorname{TruncNormal}\!\left(
+ y_{\mathrm{path}},\sigma(n)^2;\;y_{\min},y_{\max}\right),
+$$
+
+where the physical bounds are fixed across curriculum progress. Use a smooth
+scale schedule, for example
+
+$$
+\log\sigma(n)=(1-q(r))\log\sigma_{\mathrm{easy}}
+                 +q(r)\log\sigma_{\mathrm{hard}},
+\qquad q(r)=10r^3-15r^4+6r^5,
+$$
+
+with clipped progress $r$ between a declared ramp start and end, and strictly
+positive endpoint scales. This implements the agreed broad-to-concentrated
+placement idea with fixed support, avoiding moving uniform endpoints. It
+does not itself prove LAN or establish that the chosen rate is sufficiently
+slow. Start development with an easy hold for the first 10% of online
+exposure, a ramp over 10--80%, and a final hard hold. Use at least the existing
+200-transition ramp minimum and several episodes; lengthen within the budget
+if the observed change concentrates into only a few resets.
+
+Calibrate scales and bounds through cheap geometry draws before VLM rollouts.
+Aim provisionally for 40--60% of early layouts to have a clear direct approach
+and at least 90% of late layouts to obstruct it. These are distribution-design
+guides, not promised success rates. Determine blockage using the vehicle's
+finite footprint and a declared clearance margin, not a point-like ray.
+Inspect the resulting density and blockage curves; report achievable rates
+instead of silently changing the arena, target or barrier dimensions.
+
+Replace the old screen requiring wide passages on **both** sides. Admit
+side-offset barriers when at least one route remains feasible, accounting
+for turning radius, start/target access, walls and both endpoint steering
+gains. Keep this screen independent of policy and curriculum progress.
+Screening changes the realized placement distribution: log rejections and
+measure blockage on accepted layouts. Check representative paths with the
+scripted controller as a geometry diagnostic; do not use its controls as
+primary demonstrations. Preserve the old screen for historical run versions.
+
+Placement stays fixed within an episode. Curriculum progress uses cumulative
+captured training control intervals, including executed fallbacks, and is
+sampled at reset; pauses, sleep and evaluation do not advance it. Do not
+advance difficulty on success or slow it for one method after confirmation.
+Pair the schedule and named reset RNG streams across methods. Policies can
+finish episodes at different exposures, so log actual reset exposures and
+realized layouts rather than claiming identical state trajectories.
+
+During initial teacher collection and distillation, hold difficulty at the
+easy endpoint and texture/gain at A. For later online trajectories, retain
+the existing smooth A-to-B-to-A texture/gain path and add this gradual barrier
+curriculum. Label these axes separately: returning texture/gain to A does
+**not** restore the initial placement distribution while barriers remain hard.
+Report initial-task retention on the fixed easy-A panel, never on that altered
+end-of-training distribution. No full factorial drift study is required.
+
+**4. Verify a learning opportunity, then stop for the check-in.**
+
+After unit/CPU acceptance, execute a small ordered diagnostic rather than
+requiring zero-shot obstacle mastery:
+
+1. Compare the historical and revised teacher prompts on the same six easy
+   development layouts. Preserve successes and failures, action diversity,
+   steering corrections and representative clips. Treat the old prompt as a
+   bounded diagnostic comparator, not another full learning arm.
+2. Collect at most 300 easy-distribution teacher transitions for a diagnostic
+   bootstrap and perform one-time student distillation plus the initial
+   likelihood fit. Record all experience and costs; do not select only
+   successful episodes. Keep failed demonstrations distinguishable for review.
+3. Run a bounded Replay/EWC student trainability pilot from that shared
+   initialization, with two development seeds and at most 320 new transitions
+   per seed. Use the gradual curriculum and declared exploration. Compare
+   pre/post checkpoints on the same held-out diagnostic layouts against the
+   frozen initialized student. This probes the common learner and does not
+   test an FD effect. Shorten optional evaluation before shortening the ramp
+   below its minimum; report an incomplete pilot if the remaining budget cannot
+   support it.
+
+The earlier 70% teacher/60% student easy-task guides remain provisional
+readiness information, not a demand that the teacher already solve the hard
+task. Examine task success, collisions, heading/approach progress and action
+coverage before interpreting a small binary panel. At most one common
+development repair of curriculum rate or the existing exploration/optimizer
+settings is allowed, with a new version and recorded rationale. There is no
+requirement for statistically significant pilot learning, nor an automatic
+rejection of the idea after a noisy short run. A stationary policy or a lost
+reward signal should receive an explicit diagnosis before full-budget runs.
+
+Preselect fixed evaluation panels for clear approaches, partial obstruction
+and reliably blocked approaches, including mirrored layouts and small target
+offsets. Freeze their layouts and reward rubric across checkpoints. Use
+disjoint development and later confirmation seeds; evaluated transitions
+never enter replay, distillation, EWC or the exposure clock. Keep the initial
+easy-A retention panel and hard-B acquisition panel explicit in later phase
+calibration. Training success alone mixes learning with changing difficulty.
+After any development repair, both later methods receive the same sealed
+curriculum, reward, bootstrap, evaluation and service schedule.
+
+**5. Reporting, recovery and resource acceptance.**
+
+Add a concise, chronological **Phase 1 Fix 3** notebook section with the
+motivation above, one settings table and the following reader-facing results:
+
+- Placement density at early/middle/late exposure, with direct-path blockage
+  probability and the texture/gain schedule clearly distinguished.
+- A small reward contact sheet showing proximity, centering and total score,
+  including a camera-pan contrast.
+- Fixed-panel success/collision rates before and after the student pilot,
+  with counts and separate difficulty levels; one representative synchronized
+  ego/top-down clip before and after learning on a preselected common layout.
+- Progress near the notebook top: completed/pending units, active compute,
+  remaining estimate, and a short readiness conclusion with unresolved issues.
+
+Use a new configuration-driven Fix 3 entry point and immutable campaign root
+under `cache/numerical_experiment/picar/phase1/`. Preserve old loaders and
+completed artifacts. Implement `--resume` before GPU execution, including
+placement RNG, exposure/reset state, evaluator cache identity, replay and
+retirement ledgers, learner/optimizer state and interrupted-episode handling.
+Never turn an interrupted episode into a failure reward. Test reward bounds,
+camera-pan discount, collision precedence, distribution/screen invariants,
+evaluation isolation and stop/resume equivalence. Record new prompt, reward,
+curriculum and source identities. Rescored historical RGB belongs in derived
+artifacts with parent hashes; historical returns or Fisher assets cannot be
+silently reused under changed labels. Default-off retired-data rehearsal
+and the physical robot remain outside this repair.
+
+| Work | Provisional active wall-clock compute |
+|---|---:|
+| Geometry, focused acceptance and reporting | 0.10--0.20 h |
+| Frozen reward/prompt panels and teacher rollouts | 0.15--0.40 h |
+| Small bootstrap, student pilot and fixed evaluations | 0.55--1.40 h |
+| **Fix 3 total** | **0.80--2.00 h** |
+
+These are estimates, excluding implementation labor, not a fresh allowance.
+Charge all attempts to the existing three-hour cumulative repair envelope
+and the overall 20-hour study ledger, including Fixes 1/2 and the 89.3-second
+recognition diagnostic. Reforecast after the first measured units; preserve
+partial results and report any needed extension before exceeding the cap.
+At closeout, state what an easy bootstrap can supply, what the student has
+actually learned, the admitted difficulty/reward settings and updated costs
+for Phases 2--5. Execution of this amendment ends at that check-in; subsequent
+full learning and physical operation require their own authorization.
 
 ### Phase 2: Sol Bootstrap And Student Readiness
 

@@ -1,5 +1,251 @@
 # Plan 18 Restart Notes
 
+## Phase 9E Complete: No Worker Or Pending Experiment
+
+All eight fresh R/K pairs (16 trajectories) completed on 2026-11-11. The
+interrupted session resumed fresh R member 1 from accepted novel checkpoint
+91; no completed trajectory was repeated. The final root is
+`cache/mnist_experiment/plan18/adaptive_f1_v2`, with `study_completed.json` and
+status `completed`. The original failed A--E calibration stays closed. Do not
+start another calibration, the original six-arm confirmation, or another run
+without a new request. A completed wrapper `--resume` was tested and preserved
+all 72 scientific unit seals.
+
+R uses fixed pi .025/ridge 1. K uses process scale 1e-5 and ridge
+.3244386683194765, selected before confirmation after all 14 authorized K
+development paths and four reused R paths. Development Havg/H100 gaps were
+-.00482131/-.00845553 px. The fresh seed was 3305599612221488795.
+
+Fresh novel budget-averaged MSE is 2.328046 (R) versus 2.349878 (K).
+K-minus-R is +.021832 [.005462, .042746] px squared per landmark, using 2,000
+whole-pair bootstrap draws; only 1/8 pairs favor K. Endpoint novel error is
+not resolved. Average/endpoint old-retention gaps are -.001870/-.006844 px.
+Both noninferiority checks pass, but two-sided endpoint equivalence does not:
+its interval is [-.014827, -.000714] px. Thus fixed pi has slightly better
+acquisition and K somewhat better endpoint retention, not a clean result at
+fresh equivalent retention. Ridge differs, so this is a calibrated-policy
+comparison, not a pure timing effect.
+
+Online compute K/R is 1.052843 [1.041979, 1.062507]. K does not reach R's
+final novel-risk target within 100 novel grids; 1,858/2,000 inverse draws are
+unsupported. No incremental sample-saving/S estimate or ordinary inverse CI
+is justified. This does not alter historical F1-versus-Replay findings.
+Shared Phase 9 charge, including acceptance, attempts and closeout, is about
+9.73/20 active hours. The family occupies about 22.12 GB; about 552.6 GB was
+free at the final audit.
+
+Final full checks passed all 72 v2 units, 16 fresh state/pairing checks and
+68 preserved historical notebook cells; the parent audit passed 14 completed
+v1 units and four reused R references. Numerical/scheduler source components
+and the adopted parent checkpoint are unchanged. Evidence:
+`phase9e_parent_closeout_audit.json`, `phase9e_before_completed_resume.json`,
+and `phase9e_closeout_audit_v2.json` (v1 remains as an earlier audit).
+All 21 focused unit tests passed in `phase9e_unit_closeout.xml`; earlier 144
+unit tests, four interruption tests, CPU/CUDA smoke and forced-pi fidelity
+remain accepted. Reporting-only label fixes were visually checked.
+
+The notebook and plan conclusion are current. The final immutable report
+generation is `5626465e53c5d5e9acfb45a4` (43 generations audited). Reports are
+artifact-only, and all previous sections remain preserved. The notes below
+are chronological history, superseded by this completion record.
+
+## Phase 9E Versioned Scheduler And Resume
+
+The CUDA worker was previously stopped cleanly during the second development trajectory
+at ridge .5097942842144816, before consuming the final repair. Seven K
+development paths are complete; the eighth has an accepted checkpoint. The
+frozen numerical/observer component remains hash 0a3611a17ce99d9442ceb5576b1629c9a9ef082f303643125dc5bd67a001ad15.
+
+Review found that the original final repair could retry a candidate already
+complete on all four members or disregard the measured first-pair bracket.
+`combined_memory/adaptive_f1_scheduler` versions this orchestration correction
+without editing the old sources. It reads sealed v1 units in place and adopts
+the incomplete accepted checkpoint under the v2 identity. The scheduler's
+additional source hashes are in identity/provenance; numerical acceptance is
+reused only for the unchanged component. All 21 focused unit tests passed;
+the actual interrupted CPU migration reproduced both R/K replicas' scientific
+states exactly. CUDA resumed at novel checkpoint 78. The original 4--14 K
+development allowance and eight fresh pairs remain the scope.
+
+The new production root is `cache/mnist_experiment/plan18/adaptive_f1_v2`.
+Migration acceptance is sealed in `phase9e_scheduler_acceptance.json`.
+Use this command, not the old v1 entry point:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.combined_memory.adaptive_f1_scheduler.run --resume
+```
+
+The wrapper holds both parent/child writer locks, keeps all source/config/data
+checks, and shares the same 20-hour Phase 9 allowance. V1's STOP remains set.
+Status/stop/report use the same `--stage` flags on this new command.
+
+## Phase 9E Earlier Development Record
+
+The user authorized Phase 9E on 2026-11-11, an independent R/K continuation:
+original non-diagonal F1 with fixed pi .025 versus the same F1 with the existing
+velocity-Kalman policy, LFU off. Reuse the four completed development R paths
+and compatible initialization/data/observer assets; add only K development,
+calibrating its ridge to R's average and endpoint retention within .01 px.
+A passing separate gate would authorize eight fresh pairs (16 new paths),
+not resume the failed A--E confirmation. R stays fixed at ridge 1.
+
+Implementation is `combined_memory/adaptive_f1`; its production root is
+`cache/mnist_experiment/plan18/adaptive_f1_v1`. Acceptance passed 144 unit tests,
+four actual interruption/recovery tests (619.66 seconds), complete CPU/CUDA
+smokes, and full-length forced-pi fidelity. All 12 full numerical comparisons
+have exactly zero discrepancy, including final Fisher factors and solver data.
+The source hash is
+`0a3611a17ce99d9442ceb5576b1629c9a9ef082f303643125dc5bd67a001ad15`.
+`phase9e_acceptance.json` and its source-keyed copy seal these checks. CPU test
+artifacts were moved intact under `phase9e_recovery_artifacts_v1`; their compute
+is charged through the acceptance ledger once. Development starts with four
+new K paths at ridge 1. All four are now complete. K's pooled Havg/H100 are
+-.00206595045/-.00224751069 px versus R's .0110516770/.00813767015, so both
+gaps exceed .01 in magnitude. The sealed first proposal is K ridge .1 on
+development members 0/1. Current status/decisions supersede these counts.
+No fresh efficacy trajectory has run yet. Preserve the original failed calibration
+and share Phase 9's existing 20-hour cap across both protocols; the original
+4.36 hours and all new acceptance/recovery work count. New sources are isolated
+in the extension; the old `replicated_combination` sources remain frozen.
+
+Resume after acceptance with:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.combined_memory.adaptive_f1.run --resume
+```
+
+Use `--stage status`, `--stage stop`, or `--stage report` for the extension.
+The original `replicated_combination.run --resume` cannot execute this design.
+CPU/CUDA smoke roots and recovery XMLs use the `phase9e_` prefix under the
+Plan 18 cache. Do not resume a root whose scientific source identity differs.
+
+## Phase 9 Calibration Closed (Latest State)
+
+No worker is running. Phase 9 ended its bounded calibration search normally
+at 2026-11-11 07:41:29 UTC with status `calibration_infeasible`. Implementation,
+acceptance, exact F1 fidelity and 48 development paths are complete. The
+planned eight fresh six-arm blocks (48 paths) were NOT run. Do not restart
+scientific computation or label the full confirmation phase complete.
+
+The best unmatched tuple is R/B/C ridge 1, A ridge 2.6238074778486995 and
+D/E ridge .0316227766016838, with shared Kalman process scale 1e-5. Both
+pooled-four A-E matching ranges fail: Havg=.02042576379675798 px and
+H100=.037635745840038204 px, versus .01 each. The .50-pixel ceiling passes.
+The control's alternative ridge 2.308560597505053 matches endpoint retention
+but still misses the average by .013690596061013138 px relative to B.
+Adaptive pi's repair matches average more closely but retains substantially
+more old information at the endpoint. This is bounded-search calibration
+failure, not fresh negative evidence about the methods. Never widen the band,
+move B/R, add proposals or drop an arm without a new approved amendment.
+
+The scientific source hash remains
+2e1d727d1f2b6f98b5ea00c14b64f59910397c87983825ff6baaf94cd2f6731b.
+128 focused unit tests passed (phase9_unit_tests_closeout.xml); earlier four
+actual recovery tests and 12-path CPU/CUDA smokes passed. Full checksums passed
+83 completed production units. All 49 trajectory checkpoints (48 development
+plus one fidelity) passed archive/retirement/observer checks, and development
+pairing passed across every tested recipe. Audit: phase9_integrity_audit.json.
+
+The final notebook generation is 49f1af1276f32760375486d7. It clearly says
+fresh confirmation was not run and includes the selected four-member
+development curves, explicitly descriptive/post-selection, without CIs or S.
+Those scalar means were exported with the tested report.development_curves
+helper after full artifact validation, then added to report_snapshot.json.
+No scientific unit or selection decision changed. The reporter's terminal
+wording/range display and curve export are loaded; earlier notebook content
+is identical in all 28 report generations (phase9_notebook_audit.json).
+
+Additional charged compute is about 4.36 hours of the 20-hour allowance;
+about 15.64 hours is unused, not automatic authorization for more trials.
+Family/data accounting was 13.0 GB, with 562 GB free. The tmux session ended
+and nvidia-smi shows no experiment GPU process. Read phase9_closeout.json and
+the foot-of-plan closeout. All referenced artifacts are under
+cache/mnist_experiment/plan18/; the production root remains
+replicated_combination_v1. A report-only refresh is safe and never trains:
+
+```bash
+~/.venv/bin/python -m mnist_experiment.combined_memory.replicated_combination.run --stage report
+```
+
+The following Phase 9 launch/progress notes are historical and superseded.
+
+## Phase 9 Historical Execution Notes
+
+The user authorized Phase 9 execution on 2026-11-10. Read Phase 9 at the foot
+of plan18.md and combined_memory/replicated_combination/AGENTS.md. Phase 8 is
+complete and must not be resumed as this experiment. Phase 9 has six policies:
+R original F1 rank64+diagonal; A diagonal replay; B diagonal F1; C +LFU;
+D +velocity Kalman; E both. R/B ridge stays 1. LFU is diagonal-only. The
+representation contrast never gates efficacy; pooled-four .01 px average and
+endpoint retention calibration gates eight fresh six-arm blocks (48 paths).
+
+Implementation is in mnist_experiment/combined_memory/replicated_combination.
+The scientific implementation is now frozen with source hash
+2e1d727d1f2b6f98b5ea00c14b64f59910397c87983825ff6baaf94cd2f6731b.
+125 focused unit tests pass in the current combined audit (8.10 seconds;
+phase9_unit_tests_current.xml). Frozen-source CUDA and CPU smokes completed all
+12 paths in phase9_smoke_cuda_v1 and phase9_smoke_cpu_v3. All four actual
+SIGTERM/split-group and pretraining/fit/eviction recovery tests passed; XML is
+phase9_recovery_tests_final.xml (397.19 seconds). The earlier
+debug smoke's small-capacity validation mismatch was repaired before freeze;
+two preliminary recovery cases correctly rejected code edits during initial
+implementation. Those artifacts and time remain preserved/charged. Never
+resume a source-incompatible root or count smoke paths as efficacy evidence.
+
+Full F1 fidelity PASSED: all 17 comparisons have max absolute discrepancy 0,
+including initial/final theta, represented Fisher, risks, objectives and
+gradient diagnostics. It replayed Phase 8 fresh replica 0 R in 573.77 active
+trajectory seconds. The --stage fidelity invocation exited normally.
+The rest resumed in persistent tmux session `plan18-phase9`, appending to
+cache/mnist_experiment/plan18/phase9-execution.log. Observe the existing worker;
+do not launch a second writer. It begins 9B shadow scale selection, followed
+by bounded four-member retention calibration, then the gated 48-path cohort.
+The acceptance helper has sealed phase9_acceptance.json and an immutable
+source-keyed copy under phase9_acceptance/. It verified the final XMLs and
+complete source-matched smoke roots and charged recovery time once. Invoke as
+python -m mnist_experiment.combined_memory.replicated_combination.acceptance
+only when its specified evidence needs independent rechecking.
+Use ~/.venv/bin/python. CUDA on the RTX 4070 is available outside the sandbox.
+The notebook has pending Phase 9 progress near its top and a section at bottom.
+
+Authorization is cache/mnist_experiment/plan18/phase9_authorization.json:
+20 additional active compute hours above baseline 116774.02980467332 seconds.
+Charge all Phase 9 roots and preparatory compute once; no reset on reboot.
+500 GB family artifact cap, 20 GB free reserve; last free disk about 565 GB.
+At the latest milestone (2026-11-11 05:37 UTC), the first-pair stage finished
+24 development paths. The explicitly unmatched validation proposal has A ridge
+2.6238074778486995, B/C ridge 1 and D/E ridge .1. All six policies are now being
+evaluated on replicas 2/3 before the permitted all-four repair. The shared
+Kalman process scale is sealed at 1e-5, selected
+by shadow innovation scores, not predictive efficacy. No fresh path has run.
+Charged phase compute was about 2.28 hours. Live status.json supersedes these
+counts. The worker autonomously proceeds to four-member validation, permitted
+repair, and confirmation only if both pooled retention ranges pass .01 px.
+Do not add trials, move B/R, widen the band, or bypass a failed calibration.
+All remaining scientific work is authorized within the fixed 20-hour cap.
+
+A reporting-only reload earlier corrected the displayed process scale while
+preserving all scientific sources and checkpoints; see
+phase9_reporting_reload.json. A toy precision audit found only 7.14e-9 relative
+diagonal discrepancy between historical float32 derivatives and float64
+derivatives. R remains the exact historical implementation. The live source
+hash is unchanged; never edit scientific files within this sealed root.
+The reporter now also clearly closes an infeasible/budget-limited calibration
+without labelling confirmation as pending (48 reporter tests passed). This
+second reporting-only change is not yet loaded by the live worker; publish
+with --stage report after it exits, rather than interrupting its computation.
+
+Once source-matched CPU/CUDA/recovery acceptance is sealed, run:
+
+```bash
+~/.venv/bin/python -u -m mnist_experiment.combined_memory.replicated_combination.run --resume
+```
+
+The default root is cache/mnist_experiment/plan18/replicated_combination_v1.
+CLI supports --stage fidelity/status/stop/report and --clear-stop with --resume.
+Production requires CUDA and eight replicas. A report-only call never trains.
+Check live status and the foot-of-plan execution record for newer information.
+
 ## Phase 8 Complete (Latest State)
 
 Phase 8 finished on 2026-11-10 at 18:39:31 UTC. Do not resume scientific

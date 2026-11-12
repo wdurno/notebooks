@@ -441,9 +441,12 @@ class ControlSession:
                 "deadline_remaining_s": job["deadline"] - now,
                 "completed_age_s": now - job["completed_at"]}
 
-    def snapshot(self, *, timeout: float = 10.) -> dict:
+    def snapshot(self, *, timeout: float = 10., capture_external=None) -> dict:
+        """Capture optional caller history while inference and control are quiesced."""
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("snapshot timeout must be finite and positive")
+        if capture_external is not None and not callable(capture_external):
+            raise TypeError("capture_external must be callable")
         self._check(allow_failed=True)
         if threading.current_thread() is self._inference_thread:
             raise ControlSessionError("cannot snapshot inside inference")
@@ -464,7 +467,7 @@ class ControlSession:
                     if opened is not None:
                         opened["wall_age_s"] = now - opened.pop("wall_started")
                     with self._condition:
-                        return {"schema_version": CONTROL_SCHEMA_VERSION, "period_s": self.period_s,
+                        result = {"schema_version": CONTROL_SCHEMA_VERSION, "period_s": self.period_s,
                                 "pending_capacity": self.pending_capacity, "worker": backend,
                                 "learner": None if self.learner is None else self.learner.state_dict(),
                                 "model_version": version, "next_sequence": self._next_sequence,
@@ -477,6 +480,9 @@ class ControlSession:
                                 "training": self._training, "updates_s": self._updates_s,
                                 "last_update_s": self._last_update_s,
                                 "decision_count": self._decision_count, "fallback_count": self._fallback_count}
+                        if capture_external is not None:
+                            result["external"] = capture_external()
+                        return result
             finally:
                 self._quiescing = False
 

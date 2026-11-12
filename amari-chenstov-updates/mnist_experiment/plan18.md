@@ -53,6 +53,23 @@ policies; its advantage is larger in the blurred context. The 60.4% sample-savin
 point remains exploratory because 107/2000 inverse draws are unsupported.
 This phase restores the historical rank-64-plus-diagonal archive and data law.
 See the reproduction and blur-dependence design and execution record below.
+**Phase 9:** calibration closed on 2026-11-11 UTC without fresh confirmation.
+Implementation, acceptance, exact original-F1 replay and 48 development paths
+are complete. The bounded search did not match both retention summaries:
+the best tuple's A-E ranges are .02043 and .03764 px against a .01 px limit.
+The planned 48 fresh paths were therefore not run. About 4.36 additional active
+hours were charged against the approved 20-hour ceiling. This is a calibration
+shortfall, not a confirmation result against the methods. See the execution
+record at the foot of the phase; no worker remains active.
+**Phase 9E:** complete on 2026-11-11. Numerical/recovery acceptance,
+pooled-four calibration and all eight fresh R/K pairs passed execution and
+integrity checks. K ridge is .3244386683194765; R stays at 1. Fixed pi has
+lower novel budget-averaged risk: K-minus-R .02183 [.00546, .04275] px squared
+per landmark (nominal paired 95% interval). Kalman retains more old information
+at the endpoint; fresh two-sided retention equivalence is not established.
+No additional sample saving is supported. The shared Phase 9 charge is about
+9.73/20 active hours. The original failed A--E gate remains closed.
+See the amendment at the foot of Phase 9.
 **Agreed controller boundary:** retain Plan 17's velocity-Kalman observer and
 weight rule. Do not estimate the learner-error cross moment $C$ online or add
 a correlation-corrected controller to this experiment.
@@ -3457,3 +3474,958 @@ matched-budget retention bounds are unavailable because 107/2000 bootstrap
 targets are already met at initialization. This limits the sample-saving
 claim despite the positive predictive-risk evidence. Different historical
 ridges continue to limit attribution to the FD term alone.
+
+## Phase 9: Combining Methods In The Replicated STM Regime
+
+**Execution outcome:** numerical acceptance and development are complete;
+retention calibration is infeasible within the approved bounded search.
+Fresh confirmation and its efficacy/sample-saving inference were not run.
+
+### Motivation And Questions
+
+The research objective remains statistically and computationally efficient
+continual learning with few new observations and limited replay. Phase 8
+reproduced the historical F1 computation and found a fresh predictive benefit:
+average novel risk improved against both Replay/EWC references, with little
+old-domain deterioration. Its 60.4% sample-saving point remains exploratory
+because some bootstrap reference targets are already met at initialization.
+Nevertheless, we now have a useful, reproducible STM policy on which to test
+additional methods, rather than assuming that successes from different tasks
+will combine automatically.
+
+There is an important representation difference. F1 uses rank-64-plus-diagonal
+EWC, while the economical LFUs supported by our earlier investigations update
+diagonal EWC. The user explicitly rules out another attempt to extend LFUs to
+non-diagonal representations. Include the representation comparison as an
+experimental condition, then proceed with the diagonal combination study
+regardless of whether diagonal F1 reproduces the full reference's advantage.
+Representation performance is evidence, not a favorable-result gate.
+
+The questions are:
+
+1. What changes when F1 uses diagonal-only EWC with its other settings fixed?
+2. At comparable retention within diagonal EWC, do LFU, adaptive $\pi$, or
+   both improve learning beyond the STM incumbent?
+3. Does the resulting sample saving justify its additional online compute,
+   and how does the combined policy compare with the original F1 benchmark?
+
+This phase changes neither the blur regime nor model capacity to help an
+addition win. Weak motion detection, a small transport correction, or an
+unfavorable method contrast is a valid outcome. No low-rank LFU fallback,
+new discrepancy correction, cross-moment estimator, random transport probes,
+or full factorial expansion is authorized here.
+
+**Operating model:** Astra authors this design; after execution approval,
+Sol implements, validates, calibrates, runs and closes the phase without
+intermediate review. This draft authorizes no compute by itself. Preserve
+all completed studies and leave `mathematical_overview.ipynb` unchanged.
+
+### Six Conditions And Two Comparisons
+
+Every condition has the same head-rank-one model: 3,268 LTM and 108 STM
+parameters. Replay controls retain those trainable STM parameters. The
+following identifiers are local to Phase 9, not references to earlier A--E
+artifacts.
+
+| ID | Notebook label | LTM EWC | STM FD strength | LFU | Adaptation weight | Ridge ratio |
+|---|---|---|---:|---|---|---:|
+| R | F1 original | Rank 64 + diagonal | 3.34056320604949 | Off | Fixed .025 | Fixed 1 |
+| A | Diagonal Replay/EWC | Diagonal | 0 | Off | Fixed .025 | Calibrated |
+| B | Diagonal F1 | Diagonal | 3.34056320604949 | Off | Fixed .025 | Fixed 1 |
+| C | Diagonal F1 + LFU | Diagonal | Same as B | On | Fixed .025 | Calibrated |
+| D | Diagonal F1 + adaptive pi | Diagonal | Same as B | Off | Velocity Kalman | Calibrated |
+| E | Diagonal combined | Diagonal | Same as B | On | Velocity Kalman | Calibrated |
+
+**Representation comparison, B-R:** keep both recipes fixed. Preserve the
+same model, inputs, initialization, optimizer, FD probes/strength and ridge
+ratio; change only the EWC representation and its necessary maintenance.
+Do not recalibrate B or R to erase a retention difference caused by this
+change. Report predictive error, retention and runtime together. B-R is not
+automatically a comparison at matched retention.
+
+**Combination comparison, A--E:** B is the fixed retention reference.
+Calibrate A, C, D and E to it using development replicas only. The main
+incremental contrasts are C-B, D-B and E-B. Also report B-A, E-A and E-R.
+For a lower-is-better risk $\ell$, report
+
+$$
+I_{\rm LFU,\pi}=\ell_E-\ell_C-\ell_D+\ell_B.
+$$
+
+Negative interaction means a more favorable joint increment on this risk
+scale. Per-condition ridge calibration makes this an interaction between
+calibrated policies, not an isolated interaction between two mathematical
+terms. E-R is a practical benchmark comparison whose retention must be shown.
+
+The frozen initial predictor is an evaluation reference for every replica,
+not a seventh trained condition. Phase 8's R1/R2 artifacts remain historical
+context; they are not fresh paired controls for this phase.
+
+### Fixed Task, Data And Loss Contract
+
+Import the executed Phase 8 / Plan 15 configuration and its source hashes.
+Use the same 84-by-84 two-channel digit grids, (4,6)-channel CNN, unrestricted
+54-to-54 head, head-rank-one adapter, 45-epoch pretraining on 3,000 nominal
+grids, and Gaussian covariance $4I_{54}$. Preserve the original affine law,
+rendering, source-role allocation, support rejection and holdout construction.
+Use the original 128-grid initial Fisher reference; reuse those same reference
+observations for observer-noise calibration rather than obtain extra labels.
+The reserved source pool can remain larger, as in the imported data plan.
+
+The rare branch rises to probability .1 and its query blur changes continuously
+to a maximum standard deviation of 2.4 pixels. Reference images and geometric
+labels stay unchanged. Preserve the actual severity and mixture functions,
+including the 40-group mixture ramp, rather than reconstructing them from
+prose. Stop at exactly 100 designated novel grids and retain every intervening
+nominal arrival. All six conditions share each replica's actual data plan,
+nominal four-grid groups, split solve segments, and exposure horizon. Do not
+substitute Phase 7's padded canvas, angle law or 1,216-grid analysis clock.
+
+Keep FIFO32, two uniformly sampled replay grids, the .5/.5 mixture of incoming
+and replay mean losses when replay is nonempty, eviction-only EWC admission,
+accepted-state LTM recentering, and the pre-solve STM ridge anchor. Retain the
+historical bounded optimizer, including its stopping rules and 100-iteration /
+150-closure limits. Do not import the different scaled solver from an earlier
+combined-memory phase merely because its archive is diagonal.
+
+Prediction loss sums all 54 Gaussian coordinates and averages over grids.
+Reported risk is squared coordinate error divided by 27 landmarks. EWC, ridge
+and FD terms never enter held-out prediction error. Keep the FD step .01,
+two Rademacher probes, squared clipped replay ages, and division by STM
+dimension. Freeze all objective inputs and probes during a solve. Replay
+gradients can update both memory blocks.
+
+For every representation let $s_t=\operatorname{tr}(\widehat{\mathcal I}_{L,t})/3268$
+and $\kappa_t=c_m s_t$. Keep the inherited EWC/ridge multiplier
+$(1-\pi_t)/\pi_t$. Changes in archive trace can therefore change ridge
+strength even with fixed $c_m$; record this coupling explicitly.
+
+Use independent, stable seed namespaces for this phase's development,
+confirmation, bootstrap and acceptance. Within a replica, share model
+initialization, source IDs, transforms, stream, holdouts, replay selections
+and FD probes wherever compatible. Freeze the fresh seed list before
+development outcomes. Initialization and training sources remain separate
+from the fixed official-test holdouts. Historical fresh replicas may be used
+for numerical acceptance, never counted as new confirmation observations.
+
+### Phase 9A: Implementation, Fidelity And Timing
+
+Add a separately versioned implementation, provisionally
+`mnist_experiment/combined_memory/replicated_combination`, with artifacts under
+`cache/mnist_experiment/plan18/replicated_combination_v1`. Preserve historical
+scientific source files; use explicit adapters to their verified helpers.
+Publish tiny CPU/CUDA smoke configurations and `run`, `--resume`, status,
+stop and report-only commands. Add the pending notebook section and progress
+entry before production so implementation/readiness are visible.
+Add a local maintenance contract stating the R-only representation exception
+and the group/segment transaction order. Reuse historical helpers through
+explicit model bindings; do not share mutable binding state across threads.
+
+**F1 fidelity and representation isolation.** Execute R against the sealed
+Phase 8 fresh replica 0 F1 path using that path's recorded seeds. Reproduce
+the initial model, represented Fisher, objective components and gradients,
+predictions, replay/eviction IDs and accepted trajectory. Freeze tolerances
+before inspecting differences; start from Phase 8's acceptance tolerances.
+This rerun is acceptance evidence only. A failure requires diagnosis and a
+versioned repair, not relaxed tolerances selected to admit the discrepancy.
+
+Share R's initial archive with the diagonal arms by taking its represented
+diagonal, $d_{0,i}=\sum_k U_{ik}^2+\Lambda_i$. This gives identical initial
+diagonals and trace and removes off-diagonal information as the intended
+intervention. The common initialization expense is disclosed separately.
+After initialization, A--E maintain vectors directly; R alone follows the
+historical rank-64 compressor. Do not allocate a dense Fisher in an A--E
+trajectory and then discard its off-diagonal entries.
+
+At fixed audit states, compare the vector quadratic and its gradients with
+the corresponding diagonal-matrix objective. Check that all non-EWC terms,
+parameter ordering, ridge scale, probes and optimizer settings agree between
+R and B at a common state. Disabling both additions in the new diagonal engine
+must reproduce B, including after interruption. Initial predictions must agree
+across all six conditions. Numerical differences must not conceal a change
+in model, source distribution, solve budget or normalization.
+
+**Diagonal LFU transaction.** Reuse the mathematical transaction in
+"LFU Transport Without Premature Consolidation", adapting it to the original
+84-pixel model and split segments. For the accepted displacement
+$u_t=\theta_{t+1}-\theta_t$, including STM and LTM changes, measure
+
+$$
+\Delta_{t,i}=z_{Q_t,L,i}(\theta_{t+1})-z_{Q_t,L,i}(\theta_t),\qquad
+z_{Q,L,i}(\theta)=\frac{1}{4|Q|}\sum_{x\in Q}\sum_{o=1}^{54}
+\left(\partial_{L,i}f_o(x;\theta)\right)^2.
+$$
+
+Use matched still-available evictees as $Q_t$, or the incoming segment when
+there are no evictees. Compute true float64 derivative passes in bounded
+input/output chunks. The stable product of Jacobian difference and sum is
+preferred. This is a finite-change estimate of the integrated full $C+R$
+LFU; do not divide by displacement length or an artificial stencil step.
+Its use for old archived populations still assumes local representativeness.
+
+Apply transport to the old LTM archive before blending in actual evictees:
+
+$$
+\eta_t=1-(1-\pi_t)^{e_t/4},\qquad
+d_{t+1}=\Pi_+\left[(1-\eta_t)(d_t+\chi_m\Delta_t)
+  +\eta_t z_{E_t,L}(\theta_{t+1})\right],
+$$
+
+where $\chi_m=1$ only for C/E and the evictee term is absent for $e_t=0$.
+Use `expm1`/`log1p` for the weight. Recenter the LTM anchor only on eviction;
+transport alone admits no new evidence and does not recenter it. Log the
+unprojected negative mass, correction size and projection size. Do not clip
+the signed correction before forming the blend. The STM FD penalty has no
+archived matrix to transport. No off-diagonal LFU is implemented even if B-R
+is unfavorable.
+
+**Kalman clock and causality.** Retain the common-anchor, merged-coordinate
+velocity-Kalman observer and its existing action rule, without a cross-moment
+or discrepancy correction. Adapt the model/parameter mapping to this exact
+F1 architecture and verify merged/unmerged predictions at the anchor. Use the
+common reference observations for centered per-grid observed-score variance;
+use model-integrated Fisher for the anchor map. These are distinct quantities.
+Initialize prior variances and $q^{\rm ref},q^E$ with the actual 3,000-grid
+pretraining count, not an earlier phase's hard-coded count. Keep the anchor
+fixed throughout a trajectory.
+
+The observer clock is the original nominal four-grid arrival group. Choose
+$\pi_g$ from past information before that group, using its pre-group archive
+diagonal and the prospective nominal batch size four. Hold this action fixed
+through every historical solve segment in the group. Accumulate each incoming
+grid's score at the fixed anchor once, assimilate the complete group once,
+then update $q^{\rm ref}$ once. New scores affect only the next group's action.
+The last group may be truncated by the 100th novel observation: assimilate
+only observed members with their actual measurement batch size, record the
+partial group, and never read unobserved future members. The action for that
+group was already chosen for the nominal arrival. A final singleton cannot
+provide a fresh sample variance; retain and flag the prior noise estimate.
+
+Keep the 16-group .025 cold start, 32-group score-variance half-life, and
+$[10^{-4},.2]$ bounds. Use the inherited float64 two-by-two Joseph covariance
+update and observer-only numerical floors. Replay, LFU evaluations, novel
+event counts and optimizer closures do not advance the observer. Use
+$q^{\rm ref}_{g+1}=(1-\pi_g)^2q^{\rm ref}_g+\pi_g^2/m_g$ with actual observed
+group size $m_g$; maintain $q^E$ separately on real eviction transactions.
+Neither concentration is an exact effective sample size for the replay-trained
+nonlinear model. Record raw/applied pi, both Kalman gains, mean-motion and
+uncertainty energies, one-observation noise and batch noise, and fallback use.
+
+**Acceptance and timing.** Test Gaussian normalization/signs, all-output
+diagonal accumulation, zero-displacement LFU, endpoint-difference agreement,
+joint-parameter displacement, FIFO uniqueness and eviction-only admission,
+group-versus-segment observer scheduling, no-lookahead action selection,
+fixed-policy fidelity, and report identity. Interrupt/resume real tiny CPU
+paths inside pretraining, a split group, a solve and eviction; compare final
+model, archive, FIFO, observer and counters with uninterrupted execution.
+Include a CUDA smoke. Invalid nonfinite state is a failure, not an ordinary
+controller fallback. Measure representative R/B/C/D/E operation costs and
+artifact growth before reserving the fresh cohort.
+
+Implement and test the six-condition scalar analysis explicitly. Existing
+three- or eight-arm analyzers must not be satisfied by duplicating records or
+inventing missing arms. Test paired resampling, contrast/interaction signs,
+retention roots and clock alignment, unsupported inverse targets, interpolated
+time/retention, and immutable report preservation with deterministic fixtures.
+
+### Phase 9B: Development And Retention Calibration
+
+Use four paired development replicas, distinct from historical and fresh
+confirmation seeds. R and B always retain their specified fixed recipes.
+Publish their representation comparison as results arrive. Proceed with the
+diagonal conditions whether B is better, similar or worse than R.
+
+First calibrate one shared Kalman process-noise scale for D/E from the first
+two development streams. Evaluate the inherited candidates
+$\eta_{\rm KF}\in\{10^{-5},10^{-4},10^{-3}\}$ in shadow using the same
+fixed-anchor incoming scores, reference calibration and group clock. Select
+the largest mean prequential innovation log score, averaged equally over
+coordinates, post-cold-start groups and replicas; break ties within $10^{-8}$
+by proximity to $10^{-4}$ on a log scale, then smaller scale. This is a
+composite predictive diagnostic under the diagonal observation approximation,
+not a calibrated joint likelihood test. Freeze it before closed-loop ridge
+selection. Do not choose it to force a larger pi or a favorable method effect.
+Publish innovations, floors and signal/noise diagnostics even if every
+candidate appears poorly calibrated; finite diagnostic weakness is not a
+reason to drop D/E. No holdout gradients or regime labels enter this filter.
+
+For replica $r$, method $m$, and $N=100$, let $O_{m,r}(n)$ be fixed old-panel
+MSE per landmark at the post-update checkpoint containing the $n$th novel
+grid. Use the two retention statistics
+
+$$
+H^{\rm avg}_{m,r}=\sqrt{\frac1N\sum_{n=1}^{N}O_{m,r}(n)}
+                 -\sqrt{O_{m,r}(0)},\qquad
+H^{100}_{m,r}=\sqrt{O_{m,r}(N)}-\sqrt{O_{m,r}(0)}.
+$$
+
+Negative deterioration is allowed; do not clip an improvement to zero.
+Let $\bar H_m^j=\frac14\sum_{r=0}^3 H^j_{m,r}$ be the mean over all four
+development replicas. For a selected A--E tuple require
+
+$$
+\max_{m\in\{A,B,C,D,E\}}\bar H_m^j
+-\min_{m\in\{A,B,C,D,E\}}\bar H_m^j
+\le 0.01\ {m pixels},\qquad j\in\{{\rm avg},100\}.
+$$
+
+This tighter band is motivated by Phase 8's roughly .03--.04-pixel endpoint
+control deterioration: a .10-pixel band would admit differences larger than
+the effects we are investigating. The .01 criterion is a development mean
+matching requirement, not a promise of fresh statistical equivalence. R is
+excluded from it. The earlier .50-pixel absolute deterioration ceiling remains
+a separate guard, not a way to force B onto a different operating point.
+
+Use a bounded, staged ridge search rather than a factorial:
+
+1. Run all six starting recipes on development replicas 0 and 1. Start A at
+   $c_A=\sqrt{10}$ and C/D/E at 1; B/R stay at 1. Freeze the shared Kalman
+   scale first. These complete paths may be reused in later selection.
+2. Give each of A/C/D/E at most two additional ridge proposals on that first
+   pair. Propose geometric interpolation between empirical brackets or an
+   adjacent half/whole decade when the response is unbracketed. Allow zero
+   after the positive lower boundary overprotects; keep $0\le c\le1000$.
+   Inspect both retention responses and do not assume monotonicity. Record
+   every proposal and interleave arms so one does not consume the budget.
+3. Among feasible tuples on the first pair, minimize equally weighted mean
+   novel budget-averaged risk over A--E. If none yet passes, propose the tuple
+   with the smallest maximum matching violation, then that same risk criterion.
+   Break ties by measured learning time and stable recipe IDs. This is only a
+   proposal; it does not authorize fresh confirmation.
+4. Run R, B and the proposed four recipes on development replicas 2 and 3.
+   Show first-pair, second-pair and pooled-four results. Only recipes complete
+   on all four members can form the final tuple. If needed and affordable,
+   allow each calibrated arm one further targeted ridge proposal evaluated
+   on all four members; extending an earlier candidate to all four consumes
+   this repair allowance as well. Recheck the full A--E range for both metrics.
+5. Freeze the passing pooled-four tuple with the smallest equal-arm novel
+   risk, then runtime and stable-ID tie breaks. Record settings, candidate
+   coverage, both range checks, full retention curves, source hashes, cohort
+   seeds and remaining resource reserve. Keep B/R fixed throughout.
+
+The initial stage has 12 paths, at most 16 first-pair refinements, 12
+second-pair paths, and at most 16 repair paths: 24--56 development paths in
+total, with exact reuse rather than duplication. The upper bound is not a
+requirement to spend every candidate slot. Never rank by a preferred arm's
+advantage over the control or by its estimated S.
+
+Preserve the complete proposed tuple and report `calibration_infeasible` or
+`calibration_budget_limited` if the band cannot be met within this search and
+the allowance. Do not widen the band, move B, drop an arm or call an unmatched
+tuple matched. Fresh confirmation requires the passing seal. This validity
+gate is independent of B-R's efficacy: diagonal underperformance alone never
+blocks the combination experiment. No intermediate user review is required
+for any of the specified proposals or ordinary numerical repairs.
+
+### Phase 9C: Fresh Six-Condition Confirmation
+
+Run **eight new paired replicas times six conditions: 48 trajectories**.
+Reuse each replica's common initialization and fixed data plan across its six
+conditions, rotate execution order by replica to reduce timing-order effects,
+and complete paired blocks before starting the next where practical. Do not
+pool development, historical replication or acceptance paths into this cohort.
+No calibration or schedule changes are allowed after fresh execution starts.
+
+Evaluate the same fixed nominal and novel official-test panels at initialization
+and each novel-count checkpoint. Keep independent evicted-training-cohort
+diagnostics separately labelled. Report actual total incoming grids alongside
+the 100 novel grids and nine constituent digit pairs per grid. A checkpoint
+is a model evaluated after its segment's accepted update on held-out inputs;
+the plotted image count is training exposure, not evaluation exposure.
+
+Primary prediction summaries are the mean novel risk over $n=1,\ldots,100$
+and endpoint novel risk. Report B-R, C-B, D-B, E-B, B-A, E-A and E-R, the
+LFU/adaptation interaction, favorable-replica counts, and paired 95% intervals.
+Keep the all-arrival trapezoidal risk as a secondary diagnostic with its own
+clock label. An equal-budget risk comparison remains meaningful when an
+inverse sample-saving estimate is unsupported.
+
+Reassess both retention summaries on fresh data. Practical A--E equivalence
+requires paired two-sided 95% intervals inside $[-.01,.01]$ pixels; a
+nonsignificant difference alone does not establish it. Publish all ten A--E
+pairwise retention comparisons in a compact table or linked detail, and
+always show the comparisons with B in the main story. Report unmatched fresh
+results as measured trade-offs; do not recalibrate or suppress their paths.
+Show R's retention alongside B/E without applying the development matching
+label to R. Include endpoint old-error changes against frozen initialization
+with uncertainty, so a tiny dip below the frozen line is not overinterpreted.
+
+Use 2,000 named-seed bootstrap draws of whole six-condition replica blocks,
+sharing each draw across risk, retention, costs, inverse targets and interaction.
+These are nominal intervals conditional on the frozen policies and source
+dataset, not independent samples from landmarks or checkpoints and not
+familywise significance claims. Finish all eight replicas irrespective of
+interim efficacy. No significance-based stopping or automatic extension.
+
+### Sample Efficiency And Compute
+
+Keep Replay/EWC as the primary reference: in this phase it is calibrated
+diagonal condition A. For novel-panel mean risk $\bar R_m(n)$ define
+
+$$
+\tau_A=\bar R_A(100),\qquad
+f_{m:A}=1-\frac{n_m(\tau_A)}{100},\qquad
+q_{m:A}=\frac{T_m(n_m(\tau_A))}{T_A(100)},\qquad
+S_{m:A}=\frac{f_{m:A}}{q_{m:A}}.
+$$
+
+**S is the fraction of samples saved divided by the compute ratio needed
+to reach the same predictive quality.** Show $f$, $q$ and equal-budget time
+beside S. The definition is continuous with earlier work, but this reference
+policy differs from Phase 8's R2; numerical savings are not directly
+interchangeable. Do not substitute historical R2 data as a paired denominator.
+
+Use Phase 8's unsmoothed mean-curve, last-sustained-crossing definition, linear
+interpolation, and no extrapolation. A uses its full budget by definition.
+Report secondary C/D/E equivalences against B's endpoint to answer whether
+the additions save samples beyond STM. R can also be compared against A,
+with its representation/retention qualifications displayed. Never select the
+most favorable target or crossing as the headline after inspecting results.
+
+Retain the 5% reference-improvement diagnostic, the frozen reference curves,
+and explicit statuses for already-met or unreached targets. Recompute every
+target, crossing, cost and retention quantity within each paired bootstrap
+draw. Preserve invalid draws and withhold ordinary inverse confidence intervals
+if any are unsupported; do not report intervals conditional on deleting them.
+Do not retune a control, extend a trajectory or change a target to manufacture
+an estimable S. This addresses the uncertainty encountered in Phase 8 directly.
+
+For savings claimed as retention-supported, apply the .01-pixel one-sided
+upper-bound noninferiority check at full and matched budgets, plus the .50-pixel
+absolute deterioration ceiling for both policies. At the matched budget,
+interpolate each replica's old MSE on its novel-count clock, then take roots
+and paired differences. Report both full-budget average and endpoint checks.
+This one-sided support allows better retention and is distinct from two-sided
+equivalence. An unavailable inverse also makes its matched-retention bound
+unavailable, not a demonstrated retention failure.
+
+Online compute includes incoming preparation, optimizer/replay, FD penalty,
+LFU, active observer, eviction and compression costs. Measure them on current
+hardware. Count all background arrivals needed to reach the budget, not only
+novel arrivals. Exclude evaluation and diagnostic shadow observers from the
+deployment ratio but charge them to the experiment allowance. Report shared
+pretraining/reference preparation separately. Fresh D/E must each account for
+the full observer cost needed to run alone; shared development score caches
+cannot make their deployed cost appear free. Record peak VRAM and artifact
+growth. Do not assume the old two-to-one compute ratio persists.
+
+### Phase 9D: Reporting And Closeout
+
+Append a concise chronological section to `plan18_results.ipynb`; preserve all
+earlier sections and their immutable generations. Keep progress near the top:
+subphase, completed/expected paths and paired blocks, calibration status,
+charged compute, remaining allowance and measured completion forecast. Refresh
+at completed blocks and the existing 15-minute heartbeat, without replaying
+the entire historical notebook on every checkpoint.
+
+The main narrative should fit a few figures and compact tables:
+
+1. Motivation and six-condition settings, with the fixed B-R comparison and
+   calibrated A--E comparison explicitly distinguished.
+2. Development acquisition-versus-retention plots for both retention metrics,
+   selected recipes and the matching band; R stays visible as context.
+3. Fresh novel and old error trajectories, frozen references, paired effects
+   and retention qualifications. Label pi consistently as $\pi$.
+4. Sample savings, matched/equal-budget compute and S, with unsupported targets
+   visible; keep Replay/EWC and STM reference targets clearly separated.
+5. A compact pi/gain/motion plot and LFU correction/projection plot, sufficient
+   to see whether either addition was active and numerically healthy.
+6. A conclusion addressing representation, incremental benefit, combined policy
+   value, retention and compute. Separate observations from mechanism hypotheses.
+
+Detailed candidates, per-replica arrays, numerical audit logs and interval
+diagnostics belong in linked artifacts. Plots should distinguish the root of
+pooled mean MSE from mean replica RMS wherever both are used. Do not describe
+old-domain improvement as impossible: continuing nominal observations can
+improve a finite pretrained model. Do not infer STM-to-LTM transfer or exact
+optimality of the applied pi rule from a favorable prediction comparison.
+
+Before successful confirmation closeout verify source/configuration identities, all completion seals,
+paired source/holdout/exposure hashes, unique evictions, finite model/archive/
+observer state, calibration decision, and all 48 fresh trajectories. Publish
+final immutable analysis/report generations, update this phase's execution
+record and `PLAN18_HANDOFF.md`, and state clearly whether any resumption is
+still needed. A report-only invocation must never train, download, or repair
+scientific artifacts.
+
+### Compute, Recovery And Authority
+
+Phase 8 completed 40 fresh paths plus three acceptance replays and reporting
+in 6.63 charged hours. New diagonal maintenance may be cheaper, while LFU and
+observer passes add costs and calibration adds trajectories. These forecasts
+are provisional; measure the new operations in 9A rather than extrapolate
+from parameter count alone.
+
+| Subphase | Scope | Expected active wall clock |
+|---|---|---:|
+| 9A | Numerical/fidelity acceptance, CPU/CUDA recovery smoke, resource pilot | 1--2 h |
+| 9B | Four development members, shadow scale selection, bounded ridge calibration | 3--6 h |
+| 9C | Eight fresh initializations and 48 paired confirmation trajectories | 6--10 h |
+| 9D | Bootstrap, final integrity audit and concise notebook closeout | .5--1 h |
+| Total | Excludes unattended idle/reboot time | 10.5--19 h |
+
+Propose **20 additional active compute hours** upon execution approval, with
+one durable family-baseline/allowance record. Charge acceptance, calibration,
+failed attempts, partial solves, diagnostics, bootstrap and reporting once;
+neither restarts nor new version directories renew the allowance. No previous
+unused allowance is automatically authorization to launch this phase.
+
+Before each optional development proposal, reserve measured costs for the
+remaining mandatory validation, all 48 fresh paths and initializations, 25%
+contingency on remaining trajectory/initialization costs, and .5 h closeout.
+Run only refinement rounds that fit this reserve. If the passing tuple or
+fixed cohort cannot fit, publish the completed development evidence and the
+shortfall before fresh execution. Do not silently reduce eight replicas,
+remove a condition, widen the retention band or exceed the cap. Poor efficacy
+alone never requests additional compute or changes the scientific allocation.
+
+Keep the **500 GB family-wide artifact ceiling** and 20 GB free-disk reserve,
+including failed runs and dependencies. Reference existing immutable assets;
+avoid duplicate rendered datasets and full matrix dumps. Keep at most the
+current/previous recovery checkpoints for incomplete units and the required
+final artifacts after sealing. Store scalar trajectories and small diagnostic
+summaries for notebook access. R's historical representation/compressor is the
+only production exception to diagonal EWC; no non-diagonal LFU is permitted.
+
+Require `--resume`, atomic accepted-segment checkpoints, a single-writer lease,
+cooperative stop handling, and immutable completed units. Checkpoints must
+include pretraining progress, model/optimizer where applicable, archive and
+anchors, FIFO/eviction IDs, group index, the group's already-chosen pi, pending
+score summaries, filter state, both concentration states, all named seeds/RNG
+states and cumulative resource accounting. Mid-group recovery must neither
+rechoose pi nor assimilate an observation twice. Save calibration proposals,
+selection seals and bootstrap chunks so reports and inference also resume.
+
+After execution approval Sol may make ordinary implementation repairs and the
+specified development choices autonomously. Log material scientific fixes,
+version affected configurations, and repeat acceptance before using corrected
+paths. Preserve the exact representation comparison, six conditions, drift
+law, numerical estimands, calibration rule and fixed fresh allocation. No
+request for user review is needed merely because a method is disappointing.
+Any unexecuted or infeasible work must be stated plainly in the notebook and
+handoff rather than labelled complete.
+
+### Phase 9 Execution Record
+
+Execution was authorized on 2026-11-10. The durable additional allowance is
+72,000 seconds above a family baseline of 116,774.02980467332 seconds;
+`phase9_authorization.json` records the approval and baseline. Implementation
+is in `combined_memory/replicated_combination`, with a six-policy scalar
+analyzer, pure calibration, artifact-only reporting and the original F1
+optimizer. Historical scientific sources remain unchanged. Pending Phase 9
+progress was added to the notebook before scientific production.
+
+The frozen scientific source hash is
+`2e1d727d1f2b6f98b5ea00c14b64f59910397c87983825ff6baaf94cd2f6731b`.
+123 focused unit tests passed. The source-matched CUDA smoke completed all
+12 tiny paths and final inference. CPU pipeline and actual interruption/
+recovery acceptance are being finalized. A preliminary tiny-capacity schema
+mismatch was repaired; incomplete/debug runs and their compute are retained.
+The final recovery suite runs against frozen sources and checks all six
+policies, including a split group's pending scores and already-chosen pi.
+Full R fidelity against Phase 8 fresh replica 0 has started on CUDA in the
+production root. Calibration and fresh efficacy remain gated on acceptance
+and fidelity. Console log: `cache/mnist_experiment/plan18/phase9-execution.log`.
+
+Frozen-source acceptance is now sealed in `phase9_acceptance.json`: 123 unit
+tests, four real interruption/recovery tests, and complete 12-path CPU/CUDA
+smokes. SIGTERM and pending split-group recovery reproduce all six policies'
+final scientific states exactly. Recovery testing took 397.19 seconds and is
+charged once with the other acceptance work. The full fidelity trajectory's
+first 27 novel-checkpoint risks agree exactly with its historical counterpart;
+the remaining numerical comparisons are still running.
+
+Full R fidelity subsequently passed all 17 numerical comparisons with zero
+absolute discrepancy, including initial/final parameters and represented
+Fisher, old/new risks, objectives and gradient diagnostics. Accepted updates,
+replay selections, retirements and data-plan identity also agree. The fidelity
+trajectory took 573.77 active seconds. The autonomous remainder resumed in
+tmux session `plan18-phase9`, beginning shadow observer-scale calibration and
+then the bounded four-member retention comparison. All eight fresh six-arm
+blocks remain reserved and gated on the passing calibration seal.
+
+At 2026-11-11 05:37 UTC the first-pair calibration stage finished 24 paths.
+The shared shadow-selected Kalman process scale is $10^{-5}$. The proposed
+tuple (A: 2.6238074778486995, B/C: 1, D/E: .1) is explicitly unmatched and is
+now being evaluated on development replicas 2/3 before any permitted repair.
+No fresh trajectory has started. Charged phase compute was about 2.28 hours.
+The current combined unit audit passed 125 tests; a subsequent reporting-only
+terminal-calibration clarification passed all 48 reporter tests. Scientific
+sources, conditions, tolerances and completed artifacts remain unchanged.
+Live status and later records supersede these progress counts.
+
+### Phase 9 Calibration Closeout
+
+The worker exited normally at 2026-11-11 07:41:29 UTC after **48 development
+trajectories**, in addition to the exact-fidelity replay. No fresh trajectory
+was launched. The approved ridge proposals and all-four repairs were exhausted
+without a passing joint retention match; the remaining compute allowance was
+not the limiting factor. Neither B/R nor the .01-pixel tolerance was changed,
+and no condition was dropped. This stop applies the retention-validity gate,
+not a representation-efficacy gate.
+
+The best unmatched tuple under the specified minimax-violation selection uses
+$c_A=2.6238074778486995$, $c_B=c_C=1$, and
+$c_D=c_E=0.0316227766016838$; R stays at 1. The shared Kalman process scale is
+$10^{-5}$. Its measured pooled-four A-E ranges are **.0204257638 px** for
+average deterioration and **.0376357458 px** for endpoint deterioration, both
+above .01. The separate .50-pixel absolute ceiling passes. In particular,
+the adaptive repair can match B's average deterioration closely while still
+having substantially better endpoint retention. The control's best tested
+repair similarly matches the endpoint but misses the average. One ridge
+value has not matched both aspects of these different temporal responses
+within the tested search; this does not prove that matching is impossible.
+
+All selected-policy curves are **development-only, post-selection descriptive
+evidence**. No fresh confidence intervals, interaction confirmation or S
+estimate is available. The notebook now shows the exact failed ranges, the
+candidate trade-offs and full four-member development mean learning/retention
+curves, with a clear closure rather than an analysis-pending label. It does
+not recast calibration failure as evidence that LFU or adaptive pi cannot help.
+
+Final verification passed **128 focused unit tests**, the four earlier actual
+interruption/recovery tests, both complete CPU/CUDA smokes and the exact F1
+fidelity comparison. A separate full-checksum audit passed all **83 completed
+production units** and checked all 49 trajectory checkpoints for pairing,
+finite diagonal archives, unique retirements and completed observer groups.
+The scientific source hash is unchanged. All 28 reporting generations retain
+identical historical notebook content; the final generation is
+`49f1af1276f32760375486d7`. Both final plots were visually checked.
+
+Additional charged compute is approximately **4.36 hours**, including
+preparation, debug attempts, acceptance, development and artifact-only
+closeout; about 15.64 hours of the allowance remains unused. The worker and
+tmux session have exited and the GPU is released. Family/data accounting is
+about 13.0 GB with about 562 GB free, within the storage guards. Records are
+`phase9_closeout.json`, `phase9_integrity_audit.json` and
+`phase9_notebook_audit.json` under `cache/mnist_experiment/plan18/`.
+
+No execution restart is needed: resuming the sealed design cannot authorize
+confirmation. A further calibration search or revised matching design needs
+an explicit amendment; do not silently expand proposals or widen the band.
+
+### Phase 9E: Adaptive Pi With The Original Non-Diagonal F1
+
+**Motivation.** Phase 9's fixed-recipe representation comparison favors the
+original rank-64-plus-diagonal F1 (R) over diagonal F1 (B) on all four
+development replicas, for both novel acquisition and old-data retention.
+Mean novel risk is 2.2227 versus 2.3275; mean average/endpoint old RMS
+deterioration is .0111/.0081 versus .0523/.0629 pixels. Thus diagonalizing
+the successful STM policy removed a useful component before testing the
+additions. This is development evidence for the representation in this
+setting, not proof that Fisher estimation accuracy or an STM-specific
+interaction explains the difference. The non-diagonal implementation also
+cost about 3.83 times the diagonal policy's measured online learning time.
+
+Earlier matrix-valued LFU estimates were noisy, whereas paired diagonal FD
+provided economical acquisition lift with a retention trade-off. Do not
+reopen non-diagonal LFU research here. Velocity-Kalman pi poses a different
+question: it changes the scalar adaptation weight without estimating a
+matrix-valued transport correction. Test whether it adds value while retaining
+F1's successful representation, STM penalty and data regime.
+
+**Status and scope.** Execution was authorized on 2026-11-11. Sol implements
+and executes its bounded steps autonomously. It adds one policy and one primary
+paired comparison:
+
+| ID | Notebook label | LTM EWC | Pi | Ridge ratio |
+|---|---|---|---|---:|
+| R | F1 fixed pi | Rank 64 + diagonal | Fixed .025 | Fixed 1 |
+| K | F1 Kalman pi | Rank 64 + diagonal | Existing velocity Kalman | Start 1; development-calibrated |
+
+Both retain FD strength 3.34056320604949, head-rank-one STM, all 3,268 LTM
+and 108 STM parameters, FIFO32/replay2, eviction-only admission, and no LFU.
+Inherit Phase 9's exact task, Gaussian likelihood, blur trajectory, optimizer,
+holdouts, original four-grid groups and 100-novel-grid horizon. Do not change
+the process to favor adaptation, add a constant-pi sweep or change the observer
+risk metric. If ridge changes, the primary contrast is between calibrated
+policies; the common-ridge development comparison remains separately visible.
+
+#### Reuse And The Closed Calibration Gate
+
+The original Phase 9 closed normally because its bounded A--E retention search
+failed, not because computation was interrupted or its allowance exhausted.
+Adding K cannot make the existing A--E ranges pass. Preserve that decision,
+the original source snapshot and all completed units. A--E confirmation stays
+unexecuted; this amendment does not silently replace an arm in that experiment.
+
+Reuse all four completed development R trajectories, their exact initialization,
+Fisher, source/stream/holdout plans, and compatible fixed-anchor observer assets
+and shadow calibration. Import them by immutable identity and checksum; do
+not copy large datasets, rerun R merely for a new policy label, or relabel any
+development path as fresh. Reuse the shadow-selected process scale $10^{-5}$:
+its fixed-anchor input scores and selection diagnostic do not depend on which
+EWC representation subsequently trains the learner.
+
+K uses those same four development replicas. The earlier diagonal trajectories
+remain context, not substitutes for K. A passing R--K calibration seal authorizes
+only the independent confirmation below. Neither a favorable K result nor that
+seal reopens the six-condition gate. Further A--E calibration would require
+another explicit amendment; this continuation does not reserve its 48 paths.
+
+#### 9E.1: Implementation And Acceptance
+
+Use a separately versioned extension and immutable run root, referencing the
+frozen Phase 9 implementation and assets. Do not add K by editing the scientific
+sources bound to `replicated_combination_v1`, remove its failed decision, or
+try to bypass it with the old `--resume` command. Implement an explicit R/K
+analysis and gate; do not fill a six-arm analyzer with duplicate records.
+
+Keep the existing diagonal **observer approximation** even though the EWC
+penalty retains off-diagonal structure. At each pre-group state obtain its
+weights from the represented diagonal,
+
+$$
+d_{g,i}=\sum_k U_{g,ik}^2+\Lambda_{g,i},\qquad
+\widehat{\mathcal I}_{L,g}=U_gU_g^T+\operatorname{diag}(\Lambda_g).
+$$
+
+Reuse the merged-coordinate anchor map, per-coordinate Joseph Kalman update,
+motion/noise formula, 16-group .025 cold start, 32-group noise half-life and
+$[10^{-4},.2]$ limits. No full-Fisher observer, new cross-covariance estimator,
+discrepancy rule, gain multiplier or new process-scale search is included.
+This is the established approximate policy, not a newly derived exact optimum
+for the non-diagonal STM learner.
+
+One predictable $\pi_g$ applies to every solve segment in its original group.
+Use it in the historical EWC/ridge odds and the eviction blend
+$\eta=1-(1-\pi_g)^{e/4}$, preserving the original rank-64-plus-diagonal
+compressor, recentering and FD normalization. Do not scale the accepted step,
+apply pi a second time to the FD term, or add replay evidence before eviction.
+Assimilate incoming scores once per completed group, including the documented
+truncated-final-group treatment. Maintain both concentration states separately.
+
+Acceptance must show that forcing K to pi .025 and ridge 1 reproduces R's
+scientific trajectory and represented archive, apart from diagnostic timing.
+Check the diagonal extraction, archive blend, action causality and unchanged
+loss terms. Verify actual interruption/resumption inside a split group with
+pending scores, and during a solve/eviction, against uninterrupted execution.
+Require tiny CPU/CUDA smokes, deterministic pair/bootstrap tests and rejection
+of invalid source or pairing identities. Reuse old acceptance evidence for
+unchanged components; test the new integration and measure K's actual cost.
+
+#### 9E.2: Bounded Development Retention Calibration
+
+R remains fixed at ridge 1. Use the original within-replica definitions of
+$H^{\rm avg}$ and $H^{100}$, then average over the same four replicas. Require
+
+$$
+\left|\bar H_K^j-\bar H_R^j\right|\le .01\ {m pixels},
+\qquad j\in\{{\rm avg},100\},
+$$
+
+and retain the separate .50-pixel deterioration ceiling for both policies.
+The gate is symmetric development matching, not a claim of fresh equivalence.
+Do not change R, weaken the band, or call nonsignificance a successful match.
+
+1. Run K at ridge 1 on all four existing development replicas. If it passes,
+   freeze that recipe without searching for a larger favorable effect.
+2. Otherwise allow at most two additional K ridge proposals on replicas 0/1.
+   Use geometric interpolation or an adjacent half/whole decade guided by
+   both retention responses, within $0\le c_K\le1000$. Zero is allowed after
+   the positive lower boundary overprotects. Record the rationale and inspect
+   the curves; do not assume monotonicity or tune to sample savings.
+3. Extend one proposed recipe to replicas 2/3. Prefer first-pair feasibility,
+   then lower novel budget-averaged risk, learning time and stable ID. If none
+   passes the first pair, prefer smallest maximum retention violation first.
+   Only a recipe complete on all four members can pass the final gate.
+4. If needed, allow one last targeted proposal on all four members, including
+   completing another already-probed candidate. Then freeze a passing all-four
+   recipe, or close as calibration-infeasible/budget-limited with the complete
+   trade-off visible. Never select or stop according to fresh significance.
+
+This requires **4--14 new K development trajectories**, and no new R
+development trajectories apart from necessary numerical acceptance. The fixed
+pi policy, observer scale, FD strength and retention definition are not tunable.
+Publish common-ridge and selected-policy results separately. If ridge differs,
+do not attribute the whole selected-policy gap to adaptive timing alone.
+
+#### 9E.3: Fresh Paired Confirmation And Efficiency
+
+After numerical acceptance, a passing R--K seal and the resource reserve,
+run **eight fresh paired replicas: R and K, 16 trajectories total**. These
+are new trajectories for both policies; the four reused development R paths
+cannot supply confirmation controls. The original Phase 9 reserved fresh
+seed namespace may be reused only after verifying that no outcomes from it
+were generated or inspected. Otherwise choose and seal a new namespace.
+Historical Phase 8 outcomes already used to motivate this amendment are not
+fresh confirmation. Reuse compatible unexposed preparation assets by hash.
+
+Finish all eight pairs regardless of intermediate effect direction. Freeze
+settings before starting, rotate condition order, and share initialization,
+data, held-out panels, FD probes and exposure clocks within each pair. Do not
+run the other five policies merely to populate an old report layout. Publish
+novel mean/endpoint risk, both old-retention summaries, favorable-pair counts,
+and 2,000 whole-pair bootstrap intervals with a newly named seed.
+
+Fresh two-sided retention equivalence requires both paired 95% intervals
+inside $[-.01,.01]$ pixels. If not established, report the observed trade-off
+and uncertainty without recalibration or discarding completed paths. A passing
+development match does not guarantee equivalence on these new replicas.
+
+For this incremental comparison use R's novel endpoint as the explicit target:
+
+$$
+\tau_R=\bar R_R(100),\qquad
+f_{K:R}=1-\frac{n_K(\tau_R)}{100},\qquad
+q_{K:R}=\frac{T_K(n_K(\tau_R))}{T_R(100)},\qquad
+S_{K:R}=\frac{f_{K:R}}{q_{K:R}}.
+$$
+
+This measures **additional savings beyond fixed-pi F1**, not savings against
+Replay/EWC; do not merge its headline with historical S values or use old A
+artifacts as an unpaired denominator. Preserve the original persistent-crossing,
+weak/initially-met target, unsupported-bootstrap, no-extrapolation and matched-
+budget retention checks. Always report equal-budget risk/time, even when
+sample-equivalence inference is unsupported. Count observer and compression
+costs in deployment time and separate shared pretraining from online learning.
+
+#### 9E.4: Reporting, Resources And Closeout
+
+Append a concise **Phase 9E: F1 With Adaptive Pi** section to
+`plan18_results.ipynb`, with this motivation, two-condition settings,
+development retention plots, fresh novel/old trajectories, one paired-effects
+table, and sample/compute efficiency. Include the pi/gain/motion/noise diagnostic
+plot and an honest conclusion. The near-top progress display must distinguish
+the original closed calibration from the new extension's status. Preserve all
+prior notebook sections and immutable generations; do not make A--E confirmation
+appear pending whenever only R/K is running.
+
+At proposal time Phase 9 has used about **4.36 of its 20 active hours**. Upon
+approval, this extension shares the remaining approximately 15.64 hours; a new
+root/protocol must not reset accounting or hide charges in a different ledger.
+Preserve the original authorization and baseline, with an explicit extension
+authorization linking both protocols. Charge all acceptance, attempts,
+initialization, analysis and reporting once, including resumed partial work.
+
+| Extension work | Expected additional active wall clock |
+|---|---:|
+| Integration acceptance and representative timing | .5--1.5 h |
+| 4--14 new K development trajectories | .75--3 h |
+| Eight fresh R/K pairs and shared preparation | 3--4.5 h |
+| Analysis, concise reporting and artifact audit | .25--.5 h |
+| Total | 4.5--9.5 h |
+
+These are provisional forecasts based on R's roughly eight-minute learning
+paths; K's adaptive optimization cost must be measured. Initial programming
+may add roughly 1--3 hours separately. Before optional calibration proposals,
+reserve all remaining mandatory work, all 16 fresh paths and preparation,
+25% trajectory/preparation contingency and .5 h closeout. If they cannot fit,
+report the shortfall before fresh execution instead of cutting the cohort or
+exceeding the cap. There is no automatic return to the original six-arm run.
+
+Inherit the 500 GB family artifact ceiling, 20 GB free-space reserve, single
+writer, `--resume`, cooperative stopping and atomic recovery contract. Store
+factor/diagonal archives, anchors, pending group/action/scores, both q states,
+RNG states, calibration decisions and durable compute charges. A completed
+resume must validate and skip sealed units; reporting must never train.
+Close with pairing/source/checksum audits, immutable reports and an updated
+handoff clearly stating which comparisons finished and which remain unrun.
+
+#### Phase 9E Execution Record
+
+Execution authorized 2026-11-11. The new module is
+`combined_memory/adaptive_f1`, with an independent R/K calibration/analyzer,
+artifact-only reporting and shared Phase 9 compute accounting. Frozen historical
+sources and the original failed A--E decision remain intact. Tiny CPU parity
+matched original F1 with K forced to pi .025; the full CPU smoke passed.
+New K interruption/recovery tests, CUDA smoke and full-length forced-pi fidelity
+are the numerical acceptance work before production calibration. No new fresh
+efficacy path has run. Later execution records and the handoff supersede this
+implementation-stage note.
+
+Acceptance subsequently passed **144 unit tests**, four actual K interruption/
+recovery tests, complete CPU/CUDA smokes and a full-length forced-pi trajectory.
+All 12 full numerical comparisons have zero discrepancy, including held-out
+risks, final parameters, archive factors/diagonal and solver diagnostics.
+The immutable scientific source hash is
+`0a3611a17ce99d9442ceb5576b1629c9a9ef082f303643125dc5bd67a001ad15`.
+`phase9e_acceptance.json` seals the evidence. Production uses
+`adaptive_f1_v1`, reuses all four sealed development R paths, and starts K at
+ridge 1. Unit/recovery and retained failed/repeated checks share the original
+Phase 9 allowance; no fresh efficacy trajectory has started at this record.
+
+**Scheduler correction during calibration.** The original final-repair branch
+could select an already-complete candidate or ignore a useful first-pair
+bracket when only one/few recipes had four-member coverage. Before that slot
+was consumed, production stopped at an accepted checkpoint. A separately
+hashed `combined_memory/adaptive_f1_scheduler` wrapper corrects selection of
+that final proposal, using all measured first-pair brackets and validating it
+on all four members. It preserves the original proposal/path limits, gates,
+cohort and 20-hour cap. Numerical sources remain unchanged. Completed v1
+units are referenced by checksum and the partial trajectory is adopted into
+`adaptive_f1_v2`; accepted scientific computation need not be repeated.
+The wrapper source hashes and full execution hash augment the new identity
+and provenance. This is an orchestration repair, not a change to the Kalman,
+F1, Fisher, loss or metric mathematics. New unit/migration acceptance is
+required for that integration; the unchanged numerical acceptance is reused.
+
+The correction passed **21 focused unit tests** and an actual interrupted CPU
+checkpoint migration, reproducing uninterrupted R/K states exactly for both
+replicas (parameters, Fisher factors, FIFO, q states and Kalman covariance).
+The numerical component hash remains `0a3611a17ce99d9442ceb5576b1629c9a9ef082f303643125dc5bd67a001ad15`;
+the added scheduler component hash is
+`c45862c5dad50ad83bd47bc1fdd6870b7a630b9900693ede4bd686f00ffd99ea`,
+and the combined execution source hash is
+`0f650ce3a4b68babd75b57038efab9bd6932ebdc396cffaa5585f2beb3c0d6a9`.
+CUDA resumed from novel checkpoint 78 of development member 1 at ridge
+.5097942842144816. No accepted trajectory prefix was recomputed. Four ridge-1
+K paths, two ridge-.1 paths and one intermediate-ridge path were already
+complete. Ridge-1 calibration missed the .01-pixel band because K retained
+more old information; the low-ridge probes bracketed that response. Fresh
+confirmation remains gated. `phase9e_scheduler_acceptance.json` and
+`adaptive_f1_v2/scheduler_migration.json` record the evidence and lineage.
+
+**Development freeze and fresh launch.** All **14 K development trajectories**
+completed, reusing the four fixed-F1 R paths. The final ridge
+$c_K=.3244386683194765$ passes both signed-mean matching checks: K-minus-R
+average deterioration is **-.00482131 px** and endpoint deterioration is
+**-.00845553 px**, each within .01. R remains at $c_R=1$, pi .025; the Kalman
+process scale remains $10^{-5}$. The final repair used the measured first-pair
+bracket, with all-four validation. The mean novel development risks are
+2.234119 (K) versus 2.222671 (R); efficacy did not gate confirmation.
+The design/reserve decision is sealed in `adaptive_f1_v2/units/decision-design`.
+At launch about 7.01 of the shared 20 active hours was charged. Eight fresh
+pairs now run under frozen settings, using the original unexposed Phase 9
+fresh seed 3305599612221488795. No further calibration is permitted.
+
+**Fresh confirmation and closeout.** All eight fresh pairs (16 trajectories)
+completed on 2026-11-11. An interrupted session resumed fresh R member 1 from
+accepted checkpoint 91 without repeating completed work. The final analysis
+uses 2,000 whole-pair bootstrap draws, conditional on the frozen development
+selection. Negative K-minus-R differences favor Kalman; prediction errors are
+unregularized held-out quantities.
+
+| Fresh quantity | Fixed F1 (R) | Kalman F1 (K) | K minus R [nominal 95% CI] |
+|---|---:|---:|---:|
+| Novel budget-averaged MSE (px squared / landmark) | 2.32805 | 2.34988 | .02183 [.00546, .04275] |
+| Novel endpoint MSE (px squared / landmark) | 2.13401 | 2.15586 | .02185 [-.00471, .05889] |
+| Average old RMS deterioration (px) | .00836 | .00649 | -.00187 [-.00526, .00110] |
+| Endpoint old RMS deterioration (px) | .00432 | -.00252 | -.00684 [-.01483, -.00071] |
+
+Novel mean risk favors Kalman in **1/8 pairs**. Fixed pi's average advantage
+is small (about .94% relative to R), while Kalman retains more old information
+at the endpoint. Both old-data noninferiority checks pass, but the endpoint
+interval is not contained in the two-sided .01-pixel equivalence band. Do not
+describe this as a fresh equivalence result or a pure adaptive-timing effect:
+ridge differs between the two calibrated policies.
+
+Equal-budget online compute is **1.05284x [1.04198, 1.06251]** for K relative
+to R. K's mean curve does not reach R's final novel-risk target within 100
+novel grids; 1,858/2,000 inverse bootstrap draws are unsupported. Accordingly,
+additional sample savings, S and their ordinary inverse intervals are not
+estimable here. Do not extrapolate or report the valid-draw subset as a CI.
+This does not negate F1's earlier advantage over Replay/EWC; this phase tests
+the incremental addition of Kalman pi to non-diagonal F1.
+
+The final full-checksum/state/pairing audit passed all 72 completed v2 units,
+16 fresh archives/controllers and all 68 preserved historical notebook cells.
+The parent audit passed 14 completed v1 units and all four reused R references;
+the adopted partial parent checkpoint remains unchanged. A completed `--resume`
+exited without changing any scientific completion seal. Numerical and scheduler
+source hashes remain those recorded above. Reports have immutable generations;
+the concise conclusion, paired effects and pi/gain/motion diagnostics are in
+`plan18_results.ipynb`. Audit files use the `phase9e_` prefix under the Plan 18
+cache. Shared Phase 9 compute is about **9.73/20 active hours**, including
+acceptance, failed/repeated attempts, recovery, reporting and closeout. The
+original A--E confirmation remains unrun; no further experiment starts here.

@@ -236,3 +236,23 @@ the immutable run; `responses.csv` is the lightweight readout. Use `--resume`
 for an interrupted unchanged run, or a new output path for changed inputs.
 These are qualitative diagnostics, not a calibrated depth-estimation test
 or a scientific learning comparison. No additional phase is started.
+
+## Phase 1 Fix 3
+
+The bounded centering-reward/curriculum repair includes frozen-role diagnostics,
+an easy teacher bootstrap and two short Replay/EWC student pilots. It stops for
+the task/resource check-in before the main STM comparison. Run from the checkout:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar.phase1_fix3 \
+  --output cache/numerical_experiment/picar/phase1/fix3-v1 --resume
+```
+
+Default loading downloads the pinned model into the project cache. Optional
+`--model-path <checkpoint-directory> --offline` reuses an existing local model.
+`--stage software`, `--stage rewards` and `--stage teacher` allow bounded
+check-ins; resuming with `--stage all` continues the same immutable configuration.
+A `STOP` file in the campaign root or SIGTERM requests a durable stop. Remove
+the stop file before explicit resumption. Changed scientific sources/settings
+require a new output directory; completed units remain immutable. The notebook
+loads completed summaries and reports pending work without running models.
