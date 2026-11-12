@@ -175,6 +175,7 @@ def read_completed_unit(path: str | Path) -> dict[str, Any]:
     for name in ("summary.json", "metrics.csv"):
         _verify_seal(path / name, manifest.get("final_files", {}).get(name))
     smoke = config.get("mode") == "smoke" or summary.get("smoke_only") is True \
+        or summary.get("kind") == "phase2_closeout" \
         or any(row["smoke_only"] is True for row in metrics)
     return {"path": str(path), "config": config, "stored_config": stored_config, "manifest": manifest,
             "summary": summary, "metrics": metrics, "smoke_only": smoke}
@@ -522,15 +523,18 @@ def make_notebook(root: str | Path | None = None):
         f"ROOT = report.resolve_root({override})  # PICAR_CACHE_ROOT overrides the default\n"
         "snapshot = report.load_report(ROOT)\nprint(f'Artifacts: {report.root_label(ROOT)} | {snapshot[\"status\"]}')\n"
         "print(snapshot['note'])\ndisplay(pd.DataFrame(report.progress_rows(snapshot)))\n"
-        "if snapshot['live']:\n    display(pd.DataFrame(snapshot['live']))"),
+        "if snapshot['live']:\n    display(pd.DataFrame(snapshot['live']))\n"
+        "from numerical_experiment.picar.phase3_report import progress_rows as development_progress\n"
+        "development = development_progress(snapshot)\n"
+        "if development:\n    display(pd.DataFrame(development))"),
         md("## Task and Setup\n\nThe learner receives RGB, language, executed controls, and elapsed time. "
            "Top-down views are for the reader only. Settings and scene media appear only when stored artifacts exist."),
         code("settings = report.settings_rows(snapshot)\n"
              "display(pd.DataFrame(settings)) if settings else print('Setup artifacts pending.')"),
         md("## Readiness and Bootstrap\n\nMeasured loading, inference, memory, and gradient checks are diagnostics. "
            "Language readiness and held-out initial capability remain separate requirements.\n\n"
-           "Current Qwen probes use one 64x48 image/history step, top-L=1, and 56x56-112x112 processor limits, "
-           "not the full context-8/batch-4 workload."),
+           "Early Qwen resource probes used one 64x48 image/history step, top-L=1, and 56x56-112x112 processor limits, "
+           "not the full context-8/batch-4 workload. Later operating settings are recorded in the chronological sections below."),
         code("checks = report.readiness_rows(snapshot)\n"
              "display(pd.DataFrame(checks)) if checks else print('Readiness measurements pending.')\n"
              "print('Completed diagnostics do not certify all readiness gates. FD convergence requires an explicit recorded pass.')"),
@@ -580,6 +584,10 @@ def _populate_outputs(book, snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
                               stream(snapshot["note"]), table(progress_rows(snapshot))]}
     if snapshot["live"]:
         outputs["progress"].append(table(snapshot["live"]))
+    from .phase3_report import progress_rows as development_progress
+    development = development_progress(snapshot)
+    if development:
+        outputs["progress"].append(table(development))
     settings = settings_rows(snapshot)
     outputs["settings"] = [table(settings) if settings else stream("Setup artifacts pending.")]
     checks = readiness_rows(snapshot)
@@ -656,6 +664,12 @@ def build_notebook(root: str | Path | None, output: str | Path = DEFAULT_NOTEBOO
     from .phase1_fix3_report import append_fix3, conclusion as fix3_conclusion
     book = append_fix3(book, snapshot, notebook_dir=Path(output).parent)
     conclusion = fix3_conclusion(snapshot) or conclusion
+    from .phase2_report import append_phase2, conclusion as phase2_conclusion
+    book = append_phase2(book, snapshot, notebook_dir=Path(output).parent)
+    conclusion = phase2_conclusion(snapshot) or conclusion
+    from .phase3_report import append_phase3, conclusion as phase3_conclusion
+    book = append_phase3(book, snapshot, notebook_dir=Path(output).parent)
+    conclusion = phase3_conclusion(snapshot) or conclusion
     if conclusion:
         book.cells[-1].source = conclusion
     nbformat.validate(book)

@@ -50,13 +50,13 @@ def seal(path):
     return {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
 
 
-def unit(path, rows=None, *, smoke=True, version="fixture-v1", phase=0):
+def unit(path, rows=None, *, smoke=True, version="fixture-v1", phase=0, summary_extra=None):
     path.mkdir(parents=True)
     config = {"config": {"schema_version": 1, "version": version,
                           "mode": "smoke" if smoke else "production", "model": {"kind": "tiny"}},
               "source_sha256": {}, "condition": "replay_ewc", "replica": 0}
     write_json(path / "config.json", config)
-    write_json(path / "summary.json", {"phase": phase, "smoke_only": smoke})
+    write_json(path / "summary.json", {"phase": phase, "smoke_only": smoke, **(summary_extra or {})})
     with (path / "metrics.csv").open("w") as handle:
         writer = csv.DictWriter(handle, fieldnames=METRIC_COLUMNS)
         writer.writeheader()
@@ -161,6 +161,17 @@ def test_paired_failure_and_unknown_versions_never_pool_silently(tmp_path):
          smoke=False, version="different", phase=4)
     with pytest.raises(report.ArtifactError, match="multiple experiment versions"):
         report.heldout_curves(report.load_report(tmp_path))
+
+
+def test_metadata_only_phase2_closeout_is_not_a_scientific_experiment_version(tmp_path):
+    unit(tmp_path / "control", panel_rows("replay_ewc", [.2, .4]), smoke=False, phase=4)
+    unit(tmp_path / "closeout", smoke=False, phase=2, version="review-v1",
+         summary_extra={"kind":"phase2_closeout"})
+    snapshot = report.load_report(tmp_path)
+    review = next(u for u in snapshot["complete_units"] if u["summary"].get("kind") == "phase2_closeout")
+    assert review["smoke_only"]
+    curves = report.heldout_curves(snapshot)
+    assert len(curves) == 1 and curves[0]["samples"] == [0,10]
 
 
 def test_acceptance_is_visible_but_never_scientific(tmp_path):

@@ -135,6 +135,51 @@ retaining the feature-map/head dimensions and asserting actual parameter counts.
 
 ### Predictive And Optimization Coordinates
 
+**Notation used in this section:**
+
+- $\theta=(\theta_L,\theta_S)$: the full optimization parameter vector, split
+  into trainable base or long-term memory (LTM) parameters and adapter or
+  short-term memory (STM) parameters. $p_L$ and $p_S$ are their respective
+  scalar-coordinate counts, not probabilities or identifiable dimensions.
+- $x$, $Y$, and $p_\theta(y\mid x)$: an input, its random prediction target,
+  and the model's conditional probability density; $y$ is a realized target.
+  Here the target is the 54-dimensional landmark vector. $p_\theta$ without
+  arguments abbreviates the same predictive model.
+- $L(x,y;\theta)=-\log p_\theta(y\mid x)$: per-observation negative log
+  likelihood, up to a parameter-independent constant. The score is
+  $s=\nabla_\theta\log p_\theta(y\mid x)$, and the loss gradient is $g=-s$.
+  The subscript $L$ on parameters means LTM, not this loss function.
+- $\mathbb E_\theta$, $\mathcal I(\theta)$, and $F_x(\theta)$: model-law
+  expectation, the likelihood Fisher in joint optimization coordinates, and
+  its per-input conditional contribution. In $F_x$, $x$ is held fixed and
+  only $Y$ is averaged under the model. These are unregularized likelihood
+  quantities, not Hessians of the penalized training objective.
+- $W_L$, $A$, $B$, and $\gamma$: a base layer's weight matrix, the two
+  trainable low-rank STM factors, and their fixed scale. For input/output
+  widths $d_{\rm in},d_{\rm out}$ and adapter rank $r$,
+  $A\in\mathbb R^{r\times d_{\rm in}}$ and
+  $B\in\mathbb R^{d_{\rm out}\times r}$.
+  $W_{\rm eff}=W_L+\gamma BA$ is the effective predictive weight matrix.
+- $m$ and $w=m(\theta)$: the merge map and its resulting $p_L$-coordinate
+  base-model parameter vector. The map absorbs each adapter into its base
+  weight matrix and carries the remaining base parameters through unchanged.
+  $\bar p_w$ denotes the same predictor written in these merged coordinates.
+- $\mathcal M_{L+S}$ and $\mathcal M_L$: the families of predictive
+  distributions representable by trainable base-plus-STM and trainable
+  base-only models, respectively. Their equality concerns unrestricted
+  representational capacity, not equal optimization paths or regularization.
+- $Dm(\theta)=\partial m/\partial\theta$: the merge Jacobian, of size
+  $p_L\times(p_L+p_S)$. $\bar{\mathcal I}(w)$ is the same likelihood Fisher
+  geometry in merged coordinates; the bar denotes a coordinate representation,
+  not an average or a separate Fisher estimand. Superscript $T$ means transpose,
+  and $\operatorname{rank}$ is matrix rank.
+- A **chart** here means the chosen parameterization: the raw joint chart
+  stores base weights and adapter factors separately; merged coordinates store
+  their effective weights. **Nonidentifiability** means distinct parameter
+  values can give identical predictions. $\delta W_L$, $\delta A$, and
+  $\delta B$ denote infinitesimal changes; a prediction-preserving tangent
+  leaves the predictor unchanged to first order.
+
 Write $\theta=(\theta_L,\theta_S)$, with negative log likelihood $L$,
 $g=\nabla L=-s$, and the single likelihood Fisher
 

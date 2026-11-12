@@ -262,3 +262,100 @@ attempt used 84.9 recorded compute minutes. Both pilots retained easy/middle
 fixed-panel success but did not improve hard-task success. The notebook's
 conclusion describes the remaining learning-readiness gate; no larger STM
 comparison or physical operation has been started.
+
+## Phase 2: Bootstrap And Student Readiness
+
+Run only the bounded initial-skill/trainability phase, ending at its resource
+check-in rather than starting the FD comparison:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase2.campaign \
+  --output cache/numerical_experiment/picar/phase2/readiness-v1 --resume
+```
+
+Without a bootstrap override, collect a new easy-A dataset and perform its
+one-time initialization. To reuse a compatible completed initialization, add
+`--bootstrap-source <completed-bootstrap-directory>`. This verifies the source
+and imports it into a new immutable child run without repeating distillation.
+Default loading downloads the pinned model into the project cache; optional
+`--model-path <checkpoint-directory> --offline` reuses an existing model.
+Supply the same overrides when resuming. `--stage software` stops after
+acceptance and `--stage readiness` after initial/teacher/language assessments;
+`--stage all` continues the same configuration through the bounded pilots.
+
+The five-hour cap covers active experiment work, not idle pauses. The root
+`STOP` file or SIGTERM requests a durable halt; remove `STOP` before explicit
+resumption. The artifact-only notebook reports progress and complete child
+results while the campaign runs. No physical robot is used.
+
+### Conditioning Rescue Version
+
+The original two baselines are preserved. A subsequent diagnostic found a
+saturated visual-feature projection, so the plan replaces the unexecuted
+ridge/floor rescues with at most two RMS-normalized student configurations.
+The supervisor can be started alongside the original baseline campaign:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase2_rescue.campaign \
+  --output cache/numerical_experiment/picar/phase2/readiness-rms-v1 \
+  --source-campaign cache/numerical_experiment/picar/phase2/readiness-v1 \
+  --teacher-source <completed-bootstrap-directory> --resume --wait
+```
+
+It waits for both baseline results, cleanly stops and seals the old campaign,
+then rebuilds each normalized model's one-time initialization from the common
+recorded demonstrations. No old model-dependent Fisher is reused. The same
+five-hour Phase 2 budget covers BOTH versions. Optional model-path/offline
+overrides work as above and must match on resume. Before both baselines are
+sealed, resume both processes after an interruption; after handover, resume
+only this supervisor. The handoff file records the current stage and paths.
+
+Both versions completed on 2026-11-12 and stopped for review. The notebook
+records unchanged navigation success and restored projection sensitivity in
+the strongest normalization configuration. Phase 2, including its final
+verification allowance, charged 3.50 h. No FD efficacy study has started.
+
+## Phase 3: Bounded Development
+
+Run common-learning calibration, ridge screening and retention-qualified FD
+development, ending at a check-in rather than starting fresh Phase 4 runs:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase3.campaign \
+  --output cache/numerical_experiment/picar/phase3/development-v1 \
+  --teacher-source <completed-original-demonstrations-directory> \
+  --prior-review <completed-phase2-closeout-directory> --resume
+```
+
+All numerical settings, named seeds, source hashes and the cumulative budget
+are sealed. Changed likelihood scales get newly built initialization Fisher
+statistics, not a transplanted historical Fisher. The six-hour development
+ceiling includes I/O, evaluator inference, tests and final verification; idle
+user pauses do not count. The root STOP file or SIGTERM requests a durable
+halt. Remove STOP only for intentional resume and never launch a second writer.
+Use the same optional model-path/offline overrides on resume. Progress and
+completed candidates appear in `plan19_results.ipynb`; incomplete runs are not
+reported as failures. No physical robot is used.
+
+### Conditional Retention Repair
+
+The separately versioned supervisor waits for all three ridge controls. If
+none combines hard-task acquisition with acceptable easy-task retention, it
+stops the original writer at a checkpoint and takes over its remaining
+allowance:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase3_retention.campaign \
+  --output cache/numerical_experiment/picar/phase3/development-retention-v1 \
+  --source-campaign cache/numerical_experiment/picar/phase3/development-v1 \
+  --resume --wait
+```
+
+Supply the same optional model-path/offline overrides. Both versions share
+one six-hour ceiling, not six hours each. Before the handover, resume both
+commands; after the source orchestration is sealed as
+`superseded_after_ridge_screen`, resume only the supervisor. Preserve the
+source STOP file after takeover. The repair's changed action variance requires
+fresh initialization and Fisher from the original demonstrations; it does not
+acquire more teacher data. Historical controls remain explicit references,
+not newly collected replicas. Neither command starts Phase 4.

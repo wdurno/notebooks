@@ -2379,6 +2379,170 @@ no adaptation requirement. Freeze common initialization and data provenance.
 **Exit:** useful A skill, plausible B learning opportunity, valid initial
 likelihood/Fisher assets, and a revised fresh-run forecast.
 
+#### Phase 2 Execution Recipe (2026-11-12)
+
+**Motivation:** move from Fix 3's small execution diagnostic to a bounded
+assessment of the initial student and its ability to acquire navigation.
+Do not require frozen Qwen to solve the hard task, and do not begin Phase 3
+or confirmation automatically. The user authorized Phase 2 and its check-in.
+
+Reuse the completed compatible Fix 3 bootstrap first: 292 captured intervals,
+247 teacher-action examples, one completed KL stage and initial likelihood
+fit, 239 retired examples and eight eligible replay entries. Verify the
+completion seal, model/likelihood compatibility and disjoint evidence ledger.
+Reusing that asset adds neither new teacher data nor another distillation.
+A fresh checkout without an explicit bootstrap source instead collects up to
+600 easy-A intervals and builds its own one-time initialization.
+
+The common starting recipe remains top-L 1, context 4, hidden width 64,
+LTM/STM ranks 4/1, replay capacity 8, new/replay batches 1/1, 161 return bins,
+adaptation weight .025, ridge coefficient .1, Adam learning rate .001,
+exploration logit SD 4, and FD strength zero. Reward and contact semantics
+are the corrected Fix 3 versions. Online physics/control cadence is 1 s;
+teacher collection uses 2 s. Record service misses and charged stopped work.
+
+Evaluate the initial student and frozen teacher on easy-A seeds
+192501--192520, and the student on hard-B seeds 192501--192510. Retain the
+whole initial mixture and report clear/blocked strata, rather than selecting
+only clear layouts to meet the provisional 70%/60% guides. The same exact
+initial-checkpoint evaluations may be referenced across candidate runs;
+evaluate new initializations separately. Check language conditioning without
+fitting. Record preselected learned-student videos on both easy and hard
+panels so they cannot be confused with privileged scripted feasibility clips.
+
+Run two baseline development trajectories, seeds 192101/192102, up to 640
+captured intervals each. Stretch both the texture/gain path and barrier
+curriculum to that duration; do not replay the 320-interval drift twice.
+If neither shows a ten-percentage-point hard-panel success increase, allow
+at most two sequential, explicitly versioned rescue recipes: first remove
+statistical ridge while keeping the other common settings; then, if needed
+and affordable, collect a new bootstrap with teacher probability floor .01
+instead of .001 and repeat that no-ridge pilot. Apply the new floor **before**
+execution; never resmooth historical actions and pretend they were executed.
+The second rescue initializes a fresh model and performs its one-time KL,
+not repeated distillation during online learning. Keep both successful and
+unsuccessful candidates. The ten-point trigger is an operational guide, not
+a significance declaration or permission to choose confirmation outcomes.
+
+Allocate at most **five active compute hours** to this phase, inside the
+20-hour cumulative study target; stop optional rescue work when insufficient
+time remains. All elapsed experiment work, labeling, tests, checkpoints,
+evaluation and failed attempts count. Implementation labor is separate.
+Seal the resolved recipe, named seeds and source snapshot; use immutable
+child runs, `--resume`, checkpointed signals/STOP files and rolling notebook
+updates. Publish a revised forecast with FD cost explicitly unmeasured until
+profiled. End at the Phase 2 readiness/resource check-in, even if learning is
+only partial or remains absent.
+
+#### Phase 2 Conditioning Diagnostic And Targeted Rescue (2026-11-12)
+
+The broader initial assessment found 7/20 easy-A successes (7/11 clear,
+0/9 blocked) and 0/10 hard-B successes. Frozen Qwen also achieved 7/20 easy-A
+successes. Thus initial approach competence is present but limited; neither
+controller meets the original overall readiness guides. These are retained
+results, not grounds for silently removing blocked layouts.
+
+The language audit exposed a more specific conditioning issue: instructions
+change the encoded Qwen features substantially, but action logits change by
+less than about $5\times10^{-7}$ on the retained histories. An artifact-only
+reconstruction of the 64-dimensional projection found absolute preactivation
+median 11.59, all 32 instruction/history probes' coordinates at
+$|\tanh(z)|>.99$, and a median local tanh derivative of zero in float32.
+This is a plausible loss-of-sensitivity mechanism, not an isolated causal
+proof or a result about STM FD. Preserve the complete diagnostic artifacts.
+
+Finish the two already planned 640-interval baseline pilots. Supersede the
+**unexecuted** ridge/floor rescue recipes with at most two targeted common
+model-configuration rescues, recording a new source/configuration family:
+
+1. Per-timestep, parameter-free RMS-normalize the Qwen feature vector before
+   concatenating the original SI-unit controls and elapsed time. Use
+   $v/\sqrt{\operatorname{mean}(v^2)+10^{-6}}$, differentiating through the
+   denominator. Do not modify teacher/evaluator role features.
+2. If needed and affordable, additionally RMS-normalize the projected
+   64-dimensional vector before its tanh. This prevents the entire projected
+   vector from having large magnitude simultaneously. Keep parameter counts,
+   ridge .1, adaptation weight .025, probability floor .001 and other common
+   settings unchanged so this is a conditioning intervention, not another
+   hyperparameter factorial.
+
+Use fresh deterministic model weights and empty Adam/Fisher/anchor ledgers.
+Reconstruct the original 247 causal demonstration histories and executed
+targets from sealed frames, contexts, probabilities, logits and return
+records. Verify their hashes and mappings. Reuse the unchanged frozen-reward
+labels, not old model-dependent Fisher assets. Each candidate gets its own
+one-time KL, initial likelihood fit and newly computed Fisher/replay split.
+This is independent initialization from a common demonstration dataset, not
+online rehearsal of retired data or repeated distillation within a trajectory.
+Count the original acquisitions once and expose repeated initialization compute.
+
+Both rescues use the same development seed and 20/10-layout panels, with
+640 new online intervals and explicit language/sensitivity diagnostics.
+Training and inference must use identical normalization, without changing
+the joint-likelihood objective or adding trainable parameters. Validate
+functional gradients and the exact recurrent forward path before GPU work.
+
+All Phase 2 versions share the **same five-hour cap**, including the original
+baseline campaign. Concurrent CPU diagnostics are covered by its running
+wall-clock ledger rather than charged again as overlapping full intervals.
+Seal the original campaign as superseded only after both baseline results
+are durable; completed children remain unchanged. End at the readiness and
+resource check-in. No Phase 3 or confirmatory FD comparison is authorized.
+
+#### Phase 2 Execution Record (2026-11-12)
+
+The phase is complete and stopped at its check-in. All results are retained;
+the original ridge/floor rescue proposals were not run. Fixed-layout outcomes
+were unchanged in all four bounded development trajectories:
+
+| Student configuration | New captured intervals | Easy-A before / after | Hard-B before / after |
+|---|---:|---|---|
+| Original baseline, seed 192101 | 620 | 7/20 / 7/20 | 0/10 / 0/10 |
+| Original baseline, seed 192102 | 619 | 7/20 / 7/20 | 0/10 / 0/10 |
+| Feature RMS, seed 192101 | 635 | 7/20 / 7/20 | 0/10 / 0/10 |
+| Feature and projection RMS, seed 192101 | 623 | 7/20 / 7/20 | 0/10 / 0/10 |
+
+The original frozen teacher also achieved 7/20 easy-A successes, comprising
+7/11 clear and 0/9 blocked layouts. These panels are descriptive; repeated
+layout evaluations are not independent training trajectories. Captures include
+startup/fallback intervals, not an assertion that every capture is fitted.
+
+Feature RMS alone left all tested initialization projection coordinates
+saturated. Additional projection RMS reduced that fraction to zero, with
+median local tanh slope .462 and maximum instruction-dependent logit change
+.051, versus approximately $4.77\times10^{-7}$ in the original student.
+Thus the measured sensitivity bottleneck is repairable, but repairing it did
+not improve navigation success in these pilots. This is not an STM result,
+proof of correct instruction following, or proof that saturation alone caused
+the earlier failures. Common-controller learning remains unresolved; the
+phase's operational hard-panel improvement guide was not met.
+
+The two versions jointly charged **3.41 active campaign hours**, including
+the recorded validation allowance. A separately sealed closeout review adds
+a conservative five-minute allowance for final tests, notebook rendering and
+artifact verification: **3.50 h total**, below the shared five-hour limit. The
+conservative cumulative study charge is about **5.76 h**, leaving **14.24 h**
+of the 20 h target. Measured processing was 2.92 s/captured interval. The
+revised conditional forecasts are:
+
+| Scope | Processing with hypothetical FD cost multiplier 1--2 | Evaluation at pilot panel size |
+|---|---:|---:|
+| Four pairs, 1,200 intervals per condition | 7.8--11.7 h | 1.41 h |
+| Six pairs, 2,400 intervals per condition | 23.4--35.1 h | 2.12 h |
+
+FD overhead remains unmeasured; development, extra evaluation and closeout
+are additional. These forecasts do not authorize a larger study. The next
+decision should address why the common learner has not acquired obstacle
+navigation, rather than interpret an FD comparison without that prerequisite.
+All trajectories have zero pending updates; both orchestration records and
+their scientific source archives are sealed. The notebook includes the
+historical baseline table, normalization diagnostics and paired outcome plots.
+No Phase 3, FD efficacy trial, physical actuation or theory-primer edit occurred.
+Closeout verified 23 existing completion seals, all ten notebook code cells
+without Torch, completed-resume immutability and unchanged scientific sources.
+The 124 focused Phase 2 tests and 51 final reporting tests passed. The extra
+allowance is recorded separately rather than changing the completed forecast.
+
 ### Phase 3: Sol Bounded Development And Retention Matching
 
 **Purpose:** calibrate both methods fairly, not assume that MNIST strengths,
@@ -2439,6 +2603,180 @@ ramp-duration and readiness requirements.
 **Exit:** a sealed comparison, retention status, capability target, and
 resource forecast. Publish the selected and rejected development candidates
 in compact artifact-backed form.
+
+#### Phase 3 Execution Recipe (2026-11-12)
+
+**Motivation:** Phase 2 repaired a saturated visual-to-LSTM projection without
+improving navigation. Its 247 demonstrations all used the same forward
+command, leaving steering to online exploration. Phase 3 therefore diagnoses
+and calibrates common optimization, reward weighting and physical exploration
+before attributing any result to FD. Keep the Phase 2 architecture with feature
+and projection RMS; no new trainable parameters, prompts, task geometry or
+reward formula are introduced.
+
+Two implementation corrections are local to a new versioned development
+runner: permit positive FD (the historical readiness runner rejected it),
+and make the configured optimizer steps and learning rate effective after
+initial Adam-state restoration. Preserve Adam moments, independent seeds,
+atomic updates and exactly-once retirement. Earlier numerical code and
+completed artifacts remain unchanged.
+
+Use development seeds 193101/193102, disjoint from proposed confirmation
+seeds 194101--194104. Fixed panels use easy-A seeds 193501--193520 and hard-B
+193501--193510, including blocked layouts. Evaluate before training, at the
+first drained complete episode boundary after half the 640-interval budget,
+and at the end. Record the actual midpoint exposure; do not assume it was
+exactly 320. Identical initial parameters may reference the same sealed
+initial panel, with an explicit initial-asset identity, rather than repeatedly
+charging identical evaluations. Later panels are evaluated separately.
+
+Common calibration is bounded and sequential:
+
+1. Use the recorded bootstrap interdecile spread divided by 2.5631 as a robust
+   temperature scale, then inspect half/base/double. Prefer the smallest with
+   normalized weight effective fraction at least .25, maximum weight share
+   at most .1 and float32-safe log weights. These are weighting diagnostics,
+   not iid sample counts. Retain the documented isotropic unit action variance:
+   constant teacher logits cannot identify a useful empirical action covariance.
+2. Reconstruct the same original demonstrations and build a fresh common
+   one-time initialization and Fisher for the selected likelihood. Do not
+   transplant the Phase 2 Fisher across a changed temperature. No new teacher
+   data or online rehearsal of retired observations is implied.
+3. On reversible scratch copies of the initialization, compare common
+   learning-rate/step settings (.0003,1), (.001,1), (.001,2), (.003,1),
+   (.003,2), (.001,4). Choose a finite, positive retained-data NLL reduction
+   per step with symmetric working-model KL at most .25. This is a numerical
+   calibration, not evidence of task learning. Restore parameters, Adam and
+   named RNGs after every probe.
+4. Inspect Gaussian logit noise SD 2/4/6/8 through the calibrated physical
+   mapping. Prefer the smallest giving at least 20% forward-and-steering
+   commands, at least 50% forward coverage, and no more than 30% large-pan
+   commands on retained histories. If none meets all guides, retain the best
+   steering-minus-pan coverage score. Hypothetical draws are not new data.
+
+Start actual common-control trajectories with ridge .1, .03 and .3 on the
+first development seed. Keep the entire 640-interval ramp rather than speed
+it up for screening. If acquisition remains absent, one shared plasticity/
+solve repair may check adaptation weight .05 and two/four optimizer steps.
+Select the control before its second-seed replication; do not switch to a
+luckier unreplicated candidate afterward.
+
+Validate FD on the actual normalized model with common probes and
+half/base/double epsilon. Require penalty max/min at most 1.25, gradient-norm
+max/min at most 1.5 and adjacent gradient cosine at least .95. At most two
+adjacent numerical brackets may be checked if necessary. Initial FD strengths
+target penalty/data gradient ratios .01/.1/1; these do not assert equal
+downstream effects. Measure actual update costs with restored-state scratch
+fits, then start actual FD development at the middle ratio. If retention is
+unmatched and time permits, try the appropriate adjacent strength. Common
+plasticity and FD-strength repairs together are limited to two rounds.
+
+Attempt both development seeds for the selected control and FD recipe, with
+dynamic cost admission and **six active compute hours maximum**, including
+validation, I/O, scoring, reporting and a five-minute closeout allowance.
+The prior conservative study charge is 5.76 h; this phase does not authorize
+Phase 4 or a whole-study extension. Record candidates omitted by budget rather
+than invent outcomes. A numerical FD check is useful even if common task
+learning remains unresolved, but cannot establish FD efficacy or readiness.
+
+Select using mean/endpoint old-capability loss and hard-B acquisition. Match
+FD's average and endpoint A loss to the selected control within five points;
+20 A layouts give only five-point endpoint resolution, not proof of retention
+equivalence. Keep unmatched frontiers and negative results. Seal a comparison
+only to the extent supported by completed development replicas; do not claim
+sample savings or automatically start fresh runs. Publish a revised forecast
+using measured FD trajectory costs where available and explicitly identify
+unmeasured extra confirmation panels.
+
+#### Phase 3 Retention-Directed Repair Amendment (2026-11-12)
+
+The first calibrated ridge-.1 trajectory lost easy-A capability from 5/20
+to 0/20 and gained no hard-B success. Its final controls showed a strong
+right-turn bias across layouts, rather than successful obstacle navigation.
+The original proposed repair increased adaptation weight and optimizer steps;
+that direction is not well motivated when forgetting already exceeds the
+ten-point retention guide. Preserve that proposal and its implementation as
+history, but do not execute it mechanically in this observed regime.
+
+Finish all three already admitted ridge candidates. If any establishes the
+operational hard-task gain at acceptable retention, continue the original
+development schedule unchanged. Otherwise allow a separately versioned
+supervisor to replace the **unexecuted** common plasticity repair with a
+retention-directed shared configuration: learning rate .0003, one optimizer
+step and adaptation weight .01, using the best original control's ridge.
+Keep temperature, action variance, exploration, architecture, reward, replay
+and drift fixed. These are already allowed common calibration choices, not
+FD-specific tuning or a new likelihood family.
+
+The replacement may reuse the sealed Phase 3 initialization and Fisher:
+their model parameters and likelihood design are unchanged. No KL stage,
+teacher acquisition or online replay of retired data is repeated. Seal the
+old orchestration only after all three control results and the stopped
+writer's budget checkpoint are durable. Preserve its source archive and
+every completed/partial unit. Reference historical controls explicitly,
+without charging them again or combining different recipes as one condition.
+
+Evaluate the gentler candidate on the first development seed, then select
+between it and the original controls using the same acquisition/retention
+rules. Attempt the selected control's second seed and the selected FD
+comparison on both seeds as the remaining budget permits. A matched original
+control may remain preferable; the amendment does not presume the repair
+works. Retain all negative results. The gentler common repair counts as one
+of the maximum two development repair rounds; any earlier partially executed
+plasticity repair also consumes a round. At most one adjacent FD-strength
+repair remains, and only if the total limit permits it.
+
+Both orchestration versions share the **same six-hour Phase 3 ceiling** and
+the same prior study ledger. Supervisor waiting overlaps the original run
+and is not charged twice. Report the versioned handover, cumulative charge
+and budget omissions in the notebook. The original scientific source files
+remain frozen; the new supervisor is a separate module. No Phase 4 or
+physical operation is authorized by this amendment.
+
+**Refinement before executing the repair:** further artifact review found
+zero successful training episodes among the first candidate's 43 episodes.
+Its median joint data NLL was 165.54, versus EWC .00769 and ridge .0000234.
+These objective magnitudes are not gradient ratios or a causal diagnosis,
+but the SD-8 behavior noise has variance 64 while the working action scale
+was only 1. This motivates calibrating relative likelihood scales as well
+as reducing update aggression. A Phase 2 SD-4 trajectory had three successes
+in 53 episodes, under other different settings; that comparison is a lead,
+not an isolated exploration effect.
+
+The authoritative unexecuted repair recipe therefore supersedes the simpler
+retention-only proposal above: **learning rate .001, one optimizer step,
+adaptation weight .01, exploration SD 4, action variance 16**, and the best
+original control's ridge. Retain temperature 2.8375266913896, architecture,
+reward, stream and replay. Matching the unit-weight action scale to the
+known Gaussian behavior variance is a documented scale choice, not proof that
+the joint working model is correctly specified.
+
+Unlike the earlier retention-only proposal, this changes the likelihood
+design. Build a fresh independent common initialization, one-time KL/NLL fit
+and Fisher from the same 247 original demonstrations; **do not reuse the old
+Fisher or copy its initial evaluations**. No new teacher data are acquired.
+If development ultimately selects an original control rather than the new
+recipe, its FD comparison must use that original control's own compatible
+initialization, likelihood and panels. All preparation and trajectories still
+share the same six-hour cap. Neither preliminary repair proposal was executed.
+
+#### Phase 3 Interruption Record (2026-11-12)
+
+At the user's request, both tmux workers stopped gracefully at 21:56 UTC.
+The ridge-.1 and ridge-.03 controls are complete (627/625 captures): easy-A
+success fell from 5/20 to 0/20 in both, and hard-B success stayed 0/10.
+The ridge-.3 candidate is saved at 330/640 intervals during midpoint
+evaluation. Its missing endpoint is not a failure result. The tested
+conditional supervisor stopped while waiting; no repair or FD trajectory
+has begun and no source handover has occurred.
+
+The durable Phase 3 charge is 2.405 h, cumulative study charge 8.161 h;
+roughly 3.595 h of this phase's shared ceiling remains. Idle pause time is
+excluded. Seven completed seals and both active journal chains/recovery
+snapshots passed read-only integrity checks. All frozen scientific sources
+and the mathematical overview are unchanged. Detailed restart commands and
+the exact partial unit are recorded in `PLAN19_HANDOFF.md`. Phase 4 remains
+unauthorized.
 
 ### Phase 4: Sol Fresh Paired Learning
 

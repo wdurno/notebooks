@@ -1,6 +1,267 @@
-# Plan 19 Handoff: Phase 1 Check-In
+# Plan 19 Handoff: Phase 3 Development
 
-## Current Check-In (2026-11-11)
+## Paused For Node Handover (2026-11-12, 21:56 UTC)
+
+**Both tmux workers have exited cleanly and CUDA has no remaining compute
+process.** The user requested the pause; do not resume until instructed.
+STOP files exist in BOTH `phase3/development-v1` and
+`phase3/development-retention-v1`. The latter stopped while waiting; it has
+not taken over, sealed the source, initialized a model or acquired data.
+
+Two controls are complete and immutable: ridge .1 (`pilot-e50a89383d05`,
+627 captures) and .03 (`pilot-6ff65bb6993d`, 625 captures). Both went from
+5/20 easy-A successes to 0/20 at midpoint/final, with 0/10 hard-B throughout.
+The ridge-.3 control (`pilot-470d6557397f`) is checkpointed at **330/640
+incoming intervals, midpoint evaluation**. Resume its saved evaluation and
+trajectory; do not restart it or classify its missing endpoints as failures.
+
+The source parent durable charge is **8,658.508928239 s (2.405 h)**; prior
+study plus this charge is **29,378.133737569 s (8.161 h)**. About 3.595 h of
+the shared six-hour Phase 3 ceiling remains, including final verification.
+Idle node-borrowing time must not be charged. This is a remaining allowance,
+not an estimate that every proposed candidate will fit.
+
+Restart: intentionally remove BOTH STOP files, launch the original campaign
+using the command below, and launch the conditional supervisor with `--wait`
+using its command below. Supply the same optional model-path/offline overrides
+from the source `orchestration/config.json`. Use separate tmux sessions as
+before. The source must finish its third ridge candidate; the supervisor then
+decides whether to leave the original running or checkpoint/seal it and take
+over. After a takeover, never resume the original writer again.
+
+Shutdown verification checked all seven completed unit seals, all 516 parent
+journal entries and all 1,035 active-pilot journal entries, including the
+required recovery snapshots. All 69 frozen historical scientific sources and
+the mathematical overview remain unchanged. The notebook was refreshed by
+the runner's clean-stop handler. Independent supervisor/reporting acceptance
+passed **59 tests in 49.26 s**; its agent also passed 78 combined runtime,
+analysis and probe checks. All coding agents are closed. No FD development,
+Phase 4 or physical robot operation has started.
+
+## Phase 3 Authorized (2026-11-12)
+
+The user authorized Phase 3 only. The campaign started at 19:39 UTC in tmux
+session `plan19-phase3`, at
+`cache/numerical_experiment/picar/phase3/development-v1`. Acceptance passed
+109 tests in 159.47 s. CUDA initialization completed and is sealed at
+`units/bootstrap-715cd4052b9c` (850.57 s, fresh KL/NLL/Fisher). The recorded
+temperature is 2.8375266913896, action variance 1. All 247 original actions
+were forward; no new teacher data were acquired. Scratch calibration selected
+LR .003, two optimizer steps and exploration SD 8. The first ridge-.1 pilot
+is complete at `units/pilot-e50a89383d05`: 627 captures, no pending updates;
+easy-A 5/20 initially, 0/20 at midpoint/final; hard-B 0/10 throughout.
+These are NEW development layouts, not Phase 2's 7/20 panel. The lower-ridge
+.03 candidate is now running at `units/pilot-6ff65bb6993d`; .3 follows.
+The new independent package is
+`numerical_experiment/picar_phase3`; the scientific sources from Phases 1/2
+and the mathematical overview remain frozen. Two reused Sol sidecars own
+the development runtime/tests and reporting/tests. The coordinator owns
+calibration, selection, budget, scheduler and GPU execution. Both sidecars
+have finished and are closed. Runtime tests passed 30 checks and 42 earlier
+regressions; the coordinator independently passed 47 runtime/probe checks.
+Seven minutes of conservative pre-execution CPU validation and five minutes
+of closeout allowance count inside the six-hour phase ceiling.
+
+### Conditional Retention Repair Armed
+
+After the first pilot's 25-point retention loss and zero hard-task gain, the
+coordinator is preparing a separate `picar_phase3_retention` supervisor. The
+original three ridge candidates CONTINUE UNCHANGED. Independent retention and
+reporting acceptance passed 59 tests in 49.26 s. Before the user-requested
+pause, the frozen supervisor waited in tmux `plan19-phase3-retention`
+(launched about 21:28 UTC), logging to
+`phase3/development-retention-v1/run.log` under the PiCar cache root.
+It will take over only after all three are complete and none
+provides a retained hard-task gain; otherwise the original schedule continues.
+Do not resume the original past that gate without reviewing this amendment.
+
+The refined common repair is LR .001, steps 1, pi .01, exploration SD 4 and
+action variance 16 (same tau 2.8375266913896/ridge selected from original
+controls). This replaces the unexecuted higher-plasticity repair. It needs
+fresh KL/NLL/Fisher initialization from the recorded demonstrations because
+Sigma_A changes; old Fisher/panels cannot be transplanted. No teacher queries
+or retired-data online replay are added. The same six-hour Phase 3 budget
+carries across the source handover; waiting overlaps existing work and is
+not charged twice. No Phase 4 is authorized. See the appended plan refinement.
+
+Supervisor resume command (same model-path/offline overrides as the source):
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase3_retention.campaign \
+  --output cache/numerical_experiment/picar/phase3/development-retention-v1 \
+  --source-campaign cache/numerical_experiment/picar/phase3/development-v1 \
+  --resume --wait
+```
+
+Before the three-control gate, resume both the original runner and waiting
+supervisor. After the source orchestration is sealed as
+`superseded_after_ridge_screen`, resume ONLY the supervisor. Never remove the
+source STOP after takeover. New-run STOP/SIGTERM preserves the current repair
+checkpoint. The waiting supervisor performs cheap discovery and validates all
+seals before taking ownership; idle waiting is not charged twice.
+
+The appended Phase 3 execution recipe records the exact calibration and
+candidate sequence. Use feature plus projection RMS, a fresh initial Fisher
+for any changed likelihood scale, three ridge candidates and up to two
+documented repair rounds. Attempt two development seeds and report any budget
+omissions. Initial/midpoint/final fixed-layout evaluation is descriptive, not
+confirmation or a sample-savings estimate. The maximum Phase 3 charge is six
+hours inside the cumulative 20-hour target; prior charge is 20,719.62480906 s
+(5.76 h). No automatic Phase 4 or physical actuation is authorized.
+
+The standalone resume command, once acceptance passes, is:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase3.campaign \
+  --output cache/numerical_experiment/picar/phase3/development-v1 \
+  --teacher-source cache/numerical_experiment/picar/phase1/fix3-v2/units/bootstrap-5f42cbe3df8a \
+  --prior-review cache/numerical_experiment/picar/phase2/readiness-rms-v1/reviews/closeout-v1 \
+  --resume
+```
+
+Supply the same optional model-path/offline overrides recorded in the resolved
+configuration. Default loading downloads the pinned model into project cache.
+Never run a duplicate writer. STOP/SIGTERM checkpoint; remove STOP only before
+intentional resume. All old completed runs remain immutable. The runtime
+source/config fingerprint is frozen when the campaign starts; report-only
+edits may continue. Check `orchestration/progress.json` and `run.log` for state.
+
+## Phase 2 Complete (2026-11-12)
+
+**Latest state, 17:56 UTC: complete and stopped for review. GPU is free; no
+tmux job remains.** Both original baseline pilots and both normalization
+rescues retained 7/20 easy and 0/10 hard successes. Captures were 620/619 for
+the baselines, 635 for feature RMS and 623 for feature plus projection RMS.
+Each finished with zero pending updates. The original orchestration is sealed
+as `superseded_after_baselines`; the rescue orchestration is sealed as
+`ready_for_checkin` with 12 completed child units. Completion is NOT a
+readiness pass: the operational hard-panel improvement guide was not met.
+
+Feature RMS alone left the initialization projection saturated. Adding
+projection RMS produced zero saturated coordinates on the archived probes,
+median local tanh slope .462 and maximum instruction logit difference .051
+(originally about 4.77e-7). This repaired measured local sensitivity, not
+instruction following or navigation learning. No FD comparison was run.
+
+Phase 2 campaigns charged 12,290 seconds (3.41 h). Including a five-minute
+conservative final-verification allowance, Phase 2 totals 3.50 h, inside its
+shared five-hour cap. The conservative cumulative study charge is 5.76 h, leaving 14.24 h
+of the 20 h target before additional development. Measured processing was
+2.92 s/captured interval. Four pairs of 1,200 intervals/condition would take
+7.8--11.7 h processing plus 1.41 h evaluation under hypothetical FD cost
+multipliers 1--2; six pairs of 2,400 would take 23.4--35.1 h plus 2.12 h.
+FD overhead is UNMEASURED and later development/closeout are extra. These are
+conditional forecasts, not admitted studies. First resolve common-controller
+learning. No Phase 3, additional rescue or physical robot work is authorized.
+
+Closeout passed 124 focused Phase 2 tests and 51 final reporting tests. All
+23 pre-closeout seals verified, and all ten notebook code cells executed
+without importing Torch. Completed `--resume` verified unchanged seals without
+Torch or GPU work. All 63 scientific sources match the archived fingerprint;
+the mathematical overview is unchanged. Final outcome and sensitivity plots
+were visually inspected. The separately sealed `reviews/closeout-v1` records
+the verification and extra allowance without mutating the campaign forecast.
+The complete Phase 2 artifact tree occupies about 854 MB.
+The final report refresh exposed a metadata-only closeout review being treated
+as a scientific experiment version. A reporting-only classification fix and
+regression test resolved it; no sealed artifact or scientific source changed.
+All ten notebook cells and all 24 seals (including closeout) verified afterward.
+
+### Completed Execution Details And Recovery History
+
+The user authorized Phase 2 only, ending at the readiness/forecast check-in.
+Implementation is in `numerical_experiment/picar_phase2`, separate from the
+frozen Phase 1 numerical sources. See the appended Phase 2 execution recipe
+in `plan19.md`: compatible initial asset reuse, 20 easy/10 hard fixed layouts,
+two 640-interval baseline pilots, at most two bounded common rescue recipes,
+five active compute hours maximum. No FD comparison, Phase 3 or physical
+operation is authorized. Preserve all prior artifacts and the theory notebook.
+
+Two bounded Sol 6.1 Extra High sidecars implement the evaluated runtime/tests
+and artifact-only reporting/tests. The coordinator owns configuration,
+scientific integration, scheduler, resource limits and GPU execution. Their
+write sets do not overlap. This records the plan's explicit routing settings;
+token/credit usage is unavailable, not inferred.
+
+Both sidecars are now complete/closed. Runtime recovery tests and reporting
+acceptance passed; integration additionally fixed the language unit's full
+checkpoint publication and action-variance compatibility checks before
+freezing sources. The original campaign ran in tmux session `plan19-phase2`:
+`cache/numerical_experiment/picar/phase2/readiness-v1`. Its `run.log` captures
+the invocation, and `orchestration/progress.json` tracks the current stage.
+Five minutes of conservative pre-execution validation reserve are included
+in the charged phase allowance. The runtime source archive and resolved
+recipe are immutable child artifacts; report-only improvements are excluded
+from the scientific fingerprint.
+
+Resume command from the checkout (also supply the same optional model-path
+and offline overrides recorded in `orchestration/config.json`):
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase2.campaign \
+  --output cache/numerical_experiment/picar/phase2/readiness-v1 \
+  --bootstrap-source cache/numerical_experiment/picar/phase1/fix3-v2/units/bootstrap-5f42cbe3df8a \
+  --resume
+```
+
+Do not launch a second writer while tmux is running. A root STOP file or
+SIGTERM requests a checkpointed halt; remove STOP before intentional resume.
+The initial asset has passed the compatibility/disjointness audit. No
+repeated KL or unrecorded use of retired data is allowed. The original
+52 scientific sources and mathematical overview retain their hashes.
+
+### Targeted Conditioning Rescue Handover (2026-11-12)
+
+The first 640-interval baseline completed at its episode boundary after 620
+captures: easy-A remained 7/20, hard-B remained 0/10. The second planned seed
+finished after 619 captures with the same outcomes. Initial frozen teacher readiness was also 7/20 easy-A; both
+teacher and student succeeded on 7/11 clear and 0/9 blocked layouts.
+
+The language probe changes Qwen features but barely changes action logits
+(maximum difference about 4.77e-7). An artifact-only CPU reconstruction found
+all projected coordinates saturated at abs(tanh(z)) > .99; median absolute
+preactivation was 11.59 and median local tanh derivative zero in float32.
+The sealed diagnostic is `readiness-v1/reviews/feature-health-v1`. This is a
+concrete conditioning concern, not isolated causal proof or an STM result.
+
+The appended plan amendment replaces the two UNEXECUTED ridge/floor rescues
+with feature RMS normalization, then optionally feature plus projection RMS
+normalization. All other scientific settings and parameter counts stay fixed.
+Each new model reconstructs the 247 original demonstrations and receives fresh
+weights, optimizer state, one-time KL, likelihood fit and Fisher. No historical
+model-dependent Fisher is transplanted into a different forward model.
+
+The supervisor ran in tmux session `plan19-phase2-rms` and is now complete:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_phase2_rescue.campaign \
+  --output cache/numerical_experiment/picar/phase2/readiness-rms-v1 \
+  --source-campaign cache/numerical_experiment/picar/phase2/readiness-v1 \
+  --teacher-source cache/numerical_experiment/picar/phase1/fix3-v2/units/bootstrap-5f42cbe3df8a \
+  --resume --wait
+```
+
+Use the same optional model-path/offline overrides as the original command.
+Its log is `readiness-rms-v1/run.log`. It waits for BOTH baseline seals, stops
+the original writer before the old rescues, and seals that orchestration as
+`superseded_after_baselines`. It then owns the remaining Phase 2 work. Both
+versions share ONE five-hour active-compute ceiling; this is not a fresh
+five-hour allowance. Waiting overlaps the original campaign and is not charged
+twice. Neither campaign automatically starts Phase 3.
+
+The following describes interruption recovery during execution; both runs
+are now complete and must not be reopened for additional learning. A completed
+`--resume` verifies and returns without importing Torch or starting new work.
+After a reboot before both baselines finish, resume the original command above
+AND this waiting supervisor. After the original orchestration is sealed,
+resume only the rescue command. Never launch duplicate writers. Remove the
+appropriate root STOP file only for intentional resumption. Both numerical
+source sets are frozen now; use a new version for any material correction.
+Only reporting-only changes can be made without changing their fingerprints.
+Both implementation sidecars have finished and are closed; 62 focused rescue,
+health and manager tests passed before the supervisor was launched.
+
+## Previous Check-In (2026-11-11)
 
 **Fix 3 is complete and stopped for review. GPU is free; no worker remains.**
 `cache/numerical_experiment/picar/phase1/fix3-v2/orchestration/COMPLETED`
