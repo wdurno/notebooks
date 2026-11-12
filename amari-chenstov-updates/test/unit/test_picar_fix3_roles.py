@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from numerical_experiment.picar.fix3_roles import compose_score, parse_components, centering_resolution_audit
+from numerical_experiment.picar.fix3_roles import compose_score, parse_components, parse_center, centering_resolution_audit
 
 
 def test_centering_bonus_is_bounded_and_discounts_camera_pan():
@@ -35,3 +35,13 @@ def test_centering_return_signal_and_bin_alignment_are_measured():
     assert result["selected_bins"] in {81, 161}
     assert result["rows"][-1]["fraction_different_labels"] > result["rows"][0]["fraction_different_labels"]
     assert result["rows"][-1]["mean_absolute_log_weight_change"] > 0
+
+
+def test_localized_center_has_flat_central_quarter_and_tapers_to_edges():
+    assert parse_center('{"center_x":0.5}')[0] == 1.
+    assert parse_center('{"center_x":0.625}')[0] == 1.
+    assert parse_center('{"center_x":0}')[0] == 0.
+    assert parse_center('{"center_x":1}')[0] == 0.
+    assert 0 < parse_center('{"center_x":0.8}')[0] < 1
+    with pytest.raises(ValueError):
+        parse_center('{"center_x":null}')

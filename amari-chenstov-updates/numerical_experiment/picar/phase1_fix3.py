@@ -21,7 +21,7 @@ from .runtime import StopController, check_storage, sha256_file
 from .storage import RunStore
 
 
-VERSION = "phase1-fix3-v1"
+VERSION = "phase1-fix3-v2"
 
 
 def prior_seconds(root):
@@ -255,7 +255,7 @@ def run(output, *, model_path=None, offline=False, resume=False, stage="all", ma
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default="cache/numerical_experiment/picar/phase1/fix3-v1")
+    parser.add_argument("--output", default="cache/numerical_experiment/picar/phase1/fix3-v2")
     parser.add_argument("--model-path")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--resume", action="store_true")

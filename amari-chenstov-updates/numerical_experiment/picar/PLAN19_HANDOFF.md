@@ -1,6 +1,112 @@
 # Plan 19 Handoff: Phase 1 Check-In
 
-## Status
+## Current Check-In (2026-11-11)
+
+**Fix 3 is complete and stopped for review. GPU is free; no worker remains.**
+`cache/numerical_experiment/picar/phase1/fix3-v2/orchestration/COMPLETED`
+seals 23 child units. Both real student pilots ran completely. Each retained
+2/2 easy and 2/2 middle successes; hard success remained 0/2 before and after.
+This supplies a useful approach bootstrap, not demonstrated learning of the
+new obstacle task. The common learner must acquire the changed skill before
+an STM comparison is informative. Phases 2--5 and physical operation remain
+pending. No further parameter or prompt sweep was started.
+
+The notebook has the complete chronological Fix 3 section, compact success
+plot, reward contact sheet, before/after clips and a concise conclusion.
+Final reporting fixes prevent a null live timestamp on the old stopped
+attempt from superseding the completed campaign, verify pairing using the
+recorded seed/geometry, and keep legends off the data.
+
+Closeout reran all 19 focused reporting tests and executed all nine notebook
+code cells without importing Torch. The final two-student success figure was
+visually checked. Completed resume verifies/skips without importing Torch;
+the GPU has no remaining compute process. The mathematical overview retains
+its original SHA-256.
+
+Scientific Python sources remain frozen and match the campaign fingerprint.
+`units/provenance-*/sources.tar.gz` preserves the runtime code. Keep unrelated
+dirty Plan 18 files and `.gitignore` changes. The mathematical overview is
+unchanged. A completed resume verifies/skips without importing Torch:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar.phase1_fix3 \
+  --output cache/numerical_experiment/picar/phase1/fix3-v2 --resume
+```
+
+Supply the same optional `--model-path` and `--offline` values recorded in
+`orchestration/config.json`. A root `STOP` file requests a checkpointed halt;
+remove it before an intentional resume. Pending episodes retain their state
+and never receive fabricated failure returns. The CLI ends after the two
+bounded Replay/EWC student pilots and the task/resource check-in, not the
+full STM comparison or physical operation.
+
+- The stopped `fix3-v1` attempt and its exact source snapshot are retained:
+  combined proximity/centering judgments saturated almost all visible scores
+  at 10. It charged 264.7 seconds and trained no student.
+- The permitted targeted repair separates the exact Fix 2 contact/proximity
+  query from a horizontal-image-coordinate query. Camera pan discounts the
+  half-point centering addition. Development approach ordering is 4/6 and
+  centering ordering 4/6; validation approach ordering is 4/6, centering 2/6.
+  The signal is useful but coarse, with off-axis detection errors. No further
+  prompt search is authorized by this amendment.
+- Software acceptance passed 705 tests. A preceding incomplete software unit
+  retains `pytest-initial-report-failure.txt` for a reporting-string assertion;
+  it was corrected without changing scientific settings.
+- The geometry audit has 58.2% clear early layouts and 100% blocked late
+  layouts. Privileged diagnostic pursuit reached contact in 12/12 checked
+  level/gain cases; none of those controls enter demonstrations.
+- Return-bin calibration selected 161 bins to preserve more of the small
+  centering signal. Model context 4, hidden width 64, top-L 1, LTM/STM ranks
+  4/1, replay capacity 8, new/replay batch 1/1, FD strength zero in this pilot.
+- Prior repairs/recognition plus the stopped attempt were 37.0 minutes at
+  v2 admission. V2 has its own two-hour ceiling inside the cumulative
+  three-hour repair envelope and 20-hour overall study ledger.
+- Actual CUDA recovery acceptance halted one-time distillation at step 95
+  after 292 captured transitions (44 episodes, 247 executed teacher examples,
+  16 successes). A fresh GPU process restored parameters, KL Adam tensors and
+  named RNG states exactly; the check is in `fix3-v2/gpu-recovery-check.json`.
+  The STOP flag was removed and the same immutable configuration resumed.
+- Corrected campaign compute was 80.5 min; both Fix 3 attempts total 84.9 min.
+  Cumulative recorded repairs/recognition were 117.5 min; a conservative
+  further 5 min reserve covers development/verification work outside those
+  invocations. Including earlier acceptance/profiling, the conservative
+  overall study charge is about 2.22 h. Budget caps remain unchanged.
+- The bootstrap took 33.2 min across invocations; do not use only its final
+  invocation's 12.2 min as its cost. Pilots took 17.2 and 17.6 min, captured
+  305/300 intervals, and completed 276 updates each (255 online, 21 stopped).
+  Ordinary non-startup misses were 2/278 and 1/277. Final replay has 8 entries,
+  with no pending updates and exactly-once retirement accounting.
+- Review artifacts: `review/integrity.json`, `review/video-checks.json`, and
+  `review/resource-forecast.json`. Audit verified 32 completed units across
+  attempts, 1,898 frame blobs, 203 media files and two source archives with
+  unchanged completion markers. All six clips decode and show motion.
+- Conditional Replay/EWC processing throughput is 2.95 s/captured interval:
+  four pairs x 1,200/arm would take about 7.9 h processing; six x 2,400 about
+  23.6 h. These exclude additional FD cost, development, evaluation and
+  closeout, and do not admit a study whose new-task learning gate is unmet.
+
+## Reader-Requested Hard-Task Recording (2026-11-12)
+
+The old `seed-8-B/scene.mp4` gallery clips are privileged scripted feasibility
+runs, not learned-student runs. The latest Fix 1 version records success at
+13.5 s. Original Fix 3 final hard evaluations instead all collided at
+4.8--5.7 s; only the easy evaluation panel originally had video capture.
+
+At the user's request, `numerical_experiment.picar_evaluation_video` recorded
+a separate no-learning evaluation of student 193701's final checkpoint on
+hard layout 195803. Output: `diagnostics/fix3-final-hard-video-v1` (completed).
+The synchronized camera/top-down MP4 reproduced a collision at 7.23 s versus
+5.30 s in the original trial. This is explicitly supplemental footage with
+fresh real-time scheduling, not recovery of the original trial's footage.
+All learner parameters, optimizer, Fisher, anchors, RNGs and counters were
+checked unchanged. Six focused tests pass, the original campaign numerical
+sources remain unchanged, and the GPU is free. The successful invocation took
+22.8 s; a preceding sandbox-restricted CUDA load failed before any rollout.
+Original results and completion seals are untouched; no main-study result
+or treatment comparison was added. This separate CLI stays outside the
+frozen campaign's source tree and accepts an optional model path as usual.
+
+## Historical Fix 2 Check-In
 
 **Fix 2 complete, stopped at the task/resource check-in (2026-11-09).**
 `phase1/fix2-v2/orchestration/COMPLETED` seals the corrected campaign. All six

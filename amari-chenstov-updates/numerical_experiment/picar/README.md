@@ -245,7 +245,7 @@ the task/resource check-in before the main STM comparison. Run from the checkout
 
 ```bash
 ~/.venv/bin/python -u -m numerical_experiment.picar.phase1_fix3 \
-  --output cache/numerical_experiment/picar/phase1/fix3-v1 --resume
+  --output cache/numerical_experiment/picar/phase1/fix3-v2 --resume
 ```
 
 Default loading downloads the pinned model into the project cache. Optional
@@ -256,3 +256,9 @@ A `STOP` file in the campaign root or SIGTERM requests a durable stop. Remove
 the stop file before explicit resumption. Changed scientific sources/settings
 require a new output directory; completed units remain immutable. The notebook
 loads completed summaries and reports pending work without running models.
+
+Fix 3 completed on 2026-11-11. The corrected campaign and stopped first
+attempt used 84.9 recorded compute minutes. Both pilots retained easy/middle
+fixed-panel success but did not improve hard-task success. The notebook's
+conclusion describes the remaining learning-readiness gate; no larger STM
+comparison or physical operation has been started.

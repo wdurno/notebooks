@@ -371,3 +371,47 @@ def test_conclusion_describes_actual_fixed_panel_rates_and_final_blockers(tmp_pa
     assert "collisions 2/2 (100.0%) to 1/2 (50.0%)" in text
     assert "middle pending" in text and "hard pending" in text
     assert "Fresh confirmation required; Runtime forecast pending" in text
+
+
+def test_recorded_seed_and_actual_geometry_verify_pairing_and_deadlines():
+    row = {"seed": 7, "layout": {"obstacle": [1.575, .8]}, "success": False, "end_reason": "deadline"}
+    summary = {"seed": 9, "evaluations": [
+        {"checkpoint": checkpoint, "difficulty": "easy", "rows": [dict(row)]}
+        for checkpoint in ("initial", "final")]}
+    values = report._evaluations(summary)
+    assert values[0]["Panel identity"] == "matched layout IDs"
+    assert values[0]["Collision count / rate"] == "0/1 (0.0%)"
+    summary["evaluations"][1]["rows"][0]["layout"] = {"obstacle": [1.575, 0.]}
+    assert report._evaluations(summary)[0]["Panel identity"] == "layout IDs differ"
+
+
+def test_completed_execution_does_not_imply_navigation_learning(tmp_path):
+    root = tmp_path / "fix3-v2"
+    units = [{"path": str(root / name), "summary": {"kind": "phase1_fix3_" + name}}
+             for name in ("geometry", "rewards", "teacher", "bootstrap")]
+    for seed in (11, 12):
+        evaluations = [{"checkpoint": stage, "difficulty": difficulty, "rows": [
+            {"layout_id": i, "success": difficulty != "hard", "end_reason": "success" if difficulty != "hard" else "collision"}
+            for i in range(2)]} for stage in ("initial", "final") for difficulty in ("easy", "middle", "hard")]
+        units.append({"path": str(root / f"pilot-{seed}"), "summary": {
+            "kind": "phase1_fix3_pilot", "seed": seed, "evaluations": evaluations}})
+    units.append({"path": str(root / "orchestration"), "summary": {
+        "kind": "phase1_fix3_campaign", "status": "ready_for_checkin", "total_active_seconds": 3600,
+        "cumulative_repair_seconds": 6000}})
+    text = report.conclusion({"complete_units": units, "live": []})
+    assert "Fix 3 is complete" in text
+    assert "did not demonstrate acquisition" in text
+    assert "0/2 to 0/2" in text
+    assert "do not establish statistical significance" in text
+    assert "Next gate" in text
+
+
+def test_missing_live_timestamp_does_not_supersede_newer_completed_attempt(tmp_path):
+    older, newer = tmp_path / "fix3-v1", tmp_path / "fix3-v2"
+    snapshot = {"complete_units": [
+        {"path": str(older / "teacher"), "summary": {"kind": "phase1_fix3_teacher"},
+         "manifest": {"completed_at": "2026-11-10T00:00:00+00:00"}},
+        {"path": str(newer / "teacher"), "summary": {"kind": "phase1_fix3_teacher"},
+         "manifest": {"completed_at": "2026-11-11T00:00:00+00:00"}}],
+        "live": [{"path": str(older / "orchestration"), "updated_at": None}]}
+    assert "`fix3-v2`" in report.conclusion(snapshot)

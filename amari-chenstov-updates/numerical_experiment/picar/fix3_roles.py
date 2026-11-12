@@ -10,7 +10,8 @@ import time
 import torch
 
 from .config import canonical_json
-from .dense_roles import CONTROL_PROMPT, ConversationalTeacher, _strict_json, prepare_conversation
+from .dense_roles import (CONTROL_PROMPT, CONTACT_REWARD_PROMPT, ConversationalTeacher,
+                          _strict_json, parse_reward, prepare_conversation)
 from .models import batch_digest
 from .role_repair import native_text
 
@@ -32,6 +33,21 @@ Output schema: one JSON object with exactly three keys:
 {"visible": true, "proximity": 1, "centering": 1}.
 visible must be boolean; proximity and centering must be finite numbers."""
 REWARD_VERSION = "dense-visual-centering-v1"
+LOCALIZATION_PROMPT = """Locate the red ball in this image. Blue objects are not the target.
+Give the horizontal coordinate of the ball's center as a fraction of image width:
+0 is the left edge, 0.5 the middle, and 1 the right edge. Use its actual image
+position, including a partially cropped ball. If absent, use null.
+Output only JSON with exactly one key: {"center_x": 0.5}."""
+
+
+def parse_center(text):
+    value = _strict_json(text)
+    if set(value) != {"center_x"}:
+        raise ValueError("expected a horizontal ball center only")
+    x = value["center_x"]
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or not 0 <= x <= 1:
+        raise ValueError("visible ball requires a finite fractional horizontal coordinate")
+    return max(0., min(1., 1. - max(0., abs(x - .5) - .125) / .375)), float(x)
 
 
 def parse_components(text):
@@ -77,9 +93,12 @@ class CenteringReward:
 
     def __init__(self, encoder):
         self.encoder = encoder
-        self.prompt = CENTERING_REWARD_PROMPT
+        self.prompt = CONTACT_REWARD_PROMPT
         self.provenance = {"kind": REWARD_VERSION, "prompt": self.prompt,
             "prompt_sha256": hashlib.sha256(self.prompt.encode()).hexdigest(),
+            "localization_prompt": LOCALIZATION_PROMPT,
+            "localization_prompt_sha256": hashlib.sha256(LOCALIZATION_PROMPT.encode()).hexdigest(),
+            "interface": "separate-proximity-and-localization-v2", "calls_per_visible_image": 2,
             "role": "evaluator", "max_pixels": 76800, "frames": 1, "bonus": .5,
             "pan_cutoff_rad": math.radians(10), "input_whitelist": ["RGB"]}
         self.cache = {}
@@ -105,18 +124,26 @@ class CenteringReward:
         if not hit:
             attempts = []
             with self.encoder._lock:
-                inputs = prepare_conversation(self.encoder, history, self.prompt, visual_only=True)
-                for retry in range(2):
-                    raw = native_text(self.encoder, inputs, role="evaluator", max_new_tokens=96)[0]
-                    attempts.append(raw)
-                    try:
-                        components = parse_components(raw)
-                    except ValueError:
-                        if retry:
-                            raise
-                    else:
-                        self.cache[key] = {"components": components, "raw_text": attempts}
+                values = []
+                for prompt, parser in ((self.prompt, parse_reward), (LOCALIZATION_PROMPT, parse_center)):
+                    if values and values[0] == 0:
+                        values.append((0., None))
                         break
+                    inputs = prepare_conversation(self.encoder, history, prompt, visual_only=True)
+                    for retry in range(2):
+                        raw = native_text(self.encoder, inputs, role="evaluator", max_new_tokens=64)[0]
+                        attempts.append(raw)
+                        try:
+                            parsed = parser(raw)
+                        except ValueError:
+                            if retry:
+                                raise
+                        else:
+                            values.append(parsed)
+                            break
+                proximity, (centering, center_x) = values
+                components = {"visible": proximity > 0, "proximity": proximity, "centering": centering}
+                self.cache[key] = {"components": components, "center_x": center_x, "raw_text": attempts}
         result = compose_score(self.cache[key]["components"], float(pan_rad))
         self.last_diagnostic = {"cache_key": key, "cache_hit": hit,
             "seconds": time.monotonic() - started, **self.cache[key]}

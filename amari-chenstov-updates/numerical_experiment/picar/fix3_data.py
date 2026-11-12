@@ -30,7 +30,7 @@ def render_panels(store, *, split):
         raise ValueError("unknown reward split")
     saved = store.load_checkpoint(trusted=True) or {"rows": []}
     rows = saved["rows"]
-    seeds = (9211, 9212) if split == "development" else (9311, 9312)
+    seeds = (9211, 9212) if split == "development" else (9411, 9412)
     poses = [(seed, pose) for seed in seeds for pose in PANEL_POSES]
     for seed, (name, distance, yaw_deg, pan_deg) in poses[len(rows):]:
         config = SimulatorConfig(width=320, height=240, realtime=False,

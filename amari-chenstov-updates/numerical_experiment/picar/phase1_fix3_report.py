@@ -66,6 +66,22 @@ def _kind(unit):
     return "geometry" if kind == "geometry_audit" else kind
 
 
+def _campaign_order(path, data):
+    from datetime import datetime
+    times = []
+    values = [data["progress"].get("updated_at")]
+    values.extend(u.get("manifest", {}).get("completed_at") for u in data["units"])
+    for value in values:
+        if _number(value):
+            times.append(float(value))
+        elif isinstance(value, str) and value:
+            try:
+                times.append(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                continue
+    return max(times, default=0.), str(path)
+
+
 def _count(value):
     if type(value) is int and value >= 0:
         return value
@@ -110,9 +126,14 @@ def _bootstrap_row(summary):
         if value is None and key == "final_kl":
             value = distillation.get("last_preupdate_kl")
         return value if _number(value) else None
-    return {"Transitions": _count(summary.get("transitions")),
+    row = {"Transitions": _count(summary.get("transitions")),
             "Distillation initial KL": kl("initial_kl", "kl_initial"),
             "Distillation final KL": kl("final_kl", "kl_final")}
+    if "distinct_bootstrap_samples" in summary:
+        row["Executed teacher examples"] = summary["distinct_bootstrap_samples"]
+    if "selected_exploration_std" in summary:
+        row["Selected exploration SD"] = summary["selected_exploration_std"]
+    return row
 
 
 def _settings_row(units, progress, geometry, final):
@@ -351,7 +372,7 @@ def _rewards(unit, campaign, units):
         "text/html": "<table>" + grid + "</table>",
         "text/plain": "Reward contact sheet: " + "; ".join(
             "; ".join(f"{key}={_text(row.get(key))}" for key in columns) for row in selected)
-            + ". Unavailable frames remain pending."})
+            + "; unavailable frames remain pending."})
     return [sheet]
 
 
@@ -363,7 +384,7 @@ def _rate(rows, field):
             reason = row["end_reason"]
             if reason in ("collision", "obstacle_collision", "wall_collision", "obstacle_contact", "wall_contact"):
                 value = True
-            elif reason in ("success", "target_contact", "timeout", "time_limit"):
+            elif reason in ("success", "target_contact", "timeout", "time_limit", "deadline"):
                 value = False
         if type(value) is bool:
             observed.append(value)
@@ -371,6 +392,48 @@ def _rate(rows, field):
         return PENDING
     missing = f"; {len(rows) - len(observed)} unknown" if len(observed) != len(rows) else ""
     return f"{sum(observed)}/{len(observed)} ({sum(observed) / len(observed):.1%}){missing}"
+
+
+def _pilot_plot(units):
+    from matplotlib.figure import Figure
+    from matplotlib.ticker import PercentFormatter
+    import numpy as np
+    figure = Figure(figsize=(4.5 * len(units), 3.4), layout="constrained")
+    axes = figure.subplots(1, len(units), squeeze=False, sharey=True)[0]
+    for axis, unit in zip(axes, units):
+        summary = unit["summary"]
+        for offset, checkpoint, label, color in ((-.18, "initial", "Initialized student", "#357ca5"),
+                                                   (.18, "final", "After learning", "#31845e")):
+            heights, counts = [], []
+            for difficulty in ("easy", "middle", "hard"):
+                rows = next((e.get("rows", []) for e in summary.get("evaluations", [])
+                             if e.get("checkpoint") == checkpoint and e.get("difficulty") == difficulty), [])
+                known = [r["success"] for r in rows if type(r.get("success")) is bool]
+                heights.append(sum(known) / len(known) if known else float("nan"))
+                counts.append(f"{sum(known)}/{len(known)}" if known else "pending")
+            x = np.arange(3) + offset
+            axis.bar(x, heights, width=.32, color=color, label=label)
+            for position, height, count in zip(x, heights, counts):
+                axis.text(position, (height if np.isfinite(height) else 0) + .025,
+                          count, ha="center", fontsize=8, rotation=90 if count == "pending" else 0)
+        axis.set(xticks=np.arange(3), xticklabels=("Easy A", "Middle A", "Hard B"), ylim=(0, 1.16),
+                 title=f"Student seed {summary.get('seed')}")
+        axis.yaxis.set_major_formatter(PercentFormatter(1.))
+        axis.grid(axis="y", alpha=.2)
+    axes[0].set_ylabel("Fixed-panel success")
+    handles, labels = axes[0].get_legend_handles_labels()
+    figure.legend(handles, labels, loc="outside upper center", ncol=2, frameon=False, fontsize=8)
+    return _figure(figure, "Fixed-panel student success: same layouts before and after; labels are successes/episodes. "
+                   "These small development panels are descriptive, not a significance test.")
+
+
+def _layout_id(row):
+    identity = row.get("layout_id", row.get("panel_id"))
+    if identity is not None:
+        return str(identity)
+    if row.get("seed") is not None and isinstance(row.get("layout"), dict):
+        return hashlib.sha256(json.dumps([row["seed"], row["layout"]], sort_keys=True).encode()).hexdigest()
+    return None
 
 
 def _evaluations(summary):
@@ -381,7 +444,7 @@ def _evaluations(summary):
         identities = []
         for checkpoint in ("initial", "final"):
             rows = grouped[(checkpoint, difficulty)]
-            ids = [r.get("layout_id", r.get("panel_id")) for r in rows]
+            ids = [_layout_id(r) for r in rows]
             if not ids or any(value is None for value in ids):
                 return "pairing unverified"
             identities.append(sorted(map(str, ids)))
@@ -442,9 +505,21 @@ def _outputs(campaigns, *, notebook_dir=None):
     result = []
     if not campaigns:
         return [_note("Phase 1 Fix 3 pending: no orchestration progress or completed unit summaries.")]
+    latest = max(campaigns, key=lambda path: _campaign_order(path, campaigns[path]))
     for campaign, data in sorted(campaigns.items()):
         units, progress = data["units"], data["progress"]
         final = next((u["summary"] for u in reversed(units) if _kind(u) == "campaign"), {})
+        if campaign != latest:
+            rewards = [u["summary"] for u in units if _kind(u) == "rewards"]
+            reward = rewards[-1] if rewards else {}
+            result.append(_note(f"Campaign: {campaign.name} (earlier attempt; revisions are not pooled)."))
+            result.append(_table([{"Earlier attempt": campaign.name,
+                "Status": "stopped; artifacts retained" if (campaign / "STOP").exists() else progress.get("status"),
+                "Completed units (sealed)": len(units), "Compute (min)": progress.get("active_seconds", 0.) / 60,
+                "Approach order fraction": reward.get("approach_order_fraction"),
+                "Centering order fraction": reward.get("centering_order_fraction")}]))
+            result.append(_note("Earlier raw panels, prompts and source snapshots remain in " + str(campaign / "units") + "."))
+            continue
         counts = _mapping(progress.get("counts"))
         pending = progress.get("pending_units", counts.get("pending"))
         if pending is None and all(type(counts.get(k)) is int for k in ("step", "target")):
@@ -502,6 +577,8 @@ def _outputs(campaigns, *, notebook_dir=None):
                                    "Training episodes": _count(summary.get("episodes"))}]))
             result.append(_table(_evaluations(summary)))
             result.append(_videos(summary, unit, campaign, notebook_dir or _NOTEBOOK_DIR))
+        if by_kind["pilot"]:
+            result.append(_pilot_plot(by_kind["pilot"]))
         if not by_kind["pilot"]:
             result.append(_note("Student pilot / fixed-panel evaluations / before-after clips: " + PENDING))
         result.append(_note("Fixed panels must retain identical layouts across checkpoints; missing layout IDs leave pairing "
@@ -571,15 +648,76 @@ def append_fix3(book, snapshot, *, notebook_dir=None):
     return book
 
 
+def _finished_conclusion(campaign, data, campaigns):
+    units = data["units"]
+    final = next((u["summary"] for u in units if _kind(u) == "campaign"), None)
+    pilots = [u["summary"] for u in units if _kind(u) == "pilot"]
+    if (final is None or len(pilots) != 2 or _pending_evaluations(units)
+            or not set(_REQUIRED).issubset({_kind(u) for u in units})):
+        return None
+    def outcomes(pilot, checkpoint, difficulty):
+        rows = [r for e in pilot.get("evaluations", [])
+                if e["checkpoint"] == checkpoint and e["difficulty"] == difficulty for r in e["rows"]]
+        known = [r["success"] for r in rows if type(r.get("success")) is bool]
+        return sum(known), len(known)
+    def count(value):
+        return f"{value[0]}/{value[1]}"
+    lines = []
+    hard_gained = False
+    for pilot in sorted(pilots, key=lambda p: p["seed"]):
+        comparisons = []
+        for difficulty in ("easy", "middle", "hard"):
+            before, after = (outcomes(pilot, stage, difficulty) for stage in ("initial", "final"))
+            comparisons.append(f"{count(before)} to {count(after)}")
+            if difficulty == "hard" and before[1] and after[1]:
+                hard_gained |= after[0] / after[1] > before[0] / before[1]
+        lines.append(f"| {pilot['seed']} | " + " | ".join(comparisons) + " |")
+    boot = next((u["summary"] for u in units if _kind(u) == "bootstrap"), {})
+    actions = [r["probabilities"] for episode in boot.get("episodes", [])
+               for r in episode.get("intervals", []) if r.get("probabilities") is not None]
+    forward_only = bool(actions) and all(max(range(len(q)), key=q.__getitem__) == 2 for q in actions)
+    teacher_note = (f"All {len(actions)} executed bootstrap teacher actions were forward commands. "
+                    "The bootstrap therefore supplied approach experience with no turning demonstrations. "
+                    if forward_only else "")
+    masses = []
+    for pilot in pilots:
+        values = [r["probabilities"][2] for e in pilot.get("evaluations", []) if e["checkpoint"] == "final"
+                  for episode in e["rows"] for r in episode.get("intervals", []) if r.get("probabilities")]
+        if values:
+            masses.append(sum(values) / len(values))
+    behavior = (f"Final evaluation policies still assigned {min(masses):.1%} to {max(masses):.1%} "
+                "mean probability to the forward action. " if masses else "")
+    compute = sum(next((u["summary"].get("total_active_seconds", 0.) for u in d["units"]
+                        if _kind(u) == "campaign"), d["progress"].get("active_seconds", 0.))
+                  for d in campaigns.values()) / 60
+    learning = ("At least one pilot improved on its hard fixed layouts; that is a development lead requiring broader checks."
+                if hard_gained else "The pilots did not demonstrate acquisition of the hard obstacle-navigation skill.")
+    return ("## Conclusion\n\n**Phase 1 Fix 3 is complete.** The bootstrap transferred a useful approach skill. "
+            + learning + "\n\n"
+            "| Student seed | Easy A, before to after | Middle A, before to after | Hard B, before to after |\n"
+            "|---|---|---|---|\n" + "\n".join(lines) + "\n\n"
+            "Entries are successes/episodes on the same two layouts per level. The two training streams share one "
+            "bootstrap and the same evaluation layouts; these descriptive counts do not establish statistical significance.\n\n"
+            + teacher_note + behavior + "The generated reward remains coarse, with off-axis errors. "
+            "These are candidate explanations for the limited learning, not isolated causal findings.\n\n"
+            f"Recorded Fix 3 attempts used {compute:.1f} active minutes; cumulative recorded repairs used "
+            f"{final.get('cumulative_repair_seconds', 0.) / 60:.1f} minutes. "
+            "The actual CUDA halt/resume check restored parameters, Adam tensors and named RNG states exactly.\n\n"
+            "**Next gate:** demonstrate changed-task acquisition by the common learner before the larger STM comparison. "
+            "Review initial turning coverage, reward informativeness and curriculum duration. "
+            "No STM efficacy or sample-efficiency result is claimed here; physical operation and later phases remain pending.")
+
+
 def conclusion(snapshot):
     """Latest campaign only, with no inference of readiness from completion."""
     campaigns = _snapshot_campaigns(snapshot)
     if not campaigns:
         return None
-    campaign, data = max(campaigns.items(), key=lambda item: (
-        max([str(item[1]["progress"].get("updated_at", ""))]
-            + [str(u.get("manifest", {}).get("completed_at", "")) for u in item[1]["units"]]), str(item[0])))
+    campaign, data = max(campaigns.items(), key=lambda item: _campaign_order(*item))
     units, progress = data["units"], data["progress"]
+    finished = _finished_conclusion(campaign, data, campaigns)
+    if finished is not None:
+        return finished
     kinds = {_kind(u) for u in units}
     missing = [kind for kind in _REQUIRED if kind not in kinds]
     if _pending_evaluations(units):

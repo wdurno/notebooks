@@ -29,9 +29,11 @@ provisional and belongs here until
 experiments establish its value. Do not modify
 [`mathematical_overview.ipynb`](../../mathematical_overview.ipynb).
 
-**Next amendment:** Phase 1 Fix 3 (2026-11-11) is drafted below for review:
-modest centering rewards, a gradual barrier-placement curriculum and a bounded
-student trainability pilot. It has not been implemented or executed.
+**Latest check-in:** Phase 1 Fix 3 completed on 2026-11-11. The corrected
+`fix3-v2` campaign transferred an approach skill and completed two student
+pilots, but neither improved on the hard fixed layouts. The earlier saturated
+reward interface remains preserved. Full STM comparison readiness is unmet;
+later phases and physical motion remain pending. See the Fix 3 execution record.
 
 **Report:** `numerical_experiment/picar/plan19_results.ipynb`, created during
 implementation. Follow the concise, visual reporting style of Plan 13:
@@ -2019,8 +2021,9 @@ was changed, and no later learning phase was started.
 
 #### Phase 1 Fix 3: Centering Rewards And A Gradual Navigation Curriculum
 
-**Motivation and status (2026-11-11):** agreed design, drafted for review;
-implementation and execution are pending. Fix 2 produced useful straight
+**Motivation and status (2026-11-11):** implemented and executed; see the
+versioned diagnostic and execution records below for readiness limitations.
+Fix 2 produced useful straight
 approaches (3/6 unobstructed successes with the ported teacher), but no
 obstacle-task successes. Its follow-up recognition diagnostic identified the
 red sphere in every positive image while exposing unreliable spatial and
@@ -2262,6 +2265,92 @@ At closeout, state what an easy bootstrap can supply, what the student has
 actually learned, the admitted difficulty/reward settings and updated costs
 for Phases 2--5. Execution of this amendment ends at that check-in; subsequent
 full learning and physical operation require their own authorization.
+
+**Fix 3 implementation/diagnostic note (2026-11-11):** the first attempt,
+`fix3-v1`, passed 704 software tests and the geometry audit, but the new
+combined visual-component prompt assigned proximity 10 to almost all
+visible balls. Saturation then erased the centering addition. Preserve those
+completed panels and the interrupted teacher diagnostic; no student was
+trained in that attempt. The permitted targeted rubric repair is versioned
+as `fix3-v2`: restore Fix 2's exact contact/proximity prompt and request the
+ball's horizontal image coordinate in a separate frozen RGB-only query.
+Map that coordinate to the declared central-quarter plateau and linear edge
+taper, then apply the unchanged measured-pan discount and half-point bonus.
+This replaces the proposed single combined query with two short queries for
+visible images (one for absence), with their separate identities and charged
+costs. It adds no simulator geometry to the evaluator and trains neither
+frozen role. Use new validation image seeds after the development-only repair.
+Do not launch another prompt search if this revision remains imperfect;
+report the observed reward limitations and their effect on the pilot.
+
+**Fix 3 execution record (2026-11-11):** `fix3-v2/orchestration/COMPLETED`
+seals the corrected campaign and its 23 child units. Actual software acceptance
+passed **705 tests**; final reporting checks separately cover artifact-only
+execution, completed-attempt selection and fixed-layout identity. The stopped
+`fix3-v1` attempt, its saturated scores and exact source archive remain intact.
+
+| Component | Observed result |
+|---|---|
+| Curriculum geometry | 58.2% of 512 accepted early layouts had a clear direct path; all late layouts blocked that path. A privileged pursuit diagnostic reached contact in 12/12 checked level/gain cases; none of its controls entered training. |
+| Corrected frozen rewards | Strict approach ordering was 4/6 in development and 4/6 on new validation layouts. Centering ordering was 4/6 and 2/6 respectively. Absence scored zero, but proximity remained coarse and off-axis errors persisted. The desired smooth reward density is not established. |
+| Teacher prompt comparison | Both prompts succeeded in 3/6 easy-distribution diagnostic trials. Every command in those trials was forward. The declared tie-break selected the centering-guided prompt. |
+| Shared bootstrap | 292 captured intervals across 44 episodes, 247 executed teacher-action examples, 16 successful episodes. All 247 teacher actions were forward. One-time distillation's first/last recorded pre-update KL was 1.957/0.00412; an initial joint-NLL pass followed. |
+| Initial evidence split | 239 examples entered diagonal EWC; eight remained in FIFO replay. No observation was used in both sets. |
+| Exploration calibration | The default logit SD .1 produced negligible control variation. The smallest grid candidate meeting the declared speed/steering-variation guide was 4.0; both pilots used it. This is a common calibration, not an optimality claim. |
+| Student pilots | Seed 193701 captured 305 new intervals; seed 193702 captured 300. Each completed 255 updates during acquisition and 21 during the final stopped drain, with no pending updates at completion. Ordinary non-startup misses were 2/278 and 1/277. |
+| Recovery and integrity | A real CUDA halt at distillation step 95 recovered parameters, KL Adam tensors and named RNG states exactly. Audit verified 32 completed units across both attempts, 1,898 frame blobs, 203 media files and two source archives without changing completion markers. Six videos decode with nonblank, moving imagery. Completed resume skips without importing Torch. |
+
+Both pilots began from the identical saved bootstrap and used the same fixed
+evaluation layouts, with independent training streams:
+
+| Student seed | Easy A: before to after | Middle A: before to after | Hard B: before to after |
+|---|---|---|---|
+| 193701 | 2/2 to 2/2 | 2/2 to 2/2 | 0/2 to 0/2 |
+| 193702 | 2/2 to 2/2 | 2/2 to 2/2 | 0/2 to 0/2 |
+
+These are descriptive counts on two preselected layouts per level, not
+independent population accuracy estimates or evidence of significance. The
+clear easy panel is not a representative validation of the entire broad
+initial reset distribution. The bootstrap supplied useful approach behavior,
+but the pilots did **not** demonstrate acquisition of the changed obstacle
+task. Final fixed-panel policies still gave the forward action 89.8--98.5%
+mean probability. Forward-only demonstrations and coarse visual rewards are
+evidence-driven candidates for investigation; this combined pilot does not
+isolate their causal contributions. Numerical updates and exploration did
+occur. No further prompt search, blind parameter sweep or full STM comparison
+was launched. The next gate is demonstrating changed-task learning by the
+common learner, before allocating confirmation compute to the STM treatment.
+
+**Resource check-in:** the corrected campaign charged **80.5 active minutes**;
+including the stopped first attempt, recorded Fix 3 compute was **84.9 minutes**.
+The bootstrap's own accumulated timing is 33.2 minutes across invocations;
+its final invocation alone is not its total cost. The two complete pilots took
+17.2 and 17.6 minutes including evaluation. Cumulative recorded repairs and
+recognition diagnostics were 117.5 minutes. Reserve a further conservative
+five minutes for development checks, the separate GPU restoration check and
+closeout audits outside the campaign ledger: about **122.5 minutes** of repairs,
+within the existing three-hour cap. Including the earlier 10.6 minutes of
+acceptance/profiling, conservative study compute so far is about 2.22 hours.
+Implementation labor is separate. Local Fix 3 artifacts remain below 1 GB;
+external offloading was unnecessary.
+
+The pilots measured about 2.95 wall seconds per captured training interval
+after subtracting fixed evaluation work. As a conditional throughput
+extrapolation, using that Replay/EWC cost for both arm slots gives:
+
+| Possible later allocation | Acquisition, labeling, updates and retirement only |
+|---|---:|
+| Four pairs, 1,200 new observations per arm | About 7.9 h |
+| Six pairs, 2,400 new observations per arm | About 23.6 h |
+
+These are **not total-study forecasts**: FD overhead in this revised setting,
+further bootstrap/development, held-out evaluation and final analysis are
+additional. The nominal allocation cannot fit the 20-hour target at this
+throughput. The smaller allocation may be feasible, but neither is admitted
+while changed-task acquisition remains unproven. Costs will need another
+profile if the reward, initialization or curriculum changes. Lightweight
+closeout evidence is under `fix3-v2/review/`; the notebook includes the
+before/after plot, reward contact sheet, paired clips and concise conclusion.
 
 ### Phase 2: Sol Bootstrap And Student Readiness
 
