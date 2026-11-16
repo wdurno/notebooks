@@ -291,6 +291,12 @@ def _selection_rows(summary):
     if isinstance(strengths, list) and all(_number(v) for v in strengths):
         result.insert(4, {"Field": "fd_strengths", "Recorded": ", ".join(str(v) for v in strengths[:6])
                          + (f"; {len(strengths) - 6} more archived" if len(strengths) > 6 else "")})
+    if summary.get("kind") == "phase3_selection" and "selected_fd" in summary and summary["selected_fd"] is None:
+        for row in result:
+            if row["Field"] == "selected_fd":
+                row["Recorded"] = "Not selected"
+            elif row["Field"] == "retention_matched" and row["Recorded"] is None:
+                row["Recorded"] = "Not evaluated"
     return result
 
 
@@ -340,6 +346,16 @@ def phase3_outputs(snapshot, *, notebook_dir=None):
         for reference in by_kind["reference_controls"]:
             outputs.append(_note("Historical ridge screen, already charged: comparison references, not new trajectories. "
                 "The retention-directed repair replaces an unexecuted plasticity repair; the original results remain archived."))
+            repair = _mapping(_mapping(reference.get("stored_config")).get("gentle_recipe"))
+            if repair:
+                outputs.append(_note("Retention-repair rationale (2026-11-12): the ridge screen did not combine "
+                    "hard-task acquisition with acceptable easy-task retention. The shared repair checks gentler updates "
+                    "and a working action variance matched to exploration variance; these are calibration hypotheses, "
+                    "not demonstrated causes. The changed likelihood gets fresh one-time KL/NLL initialization and "
+                    "Fisher from the same original demonstrations, with no new teacher data or retired-data online replay. "
+                    "All versions share the original six-hour Phase 3 ceiling."))
+                outputs.append(_table([{"Shared repair": _scalars(repair,
+                    ("ridge", "learning_rate", "optimizer_steps", "pi", "temperature", "exploration_std", "action_variance"))}]))
             rows = [_scalars(row,_CANDIDATE) for row in _rows(reference["summary"].get("candidate_rows"))]
             outputs.append(_table(rows) if rows else _note("Historical control references: " + PENDING))
         checks = [row for kind in ("calibration", "probe") for u in by_kind[kind] for row in _diagnostics(u)]
@@ -365,9 +381,20 @@ def phase3_outputs(snapshot, *, notebook_dir=None):
         selection = _latest(data, "selection")
         outputs.append(_table(_selection_rows(selection)) if selection else _note("Recipe selection / retention match: " + PENDING))
         outputs.extend(_selection_evidence(selection))
+        skipped = _rows(selection.get("budget_skips"))
+        if skipped:
+            outputs.append(_note("Not run because of the shared development budget; these are omissions, not failed trajectories. "
+                "Admission also retains the recorded safety and closeout allowances."))
+            outputs.append(_table([{"Candidate": _mapping(row.get("settings")).get("name"),
+                "Estimated minutes, before safety margin": row["estimated_seconds"] / 60 if _number(row.get("estimated_seconds")) else None,
+                "Remaining minutes, excluding closeout": row["remaining_seconds"] / 60 if _number(row.get("remaining_seconds")) else None,
+                "Reason": row.get("reason")} for row in skipped]))
         for unit in by_kind["forecast"]:
             summary = unit["summary"]
             scopes, costs = [_scalars(row, _SCOPE) for row in _rows(summary.get("scope_rows"))], _forecast_rows(summary)
+            if summary.get("fd_unmeasured") is True:
+                outputs.append(_note("No FD trajectory cost was measured. The panel-time rows below are evaluation-only "
+                    "forecasts, not total fresh-study times; a scratch update ratio does not measure whole-trajectory overhead."))
             outputs.append(_table(scopes) if scopes else _note("Fresh-run scope forecast: " + PENDING))
             outputs.append(_table(costs) if costs else _note("Measured operational cost: " + PENDING))
         if not by_kind["forecast"]:
@@ -445,10 +472,35 @@ def conclusion(snapshot):
         decision = "Control learning and retention matching are recorded; the selected comparison is ready for the development check-in, not a presumed FD win."
     else:
         decision = "Control learning and retention matching are recorded, but sealed recipe selection remains incomplete."
+    if selection.get("fd_convergence_pass") is True and not _rows(selection.get("comparisons")):
+        decision += " FD passed the numerical checks, but no paired FD efficacy trajectory was completed."
+        if _rows(selection.get("budget_skips")):
+            decision += " Its full trajectory was not admitted within the remaining development budget."
+    candidates = _rows(selection.get("candidate_rows"))
+    outcomes = ""
+    if candidates:
+        def percentage(value):
+            return f"{100 * value:.0f}%" if _number(value) and 0 <= value <= 1 else "unverified"
+
+        outcomes = ("| Candidate / seed | Easy A, start to end | Hard B, start to end | Average A loss (pp) |\n"
+                    "|---|---|---|---:|\n")
+        for row in candidates:
+            label = (_text(row.get("name")) + " / " + _text(row.get("seed"))).replace("|", "\\|").replace("\n", " ")
+            loss = row.get("old_gap_average")
+            loss_text = f"{100 * loss:.1f}" if _number(loss) else "unverified"
+            outcomes += (f"| {label} | {percentage(row.get('easy_initial'))} to {percentage(row.get('easy_final'))} "
+                         f"| {percentage(row.get('hard_initial'))} to {percentage(row.get('hard_final'))} | {loss_text} |\n")
+        outcomes += ("\nEach row is one development trajectory, not a pooled estimate. Average A loss is initial "
+                     "success minus exposure-weighted mean success between the three measured checkpoints "
+                     "(trapezoidal interpolation), in percentage points; "
+                     "positive means deterioration. Retention during the stream and final retention can differ.\n\n")
     rows = _selection_rows(selection)
+    if candidates:
+        rows = [row for row in rows if row["Field"] in {
+            "selected_control", "selected_fd", "retention_matched", "next_phase_authorized", "reason"}]
     table = "| Selection | Recorded |\n|---|---|\n" + "\n".join(
         "| " + row["Field"] + " | " + _compact(row["Recorded"]).replace("|", "\\|").replace("\n", " ") + " |" for row in rows)
-    return (f"## Conclusion\n\nPhase 3 (`{path.name}`): {_status(path, data)}. " + decision + "\n\n" + table
+    return (f"## Conclusion\n\nPhase 3 (`{path.name}`): {_status(path, data)}. " + decision + "\n\n" + outcomes + table
             + "\n\nThese are descriptive development panels, not independent training replicas; sample savings are unavailable "
             "until fresh paired Phase 4 trajectories. Review calibration, retention qualifications and measured cost at the "
             "next check-in; no automatic Phase 4 execution follows from artifact completion.")

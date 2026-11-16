@@ -359,3 +359,62 @@ source STOP file after takeover. The repair's changed action variance requires
 fresh initialization and Fisher from the original demonstrations; it does not
 acquire more teacher data. Historical controls remain explicit references,
 not newly collected replicas. Neither command starts Phase 4.
+
+### Phase 3 Fix 1: Initialization Repair
+
+The new campaign preserves both completed development versions. It collects
+stationary initial-A demonstrations as needed, fits LTM with STM neutral,
+constructs an equal-weight initial Fisher without an adaptation-weight EMA,
+and attempts a bounded paired development comparison:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_initialization.campaign \
+  --output cache/numerical_experiment/picar/phase3/initialization-fix1-v1 \
+  --teacher-source <completed-original-demonstrations-directory> --resume
+```
+
+Default loading downloads the pinned Qwen revision into the project's ignored
+cache. An optional `--model-path <existing-model-directory> --offline` reuses
+a local copy; use the same overrides on every resume. `--stage software`
+runs only acceptance, and a subsequent `--resume` continues GPU execution.
+Never restart either historical campaign to execute this repair.
+
+This repair has its own ten-hour active-compute ceiling; its ledger includes
+testing, collection, fitting, Fisher work, evaluation, I/O and reporting.
+STOP/SIGTERM requests a checkpointed halt. Remove STOP only before intentional
+resumption, and never run two writers. Short offline blocks limit lost work
+after an abrupt halt; completed units remain immutable. Initialization and
+development diagnostics roll into the chronological Phase 3 Fix 1 section of
+`plan19_results.ipynb`. The command stops for review and never starts Phase 4
+or physical actuation.
+
+### Phase 3 Fix 2: Solver And Compute Comparison
+
+Reuse the sealed Fix 1 initializer and primary Fisher. Compare one-step
+proximal, one-step lagged-EWC and three-step proximal updates on recorded
+sequences, then run the selected solver for bounded paired development:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_solver_supervisor \
+  --source cache/numerical_experiment/picar/phase3/initialization-fix1-v1 \
+  --output cache/numerical_experiment/picar/phase3/solver-fix2-v3 --resume
+```
+
+An optional `--model-path <existing-model-directory> --offline` reuses a local
+model. Default loading downloads the pinned model into this checkout's cache.
+Use the same flags on resume. `--stage software` stops after software checks;
+`--stage screen` stops after the recorded comparison; the default `--stage all`
+continues through the selected solver's development pilots. The entire Fix 2
+has a nine-hour additional compute ceiling, including 1,500 seconds charged for
+the superseded v1/v2 attempts. Never resume those runs for live learning.
+Correctly conditioned completed v2 measurements can be explicitly referenced
+after numerical/protocol checks; invalid-context v1 results are excluded.
+
+All candidate updates publish only a complete accepted model. Retirement alone
+admits observations to Fisher; anchor publication occurs at the accepted event
+boundary. Completed units are immutable, and unfinished events/ledgers survive
+`--resume`. Use `picar.run stop --output <campaign-directory>` to request a
+clean halt, and remove that root's STOP only before intentional resumption.
+One writer per campaign is required. Scalar diagnostics, solver costs and
+paired A/B outcomes appear chronologically in `plan19_results.ipynb`. This
+command does not start Phase 4 or physical robot operation.

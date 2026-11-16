@@ -72,6 +72,20 @@ def test_retention_handover_references_are_not_new_trajectories_or_raw_metadata(
     assert "MUST_NOT_RENDER" not in text
 
 
+def test_versioned_retention_recipe_explains_new_likelihood_and_fisher(tmp_path):
+    campaign = tmp_path / "phase3" / "development-retention-v1"
+    reference = unit(campaign, "reference_controls", candidate_rows=[])
+    reference["stored_config"] = {"gentle_recipe": {"learning_rate": .001,
+        "optimizer_steps": 1, "pi": .01, "exploration_std": 4., "action_variance": 16.,
+        "raw_features": ["MUST_NOT_RENDER"]}}
+    text = rendered(book_for(snapshot(tmp_path, reference)))
+    assert "Retention-repair rationale (2026-11-12)" in text
+    assert "fresh one-time KL/NLL initialization and Fisher" in text
+    assert "no new teacher data" in text and "six-hour Phase 3 ceiling" in text
+    assert "action_variance" in text and "16" in text
+    assert "MUST_NOT_RENDER" not in text
+
+
 def test_no_phase3_is_noop_and_does_not_create_cache(tmp_path):
     root = tmp_path / "absent"
     data = snapshot(root)
@@ -329,6 +343,40 @@ def test_conclusion_respects_recorded_replication_and_fd_resolution_gates(tmp_pa
     data["complete_units"].append(unit(campaign, "probe", fd_convergence_pass=False))
     assert "FD numerical resolution failed" in report.conclusion(data)
     assert "not an FD efficacy result" in report.conclusion(data)
+
+
+def test_conclusion_summarizes_trajectory_outcomes_without_pooling_or_false_zero(tmp_path):
+    campaign = tmp_path / "phase3/development-retention-v1"
+    decision = selection(campaign, control_learning_observed=False, candidate_rows=[{
+        "name": "gentle", "seed": 193101, "easy_initial": .25, "easy_final": .1,
+        "hard_initial": 0., "hard_final": 0., "old_gap_average": .0354}, {
+        "name": "incomplete", "seed": 193102, "easy_initial": .25, "easy_final": None,
+        "hard_initial": 0., "hard_final": None, "old_gap_average": None}])
+    text = report.conclusion(snapshot(tmp_path, decision))
+    assert "gentle / 193101 | 25% to 10% | 0% to 0% | 3.5" in text
+    assert "incomplete / 193102 | 25% to unverified | 0% to unverified | unverified" in text
+    assert "not a pooled estimate" in text and "three measured checkpoints" in text
+    assert "next_phase_authorized | False" in text
+    assert "control_learning_observed |" not in text
+
+
+def test_budget_omission_is_not_a_failed_fd_result_or_total_cost_forecast(tmp_path):
+    campaign = tmp_path / "phase3/development-retention-v1"
+    decision = selection(campaign, control_learning_observed=False, fd_convergence_pass=True,
+        comparisons=[], budget_skips=[{"settings": {"name": "fd_candidate"},
+            "estimated_seconds": 4200., "remaining_seconds": 3840., "reason": "shared allowance"}])
+    data = snapshot(tmp_path, decision, unit(campaign, "forecast", fd_unmeasured=True,
+        scope_rows=[{"pairs": 4, "evaluation_hours_at_pilot_panel_size": 2.3}]))
+    text = rendered(book_for(data))
+    assert "omissions, not failed trajectories" in text
+    assert "fd_candidate" in text and "70" in text and "64" in text
+    assert "evaluation-only forecasts, not total fresh-study times" in text
+    end = report.conclusion(data)
+    assert "FD passed the numerical checks" in end and "no paired FD efficacy trajectory" in end
+    assert "not admitted within the remaining development budget" in end
+    decision["summary"]["selected_fd"] = None
+    labels = {row["Field"]: row["Recorded"] for row in report._selection_rows(decision["summary"])}
+    assert labels["selected_fd"] == "Not selected" and labels["retention_matched"] == "Not evaluated"
 
 
 @pytest.mark.parametrize("change,expected", [("reverse", True), ("seed", False), ("duplicate", False),

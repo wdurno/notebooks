@@ -40,6 +40,13 @@ implementation. Follow the concise, visual reporting style of Plan 13:
 progress near the top, phases in chronological order, and a conclusion at the
 bottom. The notebook reads artifacts only.
 
+**Planning update (2026-11-14):** Phase 3 Fix 1 is complete. The new
+[Phase 3 Fix 2](#phase-3-fix-2-curvature-aware-updates-and-solver-cost-2026-11-14)
+below proposes a bounded comparison of centered proximal updates and a lagged
+EWC anchor, including one versus three optimizer steps and measured compute
+cost. It is drafted for review, not launched. The earlier status paragraphs
+and execution records remain historical; Phase 4 remains deferred.
+
 **Operating model:** Phase 0 uses Astra 6 Extra High for the numerical slice
 and Sol 6.1 Extra High for the surrounding implementation, integration, and
 operational tests. Prefer Sol as the coordinator, with bounded Astra
@@ -2778,7 +2785,1081 @@ and the mathematical overview are unchanged. Detailed restart commands and
 the exact partial unit are recorded in `PLAN19_HANDOFF.md`. Phase 4 remains
 unauthorized.
 
+#### Phase 3 Execution Record (2026-11-12)
+
+The resumed campaign completed and stopped at its development check-in.
+All original artifacts and the separately versioned retention repair remain
+immutable; no original scientific source or theory-primer content changed.
+
+| Candidate | Development seed | Easy A, initial to final | Hard B, initial to final | Average A loss (percentage points) |
+|---|---:|---:|---:|---:|
+| Replay/EWC, ridge .1 | 193101 | 5/20 to 0/20 | 0/10 to 0/10 | 18.3 |
+| Replay/EWC, ridge .03 | 193101 | 5/20 to 0/20 | 0/10 to 0/10 | 18.3 |
+| Replay/EWC, ridge .3 | 193101 | 5/20 to 2/20 | 0/10 to 0/10 | 16.1 |
+| Gentler variance-16 repair | 193101 | 5/20 to 2/20 | 0/10 to 0/10 | 3.5 |
+| Replay/EWC, ridge .3 | 193102 | 5/20 to 0/20 | 0/10 to 0/10 | 18.5 |
+
+Average A loss is initial success minus the exposure-weighted trapezoidal
+mean success over three checkpoints, not an average of independent replicas.
+The gentle repair retained all five initial easy successes at midpoint, but
+did not improve endpoint acquisition or retention. The recorded conservative
+selection rule therefore kept original ridge .3 for replication. Its mean
+endpoint A deterioration was 20 points, exceeding the ten-point guide;
+common hard-task learning remains unresolved. This is not a negative FD result.
+
+FD passed the half/base/double numerical checks with epsilon .01 selected.
+Initial gradient ratios .01/.1/1 gave strengths .8177/8.1773/81.7725.
+Scratch two-step fits measured .2653 s control versus .3799 s FD (1.43x),
+excluding full-trajectory scoring, checkpointing and evaluation. The first
+FD trajectory was not admitted: its 69.8-minute estimate, even before the
+safety margin, exceeded 63.8 minutes remaining excluding closeout. No FD
+trajectory, retention-matched efficacy comparison or sample-savings estimate
+was produced. Missing experiments are omissions, not failures.
+
+Phase 3 charged 4.964 active hours including its five-minute closeout
+allowance, inside the shared six-hour ceiling. Cumulative study charge is
+10.719 h, leaving 9.281 h against the 20-hour target. Control processing
+measured 3.12 s/captured interval. Whole-trajectory FD overhead is unmeasured;
+the preserved forecast's evaluation-only rows are not total fresh-study times.
+No confirmation scope is admitted on the strength of these results.
+
+All 19 completion seals, 72 frozen scientific sources and unchanged theory
+hash verified. Completed resume made no seal changes and imported no Torch.
+All 11 notebook code cells executed without Torch; 53 final reporting tests
+and 79 supervisor runtime acceptance tests passed. Both supervisor trajectories
+finished with no pending updates. The GPU is free; Phase 4 remains unauthorized.
+
+#### Phase 3 Fix 1: Stationary Initialization And Bulk Fisher (2026-11-13)
+
+**Motivation:** the preceding development did not establish a suitable starting
+point for the continual-learning experiment. It reused only 247 usable teacher
+histories, performed one distillation pass and one joint-NLL pass, and supplied
+no fixed-dataset convergence curves. Both LTM and STM could acquire the initial
+skill, although EWC protects only LTM. Most importantly, the initial Fisher
+used the online $\pi=.025$ retirement EMA: 239 retirements concentrated weight
+as though there were about 79 equally weighted terms. That is a weighting
+diagnostic, not an iid effective sample size. Neither numerical finiteness nor
+frozen-Qwen pretraining establishes an adequately fitted controller or a
+calibrated initial Fisher for this likelihood.
+
+Repair initialization before drawing conclusions about the common learner or
+FD. The local information-compression argument in the mathematical overview
+motivates a well-fitted anchor and an accurate initial information estimate;
+it does not promise that more data alone cures poor coverage, misspecification,
+or incomplete optimization. This repair must distinguish those possibilities
+with plots, rather than simply acquire a much larger dataset.
+
+**Scope and precedence:** this is a new, separately versioned initialization
+and development campaign, not a mutation of the completed Phase 2/3 runs or
+the earlier retention-directed repair. Preserve their code identities,
+configuration, checkpoints, outcomes and completion seals. This subsection
+supersedes their initialization procedure and remaining resource assumptions
+for the new campaign only. Do not edit `mathematical_overview.ipynb`.
+Writing this amendment does not launch it. Once separately authorized, Sol
+may implement and execute the bounded repair without further user review at
+each internal checkpoint. Phase 4 and physical robot operation remain deferred.
+
+**Resource decision:** the user has relaxed the original whole-plan 20-hour
+target. Budget **8--10 additional active compute hours**, with a **ten-hour
+ceiling for this repair**, not ten hours remaining across all of Plan 19.
+Keep the historical cumulative ledger and charge new work separately. Further
+data collection or a larger study can be proposed after inspecting this repair;
+neither adequate convergence nor a successful FD comparison is guaranteed.
+
+##### 1. Freeze And Audit The Initial Sampling Regime
+
+Collect only at the initial A point: fixed initial textures, steering response,
+barrier-placement distribution, instruction/coaching protocol, reward, control
+cadence and horizon. Vary independently seeded layouts and episodes according
+to that fixed distribution; do not advance either curriculum/drift clock as
+the initialization dataset grows. No online learning occurs during collection.
+This is conditional regression on recorded histories, not a claim that adjacent
+transitions or overlapping recurrent contexts are marginally independent.
+
+Keep the frozen Qwen demonstrator/evaluator and the admitted task/reward
+revision. Audit initial images, action/control diversity, ball bearing and
+distance coverage, return bins, success/collision/timeout fractions, and chosen
+routes. The previous demonstrations were all forward commands: collecting
+more copies of that behavior is not evidence of useful navigation coverage.
+Do not filter away failures or select episodes by their eventual returns.
+If collection needs a prompt/coaching correction, record a new protocol and
+dataset version before using it; do not silently pool incompatible designs.
+
+Start with a small, nested data ladder, approximately 256, 512 and 1,024 usable
+training histories, rounded to complete episodes. These are checkpoints for
+inspection, not assumed sufficient sample sizes or mandatory acquisitions.
+Use measured learning curves and remaining time to choose whether another
+doubling is worthwhile. Historical demonstrations may be referenced only when
+their complete protocol and records match; count their original acquisitions
+once, and charge any new processing. Report transitions, usable histories,
+episodes, optimization exposures and model-score draws separately.
+
+Assign whole episodes to training or a fixed validation pool using a named
+split seed; aim for approximately 20% validation episodes with enough episodes
+for a meaningful diagnostic. No history/context may cross that split.
+Validation outcomes never enter fitting, Fisher construction, replay or EWC.
+They guide development, so they are not fresh confirmatory evidence. Keep
+capability evaluation layouts separately identified and disjoint from collection.
+
+##### 2. Fit A Common LTM-Resident Initialization
+
+Retain the admitted quantized backbone, feature/projection normalization,
+top-$L$ adapter placement, ranks, LSTM and heads. Train LTM adapters and dense
+LSTM/readout parameters; hold STM at a neutral effective contribution throughout
+initial fitting. Initialize LoRA factors normally with random $A_S$ and zero
+$B_S$, rather than zeroing both factors and preventing later learning. Check
+that STM tensors remain unchanged and that the published parameter-bank
+partition is complete. Both online methods will start from the same asset.
+
+Use this ordering:
+
+1. **One initial distillation stage:** fit recorded teacher action distributions
+   using multiple offline KL passes, not one pass by definition. Evaluate KL
+   on the same training/validation histories at fixed checkpoints. Repeated
+   passes are optimization of existing data, not new observations. No new
+   teacher-action supervision resumes after online learning begins.
+2. **Joint-likelihood fitting:** fit the declared return/action NLL on all
+   initialization training records, with frozen recorded baselines, return
+   bins, temperature and action covariance. Use no EWC, ridge, STM FD penalty,
+   or adaptation weight during this stage. The intrinsic advantage-dependent
+   weights inside the normalized likelihood remain; equal treatment of
+   records does not mean removing those likelihood terms. Fit the LSTM before
+   constructing EWC. Keep distillation and NLL stages and optimizers explicit.
+3. **Adequacy review:** plot fixed-set train/validation joint NLL, its actor
+   and critic components, teacher KL, and gradient/update diagnostics versus
+   optimization exposure. Show multiple passes and whether a modest additional
+   solve still reduces the same objective. Record the checkpoint-selection
+   and plateau rules before the main fitting run; retain the entire curve,
+   not a first-example/last-example comparison. Choose the accepted checkpoint
+   using the declared likelihood/validation rule, not a lucky navigation trial.
+
+Separate optimization from data adequacy: first study repeated fitting on a
+fixed dataset; then compare fitted checkpoints at larger nested dataset sizes.
+For data-size comparisons use the same raw initialization and fitting rules,
+or clearly label warm-started extensions and account for their extra exposure.
+Changing likelihood scales requires a newly identified fit and Fisher; do not
+transplant an estimate across a changed likelihood. Small development-only
+learning-rate/solve corrections are allowed, with recorded reasons and costs;
+this is not a new architecture or broad hyperparameter search.
+
+Plot easy-A capability at the distillation and accepted NLL checkpoints, with
+preselected egocentric/top-down clips. Inspect whether NLL fitting destroys
+the distilled approach skill. Retain negative outcomes and distinguish
+unresolved optimization, overfitting, deficient demonstrations and a working-
+likelihood limitation. Initial competence means the initial A task, not solving
+the final hard B task in advance. Finite loss and a visually flat curve alone
+do not prove a global MLE, identifiability or classical likelihood efficiency.
+
+##### 3. Build An Equal-Weight Initial Fisher At The Accepted Anchor
+
+Freeze the complete fitted model at $\widehat\Theta_0$, keeping STM neutral.
+For $N$ initialization training histories and $M$ model-label draws per history,
+estimate the LTM diagonal of the single declared model Fisher as
+
+$$
+\widehat d_0=
+\frac1N\sum_{i=1}^N\frac1M\sum_{m=1}^M
+s_L(h_i,J_{im},Z_{im};\widehat\Theta_0)^{\odot2},
+\qquad
+(J_{im},Z_{im})\sim p_{\widehat\Theta_0}(\cdot\mid h_i).
+$$
+
+Here $s_L$ is the LTM block of the log-likelihood score, and $\odot2$ means
+coordinatewise squaring. Draw the return label from the fitted categorical
+head, then the action from its conditional Gaussian; detach synthetic labels
+before differentiation. Evaluate every contribution at the same accepted
+anchor and fixed conditioning recipe. Do not use teacher-label gradient outer
+products, regularized-loss gradients, or the square of a batch-mean score.
+
+**No $\pi$, decay, online retirement EMA or numerical ridge enters this bulk
+average.** All training histories have weight $1/N$. Store named model-label
+seeds and resumable per-history sums/counts. Repeated label draws reduce
+Monte Carlo error; they do not increase the number of observed histories.
+
+Keep normalization explicit:
+
+$$
+D_0=\operatorname{diag}(\widehat d_0),\qquad
+\Lambda_0=N D_0,\qquad a_0=\widehat\Theta_{L,0}.
+$$
+
+$D_0$ is the average per-observation Fisher approximation; $\Lambda_0$ is
+its accumulated-information counterpart for a summed initialization likelihood.
+Neither is an additional Fisher estimand. Record $N$ and both conventions.
+The existing mean-NLL online objective uses $\omega D_t$, so initialize its
+archive with $D_0$, not $N D_0$ followed by another multiplier for sample count.
+Test the sum-versus-mean conversion explicitly. This preserves equal initial
+weights without silently changing the subsequent adaptation-weight convention.
+
+Diagnose Fisher stability against both history count and model-label budget.
+Use nested draw counts such as 1, 2 and 4, plus independently seeded estimates
+on a fixed diagnostic subset. Plot trace and relative diagonal disagreement,
+with absolute errors where a near-zero denominator makes relative error
+misleading. Separate history-sampling variability, Monte Carlo variability
+and a genuine likelihood/modeling limitation. Choose any operational tolerance
+before the full estimate and publish it; do not hide instability with a floor.
+
+Check local quadratic behavior along a few scaled actual LTM update directions,
+using fixed held-out A histories and the exact predictive KL already available.
+Compare observed NLL change after subtracting its first-order term with the
+diagonal quadratic, and show the exact-KL curvature reference separately.
+The diagonal is an approximation to the full Fisher; observed-data Hessian
+agreement needs modeling/fit assumptions. A persistent diagonal/full discrepancy
+is not automatically Monte Carlo error. Do not require false exact agreement,
+materialize a dense Fisher, or present these checks as proof of LAN.
+
+##### 4. Seal Initialization, Then Reattempt Bounded Development
+
+Summarize **all training records** into the bulk EWC asset and mark them
+archived exactly once; start online replay empty. Validation stays excluded.
+Do not retain a tail of the same records in replay or later admit them to EWC
+again. Store their IDs, conditioning/protocol identity, count, anchor, diagonal,
+parameter ordering and fit/Fisher diagnostics in the sealed asset. Diagnostic
+access to retained initialization files is not permission for online replay.
+
+Only now enable STM learning and online $\pi$-weighted retirement updates,
+and start the continuous curriculum/drift clocks from their initial point.
+Publish the common optimizer-state policy; copy the same parameters, Fisher,
+anchors and compatible optimizer state to both methods, with fresh, named
+online RNG streams. No initial KL optimizer state may leak into only one method.
+
+Reuse the preceding development principles, not their selected numeric answers.
+Recheck common update/exploration behavior and FD half/base/double numerical
+resolution at the repaired anchor. Prefer a narrow, sequential common-control
+calibration, then an FD strength near the middle initial gradient-ratio guide;
+do not blindly repeat the entire discarded ridge screen. Attempt two paired
+development seeds for Replay/EWC and FD, initially using the measured
+640-interval pilot scope and the same slow curriculum. Keep initialization,
+architecture, likelihood, replay resources and non-treatment settings matched.
+Share layout/exogenous RNG schedules where possible; policy-dependent visited
+histories need not be identical. Use separate seeds from later confirmation.
+
+Retain the existing initial/midpoint/final A/B panels and development-only
+mean/endpoint retention comparisons, evaluated relative to this new common
+initialization. Report acquisition and retention jointly, including unmatched
+frontiers. A numerical FD pass alone is not efficacy evidence; a missing run
+is not a negative result. Do not tune on confirmation seeds, claim fresh
+significance or sample savings from this bounded development, or start Phase 4.
+
+##### Implementation, Recovery And Reader-Facing Diagnostics
+
+Implement a separately versioned entry point/configuration with `--resume`.
+Keep the frozen historical scientific implementations recoverable; do not
+reopen their sealed orchestration or remove their STOP files. Use the existing
+project-local model download default and optional explicit reuse path.
+
+Replace per-example offline full checkpoints with short transactional blocks,
+initially targeting at most 30--60 seconds of unsaved numerical work, plus
+mandatory stage/data-size boundaries. Save parameters, Adam state, data order
+and cursor, named RNG states, accepted-checkpoint identity, partial Fisher
+accumulators, metrics cursor and resource ledger together. Publish metrics
+only with their committed state. An unexpected halt may replay an uncommitted
+block, but must not duplicate acquisitions, metrics, archive admission or
+Fisher contributions. Replayed computation still counts toward cost. Keep
+existing real-time collection safety and episode recovery; do not apply an
+offline checkpoint shortcut to live actuation.
+
+Before expensive work, add focused CPU tests for neutral STM with live future
+gradients, LTM-only initial fitting, absence of initial penalties/EMA,
+equal Fisher weights and partition/order invariance, fixed-anchor model scores,
+normalization/count handling, episode/context split isolation, empty initial
+replay, and exactly-once bulk admission. Test interruption and `--resume`
+mid-fit and mid-Fisher against uninterrupted results, immutable completions,
+and the completed-run no-training path. A tiny exact-output Fisher reference
+is appropriate for testing; a production dense matrix is not.
+
+Append a concise **Phase 3 Fix 1** section chronologically in
+`plan19_results.ipynb`; retain the earlier development and its limitations.
+Refresh committed results after a stage/data-size unit and at roughly
+15-minute intervals when new results exist. Near the top show stage, acquired/
+usable training/validation counts, passes, Fisher progress, completed/remaining
+pilots, charged hours and revised remaining-time range. Mark pending outcomes
+as pending, never as zero. Keep detailed journals outside the narrative.
+
+The reader-facing story is four compact diagnostic groups: coverage/data size;
+fixed-set optimization and validation curves; Fisher stability/local quadratic
+checks; and the paired acquisition/retention comparison. Include selected
+synchronized clips and a small settings/outcome table. Define each metric next
+to its plot. The notebook remains artifact-only: no training, downloads, large
+Fisher calculations or repairs. Show a clear incomplete/schema-incompatible
+message when needed, while permitting explicitly labeled committed progress.
+
+##### Compute Allocation And Check-In
+
+| Work | Additional active wall-clock estimate |
+|---|---:|
+| Stationary collection, repeated offline fitting and validation | 3--4 h |
+| Bulk Fisher, stability and local quadratic diagnostics | About 1 h |
+| Bounded Replay/EWC and FD development reattempt | 3.5--4 h |
+| Final checks, notebook and closeout | 0.5--1 h |
+| **Total planning range / ceiling** | **8--10 h / 10 h** |
+
+The original controls measured 45--52 minutes per pilot, and comparable FD
+pilots were projected near 70 minutes; whole-trajectory FD cost remains
+unverified. Offline fitting previously spent roughly three-quarters of its
+time checkpointing, motivating the block-checkpoint repair, not a promised
+speedup. Include an early 15--30-minute measured timing/recovery check inside
+the allocation. Reforecast collection, fitting, Fisher and evaluation before
+admitting larger units. Count all active testing, scoring, I/O, checkpointing,
+reporting and resumed/replayed work once; engineering labor and idle user
+pauses are separate. This is a compute ceiling, not a ten-hour coding promise.
+
+At approximately four to five charged hours, publish an initialization
+readiness review and remaining forecast. Permit multiple passes and evidence-
+guided data growth; do not abandon a promising fit because one small checkpoint
+looks poor. Equally, do not spend the rest on FD trajectories from an obviously
+inadequate anchor. Sol may redistribute the above shares within ten hours,
+but must reserve closeout time and report any omitted development units.
+Additional data are a later explicit decision, not an automatic budget extension.
+
+**Exit:** a versioned initialization asset with diagnostic evidence, or a
+specific unresolved initialization limitation; a bounded development comparison
+where feasible; and a concise notebook check-in proposing the next action.
+Publish optimization, data, Fisher, initial capability and retention readiness
+separately. Preserve partial useful results and recommend more data only when
+the observed diagnostics support it. Convergence is not guaranteed by the
+budget, nor should a budget expiration be presented as a scientific rejection.
+Stop for review; no automatic Phase 4 or physical motion.
+
+##### Fix 1 Execution Recipe (2026-11-13)
+
+The user authorized this repair. A separately versioned implementation now
+uses whole-episode hash splitting, approximately 20% validation episodes,
+and a fixed first-rung validation panel across the nested data-size study.
+Compatible original teacher records are reused without reusing any fitted
+parameters, Fisher, anchor or optimizer. New collection chunks remain at A.
+
+The fixed offline policy permits up to 12 KL passes and 16 NLL passes, with
+at least six passes before a training-plateau decision, four-pass patience
+and relative training-improvement tolerance $10^{-4}$. Validation selects
+the earliest minimum of the stated stage objective, including epoch zero;
+training plateau and validation selection are distinct diagnostics. Batch
+size is one initially. Checkpoint blocks target 45 seconds or 32 numerical
+items, whichever comes first. Likelihood temperature is 2.8375266913896 and
+action variance 16, shared across all repaired initializations and methods.
+STM remains neutral; all-bank online Adam moments reset equally at handoff.
+
+Attempt at least two data-size rungs when admitted. After the second, a
+numerically usable fit with less than 1% further fixed-validation NLL
+improvement can stop growth; preserve the development reserve after roughly
+four charged hours. Seal each growth decision so a later restart cannot
+change a past admission. Select the minimum fixed-validation NLL among
+completed rungs, with the earliest tie, and retain every candidate and curve.
+
+Five preselected easy-A layouts at each rung compare distillation and NLL
+behavior. The selected asset receives the full 20-A/10-B initial panel;
+these are development measurements, not independent efficacy replicas.
+Bulk Fisher uses four model-label draws per training history, nested 1/2/4
+diagnostics and independently seeded draws on eight diagnostic histories.
+An initial relative-diagonal disagreement guide of .5 is descriptive and
+does not certify full-Fisher accuracy or a LAN regime. Zero/near-zero scales
+retain absolute-error diagnostics. No initial adaptation weight is used.
+
+Acceptance passed 69 focused tests, including abrupt interruption/resume,
+completed-run no-Torch immutability and a tiny CPU end-to-end handoff. The
+19 historical completion seals and scientific sources passed a read-only
+audit. The campaign started in tmux `plan19-phase3-fix1`; operational notes
+and the same-flags restart command are in `PLAN19_HANDOFF.md` and the README.
+The separate repair ledger includes a conservative ten-minute pre-execution
+validation allowance and ten-minute closeout allowance. This is an execution
+recipe and progress record, not evidence that initialization or FD succeeded.
+
+##### Fix 1 User-Requested Pause (2026-11-13, 12:09 PST)
+
+The campaign stopped cooperatively for node reuse, preserving STM FD seed
+195101 at 329/640 incoming intervals during its midpoint evaluation. The
+preceding Replay/EWC trajectory is complete; the second-seed pair remains
+unstarted. Initialization and the 515-history bulk Fisher are already sealed;
+resumption must continue the existing trajectory, not recollect or refit.
+
+The durable repair charge is 17,376.676289215 seconds (4.827 hours), with
+5.173 hours left inside the separate ten-hour cap, including closeout.
+Twenty-one completed-unit scalar seals, 74 scientific source hashes, the
+parent/active recovery journals and the reserved mathematical overview passed
+handover verification. The GPU is released, the root STOP marker remains,
+and restart instructions are recorded in `PLAN19_HANDOFF.md`. No Phase 4 or
+additional Fisher reference computation was started. This interruption does
+not change the experimental recipe or imply an FD outcome.
+
+##### Fix 1 Closeout And Observed Limits (2026-11-13, 18:43 PST)
+
+The separately versioned repair is complete; the previous studies and their
+limitations remain immutable. Both fitted data rungs and all four development
+pilots are sealed. Accepted training sizes were 259 and 515 histories with
+the same fixed 65-history validation pool. Selected validation joint NLL was
+19.3439 and 19.3282; the recorded growth rule stopped before 1,024 because
+improvement was below 1%. Distillation and accepted-NLL full A panels both
+returned 5/20 successes. Passing the fit's plateau/selection rule is not proof
+of global optimization, adequate data or navigation competence.
+
+All 515 training histories contributed equally to the bulk initial Fisher,
+with no initial adaptation weight or decay; validation remained excluded.
+Online replay began empty and bulk archival occurred exactly once. A separate,
+independently seeded 16-model-draw reference on the same histories/anchor was
+admitted after all pilots completed. This diagnostic did not replace the
+primary four-draw Fisher, refit any parameters or change either condition.
+The primary/reference traces were 176.1032/200.3178 and their relative diagonal
+L2 difference was .24687. The eight-history subset remained much noisier;
+the primary-four/reference-sixteen discrepancy there was 1.2166. Neither
+reference is an oracle; retain the initial stability caveat rather than
+retroactively changing its tolerance or declaring Fisher convergence.
+
+| Development seed | Replay/EWC endpoint A | STM FD endpoint A | Endpoint B, both methods |
+|---|---:|---:|---:|
+| 195101 | 0/20 | 4/20 | 0/10 |
+| 195102 | 4/20 | 4/20 | 0/10 |
+
+All pilots began at A 5/20 and B 0/10. FD has a descriptive endpoint retention
+lead on one seed and ties on the other; only the second seed met the recorded
+retention-matching guide. No B acquisition was observed at any measured panel.
+Teacher most-probable actions remained forward-only, and the four online
+trajectories produced only three training successes in 159 episodes. These
+observations motivate a separately versioned steering-coverage/online-
+acquisition diagnostic, not immediate fresh confirmation or an assumption
+that more copies of the same demonstrations will solve the problem. The
+present repair does not isolate the acquisition bottleneck or establish
+sample savings. **Phase 4 remains deferred.**
+
+Main repair charge was 25,536.977911302 seconds including its ten-minute
+closeout allowance; the reference charged 354.395144109 seconds including its
+one-minute closeout allowance. Combined additional repair charge is
+**7.192048 hours**, below the separate ten-hour cap; cumulative historical
+study charge is 17.911503 hours. No omitted development units or further
+data acquisition are silently assumed.
+
+Final checks passed 146 focused tests, all 45 historical/new scalar completion
+seals, all 74 frozen scientific source hashes, unchanged reserved theory, and
+trusted completed pilot checkpoints with no queued updates or duplicate
+retirements. All 12 canonical notebook code cells executed with model/training
+imports blocked. Completed main resume preserved its 25 seals without Torch.
+A post-seal notebook-refresh exception was repaired in reporting-only code:
+metadata-only campaign versions no longer obstruct generic held-out plotting
+or masquerade as fresh evidence. The scientific completion and original log
+remain untouched. The notebook now includes final paired outcomes, Fisher
+reference, limitations and a qualified next action; no GPU worker remains.
+Operational details are in `PLAN19_HANDOFF.md`.
+
+#### Phase 3 Fix 2: Curvature-Aware Updates And Solver Cost (2026-11-14)
+
+**Motivation:** Fix 1 repaired initialization, but investigation of its online
+solver exposed a separate failure. Of 2,170 online optimization events, 2,134
+(98.34%) reported exactly zero EWC penalty at the gradient evaluation. Each
+event used one Adam step. The LTM anchor was fixed inside that step, then
+retirement usually copied the accepted parameters into the anchor before the
+next event. The new displacement therefore did not encounter the EWC restoring
+gradient in another optimizer iteration. A tiny CPU reproduction through the
+actual learner produced identical parameter trajectories after a large change
+in EWC strength when ridge and FD were disabled to isolate this mechanism.
+The per-event STM ridge also has zero starting gradient in a one-step explicit
+update. These findings establish an implementation/solver concern; they do
+not establish the cause of every retention or navigation failure.
+
+The agreed statistical interpretation is a **recurrent centered information
+summary**, as described in `mathematical_overview.ipynb`. Preserve that model.
+Do not add an independently estimated archived score or a new statistical
+regularizer merely to obtain a nonzero initial gradient. Instead compare two
+economical numerical mechanisms: use the current summary's curvature
+implicitly, or use a one-event-old EWC center to supply an explicit restoring
+gradient. Include three proximal iterations as a bounded optimization
+reference. The question is which recipe provides useful learning and retention
+for its compute cost, not which produces the largest penalty value.
+
+**Scope and ownership:** Astra specifies the mathematical/numerical contract
+here; after execution is authorized, Sol implements, checks, selects and runs
+the bounded repair autonomously, recording material corrections. Preserve all
+previous code identities and completed artifacts. Reuse the sealed Fix 1
+initialization and primary Fisher; do not collect another initialization
+dataset, substitute the later 16-draw reference, or edit the reserved theory
+notebook. This amendment supersedes the online solver and anchor-publication
+rules for the new version only. Phase 4, physical actuation, LFUs, adaptive
+$\pi$, new architectures and a broad solver/hyperparameter factorial remain
+outside this repair. Writing this section does not authorize execution.
+
+##### 1. Statistical Contract And The Meaning Of The Anchor
+
+Let $c_k=(c_{L,k},c_{S,k})$ be the accepted parameters before statistical update
+event $k$, and let $D_k$ be the archived, mean-per-observation LTM Fisher
+diagonal. Conditional on the calibrated recurrent summary, represent its
+weighted contribution by
+
+$$
+Q_{A,k}(\theta_L)
+=\mathrm{const}+\frac{\omega}{2}
+(\theta_L-c_{L,k})^TD_k(\theta_L-c_{L,k}),
+\qquad \omega=\frac{1-\pi}{\pi}.
+$$
+
+The population justification, with $P_c$ held fixed while the candidate moves,
+is the regular-model identity
+
+$$
+\mathbb E_{X\sim P_c}
+[-\log f(X;c+\delta)+\log f(X;c)]
+=\operatorname{KL}(P_c\Vert P_{c+\delta})
+=\tfrac12\delta^T\mathcal I(c)\delta+o(\|\delta\|^2).
+$$
+
+The old expected score vanishes at its current modeled center; motion of the
+next generating distribution appears in the live-data gradient. Zero expected
+score alone does not eliminate the random linear term in a finite-sample LAN
+expansion. In the centered-summary representation, that information is already
+encoded in the random estimated center and its uncertainty. Appendix A's
+information-summary assumption supplies this recurrent approximation; neither
+copying an arbitrary tensor nor accurately estimating curvature proves it.
+This phase adopts the agreed approximation rather than introducing another
+archived-gradient estimator. [Local asymptotic normality][lan]
+
+For an LTM-only illustration, suppress STM and ridge and approximate the live
+likelihood by its gradient $g_k$ and Hessian $H_k$ at $c_{L,k}$. The locally
+accepted displacement is
+
+$$
+\delta_k^*=-(H_k+\omega D_k)^{-1}g_k
+$$
+
+on regular directions where $H_k+\omega D_k$ is positive definite. Completing
+the combined quadratic's square places its linear information in the next center. With
+matched population curvature and no extra penalties, this gives
+$\delta_k^*\approx\pi(\theta_{L,k+1}^\star-c_{L,k})$. Thus zero initial EWC
+gradient is compatible with effective first-step retention. The implementation
+below uses diagonal positive numerical metrics and does not require an inverse
+of the network Fisher or claim an exact Gaussian sufficient statistic.
+
+Define the live objective $f_k$ as the existing mean new/replay NLL recipe plus
+the existing age-dependent STM FD term. Its gradient is $g=\nabla f_k$; only
+the NLL component is a negative score. Retired information enters through the
+summary, not through another pass over retired observations. The replay buffer,
+conditional likelihood, loss normalization, frozen return targets and FD
+definition remain those already admitted.
+
+##### 2. Three Numerical Recipes, With Common Ridge And Scaling
+
+For compact formulas use full trainable-coordinate diagonal operators
+
+$$
+E_k=\omega\operatorname{blockdiag}(D_k,0_S),\qquad
+R_k=\omega\kappa_k I,\qquad
+\kappa_k=c_r\max\!\left(\frac{\operatorname{tr}D_k}{d_L},s_{\min}\right).
+$$
+
+$E_k$ protects LTM only; $R_k$ is the previously declared statistical ridge
+on both banks, centered at $c_k$. Keep this ridge treatment identical between
+recipes. In particular, do not give the lagged candidate an effectively absent
+STM ridge merely because its explicit gradient is zero on the first step.
+Only the EWC center is lagged in that candidate; ridge remains centered at the
+current event's accepted parameters and is handled implicitly in every recipe.
+
+At inner iterate $x_j$, let $M_j$ be a positive diagonal optimizer metric.
+Use the same specified rule in every recipe: a bias-corrected exponential
+second moment of the **live gradient only**, with initial values zero,
+$\beta_2=.999$, $\epsilon_{\mathrm{opt}}=10^{-8}$, and
+
+$$
+v_r=\beta_2v_{r-1}+(1-\beta_2)g_r^{\odot2},\qquad
+M_r=\operatorname{diag}
+\left(\frac{\sqrt{v_r/(1-\beta_2^r)}+\epsilon_{\mathrm{opt}}}{\alpha}\right).
+$$
+
+$r$ counts gradient evaluations, not acquired observations. Use the actual
+current $g_r$ in the numerator, with no first-moment momentum, implicit weight
+decay or EWC/ridge contribution to $v_r$. This is a specified adaptive proximal
+gradient method, not unchanged Adam. Reset this optimizer state consistently
+for all forks; do not reinterpret historical Adam moments as this state.
+Start from the previously used $\alpha=.003$ and record all numerical settings.
+The numerical term $\delta^TM_j\delta/2$ controls optimizer steps; it is not
+another statistical ridge term or an additional information admission.
+
+| Recipe | EWC center | EWC handling | Optimizer steps/event | Role |
+|---|---|---|---:|---|
+| `proximal_1` | $c_{L,k}$ | Exact diagonal proximal correction | 1 | Economical candidate |
+| `lagged_1` | $c_{L,k-1}$ | Explicit gradient; shared ridge stays proximal | 1 | Economical delayed-anchor candidate |
+| `proximal_3` | $c_{L,k}$ | Same proximal correction at each iterate | 3 | Refinement reference and eligible candidate |
+
+For either proximal recipe, start $x_0=c_k$ and minimize the local subproblem
+
+$$
+g_j^T\delta+\tfrac12\delta^TM_j\delta
++\tfrac12(x_j+\delta-c_k)^T(E_k+R_k)(x_j+\delta-c_k).
+$$
+
+Its exact diagonal solution is
+
+$$
+\boxed{\delta_j=-(M_j+E_k+R_k)^{-1}
+\left[g_j+(E_k+R_k)(x_j-c_k)\right],\quad x_{j+1}=x_j+\delta_j.}
+$$
+
+For `proximal_3`, recompute the live prediction/gradient and numerical metric
+at each new iterate. Freeze $c_k,D_k,\kappa_k$, batch membership, targets and
+FD probes across all three iterations. Three iterations are not three new
+observations, three archive admissions, or three anchor publications. This is
+an exact solve of each diagonal subproblem, not an exact solve of the nonlinear
+network objective or a proof that three steps are converged. The general
+proximal construction follows [Parikh and Boyd][proximal]; the particular
+splitting and adaptive metric here are this repair's declared recipe.
+
+For `lagged_1`, define $a_k=(c_{L,k-1},c_{S,k})$. At its sole iterate $x_0=c_k$,
+linearize the EWC term as well as the live term, keeping the same implicit
+ridge. The accepted proposal is
+
+$$
+\boxed{\delta_k^{\mathrm{lag}}
+=-(M_k+R_k)^{-1}[g_k+E_k(c_k-a_k)].}
+$$
+
+Evaluate the live gradient at the current parameters, not at the lagged anchor.
+Keep two accepted centers and advance the lag by one accepted statistical
+event, never by one inner optimizer iteration or one retirement. At the first
+event initialize the two centers identically; its zero lagged EWC correction
+is a documented startup transient. Do not manufacture a previous displacement.
+This recipe changes the EWC center and hence its local objective; present it
+as a practical approximation rather than an algebraically identical solver.
+
+The reason to give lagging a chance is explicit. With constant local gradient,
+curvature and metric, set $W=M+R$ and $u_k=c_{k+1}-c_k$. Its recurrence is
+
+$$
+u_k=-W^{-1}(g+Eu_{k-1}),\qquad
+u_* = -(W+E)^{-1}g.
+$$
+
+The equilibrium is precisely the centered one-step proximal displacement.
+However, $e_k=u_k-u_*$ obeys $e_k=-W^{-1}Ee_{k-1}$. Contraction requires
+$\rho(W^{-1}E)<1$; in one coordinate with $R=0$, $M=\alpha^{-1}$ and
+$E=\lambda$, this is $\alpha\lambda<1$. Opposing successive corrections can
+oscillate or grow outside that regime. Log coordinatewise $E_{ii}/W_{ii}$ and realized step
+oscillation. This frozen-coefficient result motivates diagnostics, not a
+stability theorem for changing network gradients. Both one-step recipes have
+one live-gradient evaluation and inexpensive diagonal arithmetic.
+
+##### 3. Event Boundaries, Publication And Recovery
+
+An event owns one declared live-data objective. Its current center and Fisher
+are frozen until its proposed parameters are accepted or rolled back. At
+acceptance, publish the parameters, advance the recurrent center once, and
+record the previous accepted center for the lagged recipe. This occurs even
+when no observation retires. It deliberately replaces the earlier coupling
+between anchor publication and retirement, under the agreed recurrent-summary
+interpretation; it is not exact re-expression of an unchanged old quadratic.
+
+Retirement alone admits observations and updates $D_k$ with the existing
+$\eta_e=1-(1-\pi)^{e/m_0}$, $m_0=1$, and mean model-score-square estimate at
+the accepted parameters. No retirement means no Fisher admission or decay.
+Several retirements after one accepted event do not advance the anchor again.
+Leave the equal-weight bulk initialization intact. Preserve sample/count
+normalization and the numerical floor separately from statistical ridge.
+
+Distinguish a sleep drain processing newly ready labeled observations from
+extra optimizer passes over a fixed replay-only objective. The former can
+contain separate recorded events; the latter retains its event center for
+the complete declared solve. Repeated fitting never creates new transitions
+or repeated Fisher admissions. Record event IDs, exposure counts and accepted
+center versions so these boundaries can be audited.
+
+Online inference must see a complete accepted version. The current runtime
+stops yielding to inference after the first parameter mutation; naively using
+three steps can lengthen that uninterrupted interval. Measure it. If necessary,
+use isolated candidate trainable tensors with functional evaluation so the
+actor can keep reading the accepted version between safe compute blocks.
+Do not publish intermediate inner iterates, freeze simulation time, or slow
+the nominal control cadence to conceal solver cost. Charge any staging/copy
+overhead. Reject a recipe as operationally infeasible only after this bounded
+scheduling check, and distinguish that outcome from mathematical failure.
+
+Provide a separately versioned entry point with `--resume`, graceful stop,
+status and report refresh. Atomically checkpoint parameters, both centers,
+second moments and bias-correction count, inner-iteration/event cursor, frozen
+batch/probe identities, RNG states, Fisher, eligibility/retirement ledgers and
+cumulative timing. A halt can restore a complete event or replay its unfinished
+work without duplicate evidence. Preserve actor/exploration RNG progress when
+rolling back a numerical proposal. Keep completed historical source snapshots
+recoverable; do not modify sealed units or their scientific fingerprints.
+
+##### 4. Bounded Numerical Comparison Before Live Pilots
+
+**CPU acceptance:** test the centered recurrence and both updates against
+analytic scalar/diagonal quadratics, including skewed spectra, zero Fisher
+coordinates and nonzero ridge. Test first-step EWC influence, ridge on STM,
+correct off-center inner gradients, and convergence of repeated fixed-objective
+proximal iterations to a known solution. Verify the lagged equilibrium and its
+oscillatory instability on both sides of the contraction boundary. A historical
+one-step explicit/recentered regression test should reproduce the old blind
+spot; it is not another full experimental condition. Test actual model-bank
+integration, dtype/realized displacement, neutral initialization, and paired
+abrupt-resume equivalence, including interruption before publication and
+between publication and exactly-once retirement.
+
+**Recorded comparison:** target 15--30 minutes of additional GPU compute using
+existing development artifacts, with no new Qwen demonstrations or reward
+generation. Before seeing solver outcomes, identify two short contiguous
+recorded segments, preferably early and later in the curriculum, their source
+checkpoints and history/episode IDs. Start with 64 events per segment. Restore
+an identical starting model, archive and eligibility state for every recipe.
+If a previous accepted center is unavailable, use identical initial centers
+and an explicitly reported warm-in; never infer it from a future checkpoint.
+Use the same chronological arrivals, return targets, replay selections and
+named FD/model-label randomness in all forks. Run all three solvers for the
+existing Replay/EWC and STM FD objectives on these short segments. These six
+small forks are a numerical comparison, not six live experimental campaigns.
+
+Maintain each fork's own accepted model and Fisher evolution using the same
+estimator/admission rule. Use shared saved model-label random variates where
+possible, not shared synthetic labels when distributions differ. Reserve
+small whole-episode predictive validation pools not used for fitting, replay
+or Fisher in that fork, with no future data entering its starting state.
+The source histories were acquired by historical behavior policies: these
+are conditional recorded-data diagnostics, not counterfactual robot rollouts
+or fresh statistically independent efficacy replicas.
+
+Check both single-event behavior and short sequences; a single snapshot cannot
+test delayed-anchor stability. At a few preselected snapshots, compare proposals
+against the same centered target objective using identical current parameters,
+gradient, metric and probes. Also retain each recipe's own objective diagnostics.
+Do not compare raw regularized losses with different centers as though they
+were the same estimand. Across evolving forks, compare predictive losses on
+the same held-out histories. Three steps are a refinement reference, not ground
+truth; on at most four snapshots a bounded longer centered solve may measure
+remaining objective/stationarity error within the same diagnostic budget.
+
+Record first-/second-/third-step progress, pre/post-update objective components,
+and a scaled full-objective gradient residual at selected diagnostic points.
+Report the extra evaluations required for residuals. Record the counterfactual
+one-step proposal with $E=0$, using the same live gradient, metric and ridge,
+to quantify how EWC changed the actual proposal without another network pass.
+For three steps this is a local per-iteration diagnostic, not a reconstructed
+full no-EWC trajectory. Check realized parameter differences after rounding.
+A zero pre-step EWC penalty at $c_k$ is expected; nonzero post-step penalty
+alone is not sufficient proof of useful EWC influence or adequate optimization.
+
+If a numerical step-scale correction is needed, allow one recorded common
+reduction of $\alpha$ and rerun the same short paired comparison for all
+recipes. In particular, allow the lagged candidate this bounded opportunity
+when stiffness predicts oscillation. Keep failed versions visible. Do not
+quietly clip the lagged EWC force, selectively weaken its regularization, or
+give a recipe an unrecorded learning-rate search. The screen may extend to
+128 events per segment only when its measured forecast remains within the
+allocated diagnostic allowance; otherwise publish unresolved comparisons.
+
+##### 5. Selection, Live Development And Compute As An Outcome
+
+Use an explicit quality/cost comparison to select **one common solver recipe**
+for the subsequent Replay/EWC-versus-STM-FD pilot. Inspect initial-domain
+retention, held-out live-domain prediction, numerical stability and measured
+cost together. A low residual obtained by preserving the initial model without
+useful learning is not automatically preferable. Nor is a larger EWC gradient
+the objective. Record trade-offs and the selection rationale without claiming
+significance or equivalence from the small recorded comparison.
+
+Prefer a one-step recipe when the three-step refinement has no persuasive
+predictive or numerical benefit for its added cost. Promote `proximal_3` when
+the observed benefit justifies that cost. Give a stable, competitive `lagged_1`
+the same opportunity as `proximal_1`. If differences remain unresolved, choose
+the stable centered one-step method provisionally and report the uncertainty;
+do not automatically fund a full solver-by-FD factorial. The same solver and
+step budget must be used in both live methods to keep the FD contrast clear.
+
+Reuse the sealed 515-history initialization and primary four-draw Fisher, with
+empty initial replay and identical optimizer reset. Retain the architecture,
+likelihood, action/exploration protocol, curriculum, buffer capacity and
+initial/midpoint/final 20-A/10-B development panels. Start from $\pi=.025$,
+ridge coefficient $.1$ and the admitted FD strength. Use only bounded existing
+development calibration if the repaired updates require it; keep retention
+calibration development-only and display unmatched trade-offs. Do not optimize
+solver choice against fresh confirmation outcomes.
+
+After a short live latency/readiness check, attempt two paired 640-interval
+development replicas with newly named seeds and shared initialization/layout
+schedules. Differences in visited histories are expected after policies diverge.
+Report B acquisition and A retention together; this is not a sample-savings or
+fresh significance study. Earlier defective-solver runs remain contextual,
+not additional replicas of the repaired methods. Further initialization data
+or steering/demonstrator changes require a separate decision after this repair.
+
+**Timing is a selection metric, not merely a budget log.** For each solver and
+each FD/control objective, report:
+
+- Isolated completed-update wall time and GPU execution time, mean/median/p95,
+  milliseconds per inner step and per accepted event, and peak VRAM.
+- Gradient evaluations, FD evaluations and optimizer exposures per event;
+  accepted events and unique incoming observations per charged compute hour.
+- Online event service time, actor wait/blocked time, publication latency,
+  deadline misses and stop/fallback counts, separately from isolated compute.
+- Whole-trajectory charged wall time, with fitting, inference, Fisher,
+  checkpointing, validation/evaluation and reporting costs identified.
+- Initial/live validation quality versus both accepted-event count and measured
+  cumulative compute, plus the observed cost ratio to `proximal_1`.
+
+Warm up the actual kernels and report setup/model-load time separately rather
+than dropping it from the resource ledger. Alternate timing order across
+replicas/repeats. Use CUDA events or explicit synchronization at isolated timing
+boundaries so asynchronous launches do not masquerade as completed computation.
+Measure online latency under the actual scheduler; do not use a forced global
+synchronization policy that changes the controller being timed. Label CPU
+preparation, GPU work and waits explicitly; overlapping categories cannot be
+summed into fictitious total hours. Initialization reuse counts neither as
+fresh observations nor as new collection compute.
+
+##### 6. Reporting, Budget And Completion
+
+Append a concise **Phase 3 Fix 2** section to `plan19_results.ipynb`, preserving
+chronological order and earlier results. Open with the solver failure and the
+recurrent-summary motivation. Put the three recipes and their step counts in
+one small settings table. Show a quality-versus-compute plot, an EWC/update
+diagnostic plot, and a compact timing/selection table before any live results.
+Then show paired A/B capability curves and selected synchronized clips. Keep
+the full derivation in this plan and detailed traces in linked artifacts.
+Explain that a centered penalty can act through curvature while its initial
+gradient is zero; do not label such events as archived data being ignored.
+
+Near the notebook top show completed/remaining stages and methods, charged
+hours, forecast range and the selected solver when settled. Refresh on committed
+stage completions and approximately every 15 minutes when new results exist.
+Pending methods remain pending, not zero-valued. The notebook must remain
+artifact-only and must not train, time GPU kernels or repair runs on execution.
+
+The preceding four pilot trajectories took 3.0669 h total, with 40.395 min
+inside fit events. Holding all other work fixed, duplicating those fit passes
+twice projects an additional 1.3465 h and a 4.4134 h four-trajectory total.
+Those fit timers include some actor-inference waits; this is a conservative
+scaling estimate, not a measured three-step result. Changed policies, caching,
+publication scheduling and diagnostic passes can change actual wall time.
+
+| Work | Additional active compute estimate |
+|---|---:|
+| Focused acceptance, recovery and real-model smoke | 0.25--0.5 h |
+| Three-recipe recorded comparison, including bounded references | 0.25--0.5 h |
+| Common calibration and live scheduling/readiness check | 0.5--1.25 h |
+| Four live trajectories if a one-step recipe is selected | 3--3.75 h |
+| Four live trajectories if three steps are selected, replacing the preceding row | 4.25--5.25 h |
+| Notebook, integrity checks and closeout | 0.25--0.5 h |
+| **Planning allowance: one-step selection / three-step selection** | **5--7 h / 6--9 h** |
+
+The proposed ceiling is **nine additional active compute hours** once this fix
+is authorized, not a grant to spend the unused Fix 1 allowance. Engineering
+labor is separate; allow roughly 1--3 h initially and revise from actual
+implementation progress. Keep the historical cumulative ledger and charge new
+testing, retries, diagnostic passes, I/O, warm-up and closeout once. Idle user
+pauses do not count. The larger planning ranges include contingency beyond
+the individual nominal rows; they are not additional allocations per method.
+
+Sol may select among the three recipes, make bounded numerical/scheduling
+corrections, and redistribute this allocation without waiting for the user.
+Before live admission, publish the recorded comparison and a measured forecast.
+If an essential correction changes the declared statistical objective, record
+a new version and explanation; do not pool it with the prior recipe. Reserve
+closeout time, preserve incomplete useful work when the allowance runs short,
+and request an extension before exceeding the ceiling. An unresolved result
+or a compute limit is not a scientific rejection of STM or EWC.
+
+**Exit:** a tested implementation of the declared recipes, reproducible
+first-step/sequence diagnostics, measured method-specific compute costs, a
+documented solver selection, and paired live acquisition/retention results
+where feasible. Close with whether the repair makes archived information
+numerically effective, whether extra iterations earn their cost, what remains
+unresolved about learning, and the next proposed action. Leave a clean restart
+or completion handoff. Stop for review; no automatic Phase 4 or physical motion.
+
+##### Fix 2 Execution Recipe (2026-11-14)
+
+Execution is authorized. New implementation and tests are separately housed in
+`picar_solver_repair`; historical scientific files remain untouched. Restore
+the primary 515-history initialization, its four-draw diagonal and fixed initial
+20-A/10-B panel. Use no further initial collection, fitting or teacher action
+distillation. Initialize the numerical second moments equally, with no inherited
+Adam momentum. Keep $\alpha=.003$, $\pi=.025$, ridge $.1$ and FD strength
+$1742.42640280057$ initially.
+
+The recorded source is Fix 1's Replay/EWC seed 195101. Preselect 64 usable
+events near exposure zero and 64 near exposure 328, reserving whole episodes
+for eight live-domain validation histories; also use eight histories from the
+original held-out initialization pool. Both segments restart at the common
+pre-stream asset. This avoids using future information in a historical late
+checkpoint but does not emulate the policy that would have reached that point.
+Publish exact IDs and source seals before numerical outcomes. Reuse recorded
+labels; no reward-model calls or new experience are needed for the screen.
+
+Evaluate validation at events 0, 16, 32, 48 and 64. Extra full-objective residual
+passes occur at the first event and the 16-event checkpoints and are charged
+separately. Exclude those diagnostic events and initial warm-up from reported
+per-update cost comparisons; keep all work in the charged ledger. Record
+synchronized CUDA timing only in the isolated screen and ordinary scheduler
+latency in live execution. A finite recorded comparison initially selects the
+fastest candidate within .1 initial-domain NLL deterioration of the best and
+.05 live-domain NLL of the best among that retained set. These are development
+guides, not equivalence margins or inferential success criteria. Inspect the
+curves, oscillation and numerical diagnostics before live admission and record
+any judgment overriding the guide.
+
+After selection, run a 48-interval live timing check for each FD/control
+objective with the full nominal curriculum still configured at 640 intervals.
+This is scheduling readiness, not acquisition evidence. Then use fresh paired
+development seeds 196101 and 196102 for the admitted four trajectories. Keep
+the actual control clock running and publish the observed solver/cost decision
+and revised forecast before beginning those trajectories.
+
+**Execution correction before live admission:** the initial `solver-fix2-v1`
+diagnostic reused a replay-batch helper in validation, which truncated frozen
+held-out recurrent histories to the suffix represented by the small validation
+pool. It was stopped at 88 committed events in the first solver fork, before
+any live readiness or pilot run. Preserve its source snapshot, four completed
+administrative units and incomplete diagnostic; exclude it from solver selection.
+The corrected `plan19-phase3-fix2-v2` / `solver-fix2-v2` uses full frozen held-out
+histories while retaining replay trimming for training and retirement. A focused
+regression test enforces this distinction. The original approximate 628-second
+charge plus a closeout/rounding reserve is conservatively charged as 700 seconds
+against the same nine-hour ceiling, leaving 31,700 seconds for corrected work.
+No collected experience, initializer, Fisher reference or statistical likelihood
+is changed by this diagnostic correction.
+
+**Numerical failure handling correction:** the v2 lagged-anchor candidate
+generated nonfinite predictions during retirement after a few accepted updates.
+The sampler raised a finite-output `ValueError`, while the numerical supervisor
+only classified `FloatingPointError` as candidate failure. The campaign stopped
+before live admission. Version `plan19-phase3-fix2-v3` / `solver-fix2-v3` records
+that numerical failure and continues to the other candidates; unrelated schema
+or data errors still raise. The two completed, correctly conditioned v2
+`proximal_1` measurements are referenced by completion seal after numerical-source
+and protocol-equivalence checks, not counted as new replicas or recomputed.
+Earlier invalid-context v1 outcomes remain excluded.
+
+Give all three solvers the single common reduction $\alpha=.003\to.001$ if
+any original-scale numerical candidate fails, then select within the common
+reduced-scale comparison. Preserve original-scale results and label both scales
+in plots/tables. This is the already allowed bounded numerical correction, not
+a per-method hyperparameter search. The two preceding attempts are conservatively
+charged as 1,500 seconds including preparation and closeout reserves; v3 has
+30,900 seconds left inside the same nine-hour ceiling. The extra screen replaces
+contingency time and requires a measured forecast before live admission.
+
+**Recorded supervisor guard:** the failed lagged candidate also produced an
+infinite relative diagnostic, which strict JSON correctly refused to serialize.
+Keep the frozen v3 numerical sources and their fingerprints unchanged. The
+separately versioned `picar_solver_supervisor` wrapper seals its own source and
+records candidate-level nonfinite-output failures at the last committed event
+boundary. It converts only nonfinite scalar summary diagnostics to null plus
+their signed value and field path; it does not clip parameters, forces, losses
+or optimizer updates, and does not coerce configuration/schema errors. Existing
+failed candidates have no additional fitting work on resume. Its five focused
+tests and 34 reporting regressions passed before resumption. Every subsequently
+completed unit records the supervisor identity; raw binary diagnostic recovery
+state and all prior scalar seals remain preserved. Guard testing/preparation is
+covered by the existing conservative acceptance allowance. Resume v3 through
+`python -m numerical_experiment.picar_solver_supervisor` using the same flags.
+
+**Recorded screen decision and live admission (2026-11-14):** all twelve
+solver/objective/scale forks are sealed, with the two valid original-scale
+proximal-one measurements referenced rather than rerun. Both delayed-anchor
+objectives failed numerically at both allowed scales. At the common reduced
+$\alpha=.001$, the declared guide selects `proximal_3`: averaging the two
+objectives, old-pool NLL deterioration is 9.8097 versus 9.8476 for `proximal_1`,
+and final live-pool NLL is 23.4717 versus 23.7325. The old-pool averages conceal
+different per-objective trade-offs; these eight-history validation pools do not
+support equivalence or significance claims. Visual review of the complete
+quality, cost, stiffness and residual curves accepts the recorded guide without
+override. Three iterations remain visibly short of stationarity.
+
+At this scale measured mean completed-event times are 1.1356 s for Replay/EWC
+and 1.5163 s for FD, versus .7962 s and .9212 s for one step (1.43x and 1.65x).
+These exclude diagnostic-gradient events; the resource ledger includes them.
+The preceding four-pilot timing extrapolates to roughly 3.4--4.8 additional
+hours for the new four trajectories, plus two short latency checks and closeout.
+This is a provisional planning range, not a promise of throughput or a confidence
+interval. The notebook will replace it with extrapolated live-check costs and
+then completed-pilot costs. Continue the authorized two checks and seeds 196101
+and 196102 at the same selected solver, pi, ridge and FD scales. All frozen
+scientific and supervisor hashes were rechecked unchanged before live admission;
+35 reporting tests pass after the compact residual/forecast presentation update.
+
+**Measured live-check forecast:** the two checks completed in 117.6051 s
+(Replay/EWC) and 126.0766 s (FD), each capturing 38 transitions within the
+48-interval cap and completing 35 optimization events. There were no recorded
+inference-deadline misses or non-startup fallback commands. Mean fit service
+times were 1.1573 s and 1.3223 s; maximum actor lease waits were .3307 s and
+.3837 s. Extrapolating those checks and the sealed Fix 1 evaluation cost gives
+a 2.38--4.76 h four-pilot planning range, with 7.96 h of repair allowance left.
+These latency samples do not establish learning or worst-case scheduling
+guarantees. The four authorized trajectories now proceed unchanged. The
+complete focused numerical, campaign, guard and reporting suite passes 96 tests.
+
+##### Fix 2 Execution Closeout (2026-11-15)
+
+The bounded repair is complete and stopped for review. All twelve recorded
+forks, the selection, both latency checks and all four live development
+trajectories are sealed in `phase3/solver-fix2-v3`; no trajectory was omitted.
+The node restart recovered seed 196102's Replay/EWC pilot from its committed
+checkpoint without repeating completed trajectories or changing settings.
+All 275 completion markers present before this resumption remained unchanged.
+Phase 4 and physical actuation remain deferred.
+
+**Numerical result:** the selected three-step proximal recipe uses archived
+curvature from its first proposal: EWC changed that proposal in 256/256 recorded
+events across both objectives. The explicit lagged-anchor recipe failed at both
+allowed scales. Three proximal iterations cost 1.43x (Replay/EWC) and 1.65x
+(FD) the isolated one-step updates; they do not establish nonlinear convergence.
+This repairs the demonstrated first-step EWC blind spot, not every learning
+failure.
+
+| Development seed | Method | Acquired transitions | A successes: initial / mid / final | B successes: initial / mid / final | Cumulative pilot / fit minutes |
+|---|---|---:|---|---|---:|
+| 196101 | Replay/EWC | 621 | 5/20 / 5/20 / 5/20 | 0/10 / 0/10 / 0/10 | 43.49 / 13.40 |
+| 196101 | FD | 621 | 5/20 / 4/20 / 3/20 | 0/10 / 0/10 / 0/10 | 49.83 / 16.77 |
+| 196102 | Replay/EWC | 622 | 5/20 / 4/20 / 5/20 | 0/10 / 0/10 / 0/10 | 44.96 / 14.01 |
+| 196102 | FD | 621 | 5/20 / 5/20 / 5/20 | 0/10 / 0/10 / 0/10 | 49.25 / 17.70 |
+
+A is the initial/easy task and B the hard task, evaluated without training on
+fixed 20-layout and 10-layout panels. The initial panel is reused from the
+common initializer, not an independent replicate. Pilot times use checkpointed
+cumulative active runtime, including evaluation but excluding shared model
+loading and idle pauses. Overlapping fit, sleep and other timers are not added.
+The resumed pilot's top-level callback timer covers only its last invocation;
+the report now uses `timings.active_seconds` for throughput and forecasts.
+No sealed artifact was altered to make this presentation correction.
+
+**Applied result:** no pilot demonstrates hard-task acquisition, and FD has no
+established benefit here. The inherited FD/ridge strengths were not freshly
+retention-matched under the repaired solver. Two development seeds sharing one
+initializer cannot establish significance, retention equivalence or sample
+savings. Better exploration/demonstration coverage remains a plausible next
+diagnostic, not a proven cause or an authorization to expand the experiment.
+
+The whole Fix 2 charge is **4.3382 active hours**, including the conservative
+1,500-second charge for superseded attempts and the 300-second closeout reserve;
+the cumulative study ledger is 22.2497 hours. This is below the separate
+nine-hour repair ceiling. Acceptance passed **120 focused tests**. All four
+recovery states passed center, queue, retirement uniqueness, finite-parameter
+and nonnegative-Fisher checks; 25 current completion envelopes, 4,989 frame
+blobs and 16 videos verified. Current/historical scientific fingerprints and
+the reserved theory notebook are unchanged. Completed `--resume` preserves
+all seals; all 13 final notebook code cells execute with training/model/runtime
+imports blocked. The chronological notebook ends with the repair's conclusion.
+
 ### Phase 4: Sol Fresh Paired Learning
+
+#### Evaluation Reward Recording Requirement (2026-11-16)
+
+Artifact review after Fix 2 found that held-out evaluations intentionally saved
+success/controls/images but skipped frozen Qwen reward scoring. Consequently,
+their full reward trajectories cannot be recovered from scalar artifacts alone.
+At the user's direction, the present review uses saved **training rewards only**;
+do not launch retrospective GPU scoring or reinterpret training windows as
+initial/mid/final tests. Training plots classify recorded clear/blocked paths
+and early/middle/late exposure thirds, explicitly distinct from frozen A/B panels.
+
+For future evaluations, save and plot **test rewards** as well as success.
+Before another learning campaign, implement separately versioned, resumable
+evaluation scoring with the same frozen reward model, prompts and reward scales
+as training. Save per-interval elapsed time, visual proximity, centering bonus,
+complete visual score, terminal bonus, resulting stage reward and discounted
+return, with scorer identity and source episode/frame IDs. Score recorded images
+after rollout so reward processing does not freeze the control clock. Preserve
+all test/train isolation: evaluation data must never train the student, enter
+replay, or update EWC/STM; evaluator state/RNGs must not perturb training.
+Report the added cost in the fresh-run forecast. Near the corresponding success
+plots, show compact average reward trajectories by method, A/B and
+initial/mid/final checkpoint, with explicit episode/replica weighting and
+post-termination treatment. Keep existing unscored evaluations immutable and
+label missing reward values unavailable, never zero. This requirement does not
+authorize Phase 4 or new GPU work.
 
 **Purpose:** evaluate new-task sample efficiency and retained capability under
 the frozen design, not continue hyperparameter tuning on fresh results.
@@ -3038,6 +4119,8 @@ validation of this exact combination.
 14. Hugging Face. [PEFT LoRA reference][peft]. Layer-selection configuration; verify behavior in the installed version.
 15. PyTorch. [Autograd mechanics][autograd]. Gradient recording and frozen-module boundaries.
 16. Bullet Physics. [Bullet/PyBullet repository][bullet]. Dynamics and simulator implementation.
+17. Parikh and Boyd (2013). [Proximal Algorithms][proximal], especially section 4.2. Proximal-gradient splitting and exact treatment of simple quadratic penalties; the adaptive diagonal recipe in Phase 3 Fix 2 is specified separately.
+18. Van der Vaart (1998). [Asymptotic Statistics, Chapter 7: Local Asymptotic Normality][lan]. Local likelihood expansions underlying the centered information-summary approximation.
 
 [awr]: https://arxiv.org/abs/1910.00177
 [inference]: https://arxiv.org/abs/1805.00909
@@ -3055,5 +4138,7 @@ validation of this exact combination.
 [peft]: https://huggingface.co/docs/peft/en/package_reference/lora
 [autograd]: https://docs.pytorch.org/docs/stable/notes/autograd.html
 [bullet]: https://github.com/bulletphysics/bullet3
+[proximal]: https://web.stanford.edu/~boyd/papers/pdf/prox_algs.pdf
+[lan]: https://www.cambridge.org/core/books/abs/asymptotic-statistics/local-asymptotic-normality/558B4798D5D70D9B1C3ABC15FAFE3BA7
 [openai-models]: https://developers.openai.com/api/docs/models
 [openai-selection]: https://learn.chatgpt.com/docs/model-selection

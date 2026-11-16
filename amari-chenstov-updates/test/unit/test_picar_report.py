@@ -174,6 +174,20 @@ def test_metadata_only_phase2_closeout_is_not_a_scientific_experiment_version(tm
     assert len(curves) == 1 and curves[0]["samples"] == [0,10]
 
 
+@pytest.mark.parametrize("kind", ["initialization_campaign", "solver_campaign", "resource_summary"])
+def test_metadata_without_heldout_metrics_does_not_create_a_pooled_version(tmp_path, kind):
+    unit(tmp_path / "initialization-campaign", smoke=False, phase=3, version="initialization-v1",
+         summary_extra={"kind": kind, "completed_trajectories": 4})
+    snapshot = report.load_report(tmp_path)
+    assert report.heldout_curves(snapshot) == []
+    if kind in {"initialization_campaign", "solver_campaign"}:
+        assert snapshot["scientific_units"] == 0 and snapshot["complete_units"][0]["smoke_only"]
+    unit(tmp_path / "control", panel_rows("replay_ewc", [.2, .4]), smoke=False, phase=4)
+    curves = report.heldout_curves(report.load_report(tmp_path))
+    assert len(curves) == 1 and curves[0]["samples"] == [0, 10]
+    assert curves[0]["success"] == [.2, .4]
+
+
 def test_acceptance_is_visible_but_never_scientific(tmp_path):
     path = tmp_path / "qwen-acceptance-v1"
     path.mkdir()

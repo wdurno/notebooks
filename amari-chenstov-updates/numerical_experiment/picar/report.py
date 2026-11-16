@@ -175,7 +175,7 @@ def read_completed_unit(path: str | Path) -> dict[str, Any]:
     for name in ("summary.json", "metrics.csv"):
         _verify_seal(path / name, manifest.get("final_files", {}).get(name))
     smoke = config.get("mode") == "smoke" or summary.get("smoke_only") is True \
-        or summary.get("kind") == "phase2_closeout" \
+        or summary.get("kind") in {"phase2_closeout", "initialization_campaign", "solver_campaign"} \
         or any(row["smoke_only"] is True for row in metrics)
     return {"path": str(path), "config": config, "stored_config": stored_config, "manifest": manifest,
             "summary": summary, "metrics": metrics, "smoke_only": smoke}
@@ -332,7 +332,9 @@ def media_links(snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
 
 def heldout_curves(snapshot, *, version=None, include_smoke=False):
     """Aggregate panel counts, never training success, within version/replica."""
-    units = [u for u in snapshot["complete_units"] if include_smoke or not u["smoke_only"]]
+    units = [u for u in snapshot["complete_units"] if (include_smoke or not u["smoke_only"])
+             and any(row["test_domain"] in ("A", "B") and row["test_success"] is not None
+                     for row in u["metrics"])]
     versions = {u["config"].get("version") for u in units}
     if version is None and len(versions) > 1:
         raise ArtifactError("multiple experiment versions; select a version before pooling")
@@ -525,7 +527,8 @@ def make_notebook(root: str | Path | None = None):
         "print(snapshot['note'])\ndisplay(pd.DataFrame(report.progress_rows(snapshot)))\n"
         "if snapshot['live']:\n    display(pd.DataFrame(snapshot['live']))\n"
         "from numerical_experiment.picar.phase3_report import progress_rows as development_progress\n"
-        "development = development_progress(snapshot)\n"
+        "from numerical_experiment.picar_initialization.report import historical_phase3_snapshot\n"
+        "development = development_progress(historical_phase3_snapshot(snapshot))\n"
         "if development:\n    display(pd.DataFrame(development))"),
         md("## Task and Setup\n\nThe learner receives RGB, language, executed controls, and elapsed time. "
            "Top-down views are for the reader only. Settings and scene media appear only when stored artifacts exist."),
@@ -585,7 +588,8 @@ def _populate_outputs(book, snapshot, *, notebook_dir=DEFAULT_NOTEBOOK.parent):
     if snapshot["live"]:
         outputs["progress"].append(table(snapshot["live"]))
     from .phase3_report import progress_rows as development_progress
-    development = development_progress(snapshot)
+    from numerical_experiment.picar_initialization.report import historical_phase3_snapshot
+    development = development_progress(historical_phase3_snapshot(snapshot))
     if development:
         outputs["progress"].append(table(development))
     settings = settings_rows(snapshot)
@@ -668,8 +672,19 @@ def build_notebook(root: str | Path | None, output: str | Path = DEFAULT_NOTEBOO
     book = append_phase2(book, snapshot, notebook_dir=Path(output).parent)
     conclusion = phase2_conclusion(snapshot) or conclusion
     from .phase3_report import append_phase3, conclusion as phase3_conclusion
-    book = append_phase3(book, snapshot, notebook_dir=Path(output).parent)
-    conclusion = phase3_conclusion(snapshot) or conclusion
+    from numerical_experiment.picar_initialization.report import (
+        append_fix1, conclusion as initialization_conclusion, historical_phase3_snapshot,
+    )
+    historical = historical_phase3_snapshot(snapshot)
+    book = append_phase3(book, historical, notebook_dir=Path(output).parent)
+    conclusion = phase3_conclusion(historical) or conclusion
+    book = append_fix1(book, snapshot, notebook_dir=Path(output).parent, historical_conclusion=conclusion)
+    # Preserve historical closeouts until this separately versioned repair has
+    # started; its always-visible pending section must not erase earlier results.
+    if any(str(u["summary"].get("kind", "")).startswith("initialization_")
+           for u in snapshot["complete_units"]) or any(
+               "initialization-fix1-v1" in Path(u["path"]).parts for u in snapshot["live"]):
+        conclusion = initialization_conclusion(snapshot)
     if conclusion:
         book.cells[-1].source = conclusion
     nbformat.validate(book)

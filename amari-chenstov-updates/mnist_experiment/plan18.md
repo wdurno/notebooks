@@ -227,7 +227,18 @@ The maintained EWC remains diagonal in the fixed LTM implementation chart.
 
 Let $B_t$ contain new observations, $R_t$ the sampled replay observations,
 $\alpha_t$ the LTM archive anchor, and $D_t=\operatorname{diag}(d_t)$ its
-maintained diagonal. Freeze all of these during a solve. Set
+maintained diagonal. More explicitly:
+
+- $t$ indexes a learning update; $B_t$ is its incoming batch, not the LoRA
+  factor $B$ above.
+- $R_t$ is the replay minibatch sampled from the buffer's existing residents
+  for this update, not the entire buffer or the EWC archive. The production
+  configuration samples up to two grids from a 32-grid FIFO buffer.
+- $\bar L_{B_t}$ and $\bar L_{R_t}$ are mean per-observation negative log
+  likelihoods over those batches; $\beta$ is the replay mean-loss weight
+  ($1/2$ here when replay is available).
+
+Freeze the batches and archive state during a solve. Set
 
 $$
 \omega_t=\frac{1-\pi_t}{\pi_t},\qquad
@@ -263,6 +274,37 @@ $$
 \sum_{i\in R_t}a_{i,t}\operatorname{tr}F_{SS,x_i}(\theta).
 $$
 
+**Reading the STM penalty:**
+
+- $i$ indexes a sampled replay observation; $x_i$ is its input and $|R_t|$
+  is the number of sampled replay observations, not the buffer capacity.
+- $F_{SS,x_i}(\theta)$ is the STM-by-STM block of the per-input Fisher
+  $F_{x_i}(\theta)$, evaluated at the current candidate parameters. Its trace,
+  $\operatorname{tr}F_{SS,x_i}=\mathbb E_{Y\sim p_\theta(\cdot\mid x_i)}
+  [\|\nabla_{\theta_S}\log p_\theta(Y\mid x_i)\|^2]$, measures local
+  sensitivity of predictions to changes in STM coordinates.
+- $a_{i,t}=\min\{1,\max\{0,(n_t-n_i)/C_{\rm buf}\}\}^2$ is the squared,
+  clipped replay age. $n_t$ is the incoming-grid count including the current
+  batch, $n_i$ is the recorded insertion count for observation $i$, and
+  $C_{\rm buf}$ is buffer capacity. Age advances with new arrivals, not replay
+  passes: half a buffer lifetime gives weight $1/4$, and a full lifetime gives
+  weight $1$.
+- $p_S$ is the number of STM parameter coordinates (108 for Head r1), not the
+  number of prediction outputs. Dividing by $|R_t|p_S$ averages over sampled
+  observations and STM coordinates; it does **not** normalize the age weights
+  to sum to one.
+- $\lambda_F$ is the strength multiplying $\mathcal C_t$ in $J_t$. The
+  sensitivity is reevaluated as $\theta$ changes during optimization, using
+  the FD-KL approximation below rather than constructing a full Fisher block.
+  The penalty's sampled inputs, ages, and numerical probes are held fixed.
+  With no replay, $\mathcal C_t$ is defined to be zero.
+
+In words, penalize sensitivity to STM changes more strongly on older replay
+inputs, as they approach retirement into the LTM archive. This is not their
+supervised prediction error: the ordinary replay loss still trains against
+their observed targets. Nor does low sensitivity alone prove that information
+has moved into LTM.
+
 Use the existing symmetric FD-KL approximation, with fresh named-seed probes
 per solve but fixed probes within its optimizer closures:
 
@@ -272,6 +314,14 @@ $$
 +D_{\rm KL}(p_{\theta-hE_Sv/2}\|p_{\theta+hE_Sv/2})}{h^2},
 \quad \mathbb E[vv^T]=I.
 $$
+
+Here $D_{\rm KL}$ is Kullback--Leibler divergence between the two predictive
+distributions **at the same input $x$**; conditioning on $x$ is suppressed in
+the formula. $v\in\mathbb R^{p_S}$ is a random probe with independent $-1/+1$
+coordinates, $E_Sv=(0,v)$ inserts it into STM coordinates only, and $h>0$ is
+the finite-difference scale. Thus $\Phi_h$ measures how much the prediction
+changes between two nearby STM perturbations, holding LTM fixed for those
+perturbations. $I$ in $\mathbb E[vv^T]=I$ is the $p_S$-dimensional identity.
 
 Under local smoothness, $\mathbb E_v\Phi_h=
 \operatorname{tr}F_{SS,x}+O(h^2)$. Average probes, then observations with age
@@ -348,39 +398,185 @@ chart-dependent: compensating LTM/STM changes can preserve predictions while
 reducing that trace. Preserve the chart, check predictive quality, and do not
 interpret trace as a count of remembered observations.
 
-### A Separate Route To Sample Efficiency
+### From Archive Fidelity To Sample Efficiency
 
-The handoff's scalar calculation shows why improved retention calibration can
-save data without increasing information in each observation. Let a new
-estimate have variance $\sigma^2/n$ and an independent old anchor have MSE $v$
-relative to the current target. Combining them with new-evidence weight $k$
-gives
+The preceding bound describes archive error. The next question is why reducing
+that error could save observations. A low-MSE old anchor can improve an estimate
+based on scarce fresh data, but the archive must give that anchor the intended
+influence. The following local argument isolates this connection.
 
-$$
-R(k)=(1-k)^2v+k^2\sigma^2/n,\qquad
-k^*=\frac{v}{v+\sigma^2/n}.
-$$
+**We assume the optimal adaptation weight $\pi^*$ is known.** Better archive
+fidelity may also aid its estimation, but this argument does not require that
+additional benefit: archive error can cause excess MSE even with a perfect
+$\pi^*$.
 
-For summed Gaussian likelihood plus retention precision $\Lambda$, the optimal
-precision is $1/v$, not automatically the inverse historical variance. For
-$\sigma^2=1$, $v=.01$, precision 400 needs 200 new observations to reach MSE
-.005, whereas precision 100 reaches it at 100 observations. This is an exact
-constructed example, not a prediction of 50% savings in Plan 18.
+#### Scalar Argument
 
-STM can also change effective regularization without expanding the predictive
-family. Locally write an effective displacement as $u=l+Ts$. For positive
-definite penalties $P$ and $R$, profiling
-$\tfrac12l^TPl+\tfrac12s^TRs$ over this constraint gives
+Fix one local target $\theta^*$. Let $a$ be the old anchor and $z$ an unbiased
+fresh estimate based on $n$ independent new observations, with
 
 $$
-P_{\rm eff}=P-PT(R+T^TPT)^{-1}T^TP
-=(P^{-1}+TR^{-1}T^T)^{-1}\preceq P.
+v=\mathbb E[(a-\theta^*)^2]>0,\qquad
+b=\mathbb E[(z-\theta^*)^2]=\sigma^2/n>0.
 $$
 
-This is a local quadratic illustration, not the full nonlinear FD objective.
-It applies to the replay control with the same STM too. It cannot alone explain
-the incremental FD-KL benefit. Development retention matching is essential
-precisely because several interventions can alter effective protection.
+Here $v$ includes anchor bias relative to the **current** target, not just its
+historical variance. Assume old and fresh errors have zero cross moment, as
+holds for independent estimates with an unbiased fresh estimate. Curvatures
+and the chosen weight are fixed in this local experiment; expectations average
+over repeated old and fresh estimates. The affine blend
+$\widehat\theta(k)=(1-k)a+kz$ has MSE
+
+$$
+\begin{aligned}
+R(k)&=(1-k)^2v+k^2b\\
+&=\frac{vb}{v+b}+(v+b)(k-k^*)^2,
+\qquad k^*=\frac{v}{v+b}.
+\end{aligned}
+$$
+
+Now replace the local likelihoods by exact quadratics. Suppose the ideal old
+and fresh curvatures both equal $h>0$, but the archive uses
+$\widetilde h\ge0$. With $u=\theta-a$, this scalar version of the archive is
+
+$$
+K_c(u)=\tfrac12hu^2,\qquad
+\widetilde K_c(u)=\tfrac12\widetilde h u^2.
+$$
+
+The learner minimizes
+
+$$
+Q_\pi(\theta)=\frac{\pi h}{2}(\theta-z)^2
++\frac{(1-\pi)\widetilde h}{2}(\theta-a)^2.
+$$
+
+Setting its derivative to zero gives
+
+$$
+\widehat\theta=(1-k_{\widetilde h})a+k_{\widetilde h}z,
+\qquad
+k_{\widetilde h}=\frac{\pi h}{\pi h+(1-\pi)\widetilde h}.
+$$
+
+Thus **$\pi$ is the actual blending weight only when the curvatures match**.
+Overstating archive curvature suppresses adaptation; understating it amplifies
+adaptation. Supply the oracle weight $\pi=\pi^*=k^*$. Completing the square
+above immediately yields
+
+$$
+\boxed{
+R(k_{\widetilde h})-R(k^*)=(v+b)(k_{\widetilde h}-k^*)^2.
+}
+$$
+
+The connection to archive error is explicit. Write
+$\widetilde h=h(1+\delta)$, where $\delta\ge-1$ is relative curvature error:
+
+$$
+|K_c(u)-\widetilde K_c(u)|=\tfrac12h|\delta|u^2,
+\qquad
+k_{\widetilde h}=\frac{k^*}{1+(1-k^*)\delta}.
+$$
+
+As relative curvature error vanishes, the implemented blend approaches the
+optimal blend and its excess MSE vanishes. This does not require improving the
+anchor's MSE $v$ or the estimate of $\pi^*$.
+
+#### From MSE To Required Samples
+
+Substituting $b=\sigma^2/n$ gives ideal risk
+
+$$
+R^*(n)=\frac{v\sigma^2}{nv+\sigma^2}.
+$$
+
+For a target MSE $0<r<v$, the ideal sample requirement, ignoring integer
+rounding, is
+
+$$
+\boxed{n_{\rm ideal}=\sigma^2\left(\frac1r-\frac1v\right).}
+$$
+
+At each budget, hold the proposal-generating procedures and $v$ fixed and use
+the corresponding oracle weight. Archive distortion adds the nonnegative
+excess-risk term above. At the idealized threshold, nonzero gain distortion
+therefore leaves risk above $r$: more samples are required if the distorted
+learner eventually reaches that target. A more faithful archive can avoid this
+extra sample demand without increasing information in any observation. This
+is a conditional sample-efficiency argument, not a forecast of a particular
+savings percentage.
+
+#### Brief Matrix Extension
+
+The same argument applies along multiple predictive directions. Let
+$a,z,\theta^*\in\mathbb R^d$ and let the common ideal Fisher curvature be
+$H\succ0$ on an identifiable predictive subspace, with archive approximation
+$\widetilde H\succeq0$. Replace the scalar squares in $Q_\pi$ by the
+corresponding quadratic forms with $H$ and $\widetilde H$.
+
+For a clean extension, assume the errors $e_a=a-\theta^*$ and $e_z=z-\theta^*$
+have common Fisher-shaped second moments:
+
+$$
+\mathbb E[e_ae_a^T]=vH^{-1},\qquad
+\mathbb E[e_ze_z^T]=bH^{-1},\qquad
+\mathbb E[e_ae_z^T]=0.
+$$
+
+These are error second moments, including bias, not necessarily covariances;
+$v$ and $b$ now describe error scale per Fisher-normalized direction. Gaussianity
+is unnecessary. Measure performance by Fisher-weighted MSE,
+
+$$
+\mathcal R=\mathbb E[(\widehat\theta-\theta^*)^TH
+(\widehat\theta-\theta^*)].
+$$
+
+This is a **predictive-risk metric**: it weights parameter errors by their
+effect on predictions and equals twice expected local predictive KL to second
+order.
+It uses the likelihood Fisher, not another Fisher estimand or tuning
+parameter. In the scalar case it simply multiplies $R(k)$ by $h$, leaving the
+optimal weight unchanged.
+
+Changing coordinates by $H^{1/2}$ makes ideal curvature the identity. If
+$\lambda_i$ are the eigenvalues of the relative archive curvature
+$H^{-1/2}\widetilde H H^{-1/2}$, its effective blending weights are
+
+$$
+k_i=\frac{\pi^*}{\pi^*+(1-\pi^*)\lambda_i},
+\qquad \pi^*=\frac{v}{v+b}.
+$$
+
+The scalar identity applied in each direction gives
+
+$$
+\boxed{
+\mathcal R=
+\underbrace{d\,\frac{vb}{v+b}}_{\text{ideal risk}}
++\underbrace{(v+b)\sum_{i=1}^d(k_i-\pi^*)^2}
+_{\text{excess risk from archive distortion}}.
+}
+$$
+
+An exact archive has every $\lambda_i=1$ and hence every $k_i=\pi^*$.
+The original matrices need not share eigenvectors. Without the common
+error-shape assumption, different directions can genuinely require different
+optimal weights; a scalar oracle need not be optimal among matrix-valued
+blends. These transformations are for analysis, not an additional numerical
+requirement for the experiment.
+
+**Interpretation and scope:** reduced omitted STM sensitivity can improve
+archive fidelity; faithful archive geometry can better realize the intended
+bias-variance compromise; this can reduce samples needed for a predictive-risk
+target. The proof holds for the stated local quadratic model. The preceding
+absolute KL bound does not alone establish the needed relative curvature
+accuracy, common local geometry, or error moments for a nonlinear, recentered
+replay learner. Nor does curvature accuracy automatically reduce anchor MSE.
+This is a proposed explanation to test against predictive results, not a
+demonstrated mechanism for every observed FD-KL gain. Development retention
+matching remains essential for fair acquisition comparisons.
 
 ## LFU Transport Without Premature Consolidation
 
