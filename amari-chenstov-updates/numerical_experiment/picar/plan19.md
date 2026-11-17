@@ -47,6 +47,21 @@ EWC anchor, including one versus three optimizer steps and measured compute
 cost. It is drafted for review, not launched. The earlier status paragraphs
 and execution records remain historical; Phase 4 remains deferred.
 
+**Planning update (2026-11-17):** Fix 2 is complete. The new
+[Phase 3 Fix 3](#phase-3-fix-3-six-example-visual-rewards-and-reward-scale-pilot-2026-11-17)
+proposes a six-example frozen-Qwen evaluator and a bounded comparison of linear
+and signed-quadratic rewards. It preserves the repaired optimizer, rebuilds
+reward-compatible initialization from saved stationary demonstrations, and requires
+held-out reward recording. This is a draft for review, not execution approval;
+Phase 4 and physical motion remain deferred.
+
+**Execution update (2026-11-17):** Fix 3 is authorized with a 12-hour additional
+active-compute limit. Implementation/recovery acceptance passed 287 tests;
+the actual frozen-Qwen input/response parity check passed. The new campaign
+is re-scoring 659 unique stationary images before reward-compatible fitting.
+The canonical notebook contains current Fix 3 progress and preserves prior
+history. See the Fix 3 execution recipe and `PLAN19_HANDOFF.md` for restart.
+
 **Operating model:** Phase 0 uses Astra 6 Extra High for the numerical slice
 and Sol 6.1 Extra High for the surrounding implementation, integration, and
 operational tests. Prefer Sol as the coordinator, with bounded Astra
@@ -3832,6 +3847,531 @@ blobs and 16 videos verified. Current/historical scientific fingerprints and
 the reserved theory notebook are unchanged. Completed `--resume` preserves
 all seals; all 13 final notebook code cells execute with training/model/runtime
 imports blocked. The chronological notebook ends with the repair's conclusion.
+
+#### Phase 3 Fix 3: Six-Example Visual Rewards And Reward-Scale Pilot (2026-11-17)
+
+**Motivation:** Fix 2 repaired the demonstrated EWC/solver blind spot, and
+initial-task retention was mostly preserved, but every hard-B evaluation still
+failed. Saved training rewards suggested a separate limitation: Qwen usually
+gave a visible ball a proximity score of one, providing little distinction
+between seeing the target and approaching it. That is evidence of weak reward
+resolution, not proof that reward alone explains the navigation failures.
+Exploration, demonstration coverage, partial observability and optimization
+remain plausible contributors. Held-out reward trajectories were not saved;
+the retrospective review cannot manufacture them from training curves.
+
+The subsequent, separately saved prompt diagnostics replaced physical-distance
+judgments with apparent horizontal ball width. The user requires Qwen to remain
+the visual evaluator for transfer to physical robotics. Four worked examples
+substantially improved a twenty-image diagnostic over a single-image prompt.
+Adding a middle-sized and a partially occluded reference produced a further,
+modest improvement on twenty fresh images:
+
+| Fresh diagnostic, not a learning trial | Four examples | Six examples |
+|---|---:|---:|
+| Mean absolute reward error, on the 0--10 scale | 1.1875 | 1.0801 |
+| Mean absolute width error, percentage points | 9.8906 | 8.5469 |
+| Partially visible targets incorrectly given zero reward | 2/2 | 1/2 |
+| Mean inference seconds per scored image | 1.5160 | 1.6755 |
+
+The six-example version improved reward error on seven cases, worsened three
+and tied ten. Both versions returned zero on all three no-visible-ball cases.
+These are fixed coverage panels, not random population samples, independent
+learning replicas or evidence of hard-task acquisition. Large individual
+errors and copying of reference scores remain. Freeze the imperfect evaluator
+and test whether it supports learning rather than continue an open-ended
+prompt search.
+
+The second hypothesis is that emphasizing larger rewards helps pursuit and
+completion. Compare the agreed signed square with a linear control. The
+signed square preserves zero and negative penalties, unlike raw exponentiation,
+but can compress small magnitudes, amplify evaluator errors and change the
+success/collision trade-off. It is a deliberate reward-objective change, not
+a generally policy-invariant transformation. [Reward transformations][shaping]
+The existing likelihood already contains exponential advantage weights;
+reward units must therefore be explicit. [Advantage weighting][awr]
+
+**Scope and authority:** Astra specifies this contract; once separately
+authorized, Sol implements, profiles, runs and closes out this bounded repair.
+Record material corrections with a new version and preserve failed attempts.
+Do not modify `mathematical_overview.ipynb`, historical scientific identities,
+completed artifacts or old reward definitions. This section is a proposal,
+not a launch request. No new Qwen demonstrations, physical actuation, Phase 4,
+LFUs, adaptive $\pi$, architecture changes or broad hyperparameter search are
+included.
+
+##### 1. Freeze The Six-Example Qwen Evaluator
+
+Use the original **direct-width prompt**, unchanged, from
+`numerical_experiment/picar_ball_width_probe.py`. The frozen quantized
+Qwen2.5-VL-3B evaluator receives six worked RGB/assistant-answer pairs and
+one current post-action RGB image, with no robot history, previous scores,
+actions, geometry or segmentation masks. Each worked answer contains known
+`width_percent` and `reward`; the final target has no supplied answer. Reset
+generation context between calls. Keep deterministic native generation,
+96 output tokens, the 2,048-token context limit and the existing per-image
+76,800-pixel cap. Never silently truncate the references or target.
+
+Freeze these references and their order from the completed refinement:
+
+| Order / identity | Reference | Width percent | Reference reward |
+|---|---|---:|---:|
+| 1 / A | No visible ball | 0 | 0 |
+| 2 / B | Far ball | 4.6875 | 0.5859375 |
+| 3 / C | Intermediate ball | 10.3125 | 1.2890625 |
+| 4 / F | Partially occluded ball | 10.9375 | 1.3671875 |
+| 5 / E | Middle-sized ball | 41.5625 | 5.1953125 |
+| 6 / D | Very close ball | 87.8125 | 10 |
+
+Reference identity is not positional alphabetical order: the admitted order
+is **A, B, C, F, E, D**. Preserve the actual images, assistant-answer rounding
+to four decimal places and processor behavior, not just these descriptions.
+The canonical provenance is
+`cache/numerical_experiment/picar/prompt-probes/refined-width-evaluation-v1-20261116`;
+its fresh targets are in `refined-width-panels-v1-20261116` under the same
+parent. The added references originate in `diverse-width-panels-v1-20261116`;
+the original four originate in `ball-references-v2-20261116` and its recorded
+frame source. Verify completion seals and content hashes, then bundle the
+six references in the new ignored campaign cache with parent identities.
+No dependency on a personal model path or sibling software is introduced.
+
+Use Qwen's returned **reward** $q\in[0,10]$, not a renderer measurement or
+a recomputed reward from its width estimate. Save both numeric fields and
+raw text, including their arithmetic disagreement. The diagnostic did not
+support replacing the returned reward with code-computed arithmetic. Keep
+the prompt and example answers identical in both learning conditions;
+apply the treatment downstream in code. Do not give squared example scores
+to only one evaluator. Replace the old proximity-plus-centering score with
+this width score in both conditions; do not add a new centering prompt or
+bonus during the pilot. The task instruction and teacher remain unchanged.
+
+Cache a score by model/revision, prompt, ordered reference/answer hashes,
+processor configuration and exact target RGB hash. A second occurrence of
+the same input can reuse the frozen answer without acquiring another sample.
+An invalid response is not zero: retain it and allow one identical retry,
+then checkpoint a pending score if unresolved. No privileged fallback or
+silent exclusion of the associated episode is allowed.
+
+##### 2. Exact Reward Units, Terminal Events And Return Encoding
+
+Define the two fixed transformations on **dimensionless score units**:
+
+$$
+F_1(x)=x,\qquad F_2(x)=x|x|.
+$$
+
+For elapsed physical time $\Delta t_i$ in seconds, current-image Qwen score
+$q_i$ and one-time terminal bonus $b_i$, use
+
+$$
+\boxed{r^{\mathrm{raw}}_{p,i}
+=\Delta t_i\,[0.01F_p(q_i)-0.04]+F_p(b_i),
+\qquad p\in\{1,2\}.}
+$$
+
+The linear condition reproduces the previous dense-reward arithmetic with
+the newly admitted evaluator. For the quadratic condition, square Qwen's
+0--10 score **before** converting it to a physical-time reward rate. Do not
+square an already time-integrated interval reward, the conversion coefficient,
+or the sum of visual reward and terminal bonus. The $0.04$-per-second time
+cost stays fixed in raw units; it is not another transformed Qwen score.
+This explicitly settles the order-of-operations ambiguity discussed before
+drafting. In particular, avoid squaring tiny interval rewards and thereby
+almost erasing dense feedback. For a fixed score, splitting an interval
+must preserve its undiscounted reward. This does not assert exact invariance
+of discretized discounted returns when the physical control cadence changes.
+
+| Terminal event | $b_i$ / linear raw bonus | Signed-square raw bonus |
+|---|---:|---:|
+| Target contact, success | +10 | +100 |
+| Unsafe obstacle collision | -5 | -25 |
+| Episode deadline/timeout | -1 | -1 |
+| Nonterminal interval | 0 | 0 |
+
+Use the existing terminal precedence: contact with the red ball is success,
+not an unsafe collision. Add a bonus exactly once, without multiplying it
+by elapsed time. A software crash, unresolved label or external halt is not
+a task timeout. Keep the existing 20-second episode horizon and control
+cadence. Maximum undiscounted visual contribution over that horizon is 2
+for linear and 20 for quadratic. Timely success must remain preferable to
+merely accumulating maximum visibility until timeout. Preserve genuine
+visual reward on terminal observations, including partial final intervals.
+
+Use the same physical-time discounts in both conditions:
+
+$$
+\gamma_i=.99^{\Delta t_i/.5},\qquad
+G^{\mathrm{raw}}_{p,i}=\sum_{j=i}^{T-1}
+\left(\prod_{\ell=i}^{j-1}\gamma_\ell\right)r^{\mathrm{raw}}_{p,j}.
+$$
+
+Complete-episode returns, not new TD/Bellman targets, remain the labels.
+Conservative enclosing ranges are $[-6,12]$ for linear and $[-26,120]$ for
+quadratic. Do not inherit an incompatible return head or clip out-of-range
+returns.
+
+**Fixed return encoding, not a tuned hyperparameter:** use $c_1=1$ and
+$c_2=10$, the ratio of raw success bonuses, and encode
+
+$$
+\widetilde G_{p,i}=G^{\mathrm{raw}}_{p,i}/c_p,
+\qquad \widetilde b_{p,i}=b^{\mathrm{baseline,raw}}_{p,i}/c_p.
+$$
+
+Both coded returns fit the existing **161-bin support $[-6,12]$**. Use
+the same bin edges, action variance 16 and temperature
+$\widetilde\tau=2.8375266913896$ in these common coded units. Thus
+
+$$
+w_{p,i}=\exp\!\left(
+\frac{\widetilde G_{p,i}-\widetilde b_{p,i}}{\widetilde\tau}\right)
+=\exp\!\left(
+\frac{G^{\mathrm{raw}}_{p,i}-b^{\mathrm{baseline,raw}}_{p,i}}
+{c_p\widetilde\tau}\right)
+$$
+
+before the existing categorical approximation. This fixes how numerical
+units enter advantage weighting: the raw quadratic temperature is ten times
+the raw linear temperature, with no outcome-driven temperature search.
+Raw terminal bonuses remain the agreed +100/-25/-1; the coded quadratic
+bonuses are +10/-2.5/-.1. Display raw and coded quantities distinctly.
+This positive constant recoding does not change which policy maximizes
+that condition's expected return. It is **not** a claim that keeping raw
+temperature unchanged after recoding preserves the likelihood, or that the
+two nonlinear reward objectives have the same optimum. The normalization
+prevents the contrast from being dominated by an accidental tenfold
+overall likelihood-weight scale while retaining its changed relative
+preferences. Do not add a third unnormalized condition automatically.
+
+##### 3. Two Learning Conditions, Not A Reward-By-Memory Factorial
+
+For this readiness repair, propose the cheaper **Replay/EWC learner in both
+conditions**, with identical trainable LTM and STM capacity and FD strength
+zero. This is the existing capacity-matched control, not a smaller frozen-STM
+network. The comparison is:
+
+| Condition | Frozen evaluator | Reward map | Online solver / memory |
+|---|---|---|---|
+| `width6_linear` | Six examples, fixed | $F_1$ | Three-step proximal; replay + diagonal EWC |
+| `width6_signed_square` | Identical | $F_2$ | Identical |
+
+Hold the Fix 2 selected `proximal_3` solver, $\alpha=.001$, $\pi=.025$,
+ridge coefficient $.1$, numerical floor, replay capacity/batch, exploration
+standard deviation 4, network, preprocessing, action mapping, sleep protocol,
+and continuous texture/steering/barrier curriculum fixed. Advance the recurrent
+center once per accepted event; admit Fisher information only on retirement.
+Do not rerun the solver screen or introduce a lagged anchor. Use the same
+nominal 640-interval outward-and-return curriculum without shortening its
+ramps. Policy-dependent visited images will differ after actions diverge.
+
+Run two paired development seeds, **197101 and 197102**, with named component
+seeds and alternating reward-condition execution order. Keep matching layout,
+initial random tensors, exploration variates, replay and model-label RNG
+policies where meaningful. Do not force identical categorical model labels
+when fitted distributions differ. Finish a pair before admitting another.
+The frozen initial student for each condition is an evaluation reference,
+not a third full-budget condition. The two-learner FD-versus-control study
+resumes only after reviewing this repair; do not silently expand to eight
+trajectories or infer an FD result from a pilot that does not test FD.
+
+##### 4. Reward-Compatible Stationary Initialization
+
+Reuse Fix 1's **same 515 stationary-A training histories and 65 fixed
+validation histories**, whole-episode split, recorded teacher actions,
+initial sampling protocol and independently identified evaluation layouts.
+No new teacher demonstrations or data-size ladder are authorized here.
+Audit complete source episodes and post-action frames first. Score all
+required unique training/validation images once with the frozen six-example
+evaluator, derive both reward versions, and save them in new artifacts.
+The evaluation and prompt-diagnostic panels never enter this training set.
+Report reused observations separately from new scoring or fitting compute.
+
+Restore the same neutral-STM, post-KL-distillation checkpoint from the sealed
+Fix 1 fit for both reward versions. If it cannot be independently recovered,
+repeat the same one-time offline teacher-KL stage from the recorded data and
+pristine model once, then fork; do not collect new demonstrations. Keep all
+original artifacts unchanged.
+
+The old reward labels, baselines and four-draw Fisher are **not** a valid
+reward-consistent fitted initialization by assertion. For each version:
+
+1. Recompute complete raw and coded returns. During stationary joint fitting,
+   use the detached mean coded training return as the common initial baseline
+   for that version. Compute it from training records only, freeze it before
+   fitting, and apply it unchanged to validation. Do not import the old-reward
+   baseline or estimate it from validation outcomes.
+2. Fit the same declared joint likelihood with STM neutral, EWC/FD/ridge off
+   and no online $\pi$ weighting. Use Fix 1's bounded joint-NLL fitting and
+   checkpoint-selection rules: at least six passes if numerically feasible,
+   at most sixteen, patience four, training plateau tolerance $10^{-4}$,
+   minimum fixed-validation joint NLL with earliest tie including epoch zero.
+   Keep batch size, order-seed policy and optimizer settings common. The
+   shared KL stage is not repeated separately merely to alter return scales.
+3. Plot train/validation NLL and teacher KL at fixed exposure checkpoints,
+   retaining accepted-checkpoint identities and gradient/update diagnostics.
+   Do not compare raw NLL values across the two different reward models as
+   though they measured identical targets. Show A/B initial capability too.
+4. At each accepted model, rebuild the LTM model-Fisher diagonal using equal
+   weights over the 515 training histories and four model-label draws per
+   history, with nested 1/2/4-draw stability diagnostics. Use per-sample
+   likelihood scores, not regularized gradients. No $\pi$, decay or repeated
+   archive admission enters this bulk average. The reward-compatible baseline,
+   coded bins, temperature and action variance belong to its identity.
+5. Seal separate accepted parameters, centers and Fisher assets; mark their
+   initialization observations archived once and start online replay empty.
+   Reset the online numerical optimizer state identically. Future online
+   baselines remain detached predictions made before the action, as before.
+
+The two reward versions can yield different post-fit initial actors and
+Fisher estimates. Report these differences rather than claim an identical
+post-fit initialization. The estimand is the **complete reward-consistent
+initialization-and-learning recipe**, not the isolated effect of changing a
+reward after a common online starting checkpoint. Paired raw demonstrations,
+pre-fit model, fitting rules and budgets are common; fitted statistics need
+not be identical under different targets. This necessary reinitialization is
+not a new architecture, extra dataset or reward-specific hyperparameter search.
+
+##### 5. Acceptance, Live Pilot And Held-Out Reward Recording
+
+Before learning, CPU-test signs/zero, terminal precedence, raw/coded units,
+elapsed-time additivity, partial final intervals, complete discounted returns,
+support bounds, and failure on out-of-range/nonfinite targets. Verify the
+raw-to-coded advantage identity when bins/baselines/temperature are converted
+consistently, including corresponding categorical-bin values. Preserve the
+joint likelihood's normalizing terms and score sign conventions.
+
+Audit scripted immediate/delayed success, maximum-visibility loitering,
+ball disappearance, collision and timeout sequences at the admitted cadence.
+Report raw and coded returns, bin ties and log-weight differences for paired
+approach trajectories. A numerical score difference that disappears in return
+bins is not usable reward density. Check actual-model gradient sensitivity
+to the new return targets, finite model-score draws, and both neutral-STM
+initialization and the first-step EWC effect. Reuse Fix 2's proximal/recovery
+tests; no full Hessians or new solver factorial are needed.
+
+Then run a **48-interval timing check per reward version**, preserving the
+full 640-interval curriculum clock. Measure evaluator latency, queue growth,
+label availability, fitting time, actor lease waits, fallback/deadline events
+and peak VRAM. Qwen reward generation must not freeze physics or occupy the
+actor's accepted-model lease across generation. Serialize GPU work safely and
+cache identical inputs. Publish the actual forecast before the four full
+pilot trajectories. Recheck that useful exploration includes steering; do
+not alter the prompts, exploration or barrier schedule to rescue one version.
+
+Evaluate at **initial, midpoint and final** checkpoints on the same fixed
+20-A/10-B development layouts used for the preceding repairs. Score the
+saved post-action evaluation images after rollout with the same frozen
+six-example evaluator. Save test rewards now; do not repeat the historical
+omission. The per-condition initial panel can be shared by its two online
+seeds, but that is one shared reference, not two independent initial tests.
+Evaluation must not fit, train replay, retire observations, update EWC or
+consume the training RNG state. Frozen initial reference predictions need
+not be rerun for every seed.
+
+Retain elapsed times, raw Qwen text/width/reward, terminal reason/bonus,
+linear and squared **counterfactual arithmetic on the same saved scores**,
+raw/coded stage rewards and returns, bin IDs, frozen pre-action baselines,
+episode/frame/checkpoint identities and scorer provenance. Deriving both
+arithmetic versions costs no additional Qwen call. It does not make a
+recorded trajectory a counterfactual rollout under the other learned policy.
+Cache train/test roles and eligibility separately even when image inference
+can be safely shared.
+
+##### 6. Reader-Facing Outcomes And Interpretation
+
+Append a concise chronological **Phase 3 Fix 3** section to
+`plan19_results.ipynb`; preserve the earlier findings and their conclusions.
+Open with the flat-reward motivation, the modest six-example diagnostic,
+the two reward formulas/terminal bonuses and the fact that this pilot holds
+FD off. Keep the full derivation here, not in a wall of notebook prose.
+
+Near the notebook top show scoring done/remaining, each initializer's
+fit/Fisher state, checks and completed pilot trajectories out of four,
+charged hours and a measured remaining-time range. Refresh after committed
+stages and about every fifteen minutes when new results exist. Artifact-only
+reporting never loads Qwen, trains, scores missing images or repairs a run.
+Missing/unscored outcomes remain unavailable, not zero. Budget admission or
+numerical failure is not a finding that a method cannot learn.
+
+Prioritize these compact displays:
+
+- **Predictive/task capability:** one A/B success-rate figure against incoming
+  intervals at initial/mid/final, and one endpoint table with paired-seed
+  outcomes, collisions, timeouts and A retention changes. Report evaluated
+  episode counts and shared-initializer dependence explicitly.
+- **Reward trajectories:** a 2-by-2 figure with rows A/B and columns training/
+  held-out evaluation; use color for reward condition and line style for
+  early/middle/late training windows or initial/mid/final tests. Plot the
+  **common raw Qwen score** so the vertical scale means the same thing for
+  both objectives. Label training windows versus fixed test checkpoints.
+  Show a compact separate table of actual raw/coded cumulative returns;
+  larger squared returns alone are not evidence of better behavior.
+- **Initialization and numerical health:** two compact panels for fitted
+  train/validation curves and Fisher stability, with EWC influence/return-bin
+  and advantage-weight diagnostics summarized in a small table or linked
+  artifacts. Include reward-spike frames rather than interpreting every
+  high-score episode as successful pursuit.
+- **Behavior and cost:** preselect common ego/top-down clips spanning A/B
+  and initial/mid/final, plus a separately labeled failure gallery. Summarize
+  steering/forward action use, inference/scoring/update times, completed
+  observations, unique scored images, deadline/fallback counts and VRAM.
+
+For average reward curves, use a common elapsed-episode-time grid, first
+average within each replica and then across replicas, show contributing
+episode/replica counts and state terminal handling. Qwen-score curves stop
+at termination; cumulative earned rewards stay flat afterwards. Do not pad
+post-terminal visual scores with zero or turn training windows into tests.
+
+With two seeds and shared stationary demonstrations, this is development,
+not a statistically powered efficacy study. Do not claim sample savings,
+retention equivalence or FD benefit. Report whether either recipe acquires
+any reproducible B capability, its A-retention trade-off, whether visually
+high rewards actually accompany pursuit/contact, and whether latency/queues
+permit useful online learning. Do not optimize only B while hiding A loss.
+Keep $\pi$/ridge fixed here; mandatory development-only retention matching
+returns before a later FD-versus-control efficiency comparison. A practical
+linear win is as useful as a quadratic win.
+
+##### 7. Implementation, Immutability And Restart
+
+Implement a separately versioned `picar_reward_repair` entry point/config
+and a new campaign root, provisionally
+`cache/numerical_experiment/picar/phase3/reward-fix3-v1`. Reuse project helpers
+without changing frozen historical numerical files. Seal evaluator references,
+prompt/native-output parsing, reward/return coding, initializer policies and
+learner settings before the pilot. Completed prompt probes remain separate
+diagnostic evidence; reference them by identity, not as learning replicas.
+
+Provide `--resume`, stage selection, status/report and graceful-stop commands.
+Retain Qwen model download into this checkout's ignored cache as the default;
+an explicit local model override is optional. Archive roots are arguments,
+never personal absolute paths in tracked configs. Keep existing bounded local
+storage and free-space reserves; forecast artifact growth before admission.
+No physical backend command is authorized.
+
+Checkpoint scoring after each valid cached image; checkpoint fitting/Fisher
+in short transactional blocks, targeting at most 30--60 seconds of replayed
+work, plus event/stage boundaries. Persist raw/scored-frame cursor and cache
+identity, reward-version labels/baselines, parameters/optimizer state, RNGs,
+accepted current/previous centers, partial Fisher sums/counts, actor state,
+simulation snapshot, replay/pending queues, retirement ledger, evaluation
+cursor, metrics and cumulative timing together as appropriate to each unit.
+An abrupt halt must neither drop an acquired interval nor duplicate a bonus,
+optimizer acceptance, archive admission, score or resource charge.
+
+Test interruptions before/after score and return-label commits, inside a
+multi-step candidate solve, between parameter publication and retirement,
+and partway through held-out rollout/scoring. Recovery must preserve the
+uninterrupted causal ordering and paired settings. Only committed complete
+units acquire `COMPLETED`; resume never mutates a completed unit or backfills
+an older unscored evaluation in place. Material code/protocol corrections
+get a new version and an explicit notebook note; retain useful partial work.
+
+##### 8. Proposed Budget, Autonomy And Exit
+
+The selected Fix 1 fit took **1.3900 active hours** including its KL and NLL
+stages; its primary bulk Fisher took **0.0486 hours**. Fix 2's four live pilots
+took **3.1255 hours** including their evaluations but not new Qwen evaluation
+scoring. The six-example image diagnostic measured **1.6755 seconds/image**.
+These are inputs to a forecast, not guarantees: new rewards change behavior,
+episode lengths, queue pressure, fitting and evaluation image counts.
+
+| Work | Additional active wall-clock estimate |
+|---|---:|
+| Focused acceptance, source/reference audit and real-model smoke | 0.25--0.5 h |
+| Stationary image re-scoring and both return-label versions | 0.25--0.5 h |
+| Shared distilled-state restoration, two NLL fits and two bulk Fishers | 1.5--3 h |
+| Two live timing checks and label-resolution/weight audit | 0.25--0.5 h |
+| Four 640-interval live trajectories, including ordinary held-out rollouts | 3--4 h |
+| New held-out Qwen scoring across all checkpoints | 0.75--1.5 h |
+| Notebook, artifact/recovery audit and closeout | 0.25--0.5 h |
+| **Planning range, approximately** | **6.25--10.5 h** |
+
+The user approved execution on 2026-11-17 with a
+**twelve-additional-active-hour ceiling**, replacing the proposed ten-hour
+ceiling to cover the forecast's 10.5-hour upper end. This is not a renewed
+whole-plan twenty-hour promise or reuse of an old
+repair's unspent allowance. Implementation labor is separate, provisionally
+1--3 elapsed hours before compute; revise that estimate if integration is
+more involved. Keep the historical cumulative ledger, recording the prompt
+diagnostics separately rather than inventing an unmeasured retrospective
+charge. Charge new scoring, failed attempts, fitting, rollouts, I/O, reporting
+and warm-up once; overlapping timers are not additive and user pauses are
+not compute.
+
+After source audit, publish unique image counts and their measured scoring
+forecast. After the timing checks, publish a whole-pilot forecast including
+held-out scoring. Reserve closeout time and admit the next complete pair
+only if it fits. If four trajectories do not fit, finish one paired seed,
+publish the partial scope and stop for review; do not shorten the curriculum,
+drop evaluation scoring or silently exceed the cap. An extension can be
+proposed from measured costs. No significance-driven stopping is intended.
+
+Sol may correct implementation/scheduling defects, reuse identical cached
+scores, choose the common checkpoint via the stated validation rule and
+redistribute this allowance without waiting for a user check-in. If the fixed
+reward/units contract fails a numerical or loitering audit, report the failure
+and preserve the evidence; do not invent a third reward or independently tune
+temperature, penalties, prompts or regularization for one version. Material
+mathematical changes require a separately recorded revision before continuing.
+
+**Exit:** tested six-example scoring and signed-reward/return kernels;
+reward-compatible fitted/Fisher assets and initialization diagnostics; a
+bounded paired reward-scale comparison where feasible; saved and charted
+training **and held-out** rewards alongside real task outcomes; measured
+compute/latency; an honest short conclusion and restart/completion handoff.
+State whether to keep linear or signed-square provisionally, or whether
+reward quality/coverage/learning remains unresolved. Stop for review. Do not
+automatically start Phase 4 or the renewed STM comparison.
+
+##### Fix 3 Execution Authorization (2026-11-17)
+
+The two-condition design is authorized with a twelve-hour additional active
+compute limit. Implementation, source/reference checks, reward-compatible
+initialization, live readiness, paired pilots, held-out scoring and closeout
+remain within that shared limit. Preserve the original forecast and report
+measured revisions; unused historical allocations are not carried forward.
+The earlier draft-status prose is historical. Phase 4 and physical motion
+remain deferred.
+
+##### Fix 3 Execution Recipe (2026-11-17)
+
+Implementation is separately housed in `numerical_experiment/picar_reward_repair`.
+The new reward/scoring kernels, initialization/live integration and scalar-only
+reporter passed 287 focused acceptance/regression tests. Fake-clock recovery
+checks include reward-label commits and midpoint/final test-score commits;
+they compare accepted parameters, optimizer moments, Fisher, centers, replay,
+retirement and evaluated episode results, excluding wall-time diagnostics.
+Historical numerical files remain unchanged. The actual post-KL checkpoint
+was recovered and the six original RGB/reference seals verified in ABCFED
+order, so no new demonstrations or repeated KL fitting are needed.
+
+The admitted campaign is `phase3/reward-fix3-v1`, with its own source snapshot,
+12-hour ledger and an unchanged notebook-history snapshot. Re-score stationary
+images into a shared frozen input cache, refit each reward's likelihood and
+bulk Fisher, score initial A/B panels, measure both live checks, then admit
+paired pilots from the measured forecast. The evaluator's actual processed
+target pixels and response are checked against the saved six-example probe
+before new initialization scoring. No fresh significance claim is planned.
+
+##### Fix 3 Initialization Milestone (2026-11-17)
+
+All 659 unique stationary post-action images have frozen scores, without a
+retry. Linear fitting completed 16 passes and retained validation-best pass
+five. Signed-square fitting completed 12 passes; both reward-specific,
+equal-weight initial Fisher assets are sealed. Linear initial success is
+5/20 on A and 0/10 on B, with its live readiness check complete. The expanded
+focused suite passes 307 tests; all 16 notebook code cells execute with
+model/simulator imports blocked. The scientific source fingerprints remain
+unchanged. Full pilot outcomes and their measured forecast are still pending.
+
+One important evaluator limitation is already visible: every saved frame in
+the linear initial B panel received zero (58 frames). A qualitative inspection
+of its first frame shows a small red ball above the barrier despite that
+judgement. Thus zero reward does not prove absence or full occlusion. Preserve
+this diagnostic and inspect behavior alongside reward curves; do not retune
+the frozen evaluator mid-comparison. The gradual curriculum may still provide
+useful learning opportunities, so the authorized pilot continues unchanged.
 
 ### Phase 4: Sol Fresh Paired Learning
 

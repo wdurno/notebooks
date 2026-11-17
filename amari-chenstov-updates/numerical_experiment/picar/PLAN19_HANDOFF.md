@@ -1,5 +1,63 @@
 # Plan 19 Handoff: Phase 3 Development
 
+## Phase 3 Fix 3: Reward Repair (2026-11-17)
+
+Execution is authorized with **12 additional active compute hours**. The new
+`numerical_experiment.picar_reward_repair` package implements the six-example
+frozen width evaluator and linear/signed-square comparison, holding FD off.
+Historical numerical files and completed campaigns remain unchanged.
+
+New campaign root: `cache/numerical_experiment/picar/phase3/reward-fix3-v1`.
+The exact 515 training/65 validation histories and common post-KL checkpoint
+were recovered; no new demonstrations or physical motion are needed. Re-score
+stationary images once, refit each reward likelihood and its equal-weight
+four-draw Fisher, then run readiness and paired seeds 197101/197102. Keep the
+three-step proximal solver. The reward/return-unit contract is in Phase 3 Fix 3
+of `plan19.md`; raw squared bonuses are +100/-25/-1 and coded returns divide
+by ten. Both models use 161 coded bins on [-6,12] and the common coded
+temperature. Never transplant the old reward's Fisher or targets.
+
+The numerical/scoring and reporting agents finished their bounded changes.
+Integration/recovery acceptance passed 287 tests, including fake-clock complete
+pilots and exact accepted-state recovery at reward-label and midpoint/final
+evaluation-score boundaries. The GPU campaign is now active. Its log is
+`cache/numerical_experiment/picar/phase3/reward-fix3-v1-run.log`.
+The report snapshots existing notebook history rather than rebuilding every
+historical campaign. The new notebook section is chronological, with progress
+near the top. Save both training and held-out rewards. Do not start Phase 4.
+
+Planned restart command from the repository root (same optional model override
+as the initial invocation, if used):
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_reward_repair run \
+  --output cache/numerical_experiment/picar/phase3/reward-fix3-v1 \
+  --max-hours 12 --resume
+```
+
+Add `--model-path <local-model-directory> --offline` to reuse local model data;
+without an override the pinned model downloads into the project cache.
+`status`, `stop`, and `report` replace the `run` subcommand. A graceful stop
+leaves `STOP`; use `--clear-stop --resume` only for intentional continuation.
+An unannounced restart resumes from committed scoring, fit, Fisher, learner,
+simulation and evaluation cursors. Do not launch a second writer.
+
+**Initialization milestone (2026-11-17):** all 659 unique stationary images
+are scored without retries. Linear fitting completed 16 passes and retained
+validation-best pass five; signed-square fitting completed 12 passes. Both
+equal-weight Fisher assets are sealed. Linear initial A/B counts are 5/20 and
+0/10, and its readiness run is complete; signed-square initial evaluation is
+in progress. The expanded focused suite passes 307 tests. All 16 notebook code
+cells also execute from the notebook directory with model/simulator imports
+blocked. Numerical source hashes remain unchanged.
+
+The linear initial B panel has zero Qwen scores on all 58 saved frames. A
+qualitative spot check of its first frame, `sha256:bc04b838327c1797d1575c053c99a90b280e314ac85f080d8c3030909957c73c`,
+shows a small red ball above the blue barrier despite that zero judgement.
+Do not infer that every zero means true absence. This remaining evaluator
+blind spot is a qualification, not permission to tune the frozen prompt or
+change the learning comparison. Continue the approved curriculum/pilots.
+
 ## Training Reward Review (2026-11-16)
 
 The user requested quick reward diagnostics, then explicitly declined new
