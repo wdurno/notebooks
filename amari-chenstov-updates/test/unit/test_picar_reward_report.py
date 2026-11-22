@@ -114,12 +114,14 @@ def panel(checkpoint="initial", difficulty="easy", *, condition=report.CONDITION
             "seeds": [r["seed"] for r in rows], "rows": rows}
 
 
-def pilot(root, *, condition=report.CONDITIONS[0], seed=197101, episodes=None, evaluations=None, **kwargs):
+def pilot(root, *, condition=report.CONDITIONS[0], seed=197101, episodes=None, evaluations=None,
+          fit_metrics=None, **kwargs):
     return unit(root, "pilot", name=f"pilot-{condition}-{seed}", condition=condition,
                 settings={"seed": seed, "initial_asset_id": "asset-linear"}, acquired_count=640,
                 episodes=[episode(evaluation=False, condition=condition)] if episodes is None else episodes,
                 evaluations=[panel(cp, condition=condition) for cp in ("initial", "midpoint", "final")] if evaluations is None else evaluations,
-                fit_metrics=[{"first_step_ewc_suppression": .3, "update_seconds": .2}],
+                fit_metrics=([{"first_step_ewc_suppression": .3, "update_seconds": .2}]
+                             if fit_metrics is None else fit_metrics),
                 timings={"active_seconds": 10., "fit_seconds": 1., "scoring_seconds": 2.}, **kwargs)
 
 
@@ -466,7 +468,12 @@ def test_closeout_all_zero_b_summarizes_a_retention_and_shared_initial_once(root
     assert "Linear (final seeds 197101, 197102): A retention 2/2 -> 2/2, 1/2; B acquisition 0/2 -> 0/2, 0/2" in text
     assert "Signed square (final seeds 197101, 197102): A retention 1/2 -> 1/2, 0/2" in text
     assert "Hard-task acquisition remains unestablished for both conditions." in text
-    assert "Neither is ready for promotion" in text
+    assert "**Scope:** linear versus signed-square reward recipes" in text
+    assert "not a test of FD-KL statistical efficiency" in text
+    assert "**No demonstrated advantage of either reward recipe**" in text
+    assert "not evidence of equivalence" in text
+    assert "does not rule out an FD benefit" in text
+    assert "Neither is ready for promotion" not in text
     assert "Linear: A declined in 1/2 seeds, B successes in 0/2 evaluated seeds" in text
     assert "shared initial panels count once" in text
     assert text.count("A retention 2/2 ->") == 1
@@ -507,6 +514,7 @@ def test_closeout_pending_does_not_turn_missing_outcomes_into_zero(root):
     assert "Signed square: A retention pending -> pending; B acquisition pending -> pending" in text
     assert "Defer recipe selection" in text
     assert "Hard-task acquisition remains unestablished for both conditions" not in text
+    assert "No demonstrated advantage" not in text
     assert "B acquisition 0/" not in text
 
 
@@ -576,6 +584,150 @@ def test_notebook_preserves_history_and_refresh_deduplicates(root, tmp_path):
     assert len(refreshed_book.cells) == len(book.cells)
     assert len({c.id for c in refreshed_book.cells}) == len(refreshed_book.cells)
     assert [c for c in refreshed_book.cells if not c.metadata.get(report._TAG)] == previous.cells
+
+
+def test_fix3_refresh_preserves_later_fix4_draft_and_chronology(root, tmp_path):
+    _, previous = history(root)
+    output = tmp_path / "results.ipynb"
+    pilot(root)
+    report.build_notebook(root, output)
+    book = nbformat.read(output, as_version=4)
+    draft = nbformat.v4.new_markdown_cell(
+        "### Phase 3 Fix 4\n\nDraft for review; not executed.",
+        metadata={report._DRAFT_TAG: True}, id="plan19-phase3-fix4-draft")
+    book.cells.append(draft)
+    nbformat.write(book, output)
+    report.build_notebook(root, output)
+    refreshed = nbformat.read(output, as_version=4)
+    assert refreshed.cells[-1] == draft
+    assert refreshed.cells[-2].source.startswith("## Phase 3 Fix 3 Conclusion")
+    assert [c for c in refreshed.cells if not c.metadata.get(report._TAG)
+            and not c.metadata.get(report._DRAFT_TAG)] == previous.cells
+    assert sum(c.metadata.get(report._DRAFT_TAG, False) for c in refreshed.cells) == 1
+    alternate = tmp_path / "alternate.ipynb"
+    report.build_notebook(root, alternate, base_notebook=output)
+    assert nbformat.read(alternate, as_version=4).cells[-1] == draft
+
+
+def test_reward_plot_legends_are_concise_and_acquisition_axis_explicit(root, monkeypatch):
+    pilot(root)
+    snapshot = report.load_report(root)
+    monkeypatch.setattr(report, "_figure", lambda figure, description: figure)
+    reward = report._reward_figure(snapshot)
+    labels = [label for axis in reward.axes for label in axis.get_legend_handles_labels()[1]]
+    assert labels
+    assert all("e=" not in label and "r=" not in label for label in labels)
+    capability = report._capability_figure(snapshot)
+    assert all(axis.get_xlabel() == "Captured transitions" for axis in capability.axes)
+    reward.clear()
+    capability.clear()
+
+
+def training_metrics(values, *, origin=100):
+    return [{"event_id": index, "acquired_count": origin + acquired, "data": value - .5,
+             "total": 999., "path": "online" if index % 2 else "sleep",
+             "inner_steps": [{"inner_step": step, "data": value - .25 * (step - 1)}
+                             for step in (1, 2, 3)]}
+            for index, (acquired, value) in enumerate(values)]
+
+
+def test_training_nll_uses_first_step_data_equal_replica_weights_and_local_clock(root):
+    unit(root, "dataset", acquired_count=100)
+    pilot(root, seed=197101, fit_metrics=training_metrics([(1, 2.), (32, 4.), (33, 8.)]))
+    pilot(root, seed=197102, fit_metrics=training_metrics([(16, 9.), (64, 10.), (65, 6.)]))
+    pilot(root, condition=report.CONDITIONS[1], fit_metrics=training_metrics([(1, -2.)]))
+    curves = report.training_nll_curves(report.load_report(root))
+    assert curves[0]["condition"] == report.CONDITIONS[0]
+    points = curves[0]["points"]
+    assert [p["observations"] for p in points] == [16, 48, 80]
+    assert [p["mean"] for p in points] == [6., 9., 6.]
+    assert [p["events"] for p in points] == [3, 2, 1]
+    assert [p["replicas"] for p in points] == [2, 2, 1]
+    assert points[0]["window_start"] == 0 and points[0]["window_end"] == 32
+    assert curves[1]["points"][0]["mean"] == -2.
+
+
+def test_training_nll_no_missing_or_readiness_imputation(root):
+    pilot(root)
+    unit(root, "readiness", condition=report.CONDITIONS[0],
+         fit_metrics=training_metrics([(1, 1000.)]))
+    snapshot = report.load_report(root)
+    assert report.training_nll_curves(snapshot) == []
+    assert report._training_nll_figure(snapshot) is None
+    text = " ".join(o.get("text", "") + o.get("data", {}).get("text/plain", "")
+                    for o in report.result_outputs(snapshot))
+    assert "Online training NLL is unavailable" in text
+    assert "Held-out online NLL was not recorded" in text
+
+
+@pytest.mark.parametrize("defect", ["origin", "clock", "nonfinite", "missing_steps", "duplicate_event"])
+def test_training_nll_rejects_ambiguous_clock_or_invalid_metrics(root, defect):
+    if defect != "origin":
+        unit(root, "dataset", acquired_count=100)
+    metrics = training_metrics([(1, 2.), (2, 3.)])
+    if defect == "clock":
+        metrics[0]["acquired_count"] = 100
+    elif defect == "nonfinite":
+        metrics[0]["inner_steps"][0]["data"] = float("nan")
+    elif defect == "missing_steps":
+        del metrics[0]["inner_steps"]
+    elif defect == "duplicate_event":
+        metrics[1]["event_id"] = metrics[0]["event_id"]
+    pilot(root, fit_metrics=metrics)
+    with pytest.raises(shared.ArtifactError, match="nonfinite JSON|training NLL"):
+        report.training_nll_curves(report.load_report(root))
+
+
+def test_training_nll_plot_and_visible_notebook_limitations(root, tmp_path, monkeypatch):
+    unit(root, "dataset", acquired_count=100)
+    pilot(root, fit_metrics=training_metrics([(1, 4.), (64, 3.)]))
+    snapshot = report.load_report(root)
+    original = report._figure
+    monkeypatch.setattr(report, "_figure", lambda figure, description: figure)
+    figure = report._training_nll_figure(snapshot)
+    axis = figure.axes[0]
+    assert axis.get_xlabel() == "Newly captured training intervals"
+    assert axis.get_ylabel() == "Data-only joint NLL (lower is better)"
+    assert list(axis.lines[0].get_ydata()) == [4., 3.]
+    figure.clear()
+    monkeypatch.setattr(report, "_figure", original)
+    history(root)
+    output = tmp_path / "nll.ipynb"
+    report.build_notebook(root, output)
+    book = nbformat.read(output, as_version=4)
+    text = rendered(book)
+    assert "**Held-out online NLL was not recorded.**" in text
+    assert "different likelihood targets" in text.replace("\n", " ")
+    assert "regularizers are not" in text and "not necessarily better navigation" in text
+    assert "32-captured-interval windows" in text
+    assert sum("image/png" in o.get("data", {}) for c in book.cells for o in c.get("outputs", [])) == 3
+
+
+def test_capability_curve_averages_checkpoints_not_distinct_replica_counts(root, monkeypatch):
+    first = [panel(cp) for cp in ("initial", "midpoint", "final")]
+    second = copy.deepcopy(first)
+    first[1]["acquired_count"], second[1]["acquired_count"] = 320, 330
+    first[2]["acquired_count"], second[2]["acquired_count"] = 620, 630
+    second[1]["rows"][0]["success"] = True
+    first[2]["rows"][0]["success"] = True
+    pilot(root, seed=197101, evaluations=first)
+    pilot(root, seed=197102, evaluations=second)
+    monkeypatch.setattr(report, "_figure", lambda figure, description: figure)
+    figure = report._capability_figure(report.load_report(root))
+    line = figure.axes[0].lines[0]
+    assert list(line.get_xdata()) == [0, 325, 625]
+    assert list(line.get_ydata()) == [0, .5, .5]
+    figure.clear()
+
+
+def test_endpoint_collisions_use_recorded_terminal_reason(root):
+    row = episode()
+    row.pop("collision")
+    row["end_reason"] = "collision"
+    pilot(root, evaluations=[panel(), panel("final", rows=[row])])
+    endpoint = report.endpoint_rows(report.load_report(root))[0]
+    assert endpoint["Collisions"] == 1
+    assert endpoint["Timeouts"] == 0
 
 
 def test_missing_history_wrong_output_or_seal_fails_without_writes(root, tmp_path):

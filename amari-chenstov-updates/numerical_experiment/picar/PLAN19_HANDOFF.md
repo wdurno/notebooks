@@ -1,5 +1,565 @@
 # Plan 19 Handoff: Phase 3 Development
 
+## Latest: Fix 5 Conditional Likelihood And Signed-Square Rewards Agreed (2026-11-22)
+
+**Do not resume the old campaign or start a new experiment from this note.**
+Fix 4 is complete: its orchestration `COMPLETED` marker is present, status is
+`complete`, all four trajectories / two paired streams are sealed, and charged
+time is 70,871.7245 seconds / 19.6866 hours. Its final notebook was refreshed on
+2026-11-20. The older live-run and pause entries below are historical.
+
+The user requested a new repair draft to protect the agreed design during
+continued mathematical discussion, not implementation or GPU execution. They
+called it Fix 4; preserve that completed identifier and use **Phase 3 Fix 5**.
+The append-only section at the foot of `plan19.md` has explicit anchor
+`plan19-phase3-fix5`; the end of the old Fix 4 section points to it.
+
+Preserve these design decisions:
+- AWAC with refreshed one-step Bellman targets, Gaussian action coordinates,
+  small action-conditioned critics, and refreshed actor advantage weights.
+- Use the explicit frozen-reference conditional likelihood in Fix 5 section 5
+  for training data NLL, EWC Fisher and STM joint predictive KL. The user has
+  accepted this practical contract; the self-consistent-model efficiency proof
+  is deferred and is not an implementation gate.
+- All three learners use signed-square rewards: raw stage reward is
+  dt*(.01*q*abs(q)-.04) + b*abs(b), then divide by ten. Raw success/collision/
+  timeout bonuses are +100/-25/-1; encoded bonuses are +10/-2.5/-.1.
+  Keep the frozen six-example scorer unchanged. Calibrate advantage temperature
+  and critic variance in encoded units; rebuild compatible heads and Fisher.
+- Freeze Qwen/adapters, the input projector and LSTM/adapters after compatible
+  initialization. Only output/action and critic heads are tunable; use head-only
+  rank-one STM. The user now requests LTM EWC ranks 0, 3, 5, 10 using
+  low-rank-plus-diagonal representations; admission remains eviction-only.
+- Memoize the exact frozen history representation; history trimming, language,
+  controls, time and encoder identity must invalidate incompatible cache entries.
+- A-only appearance/steering, with modest continuous barrier-difficulty change,
+  not a return to the reliably blocked B endpoint. No LFU/adaptive pi/physical run.
+- Broader development-only replay/optimization/rank survey, then FD/ridge retention
+  calibration and fresh assessment with settings frozen. Development may learn
+  from the entire new A curriculum; it does not mean old-data-only calibration.
+- The draft proposes MC-Replay, TD-Replay and TD-FD controls, matched episode-end
+  admission, a 1,024-interval moderate-A path, two fresh paired replicas, and a
+  roughly 5--13-hour compute forecast after implementation. These specifics are
+  reviewable proposals, not authorized numerical settings or measured timings.
+- Keep the notebook concise and chronological, with live progress near the top,
+  held-out observed rewards/losses, replay age/reuse and update-time diagnostics,
+  top-down videos, immutable units and tested `--resume` semantics.
+
+**Theory is consolidated into one local framework.** Fix 5 sections 1--4
+define one conditional likelihood, its Fisher and efficient local estimate,
+an exact Gaussian Bellman example, and a sufficient score-equation criterion
+for a numerical solver to inherit MLE efficiency. The user's goal is local
+data-use efficiency, not global trajectory-wide MLE efficiency. The lengthy
+sequence of alternative formulations has been replaced. Section 5 is now the
+accepted operational contract, not an unresolved choice: differentiate only
+candidate parameters in the normalized conditional working likelihood.
+Hold the reference, targets and realized per-transition advantage weight fixed
+through every inner fit, Fisher integration and both FD endpoints. Do not
+recompute a weight from a newly sampled model action. The working actor uses
+covariance Gamma/w, distinct from the executed policy's Gamma. Integrate the
+critic part of the joint KL over the source working actor, preserving its
+candidate-parameter dependence when differentiating the FD objective.
+The twin-disagreement regularizer is outside data NLL/Fisher. EWC admits the
+LTM block only on retirement. The MC control has the same conditional family
+with encoded observed return as response and continuation offset zero.
+Refresh references only between local fits; retain snapshot identities and
+RNG state across resume. Do not implement total continuation derivatives or
+claim the abstract result proves this sequence achieves MLE efficiency.
+All theory remains in `plan19.md`; the mathematical overview is unchanged.
+
+**Low-rank plan:** prefer incremental thin SVD of old factor plus weighted
+fresh Fisher columns, returning discarded diagonal mass to the residual.
+Preserve the full represented diagonal/trace. Reuse `src/representations.py`
+quadratics/Woodbury solves; no production dense reconstruction. This is not
+Plan 18's exact dense recompression: old discarded correlations are lost.
+Profile small Gram versus thin SVD/QR, audit compression, and retain wider
+sketch/Frequent Directions/Lanczos as recorded fallbacks. Track the spectrum
+of L^T L (nonzero LL^T spectrum), trace share, residual/PSD integrity, operator
+and solve errors, timing and bytes. Distinguish EWC rank from STM LoRA rank.
+The main fresh TD-FD versus TD-Replay contrast shares a development-selected
+EWC rank; a small development rank comparison checks zero versus a shortlisted
+positive rank under both methods. No four-rank full online factorial is
+authorized. Reprice this survey in the resource pilot; the 5--13 h forecast
+is still provisional. No implementation or GPU execution has begun.
+
+## Latest: User Authorized Detached Fix 4 Completion (2026-11-20)
+
+The user requested the remaining experiment run in `tmux` so discussion of
+the next repair can proceed concurrently. Restarted the existing campaign in
+`plan19-fix4` with `--resume --clear-stop` and its recorded optional model
+override. CUDA, the 1,027-capture / 938-event checkpoint, finite parameters and
+Fisher, accepted-center equality, solver counts, retirement ledger, all 102
+frozen numerical source hashes and unchanged theory passed preflight.
+The recovery ledger starts from 13.1649 h against the same 28 h ceiling;
+approximately 544 GB was free. No scientific settings changed.
+
+Let the runner finish seed 198102 FD, then its matched control, audit/seal
+the campaign and refresh the notebook automatically. There is no automatic
+Phase 4 or physical operation. Status and checkpoint-boundary STOP commands
+remain available below. New buffer/capacity designs are discussion only and
+must not alter this frozen run. The pause record below is historical.
+
+Architecture clarification from the saved parameter inventory: the input
+projection is 2,053 -> 64 (2,048 Qwen channels plus four executed controls and
+elapsed time), not the backbone's visual projector. A single 64-input /
+64-hidden LSTM cell has 33,280 dense LTM coordinates plus 640 rank-one STM
+coordinates, total 33,920 excluding the separate input/output maps. Total
+STM is 55,021, of which 51,968 belongs to the final transformer block.
+Replay capacity is eight transitions with one replay draw per new fitting
+event, three steps on that selected pair. In the first sealed FD trajectory,
+626/1,781 fitted histories (35.15%) were never selected for replay afterward;
+they were still initially fitted and admitted to EWC upon retirement.
+
+## Latest: Paused For User Interim Review (2026-11-20)
+
+**Do not resume until requested.** The user interrupted the monitoring turn
+and requested an interim review. On inspection no tmux server or experiment
+GPU process remained; the parent heartbeat was stale, not a current running
+status. A STOP marker was placed to preserve the requested pause. Do not
+describe this absence as an acknowledged clean runner stop. No numerical
+traceback explains the earlier disappearance in the saved log.
+
+The third main trajectory (seed 198102 / FD),
+`units/trajectory-ddc969b05575`, has a verified committed checkpoint at
+**1,027 observations / 938 accepted events / 2,814 optimizer steps**, in
+checkpoint evaluation near nominal 1,024. Targets 0, 448 and 768 are complete;
+the 1,024 A panel was partially scored. Replay has eight eligible histories,
+no pending labels or ready updates, and 1,445 retired histories including
+initialization. Recovery seal, finite parameters and nonnegative Fisher,
+accepted-center equality, event counts, all 102 frozen source hashes and the
+unchanged theory passed the audit. The parent recovery charge is **13.1649 h**
+including its conservative 60-second unclean-recovery reserve; the last
+displayed heartbeat charge was 13.1482 h. Do not charge the inactive gap.
+
+Two of four main trajectories are sealed; nominal acquired training workload
+is 62.54% complete, with all setup/calibration done. Measured remaining FD
+time plus one full control suggests about **7--9 additional active hours**
+including closeout; the original 28 h cumulative ceiling remains unchanged.
+No automatic Phase 4 or physical operation is authorized.
+
+Interim artifact-only layout review of the completed seed-198101 pair:
+final A has eight clear and four blocked layouts. FD succeeds on four clear
+layouts and zero blocked layouts; control succeeds on none. Both B panels
+have twelve blocked layouts and zero successes for both methods. This is
+evidence of retained clear-path A behavior without demonstrated detour skill,
+not established robotics sample savings. A/B labels denote fixed test
+environments evaluated separately at every checkpoint, not segments of the
+smooth training curriculum. Current Fix 4 uses linear rewards only and
+diagonal-only LTM EWC in both learner conditions; signed-square results are
+historical Fix 3. The first-step training plot is not held-out loss: it is
+data-only new/replay NLL before each three-step fit, in 32-observation bins.
+Whole-episode overshoots and the final bin center explain x=2,064.
+
+## Latest: First Fix 4 Pair Sealed, Second Seed Running (2026-11-19)
+
+Both seed-198101 trajectories are complete. FD at
+`units/trajectory-a4860df2bfdb` captured 2,056 observations, accepted 1,781
+events, recorded 5,226 FD evaluations and nonzero first-step EWC influence in
+all events, with no pending updates or incomplete episode. Its active time
+was 14,805.347 s / 4.1126 h versus control 5.0225 h. Final successes are FD
+A 4/12, B-initial 0/12, B-final 0/12; control 0/12 in each environment.
+
+One-pair budget-averaged fixed-reference joint NLL differences (FD minus
+control) are A +.74465, B-initial -.55544, B-final -2.22989. No between-replica
+CI is estimable from one pair, and reference NLL is not navigation or sample
+savings. Retention accuracy and reference NLL do not tell the same story.
+FD/control total-time ratio .81883 is policy/history dependent: fit time per
+accepted event was about 1.647 s versus 1.583 s, while FD had shorter evaluation
+rollouts and more collision-ended training episodes. Do not infer a cheaper
+FD primitive from total time, or add overlapping component timers.
+
+The campaign admitted seed 198102 and runs FD first at
+`units/trajectory-ddc969b05575`, then its control, as frozen. Initial evaluation
+is underway. Cumulative active charge was approximately 11.2 h / 28 h at this
+milestone; consult committed progress for current values. The notebook is
+refreshed from the two sealed main units. Continue Fix 4 only; earlier
+milestones and pauses below are history, not a current stop request.
+
+## Latest: First Fix 4 Control Sealed, FD Started (2026-11-19)
+
+Main control seed 198101 is complete and immutable at
+`units/trajectory-1b1d7fd79434`: 2,053 captures (five over nominal), 1,898
+accepted events, 2,405 retired histories including initialization, zero FD
+evaluations, and nonzero first-step EWC influence in all 1,898 events. Active
+trajectory time is 18,081.021 s / 5.0225 h, inclusive of evaluations/scoring
+and checkpointing; overlapping component timers must not be added.
+All final A/B-initial/B-final panels have zero successes out of 12 each.
+This is a completed control result, not an FD efficacy conclusion.
+
+The same campaign automatically started the first positive-FD trajectory,
+seed 198101, at `units/trajectory-a4860df2bfdb`, with strength
+4498.478657338156 and ridge .1. Its initial evaluation is underway. The notebook
+has been refreshed with the sealed control curves and provisional active
+progress. There is not yet a complete paired result. Continue the authorized
+four-trajectory Fix 4 campaign under the existing 28 h cumulative ceiling;
+no Phase 4 or physical operation. Earlier pause counts below are history.
+
+## Latest: Fix 4 Resumed From Final-B Hold (2026-11-19)
+
+The user requested resumption after the second pause. Restarted the existing
+campaign in detached `plan19-fix4` tmux with `--resume --clear-stop` and its
+recorded optional model override. Preflight reverified the 1,787-capture /
+1,636-event checkpoint seal, accepted-center equality, finite parameters and
+nonnegative Fisher diagonal, retirement ledger, three-step counts, all 102
+frozen numerical source hashes and unchanged theory. PyTorch CUDA passed on
+the RTX 4070; approximately 545 GB was free. No numerical settings changed.
+
+Continue the saved final-B hold, including the ten ready updates and five
+pending-return intervals, then the final evaluation and remaining main runs.
+The cumulative allowance starts from 5.7929 h charged out of 28 h, not zero.
+Reuse sealed preparation/calibration. Monitor the notebook and committed
+progress; stop after Fix 4 closeout, without Phase 4 or physical operation.
+The pause entries below are historical, not current stop requests.
+
+## Latest: Fix 4 Paused Again At User Request (2026-11-19)
+
+**Stopped cleanly; wait for the next explicit resume request.** The STOP
+marker is retained, `plan19-fix4` has exited, and the GPU has no experiment
+compute process. The final `InterruptedError` in `runner.log` is the expected
+checkpoint-boundary stop. No Phase 4 or physical motion is authorized.
+
+The first main trajectory, **seed 198101 / Replay/EWC control**, is saved at
+**1,787 captured training intervals / 1,636 accepted events / 4,908 optimizer
+steps**, in the final-B hold (which starts at 1,664). It has 2,143 retired
+histories including the 515-record initializer, 18 eligible histories, five
+pending-return intervals and ten ready updates. An episode is in progress;
+the simulator, recurrent history, learner, optimizer and RNG states are saved.
+Do not discard or manually drain these queues during recovery.
+
+Checkpoints 0, 448, 768, 1,024 and 1,664 have complete three-environment task
+and fixed-reference evaluations. Actual acquisition boundaries are 0, 450,
+771, 1,032 and 1,667. The final 2,048 evaluation remains to be run. Zero of
+four main trajectories is sealed, so there is no complete FD/control pair.
+At the latest panel the control has zero successes in all three environments;
+these are interim control results, not a treatment conclusion.
+
+Charged active compute is **20,854.472 seconds / 5.7929 h** against the same
+28 h ceiling (22.2071 h remains). User pauses are excluded. Checkpoint seals,
+finite parameters and nonnegative Fisher diagonal, accepted-center equality,
+retirement ledger, three-step event counts, all 102 frozen numerical source
+hashes and unchanged theory passed the post-exit audit. The canonical notebook
+has been refreshed from scalar artifacts; no training was run by reporting.
+
+On a later authorized resume, use the existing `run --resume --clear-stop`
+command and the recorded optional model override, recreating detached tmux
+session `plan19-fix4` if desired. Current unit:
+`cache/numerical_experiment/picar/phase3/curriculum-fix4-v1/units/trajectory-1b1d7fd79434`.
+Reuse all sealed preparation/calibration and the partial trajectory. Frozen FD
+strength remains 4498.478657338156 / ridge .1, control FD=0 / ridge .1. Earlier
+resumption and pause entries below are historical.
+
+## Latest: Fix 4 Resumed After User Pause (2026-11-19)
+
+The user requested resumption. The existing campaign was restarted in detached
+`plan19-fix4` tmux with `--resume --clear-stop` and its recorded optional model
+override, without changing the scientific sources or selected settings.
+Preflight verified the sealed 517-capture / 463-event checkpoint, accepted
+parameter center, finite/nonnegative diagonal Fisher, retirement accounting,
+all 102 numerical source hashes and the unchanged theory notebook. Actual
+PyTorch CUDA execution passed on the RTX 4070; approximately 546 GB was free.
+The saved charge is 2.9522 h of the same 28 h ceiling, not a reset allowance.
+
+Continue the four main trajectories and close out Fix 4 only. Completed
+initialization, reference banks and calibration are reused. Preserve the
+partial episode and pending labels; monitor scalar progress and notebook
+updates. The pause record below is historical, not a current stop request.
+No physical operation or automatic Phase 4 is authorized.
+
+## Latest: User-Requested Fix 4 Pause (2026-11-19)
+
+**Stopped cleanly; do not resume until requested.** The checkpoint-boundary
+STOP was acknowledged, the `plan19-fix4` tmux runner exited, and NVIDIA reports
+no experiment compute process. The STOP marker is intentionally retained.
+The interruption traceback in `runner.log` is the expected stop acknowledgement,
+not a failed numerical update. No Phase 4 or physical motion is authorized.
+
+Saved first main trajectory: **seed 198101, Replay/EWC control**, 517 newly
+captured training intervals out of nominal 2,048, still in the blocking ramp.
+It has 463 accepted learning events / 1,389 optimizer steps; 970 retired
+histories (including the 515-record initializer), eight eligible histories,
+16 pending-return intervals, no ready updates, and an in-progress episode.
+The simulator, recurrent history, learner/optimizer and RNG state are saved.
+The initial and nominal-448 evaluations are complete (the latter at 450 actual
+captures), including all three fixed-reference banks. Zero of four main
+trajectories is sealed; shared preparation and calibration remain complete.
+Charged active compute is **10,628.005 seconds / 2.9522 hours** of the approved
+28-hour ceiling; this user pause is not compute time.
+
+After runner exit, the trusted checkpoint load verified its recovery seal,
+finite model parameters, unique/disjoint retirement ledger, accepted event and
+three-step counts, and all 102 frozen numerical source hashes. The current
+unit is `units/trajectory-1b1d7fd79434` under
+`cache/numerical_experiment/picar/phase3/curriculum-fix4-v1`.
+The canonical notebook was refreshed from saved scalar artifacts.
+
+For a later authorized restart, first check status and GPU availability, then
+use the existing `run --resume --clear-stop` command below with the same
+optional model override recorded in `orchestration/config.json`. A detached
+`plan19-fix4` tmux session may be recreated. Do not restart initialization,
+repeat completed calibration, discard the partial episode, change frozen
+settings, or launch duplicate runners. Earlier active-run entries are history.
+
+## Latest: Fix 4 Main Runs Started (2026-11-19)
+
+The three reference banks are sealed: A 147 usable histories / 155 captures,
+B initial 68 / 76, B final 53 / 61, each from eight complete episodes. No bank
+has a target shortfall or enters learning. The real STOP/resume test completed
+without restarting those collections. FD resolution passed at .005/.01/.02.
+The separate 128-interval timing run and three FD calibration runs completed,
+followed by the matched control on seed 198301. No extra ridge trial was needed.
+
+Frozen selection: **FD strength 4498.478657338156, ridge .1**, versus control
+FD=0/ridge=.1. This multiplier targets the probed FD/live-gradient norm ratio
+1; it is not a learning rate. All ordinary optimizer/exploration settings stay
+unchanged. The tiny two-layout A matching diagnostic passed relative to the
+control; this is not absolute retention, equivalence, or main efficacy evidence.
+
+Preparation charged 1.942 h before main admission. Measured forecast for all
+four main trajectories is **17.634--22.924 additional active hours**, or about
+**19.576--24.866 total**, below the approved 28-hour ceiling. Actual timing and
+artifacts, not this estimate, determine the remaining allowance. Main boundaries
+remain 0,128,768,1024,1664,2048; no ramp/hold was shortened. Seed 198101 runs
+Replay/EWC then FD; 198102 reverses order. The `plan19-fix4` tmux campaign and
+the same status/stop/resume commands below remain current. Do not launch a
+duplicate runner, Phase 4, or physical motion.
+
+Reporting-only additions compute paired budget-averaged fixed-reference risk
+and final task gaps from complete pairs. They retain the original normalized
+likelihood, and no samples-saved statistic is invented for flat task curves.
+Training-clock conversion can verify its 752-observation initialization offset
+from the full contiguous saved arrival ledger, rather than requiring a redundant
+summary field. The shared summary reader remains bounded at 128 MiB per summary
+and 512 MiB total here, with all seals/schema checks intact. These reporting
+changes are outside the 102 frozen numerical sources; all those hashes match.
+
+**Main reporting reload:** a clean checkpoint/resume at seed 198101/control,
+414 captures / 363 accepted events / 1,089 optimizer steps activated the tested
+reporting refinements in the long-lived Python process. The checkpoint passed
+its payload seal, finite-parameter and accepted-center checks, unique/disjoint
+retirement ledger checks, and exact event/step counts. It retained 870 retired
+histories, 28 eligible records and one pending-return interval at the saved
+boundary (verify live state rather than using these historical counts).
+No numerical source, selected hyperparameter, seed or curriculum changed.
+The same tmux session name and command resume the existing unit, not a new
+replica. This also exercises real-model recovery during ongoing learning.
+
+## Current: Fix 4 Authorized, Implementation Underway (2026-11-19)
+
+The user approved Phase 3 Fix 4 and a **28 additional active-hour ceiling**.
+The earlier draft-only and Fix 3 stop instructions below are historical.
+Implement/run `numerical_experiment.picar_curriculum_repair` under the separate
+`cache/numerical_experiment/picar/phase3/curriculum-fix4-v1` root. Preserve the
+completed Fix 3 artifacts and the theory notebook. The GPU was available at
+preflight, with about 509 GB free on the working disk. No physical motion or
+automatic Phase 4 is authorized. New CPU recovery/prediction tests and a
+bounded real-model pilot must pass before the four main trajectories.
+
+The staged simulator is opt-in (`staged_curriculum=True`); its default remains
+historical. Main stage boundaries are 0,128,768,1024,1664,2048. Compressed
+128-interval calibration runs are engineering/development diagnostics, never
+substitutes for the main slow curriculum or members of its paired outcomes.
+Fixed-reference data never enter fitting, replay, EWC or baseline updates.
+
+Implemented entry point (run from the checkout, using the user's venv):
+
+```bash
+~/.venv/bin/python -m numerical_experiment.picar_curriculum_repair status
+~/.venv/bin/python -m numerical_experiment.picar_curriculum_repair stop
+~/.venv/bin/python -u -m numerical_experiment.picar_curriculum_repair run \
+  --resume --clear-stop --model-path "$MODEL_PATH" --offline
+```
+
+Set `MODEL_PATH` to the **same explicit optional model override recorded in
+the orchestration configuration** for this local campaign. The default for a
+fresh campaign remains a pinned Hub download into the ignored project cache;
+no sibling-project software import is used. Do not start a second runner if
+one already owns the orchestration lock. The commands never move the physical
+robot. `--stage software`, `references`, or `calibration` provides bounded
+check-ins without sealing the whole campaign; later `--resume` continues the
+same identities. Reporting-only refresh uses the `report` command.
+
+Acceptance so far: eight deterministic trajectory/recovery tests, 27 control-
+plane tests, the standalone real-PyBullet CPU smoke (12 accepted events, all
+with first-step EWC influence, 21 FD evaluations), plus the bounded predictive
+and staged-simulator suites. The canonical software unit is running the
+combined acceptance suite before any new Qwen learning. Main trajectories have
+not started. Five minutes of prelaunch checks are conservatively charged once;
+subsequent runner wall time is charged continuously, with a 60-second recovery
+margin on the latest uncleanly interrupted heartbeat. User pauses are excluded.
+
+**Reporting-only restart (2026-11-19):** the eight-episode A reference bank
+produced 147 usable histories / 155 captures. This showed that main summaries
+could exceed the old 16 MiB reader limit. After a clean STOP while scoring the
+B-initial bank, the scalar reader now allows at most 128 MiB per sealed summary
+(configuration/other JSON still 16 MiB) and 512 MiB cumulatively for this report.
+All checksum, schema and nonfinite checks remain. Fifty-five shared/Fix 4
+reporting tests pass; all 102 frozen scientific source hashes still match.
+The same `plan19-fix4` tmux command resumed with `--resume --clear-stop` and
+the same optional model override; no initialization, completed bank or sampled
+episode was discarded. This is an operational reporting correction, not a
+change in the likelihood, model, curriculum, optimizer or treatment settings.
+Current scalar previews are provisional; complete paired results remain pending.
+
+## New Draft: Phase 3 Fix 4 (2026-11-19)
+
+The user requested a written repair for review, **not execution**. The new
+Fix 4 section in `plan19.md` proposes one persistent learner progressing
+through A hold, blockage-only ramp, B-initial hold, steering/texture ramp, and
+full-B learning. The provisional budget is 2,048 new intervals per trajectory,
+with a small pilot before freezing common stage lengths. Linear rewards are
+fixed; the main comparison explicitly restores positive FD versus the
+capacity-matched Replay/EWC control. Held-out NLL is required.
+
+The plan and a draft-only notebook introduction share the diagram in
+`docs/figures/plan19_phase3_fix4_transition.png`; regenerate it with
+`~/.venv/bin/python docs/plan19_fix4_diagram.py`. This is a documentation
+renderer, not implemented experimental scheduling. Fix 3 reporting preserves
+the tagged Fix 4 draft after its historical conclusion on refresh.
+The initial forecast is 16--26 additional active hours and the proposed hard
+ceiling is 28 hours, all awaiting user approval. Do not start implementation
+of the experiment, new GPU work, Phase 4 or physical motion from this draft.
+
+## Current: Fix 3 Complete And Stopped (2026-11-17)
+
+All four authorized pilots and both paired seeds are sealed; none was omitted.
+The GPU runner exited successfully and released its compute resources. **Do
+not resume learning, spend unused allowance, start Phase 4, or actuate the
+physical robot without a new request.** Earlier active/pause entries below
+are historical. Campaign: `cache/numerical_experiment/picar/phase3/reward-fix3-v1`.
+
+Charged runner compute is **28,578.719 seconds (7.9385 h)** against the approved
+twelve-hour ceiling; additional closeout checks are lightweight CPU work.
+The campaign occupies about 1.2 GiB. The notebook has been regenerated from
+sealed artifacts, with chronological Fix 3 results and a final conclusion.
+
+**Reporting follow-up (2026-11-19):** the user requested online training NLL
+trajectories, despite the intentionally changing sampling distributions. Plot
+first-inner-step data-only NLL from the sealed pilot metrics, with equal replica
+weights in 32-captured-interval windows and the 752-interval initialization
+offset removed. The reward recipes have different likelihood targets; held-out
+online NLL was not recorded. Record held-out NLL and actor/return components in
+the next authorized experiment, with explicit targets/conditioning and outputs
+sufficient for an audit. No new GPU work or Phase 4 is authorized by this
+reporting follow-up. Fixed A and B evaluations use the same frozen checkpoint,
+A then B, without learning between them; their differences are not texture-only.
+
+| Seed | Reward | Captured | A initial / mid / final | B initial / mid / final | Active min |
+|---|---|---:|---|---|---:|
+| 197101 | Linear | 620 | 5/20 / 5/20 / 5/20 | 0/10 / 0/10 / 0/10 | 66.73 |
+| 197101 | Signed square | 630 | 5/20 / 4/20 / 3/20 | 0/10 / 0/10 / 0/10 | 68.85 |
+| 197102 | Signed square | 622 | 5/20 / 2/20 / 5/20 | 0/10 / 0/10 / 0/10 | 64.63 |
+| 197102 | Linear | 625 | 5/20 / 0/20 / 4/20 | 0/10 / 0/10 / 0/10 | 78.56 |
+
+No hard-task acquisition is established, and neither recipe is ready for
+promotion. Mean final A success is 22.5% linear and 20% signed square, versus
+25% shared initialization. These are two development replicas, not significance
+or retention-equivalence evidence. Only 2/187 training episodes succeeded;
+successful-path coverage and the documented Qwen false-zero issue are plausible
+bottlenecks, not established causes. FD was off in both conditions, so this
+does not test an FD benefit or establish a sample-efficiency result.
+
+Closeout verified all 21 completed envelopes (20 units plus orchestration),
+20 distinct evaluation panels, reward arithmetic on 487 episodes / 5,305
+intervals, 20 videos, and 5,773 frame blobs. All 2,299 learning events have
+unique IDs and nonzero first-step EWC influence; optimizer/retirement counts
+match three steps per event and exactly-once admission. No score retries were
+needed. The 93-source numerical fingerprint, frozen theory snapshot and current
+user-updated theory notebook all pass their respective hash checks.
+The focused regression suite passes **317 tests**. Report-only fixes populate
+collision counts from saved end reasons and average success by checkpoint,
+including mean captured counts, rather than joining independent replicas.
+
+The operational resume wrapper, its exact source snapshot and its successful
+outcome receipt are preserved under `resume_provenance/`. The current theory
+notebook was not edited by this work. No mathematical treatment or hyperparameter
+was changed after launch. Completed resumption is verification only, not a way
+to extend this pilot. Discuss reward support, behavior and coverage before
+designing the next repair.
+
+## Current: Fix 3 Resumed (2026-11-17)
+
+The user explicitly requested continuation. Parent/child recovery hashes and
+all 17 sealed units passed preflight; the GPU was available. The run is active
+again through `numerical_experiment.picar_reward_resume` (exec session 25955),
+appending to the existing `reward-fix3-v1-run.log`. The original twelve-hour
+ceiling, saved seeds, numerical sources, prompt and comparison are unchanged.
+Finish the partial seed-197101 signed-square pilot, then seed 197102 in
+signed-square/linear order. The paused record below is historical.
+
+The ordinary command correctly refused resumption because the user committed
+new STM theory to `mathematical_overview.ipynb` while paused. No numerical
+source changed. The separately versioned operational wrapper recovers the
+exact original theory notebook from Git (`dd447dce15779ee4408037be48dd4729d01f8322`)
+into ignored `resume_provenance/`, verifies its frozen hash, and redirects
+only the campaign's theory-provenance reads to that snapshot. It does not
+replace the current notebook, fake a checksum, or relax other identity checks.
+Receipts record both document hashes, current Git state and wrapper hash.
+Seven CPU tests cover isolation, corruption, identity rejection and cleanup.
+The snapshot's bytes and the original 93-source fingerprint remain enforced.
+
+Subsequent restart command (the saved model-data override and cap are read
+from the original resolved configuration):
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_reward_resume \
+  --output cache/numerical_experiment/picar/phase3/reward-fix3-v1 \
+  --resume --clear-stop --offline
+```
+
+Use two CPU threads and CUDA as before. Stop via the original campaign's
+`stop` subcommand; it is the same checkpoint protocol. Do not launch a second
+writer. Phase 4 and physical robot motion remain deferred.
+
+## Current: Fix 3 Paused By User (2026-11-17)
+
+The user requested the node back. The checkpoint-boundary stop completed;
+the runner exited and `nvidia-smi` shows no compute process. **Do not resume
+until requested.** The expected `InterruptedError` at the end of the log is
+the deliberate stop, not a numerical failure. `STOP` remains in the campaign.
+
+Campaign: `cache/numerical_experiment/picar/phase3/reward-fix3-v1`.
+Charged additional active compute is **18,718.244 seconds (5.200 h)**, leaving
+**6.800 h** of the approved twelve-hour ceiling; idle time is not charged.
+Both reward-specific initializers/Fishers, both initial panels, and both
+readiness checks are sealed. Initial A/B success counts are 5/20 and 0/10 for
+each condition. Linear retained NLL pass five of sixteen; signed square
+retained pass nine of twelve.
+
+Seed 197101 linear is sealed (`pilot-b628efa4825a`): 620 captured transitions,
+A 5/20 -> 5/20 -> 5/20 and B 0/10 at every panel. Its first-step EWC proposal
+changed in all 568 recorded learning events. The corresponding signed-square
+pilot is paused at **544 captured transitions**, with initial/midpoint A/B
+panels fully scored. Its unfinished episode labels resume from their saved
+per-image cursor. Active unit: `units/pilot-b49beea18668`. Then finish the final
+panel and run seed 197102 in reversed order (signed square, then linear).
+Do not rerun a completed unit or treat the partial pilot as a final result.
+Approximately 2.5--3.5 further active hours are plausible; admission checks
+still enforce the original cap.
+
+Parent and child CURRENT manifests, progress/evidence files, and recovery
+payload hashes verified after exit; all **17 sealed units** validate. The
+active child journal sequence is 1875, commit
+`8c4aa5c702ac451ca0ad6429b9e3e6c0`. Scientific fingerprints remain unchanged.
+The focused suite passed 307 tests before the final report-only plot-label
+test; the reporting suite now passes 53 tests. The notebook was refreshed to
+show the pause and only sealed outcomes. Keep the small-visible-ball/zero-score
+qualification below. No prompt, numerical recipe, or learning scope changed.
+
+On explicit resumption, use the same optional model-data override recorded
+as `model_source` in `orchestration/config.json`:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_reward_repair run \
+  --output cache/numerical_experiment/picar/phase3/reward-fix3-v1 \
+  --max-hours 12 --resume --clear-stop \
+  --model-path <same-local-model-directory> --offline
+```
+
+Use the user's venv, two CPU threads, and actual CUDA access. Preserve/append
+the existing log rather than truncating it. A fresh reporting process picks up
+the report-only legend/import fixes; regenerate the canonical notebook at
+closeout. Phase 4 and physical robot motion remain unauthorized.
+
 ## Phase 3 Fix 3: Reward Repair (2026-11-17)
 
 Execution is authorized with **12 additional active compute hours**. The new

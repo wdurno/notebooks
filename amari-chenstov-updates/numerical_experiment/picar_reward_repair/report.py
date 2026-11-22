@@ -30,6 +30,7 @@ MAX_SCALAR_BYTES = 128 * 1024 * 1024
 MAX_HISTORY_BYTES = 64 * 1024 * 1024
 MAX_PREVIEW_CURVES = 64
 _TAG = "plan19_phase3_fix3"
+_DRAFT_TAG = "plan19_phase3_fix4_draft"
 _KINDS = {"reward_" + name for name in (
     "dataset", "references", "scoring", "fit", "bootstrap", "initial_evaluation", "readiness",
     "pilot", "campaign", "integrity", "provenance", "software", "audit")}
@@ -56,6 +57,13 @@ may be shared between online seeds; missing or unscored work remains pending.
 The evaluator is imperfect: a zero score is not proof that the ball is absent.
 Inspect the saved clips alongside reward curves, especially for small or
 partly occluded targets.
+
+The online training NLL plot uses data-only loss on the active new/replay
+batch, before its first optimizer step; EWC, ridge and FD penalties are excluded.
+Sampling distributions change, and the two reward recipes define different
+likelihood targets: their absolute NLL values are not a common performance
+scale. **Held-out online NLL was not recorded.** The initialization
+train/validation curves are a separate, stationary fitting diagnostic.
 """
 
 
@@ -494,6 +502,53 @@ def reward_curves(snapshot, *, grid=None, cumulative=False, coded=False):
     return curves
 
 
+def training_nll_curves(snapshot, *, window=32):
+    """Bin first-step data NLL by the actual acquisition clock, not replay age.
+
+    Average events within each replica/window, then give replicas equal weight.
+    The recorded initialization acquisition count removes the shared history
+    offset; neither initialization nor readiness fits enter these curves.
+    """
+    _require(type(window) is int and window > 0, "training NLL window must be a positive integer")
+    origin = _latest(snapshot, "dataset").get("acquired_count")
+    groups = {}
+    for unit in _units(snapshot, "pilot"):
+        summary = unit["summary"]
+        metrics = _rows(summary.get("fit_metrics"))
+        if not any("data" in row for row in metrics):
+            continue
+        _require(_count(origin), "training NLL requires the recorded initialization acquisition count")
+        replica = summary["settings"]["seed"]
+        condition = _condition(summary)
+        events = set()
+        for row in metrics:
+            steps = _rows(row.get("inner_steps"))
+            _require(_number(row.get("data")) and steps and steps[0].get("inner_step") == 1
+                     and _number(steps[0].get("data")), "training NLL requires finite first-step data loss")
+            event = row.get("event_id")
+            _require(_count(event) and event not in events, "training NLL requires unique event IDs")
+            events.add(event)
+            acquired = row.get("acquired_count")
+            _require(_count(acquired) and origin < acquired <= origin + summary["acquired_count"],
+                     "training NLL acquisition clock is outside the pilot")
+            index = (acquired - origin - 1) // window
+            groups.setdefault((condition, index), {}).setdefault(replica, []).append(steps[0]["data"])
+    curves = []
+    for condition in CONDITIONS:
+        points = []
+        for (source, index), replicas in sorted(groups.items()):
+            if source != condition:
+                continue
+            means = [sum(values) / len(values) for values in replicas.values()]
+            points.append({"observations": (index + .5) * window,
+                           "window_start": index * window, "window_end": (index + 1) * window,
+                           "mean": sum(means) / len(means), "replicas": len(means),
+                           "events": sum(len(values) for values in replicas.values())})
+        if points:
+            curves.append({"condition": condition, "points": points})
+    return curves
+
+
 def endpoint_rows(snapshot):
     panels = evaluation_panels(snapshot)
     rows = []
@@ -509,7 +564,10 @@ def endpoint_rows(snapshot):
         change = rate - sum(r["success"] for r in initial["rows"]) / len(initial["rows"]) if matched else None
         rows.append({"Method": _LABELS[condition], "Replica": item["replica"], "Task": "A" if panel["difficulty"] == "easy" else "B",
                      "Success / episodes": f"{sum(r['success'] for r in outcomes)} / {len(outcomes)}",
-                     "Collisions": sum(r["collision"] for r in outcomes) if all(type(r.get("collision")) is bool for r in outcomes) else None,
+                     "Collisions": (sum(r["end_reason"] == "collision" for r in outcomes)
+                                    if all(isinstance(r.get("end_reason"), str) for r in outcomes)
+                                    else sum(r["collision"] for r in outcomes)
+                                    if all(type(r.get("collision")) is bool for r in outcomes) else None),
                      "Timeouts": sum(r["end_reason"] in ("timeout", "deadline") for r in outcomes) if all(isinstance(r.get("end_reason"), str) for r in outcomes) else None,
                      "A change vs shared initial": change if panel["difficulty"] == "easy" else None,
                      "Raw earned / coded earned": f"{sum(sum(r['raw_stage_rewards']) for r in outcomes)/len(outcomes):.3g} / {sum(sum(r['stage_rewards']) for r in outcomes)/len(outcomes):.3g}",
@@ -576,8 +634,7 @@ def _reward_figure(snapshot):
         axis = axes[("easy", "hard").index(curve["difficulty"]), ("training", "held-out").index(curve["mode"])]
         points = curve["points"]
         if points:
-            counts = [(p["episodes"], p["replicas"]) for p in points]
-            label = f"{_LABELS[curve['condition']]} {curve['label']} (e={min(v[0] for v in counts)}--{max(v[0] for v in counts)}, r={min(v[1] for v in counts)}--{max(v[1] for v in counts)})"
+            label = f"{_LABELS[curve['condition']]} {curve['label']}"
             axis.plot([p["elapsed_s"] for p in points], [p["mean"] for p in points],
                       color=_COLORS[curve["condition"]], linestyle=styles[curve["label"]], label=label)
     for i, task in enumerate(("A", "B")):
@@ -585,7 +642,10 @@ def _reward_figure(snapshot):
             title = ("Clear / A-labeled" if i == 0 else "Blocked / B-labeled") + ": " + mode if j == 0 else task + ": " + mode
             axes[i, j].set(title=title, xlabel="Elapsed episode seconds", ylabel="Raw Qwen score (0--10)", ylim=(-.2, 10.2))
     _finish(axes.ravel())
-    return _figure(figure, "Scores stop at termination; equal replica weights after within-replica episode means. Legend e/r: contributing episodes/replicas (range over time). Continuous-curriculum training is stratified by its saved clear/blocked flag when no task label exists; these are not fixed A/B tests.")
+    for axis in axes.ravel():
+        if axis.get_legend_handles_labels()[0]:
+            axis.legend(fontsize=7, ncols=2)
+    return _figure(figure, "Scores stop at termination; equal replica weights after within-replica episode means. Contributing episode/replica counts can fall over time and remain available through reward_curves(). Continuous-curriculum training is stratified by its saved clear/blocked flag when no task label exists; these are not fixed A/B tests.")
 
 
 def _capability_figure(snapshot):
@@ -602,12 +662,16 @@ def _capability_figure(snapshot):
             for item in panels:
                 p = item["panel"]
                 if p["difficulty"] == domain and item["condition"] == condition:
-                    grouped.setdefault(p["acquired_count"], []).append(sum(r["success"] for r in p["rows"]) / len(p["rows"]))
+                    grouped.setdefault(p["checkpoint"], []).append((p["acquired_count"],
+                        sum(r["success"] for r in p["rows"]) / len(p["rows"])))
             if grouped:
-                axis.plot(sorted(grouped), [sum(grouped[x])/len(grouped[x]) for x in sorted(grouped)], "o-", color=_COLORS[condition], label=_LABELS[condition])
-        axis.set(title="A" if domain == "easy" else "B", xlabel="Incoming intervals", ylabel="Held-out success rate", ylim=(-.05, 1.05))
+                checkpoints = [grouped[c] for c in ("initial", "midpoint", "final") if c in grouped]
+                axis.plot([sum(p[0] for p in rows)/len(rows) for rows in checkpoints],
+                          [sum(p[1] for p in rows)/len(rows) for rows in checkpoints],
+                          "o-", color=_COLORS[condition], label=_LABELS[condition])
+        axis.set(title="A" if domain == "easy" else "B", xlabel="Captured transitions", ylabel="Held-out success rate", ylim=(-.05, 1.05))
     _finish(axes)
-    return _figure(figure, "Initial/midpoint/final task success; initial reference counted once per condition, not once per online seed. No significance inference.")
+    return _figure(figure, "Replica means at initial/midpoint/final checkpoints, including the mean captured count on the x axis; initial reference counted once per condition, not once per online seed. No significance inference.")
 
 
 def _initialization_figure(snapshot):
@@ -643,6 +707,35 @@ def _initialization_figure(snapshot):
                    + "Nested Fisher prefixes are sensitivity diagnostics, not independent uncertainty estimates; full teacher KL/selection/gradient diagnostics remain linked.")
 
 
+_TRAINING_NLL_NOTE = (
+    "Online training NLL only. Held-out online NLL was not recorded.\n"
+    "Nonoverlapping 32-captured-interval windows: event means, then equal replica weights; no confidence bands.\n"
+    "The x axis excludes initialization. Data loss is measured before the first optimizer step.\n"
+    "Active new/replay batches, online and sleep updates; regularizers are not included. All spikes retained.\n"
+    "Sampling distributions change and reward recipes use different likelihood targets.\n"
+    "Lower loss means better fitting of these training targets, not necessarily better navigation."
+)
+
+
+def _training_nll_figure(snapshot):
+    from matplotlib.figure import Figure
+
+    curves = training_nll_curves(snapshot)
+    if not curves:
+        return None
+    figure = Figure(figsize=(9, 3.5), layout="constrained")
+    axis = figure.subplots()
+    for curve in curves:
+        condition, points = curve["condition"], curve["points"]
+        axis.plot([p["observations"] for p in points], [p["mean"] for p in points],
+                  "o-", markersize=3, color=_COLORS[condition], label=_LABELS[condition])
+    axis.set(title="Online training: joint NLL", xlabel="Newly captured training intervals",
+             ylabel="Data-only joint NLL (lower is better)")
+    _finish((axis,))
+    axis.legend(fontsize=8)
+    return _figure(figure, _TRAINING_NLL_NOTE)
+
+
 def _links(snapshot, notebook_dir):
     links, clips, seen_clips = [], [], set()
     root = Path(snapshot["root"]).resolve()
@@ -674,6 +767,11 @@ def result_outputs(snapshot, *, notebook_dir=None):
     for figure in (_reward_figure(snapshot), _capability_figure(snapshot), _initialization_figure(snapshot)):
         if figure is not None:
             outputs.append(figure)
+    training = _training_nll_figure(snapshot)
+    if training is not None:
+        outputs.extend([training, _note(_TRAINING_NLL_NOTE)])
+    else:
+        outputs.append(_note("Online training NLL is unavailable in the sealed scalar artifacts. Held-out online NLL was not recorded."))
     preview = _fit_preview(snapshot)
     if preview:
         last = preview["curves"][-1]
@@ -689,7 +787,7 @@ def result_outputs(snapshot, *, notebook_dir=None):
     initializers = initialization_rows(snapshot)
     if initializers:
         outputs.append(_table(initializers))
-    outputs.append(_note("Raw/coded earned totals are undiscounted; start returns use physical-time discounting. Counterfactual reward arithmetic is not a counterfactual learned-policy rollout. Visual curves stop at termination; cumulative earned rewards stay flat thereafter. Missing train domains/windows are not inferred from test panels."))
+    outputs.append(_note("Success curves average replicas at each checkpoint, with mean captured counts on the x axis. Raw/coded earned totals are undiscounted; start returns use physical-time discounting. Counterfactual reward arithmetic is not a counterfactual learned-policy rollout. Score curves average surviving episodes within each replica, then give replicas equal weight; later points may have fewer examples. Visual curves stop at termination; cumulative earned rewards stay flat thereafter. Missing train domains/windows are not inferred from test panels."))
     outputs.append(_links(snapshot, notebook_dir or Path.cwd()))
     return outputs
 
@@ -755,7 +853,9 @@ def conclusion(snapshot):
     if not complete or not matched:
         guidance = "Defer recipe selection until matched paired A/B panels are complete. Missing or budget-omitted work is not evidence of inability to learn."
     elif not any(m["b_success_seeds"] for m in methods):
-        guidance = "Hard-task acquisition remains unestablished for both conditions. Neither is ready for promotion; review A retention and reward/coverage limitations before extending."
+        guidance = ("Hard-task acquisition remains unestablished for both conditions. "
+                    "**No demonstrated advantage of either reward recipe** was established in this two-seed development comparison; "
+                    "this is not evidence of equivalence. This control-only result does not rule out an FD benefit.")
     else:
         candidates = [m["name"] for m in methods if m["b_success_seeds"] and m["retained"]]
         guidance = ("Provisional follow-up candidates with B successes and no observed A decline: " + ", ".join(candidates) + "."
@@ -767,7 +867,10 @@ def conclusion(snapshot):
     if coverage:
         guidance = coverage + ". " + guidance
     status = "Complete development panels." if complete and matched else "Partial development results; unevaluated panels remain pending."
-    return ("## Phase 3 Fix 3 Conclusion\n\n" + f"{len(pilots)}/4 sealed pilot trajectories; {paired}/2 complete paired seeds. "
+    return ("## Phase 3 Fix 3 Conclusion\n\n"
+            "**Scope:** linear versus signed-square reward recipes, using capacity-matched Replay/EWC learners. "
+            "This is a reward comparison, not a test of FD-KL statistical efficiency.\n\n"
+            + f"{len(pilots)}/4 sealed pilot trajectories; {paired}/2 complete paired seeds. "
             + status + " Counts are successes/episodes; shared initial panels count once.\n\n"
             + "\n\n".join(outcomes) + "\n\n" + guidance
             + " FD was off: no FD benefit, significance, causal proof, sample-savings or retention-equivalence claim follows. "
@@ -779,7 +882,8 @@ def build_notebook(root, output, base_notebook=None):
 
     Defaults to ``campaign/history.ipynb``. Missing history fails clearly;
     callers may explicitly supply another saved notebook. Refreshes replace
-    only cells tagged by this report. Output publication is atomic.
+    this report's cells and preserve explicitly tagged subsequent Fix 4 drafts
+    after the Fix 3 conclusion. Output publication is atomic.
     """
     import nbformat
 
@@ -792,7 +896,12 @@ def build_notebook(root, output, base_notebook=None):
     _require(not any((p / "COMPLETED").exists() for p in output.resolve().parents), "output is inside a completed unit")
     book = nbformat.reads(shared._read(base, MAX_HISTORY_BYTES).decode("utf-8"), as_version=4)
     book = copy.deepcopy(book)
-    book.cells = [c for c in book.cells if not c.metadata.get(_TAG)]
+    drafts = {}
+    if output.is_file() and output.resolve() != base.resolve():
+        previous = nbformat.reads(shared._read(output, MAX_HISTORY_BYTES).decode("utf-8"), as_version=4)
+        drafts.update((c.id, copy.deepcopy(c)) for c in previous.cells if c.metadata.get(_DRAFT_TAG))
+    drafts.update((c.id, copy.deepcopy(c)) for c in book.cells if c.metadata.get(_DRAFT_TAG))
+    book.cells = [c for c in book.cells if not c.metadata.get(_TAG) and not c.metadata.get(_DRAFT_TAG)]
     code = ("from numerical_experiment.picar_reward_repair import report as reward_report\n"
             f"reward_snapshot = reward_report.load_report({str(campaign.resolve())!r})\n")
     bootstrap = (
@@ -814,6 +923,7 @@ def build_notebook(root, output, base_notebook=None):
         cell.id = f"plan19-phase3-fix3-{index}"
         cell.metadata[_TAG] = True
     book.cells.extend(section)
+    book.cells.extend(drafts.values())
     nbformat.validate(book)
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=".reward-report-", suffix=".ipynb", dir=output.parent)

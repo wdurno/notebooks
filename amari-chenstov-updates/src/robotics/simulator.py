@@ -19,7 +19,7 @@ from typing import Any
 
 from .actions import Calibration
 from .curriculum import LAYOUT_VERSION, sample_layout
-from .drift import drift_alpha, steering_gain
+from .drift import drift_alpha, staged_drift_alpha, steering_gain
 from .geometry import contact_terminal_event, in_success_region, target_geometry, terminal_event
 from .protocol import (
     CommandReceipt, Control, RewardComponents, RobotCommand, RobotObservation, StepResult,
@@ -48,6 +48,7 @@ class SimulatorConfig:
     curriculum_total_intervals: int = 320
     curriculum_exposure_override: float | None = None
     domain_override: str | None = None
+    staged_curriculum: bool = False
 
     def __post_init__(self) -> None:
         if type(self.task_version) is not str or self.task_version not in ("safe-stop-v1", "ball-contact-v1"):
@@ -80,13 +81,16 @@ class SimulatorConfig:
             raise ValueError("barrier bounds must fit the walls and enclose all path centers")
         object.__setattr__(self, "barrier_bounds", tuple(self.barrier_bounds))
         if (type(self.curriculum_total_intervals) is not int or self.curriculum_total_intervals <= 0
-                or (self.layout_version == LAYOUT_VERSION and .7 * self.curriculum_total_intervals < 200)):
+                or (self.layout_version == LAYOUT_VERSION and not self.staged_curriculum
+                    and .7 * self.curriculum_total_intervals < 200)):
             raise ValueError("curriculum ramp must span at least 200 intervals")
         if self.curriculum_exposure_override is not None and (
                 not math.isfinite(self.curriculum_exposure_override) or self.curriculum_exposure_override < 0):
             raise ValueError("curriculum override must be finite and nonnegative")
         if self.domain_override not in (None, "A", "B"):
             raise ValueError("domain_override must be A, B or None")
+        if type(self.staged_curriculum) is not bool:
+            raise ValueError("staged_curriculum must be boolean")
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> SimulatorConfig:
@@ -95,7 +99,7 @@ class SimulatorConfig:
         # Only these additive fields may be absent in historical snapshots.
         additive = {"task_version", "obstacle_enabled", "layout_version", "barrier_sigma_easy",
                     "barrier_sigma_hard", "barrier_bounds", "curriculum_total_intervals",
-                    "curriculum_exposure_override", "domain_override"}
+                    "curriculum_exposure_override", "domain_override", "staged_curriculum"}
         if value.keys() - names or (names - additive) - value.keys():
             raise ValueError("unsupported or incomplete simulator configuration")
         try:
@@ -290,9 +294,12 @@ class PyBulletBackend:
         p.changeDynamics(self.vehicle_id, -1, linearDamping=.02, angularDamping=.05, physicsClientId=cid)
 
     def _update_drift(self) -> None:
-        self.alpha = ({"A": 0., "B": 1.}[self.config.domain_override]
-                      if self.config.domain_override is not None
-                      else drift_alpha(self.exposure_intervals, self.config.total_training_intervals))
+        if self.config.domain_override is not None:
+            self.alpha = {"A": 0., "B": 1.}[self.config.domain_override]
+        elif self.config.staged_curriculum:
+            self.alpha = staged_drift_alpha(self.exposure_intervals, self.config.curriculum_total_intervals)
+        else:
+            self.alpha = drift_alpha(self.exposure_intervals, self.config.total_training_intervals)
         if self._last_alpha == self.alpha:
             return
         # Two procedural checker textures interpolate intensities, never geometry.
@@ -443,7 +450,9 @@ class PyBulletBackend:
              "wall_time_s": time.time(), "exposure_intervals": self.exposure_intervals,
              "acquisition_count": float(math.floor(self.exposure_intervals + 1e-9)),
              "fallback_ticks": float(self._fallback_ticks),
-             "accelerated": float(not self.config.realtime)},
+             "accelerated": float(not self.config.realtime),
+             **({"alpha": self.alpha, "steering_gain": steering_gain(self.alpha)}
+                if self.config.staged_curriculum else {})},
         )
 
     def step(self, action: Control | RobotCommand, *, training: bool = True) -> StepResult:

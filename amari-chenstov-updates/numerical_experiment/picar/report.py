@@ -30,6 +30,7 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "cache/numerical_experiment/picar"
 DEFAULT_NOTEBOOK = Path(__file__).with_name("plan19_results.ipynb")
 MAX_JSON_BYTES = 16 * 1024 * 1024
+MAX_SUMMARY_BYTES = 128 * 1024 * 1024
 MAX_METRIC_BYTES = 64 * 1024 * 1024
 PHASES = (
     "Implementation and acceptance", "Physical/resource readiness", "Bootstrap and student readiness",
@@ -69,14 +70,14 @@ def _read(path: Path, limit: int) -> bytes:
     return data
 
 
-def _json(path: Path) -> dict:
+def _json(path: Path, *, limit: int | None = None) -> dict:
     def invalid(value):
         raise ArtifactError(f"nonfinite JSON value in {path}: {value}")
     def finite_float(value):
         result = float(value)
         return result if math.isfinite(result) else invalid(value)
     try:
-        value = json.loads(_read(path, MAX_JSON_BYTES), parse_constant=invalid, parse_float=finite_float)
+        value = json.loads(_read(path, MAX_JSON_BYTES if limit is None else limit), parse_constant=invalid, parse_float=finite_float)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ArtifactError(f"invalid JSON artifact: {path}") from exc
     if not isinstance(value, dict):
@@ -101,7 +102,7 @@ def _phase_number(value):
 def _verify_seal(path, seal):
     if not isinstance(seal, dict) or "sha256" not in seal or "bytes" not in seal:
         raise ArtifactError(f"missing scalar artifact seal: {path}")
-    data = _read(path, MAX_METRIC_BYTES)
+    data = _read(path, MAX_SUMMARY_BYTES if path.name == "summary.json" else MAX_METRIC_BYTES)
     if len(data) != seal["bytes"] or hashlib.sha256(data).hexdigest() != seal["sha256"]:
         raise ArtifactError(f"scalar artifact hash/size mismatch: {path}")
 
@@ -146,7 +147,8 @@ def read_completed_unit(path: str | Path) -> dict[str, Any]:
     marker = _json(path / "COMPLETED")
     if marker.get("manifest_sha256") != hashlib.sha256(_read(path / "manifest.json", MAX_JSON_BYTES)).hexdigest():
         raise ArtifactError(f"completion marker/manifest hash mismatch: {path}")
-    stored_config, summary = _json(path / "config.json"), _json(path / "summary.json")
+    stored_config = _json(path / "config.json")
+    summary = _json(path / "summary.json", limit=MAX_SUMMARY_BYTES)
     config = stored_config.get("config", stored_config)
     canonical = json.dumps(stored_config, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if manifest.get("config_hash") != hashlib.sha256(canonical.encode()).hexdigest():

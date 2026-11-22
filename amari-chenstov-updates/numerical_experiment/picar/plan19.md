@@ -62,6 +62,39 @@ is re-scoring 659 unique stationary images before reward-compatible fitting.
 The canonical notebook contains current Fix 3 progress and preserves prior
 history. See the Fix 3 execution recipe and `PLAN19_HANDOFF.md` for restart.
 
+**User-requested pause (2026-11-17):** Fix 3 is now cleanly stopped and the GPU
+is released. One linear pilot is sealed; its paired signed-square pilot is
+checkpointed at 544 captured transitions. Both initializers, initial panels,
+and readiness checks are complete. The twelve-hour ledger is at 5.200 h.
+Do not resume until requested; the detailed pause record and restart command
+are below and in `PLAN19_HANDOFF.md`. Earlier status entries are historical.
+
+**Resumption update (2026-11-17):** the user requested continuation. Recovery
+checks pass. A separate operational wrapper pins the exact original theory
+snapshot, because the user added STM theory to the live notebook while paused.
+It preserves that update, records both document versions, and leaves numerical
+sources, run identity and settings unchanged. See the Fix 3 resumption record.
+
+**Fix 3 closeout (2026-11-17):** all four pilots are sealed and the GPU is
+released. Charged runner compute is 7.9385 h of the authorized twelve hours.
+Neither reward recipe established B success; final A success averaged 22.5%
+linear and 20% signed square, versus 25% initially. The notebook and detailed
+execution closeout below preserve the negative result and its qualifications.
+Phase 4 remains deferred; unused budget is not automatic authorization.
+
+**New draft (2026-11-19):** [Phase 3 Fix 4](#phase-3-fix-4-staged-a-to-b-learning-and-predictive-loss-2026-11-19)
+repairs the mismatched curriculum clocks, provides substantially more learning
+experience, restores the FD-versus-control comparison with linear rewards,
+and requires held-out NLL. Its matching transition diagram is also in the
+notebook. This is for review only; no Fix 4 compute is authorized.
+
+**Execution authorization (2026-11-19):** the user approved Phase 3 Fix 4 and
+its **28 additional active-hour ceiling**. Implementation, bounded acceptance,
+resource/retention calibration and both paired development seeds are now
+authorized. This supersedes the draft-only status above and within the
+original amendment; it does not authorize Phase 4 or physical robot motion.
+The 2,048-interval schedule remains provisional until the resource pilot.
+
 **Operating model:** Phase 0 uses Astra 6 Extra High for the numerical slice
 and Sol 6.1 Extra High for the surrounding implementation, integration, and
 operational tests. Prefer Sol as the coordinator, with bounded Astra
@@ -4373,6 +4406,603 @@ this diagnostic and inspect behavior alongside reward curves; do not retune
 the frozen evaluator mid-comparison. The gradual curriculum may still provide
 useful learning opportunities, so the authorized pilot continues unchanged.
 
+##### Fix 3 User-Requested Pause (2026-11-17)
+
+The checkpoint-boundary stop completed at 19:41 UTC. The runner exited and
+released CUDA; the trailing `InterruptedError` is the deliberate stop. Both
+initializers/Fishers, initial panels and live readiness checks are sealed.
+Signed square retained validation-best NLL pass nine of twelve. Its initial
+A/B success is also 5/20 and 0/10. Readiness projected 2.61--4.54 active hours
+for the four pilots, including the upper estimate's held-out scoring allowance.
+
+The seed-197101 linear pilot is sealed with 620 captured transitions: A was
+5/20 at initial, midpoint and final, while B remained 0/10 throughout.
+Its EWC term changed the first-step proposal in all 568 recorded learning
+events. The paired signed-square pilot is committed at 544 captured
+transitions, with initial/midpoint panels fully scored and an unfinished
+episode's reward-label cursor preserved. Finish it, then run seed 197102 in
+reversed condition order. No final outcome is inferred from the partial run.
+
+The active ledger is 18,718.244 seconds (5.200 h), leaving 6.800 h of the
+authorized ceiling; downtime does not count as compute. Parent/child recovery
+payloads and committed metadata hashes pass, as do all 17 completed-unit
+envelopes. Scientific hashes are unchanged. The expanded focused suite passed
+307 tests and the final reporting suite passes 53. The notebook is refreshed
+with a pause status, compact legends, explicit captured-transition labels,
+sealed outcomes and the evaluator limitation above.
+
+`STOP` remains present. Resume only upon a new request, with `--clear-stop
+--resume`, the same twelve-hour cap and the same recorded model-data override.
+See `PLAN19_HANDOFF.md`. Preserve the existing log when relaunching. There has
+been no prompt or numerical change, and no authorization to start Phase 4 or
+actuate the real robot.
+
+##### Fix 3 Resumption And Theory Provenance (2026-11-17)
+
+The user requested resumption. Parent/child committed payloads and metadata,
+all 17 sealed-unit envelopes, and scientific source hashes pass preflight.
+The original command refused the changed theory-document hash before GPU
+execution: the user had committed a new STM appendix, updated introduction
+and citations. The frozen numerical code and experimental settings did not
+change. This documentation update is not a reason to discard the saved pilot
+or adopt new theory partway through it.
+
+The separately versioned `numerical_experiment.picar_reward_resume` wrapper
+recovers the exact original notebook from Git into ignored run provenance,
+verifies its frozen hash and redirects only the campaign's theory-document
+reads to it. All other paths, configuration checks, source hashes and numerical
+functions remain unchanged. The current `mathematical_overview.ipynb` is not
+modified. An immutable operational receipt records both document hashes,
+the historical Git object, current Git state, wrapper hash and identity match;
+an outcome receipt records exit status and elapsed invocation time.
+
+Seven deterministic CPU tests pass, including numerical-source/other-identity
+rejection, corrupt snapshots, and restoration of normal paths after interruption.
+The same saved pilot resumes under the same twelve-hour ledger. Finish the
+seed-197101 signed-square condition, then the reversed seed-197102 pair.
+The wrapper's restart command is in `PLAN19_HANDOFF.md`. There is no changed
+mathematical treatment or permission to start Phase 4 or physical robot motion.
+
+##### Fix 3 Execution Closeout (2026-11-17)
+
+The authorized campaign is complete at
+`cache/numerical_experiment/picar/phase3/reward-fix3-v1`. Both seed pairs, both
+reward-compatible initializers/Fishers, initial panels, live readiness checks
+and all held-out reward scoring are sealed. No pilot was omitted or shortened.
+The runner exited successfully and released CUDA. Charged runner compute is
+28,578.719 seconds (7.9385 h), within the twelve-hour ceiling; final CPU-only
+verification/reporting adds a small closeout overhead. The artifact directory
+occupies about 1.2 GiB. The four pilots themselves used 4.646 active hours,
+slightly above readiness's 4.539-hour upper estimate.
+
+| Seed | Reward | Captured transitions | A initial / midpoint / final | B initial / midpoint / final | Active min |
+|---|---|---:|---|---|---:|
+| 197101 | Linear | 620 | 5/20 / 5/20 / 5/20 | 0/10 / 0/10 / 0/10 | 66.73 |
+| 197101 | Signed square | 630 | 5/20 / 4/20 / 3/20 | 0/10 / 0/10 / 0/10 | 68.85 |
+| 197102 | Signed square | 622 | 5/20 / 2/20 / 5/20 | 0/10 / 0/10 / 0/10 | 64.63 |
+| 197102 | Linear | 625 | 5/20 / 0/20 / 4/20 | 0/10 / 0/10 / 0/10 | 78.56 |
+
+**Observed result:** neither reward recipe demonstrated hard-task acquisition.
+Mean final A success is 22.5% linear and 20% signed square, versus 25% initially.
+Signed square did not produce a consistent capability benefit. These are two
+development trajectories per recipe, with shared initial panels, not fresh
+significance or retention-equivalence evidence. FD was off: no FD efficacy,
+causal transfer or sample-savings claim follows. Keep Phase 4 deferred.
+
+The saved training episodes contain only two successes out of 187 episodes.
+Together with the already recorded visible-ball/zero-Qwen-score example, this
+supports investigating successful-path coverage and reward support as possible
+bottlenecks; it does not identify the cause of failure. Linear initialization
+also did not establish a training plateau within its pass cap. Do not turn
+these limitations into a retrospective success criterion or a claim that the
+continual-learning machinery itself has been isolated and falsified.
+
+The final notebook contains three compact figure groups, endpoint/cost tables,
+video links and a conclusion. Visual review found that grouping success by
+each replica's slightly different captured count incorrectly joined independent
+replicas into a curve. The reporting-only correction now averages replicas
+at each initial/midpoint/final checkpoint, including mean captured count on
+the x axis. Collision counts use the recorded terminal reason. Scalar outcomes
+and frozen numerical sources are unchanged. Reward curves retain equal replica
+weights and explicitly note changing surviving-episode support.
+
+Acceptance passed 317 focused tests. Independent closeout checks validate all
+21 completed envelopes (20 units plus orchestration), 20 distinct evaluation
+panels, raw/coded reward and return arithmetic on 487 episodes / 5,305 intervals,
+20 videos, and 5,773 frame blobs. All 2,299 recorded learning events have unique
+IDs and nonzero first-step EWC influence. Optimizer and retirement counts match
+three steps per event and exactly-once evidence admission. There were no Qwen
+score retries. The numerical source fingerprint, original theory snapshot and
+unchanged user-updated theory notebook all pass their respective hash checks.
+The operational wrapper's source and successful outcome receipt are preserved;
+the theory update did not change this experiment's estimand or settings.
+
+Stop for review. Do not use unused allowance for additional learning or proceed
+to Phase 4 or physical robot motion without authorization.
+
+##### Fix 3 Reporting Addendum (2026-11-19)
+
+Plot the saved online training joint NLL as an additional artifact-only
+diagnostic. Use data-only loss before the first inner optimizer step on each
+active new/replay batch, excluding EWC, ridge and FD penalties. Include online
+and sleep learning events, subtract the recorded initialization acquisition
+offset, average within 32-captured-interval windows per replica, and then give
+replicas equal weight. Keep spikes; do not replace means with medians or hide
+unfavorable intervals. Sampling distributions change by design, and the two
+reward recipes define different likelihood targets, so absolute levels are not
+a common performance scale. **Held-out online NLL was not recorded**; stationary
+initialization-validation NLL must not be mislabeled as online held-out loss.
+These curves diagnose training fit, not sample savings or navigation success.
+
+For the next authorized learning experiment, record and plot held-out
+unregularized joint NLL and its actor/return components at evaluation
+checkpoints, with explicit conditioning, target, baseline and reward-unit
+definitions. Preserve sufficient predictive outputs to audit those likelihoods;
+a predicted mean return alone cannot reconstruct a categorical return NLL.
+Evaluation must remain isolated from learning, replay admission and EWC.
+This reporting addendum does not authorize new training or retrospective GPU
+scoring of the completed pilot.
+
+#### Phase 3 Fix 4: Staged A-To-B Learning And Predictive Loss (2026-11-19)
+
+**Motivation:** give one continually learning student a fair opportunity to
+acquire obstacle navigation, then carry that capability into changed steering
+and appearance. Fix 3 mostly compared reward recipes: neither demonstrated a
+success-rate advantage, both had FD off, and held-out online NLL was not
+recorded. Its retained A skill and falling training NLL are useful evidence,
+but not a test of the proposed FD sample-efficiency mechanism.
+
+Artifact review found a concrete curriculum mismatch. The barrier distribution
+reached B only at 80% of exposure, whereas B's texture/steering held from
+45--55% and then returned toward A. Learned parameters and memory did persist;
+the problem was **not** a model reset. The training environment nevertheless
+never settled at the complete B endpoint used for evaluation. A/B evaluation
+differences consequently cannot be attributed to texture alone.
+
+Repair this with two sequential smooth changes and explicit learning periods:
+first acquire concentrated-blockage navigation with A's steering/texture,
+then adapt that skill to B's steering/texture while blockage stays fixed.
+Give these stages more observations, not merely smaller shares of the old
+640-interval budget. Record training and held-out NLL so unsuccessful episodes
+can still reveal fitting progress. Fix 3's NLL spike near 200--250 followed its
+two rare successes and their large advantage weights; retain such spikes and
+diagnose them rather than treating every rise as failed learning.
+
+**Status and precedence:** draft for review, not execution authorization.
+Astra specifies this amendment; Sol implements, profiles, calibrates and
+executes it after approval. It supersedes the outward-and-return schedule
+only for a new Fix 4 campaign. Keep Fixes 1--3, their code identities, results
+and conclusions intact. Do not modify `mathematical_overview.ipynb`. Phase 4,
+physical robot operation, LFUs and adaptive $\pi$ remain outside this repair.
+
+##### 1. One Learner, Five Learning Stages
+
+![Draft continuous A-to-B training schedule](../../docs/figures/plan19_phase3_fix4_transition.png)
+
+The diagram shows actual proposed parameter settings, not measured results.
+The interval counts below are a **provisional 2,048-interval schedule** to
+profile and freeze before the paired development runs. Stationary initialization
+is separate and precedes interval zero.
+
+| New training intervals | Stage | Barrier placement | Steering / texture | Learning |
+|---|---|---|---|---|
+| 0--128 | A hold | Broad A distribution | A | Continues |
+| 128--768 | Blocking ramp | Smooth A to concentrated B | Remain A | Continues |
+| 768--1,024 | Initial-B hold | Concentrated B | Remain A | Continues |
+| 1,024--1,664 | Steering/texture ramp | Remains concentrated B | Smooth A to B | Continues |
+| 1,664--2,048 | Final-B hold | Concentrated B | B | Continues |
+
+Call the three fixed evaluation environments **A**, **B initial**, and
+**B final**. B initial is not a second initializer or a new student. A includes
+some blocked paths; it is not synonymous with an unobstructed layout. Distinguish
+these environments from the two learner conditions below, and distinguish
+"final A evaluation" (the final model tested on fixed A) from late training.
+
+Keep parameters, LTM/STM banks, optimizer state, replay, pending returns, EWC
+statistics and retirement accounting continuous across every stage boundary.
+Only ordinary episodic state resets between trials. Continue fitting new and
+replay data throughout both ramps and all holds; do not switch learning off
+upon entering B, reset memory, redistill, or train on an evaluation panel.
+
+##### 2. One Explicit Observation Clock
+
+Let $n$ count newly captured training intervals, excluding initialization,
+evaluation and repeated optimization exposures. Use
+
+$$
+S(r)=\begin{cases}
+0,&r\leq0,\\
+r^3(10-15r+6r^2),&0<r<1,\\
+1,&r\geq1,
+\end{cases}
+\quad
+u(n)=S\!\left(\frac{n-128}{640}\right),\qquad
+v(n)=S\!\left(\frac{n-1024}{640}\right).
+$$
+
+Set the barrier's pre-truncation lateral standard deviation and the remaining
+environment settings to
+
+$$
+\begin{aligned}
+\sigma(n)&=\exp\{[1-u(n)]\log(1.00)+u(n)\log(0.08)\}\ \mathrm m,\\
+\operatorname{steering\ gain}(n)&=1-0.35v(n),\\
+T(n)&=[1-v(n)]T_A+v(n)T_B.
+\end{aligned}
+$$
+
+Preserve the existing path-centered truncated barrier sampler, bounds,
+footprint-aware blockage diagnostic and policy-independent feasibility screen.
+Draw a new barrier only at an episode reset; do not move a physical obstacle
+mid-episode. Texture and steering use the current acquisition clock, not a
+second hidden episode counter. Record each reset's sampling settings and each
+interval's actual steering/texture progress. A boundary-spanning episode may
+retain its earlier barrier draw; do not label it a fresh endpoint-B draw.
+
+Both ramps have zero first and second derivatives at their boundaries. Once
+reached, each parameter stays at its new endpoint: **there is no return to A**.
+Smooth environment parameters support the intended local-drift setup but do
+not by themselves prove LAN or guarantee that the learner keeps pace.
+
+Freeze one schedule shared by all conditions before the main runs. Do not
+advance a method because it succeeds, hold another back because it fails, or
+let evaluation, sleep fitting, I/O or a disconnected client advance exposure.
+Finish the first complete training episode at or after the final observation
+budget, record any overshoot, and drain pending labels/updates. Do not reuse
+the old early-exit reserve to omit the final learning period.
+
+##### 3. Compare The Mechanism, Not Reward Recipes Again
+
+Use the frozen six-example Qwen evaluator and **linear** reward/return coding
+from Fix 3. Linear is a practical default after no demonstrated advantage from
+squaring, not a proven superior reward. Do not add a reward factorial.
+
+| Learner condition | Trainable capacity, replay and diagonal LTM EWC | STM finite-difference KL |
+|---|---|---|
+| Replay/EWC control | Identical LTM and STM banks | Off |
+| FD learner | Identical | Positive, development-calibrated strength |
+
+Reuse the verified linear-reward stationary initializer and its equal-weight
+four-draw Fisher, with explicit source/checkpoint hashes and unchanged likelihood
+units. It contains 515 training histories from 101 episodes and 65 validation
+histories from 12 disjoint episodes. Reuse the one-time distillation; do not
+collect new demonstrations, repeat distillation per condition, or import the
+signed-square Fisher. Audit compatibility and initial A capability; report
+the inherited unresolved linear training plateau rather than claim a global MLE.
+
+Start each trajectory from this same asset with fresh online replay and the
+initialization training records archived exactly once. Preserve the repaired
+three-step proximal solve, accepted-center scheduling, eviction-only Fisher
+admission, $\pi=.025$, numerical floors, network, action mapping and observation
+processing. Start from $\alpha=.001$, ridge $.1$, and exploration SD 4, held
+constant across the two conditions. Do not change temperature, exploration,
+architecture or optimizer step count as an undocumented rescue.
+
+Numerically recheck positive FD using the inherited stable finite-difference
+step and a small replay-age/gradient-ratio probe. Screen at most three positive
+strengths around the measured scale; report the historical strength as a
+reference, not an automatically valid optimum. Use a bounded independent
+development stream to select among them. Mandatory **development-only retention
+calibration** compares fixed-A success and predictive NLL; if necessary, test
+at most one additional ridge multiplier per method, with all choices recorded.
+This is sequential calibration, not a strength-by-ridge factorial.
+
+If retention cannot be matched within the allotted calibration, retain the
+best stable candidates and describe their A/B trade-off. Do not call a
+nonsignificant A gap proof of equivalence. Do not require the control to solve
+B before admitting the FD learner, or silently replace the comparison with
+another FD-off readiness study.
+
+##### 4. Resource Pilot, Then Paired Development
+
+Implement CPU tests first, then a short, separately identified paired timing
+pilot. A compressed pilot schedule may test boundary traversal and resource
+use, but it must be labeled an engineering diagnostic, not evidence that the
+full learning schedule is adequate. Also audit the full proposed schedule
+without model fitting: parameter curves, blockage rates and endpoint identity.
+
+Profile ordinary and FD learning, evaluator/predictive-scoring costs, label
+delay, completed updates per incoming interval, actor waits/fallbacks, VRAM
+and artifact bytes. Report actual episodes and fresh/usable observations in
+each stage. Inspect training NLL, returns, steering, and preselected videos
+for evidence that either transition is outrunning useful learning.
+
+Sol may select one common longer schedule after this pilot, within the
+approved compute allowance, and record the reason before the main runs.
+Keep each ramp at least 640 intervals and each B hold at least its proposed
+length. Do not shorten the final-B period to fit a misleading forecast. A
+stable negative pilot is informative, not an automatic stop or permission to
+drop FD. Material numerical defects require a separately recorded version.
+
+Then run two paired development seeds, **198101 and 198102**, with method order
+reversed for the second seed. Use separate named seeds for resource pilots,
+retention calibration, reference data, evaluation and numerical algorithms.
+Pair initial state, environment/exploration RNG policies and nominal observation
+schedule. Actual visited images and episode lengths may differ after actions
+diverge; do not claim identical on-policy data. Complete a pair before adding
+another. The pilots/calibration never enter the two-seed outcome summary.
+
+##### 5. Held-Out Loss And Task Capability
+
+Evaluate fixed A, B initial and B final throughout the same uninterrupted
+training trajectory. Proposed checkpoints are $n=0,448,768,1024,1664,2048$,
+at the first drained complete-episode boundary at or after each value. Record
+actual counts. A then B initial then B final are **evaluation order only**;
+the model must remain frozen across those panels. Evaluations have their own
+RNGs, and their histories/rewards never enter fitting, replay, EWC or an online
+baseline. They do not replace the intervening B training episodes.
+
+Use eight preselected layout seeds per environment at interim checkpoints,
+and twelve per environment at the final checkpoint. Reuse matched initial
+panels only when their entire policy/task/scoring identity matches; count a
+shared panel once. Report these as repeatedly inspected development panels,
+not a fresh confirmation study or hundreds of independent replicas.
+
+**Do not omit held-out NLL again.** Provide two explicitly different views:
+
+1. **Fixed-reference predictive NLL:** before main-run selection, collect and
+   seal a small independent reference bank for each environment using the
+   frozen initial student with the fixed exploration distribution. Target
+   at least 32 usable histories spanning at least eight complete episodes
+   per environment; cap acquisition at 256 intervals per environment and
+   report any shortfall. Save full causal histories, executed logits, complete
+   return/bin labels and pre-action baselines, then freeze them. No learner
+   optimizes on this bank. Evaluate the same records at every checkpoint,
+   with data-only joint NLL and separate actor/return-head components. All
+   conditions share the reference behavior and targets. This measures fit to
+   a fixed, off-policy reference distribution, not navigation success or
+   on-policy return prediction under an unchanged continuation policy.
+2. **Current-policy evaluation:** on the held-out rollout panels, save full
+   predictive outputs at decision time and score completed outcomes afterward.
+   Record categorical return NLL and the declared joint NLL with the exact
+   conditioning/normalizers; report deterministic-action conventions explicitly.
+   Scoring a policy's own chosen actions is not an imitation-accuracy test.
+   Keep these policy-dependent likelihoods separate from the common-reference
+   curves and from genuine task success/reward.
+
+Freeze the evaluation likelihood design, reference sampling and checkpoint
+rules before main outcomes. A predicted mean return is insufficient: preserve
+return logits, action means, labels, baselines, bin values, temperature and
+action covariance so every reported NLL can be recomputed. Keep penalty terms
+out of all predictive losses. Cache frozen-prefix features where exact and
+safe; never use caching to detach trainable paths during actual fitting.
+
+Also save success, collision, timeout, full linear rewards, completion time,
+actual training exposures, and interval-level progress. Plot training NLL as
+in the reporting addendum, including spikes. Link spikes to return/advantage
+weights, first/last inner-step losses and successful/replayed cohorts so that
+rare rewarding experience is not confused with global numerical failure.
+
+Use new/current-domain performance versus observations as the efficiency
+story, with A retention beside it. Compare paired budget-averaged curves and
+report compute multipliers. Only estimate samples saved where a common target
+is actually supported within the observed learning curves; show nonattainment
+and do not extrapolate through flat success curves. NLL progress is useful
+even without success, but fixed-reference NLL alone is not proof of better
+robot behavior. Two development seeds do not establish a powered efficacy result.
+
+##### 6. Readable Reporting And Reliable Execution
+
+Append **Phase 3 Fix 4** after Fix 3 in `plan19_results.ipynb`. Its introduction
+must state the mismatched-clock motivation, the extra learning opportunities,
+the restored FD comparison and the missing-held-out-NLL repair. Include the
+**same transition diagram** as this plan; regenerate it if the frozen stage
+lengths change. Clearly label a draft/provisional diagram versus measured
+results. Do not overwrite Fix 3 or manufacture Fix 4 result placeholders.
+
+Near the top, show one compact current-run summary: stage/within-stage
+observations, completed pairs, charged active time, remaining-time range and
+stop/resume state. Keep old progress tables historical, not competing current
+statuses. Use explicit labels: not applicable, not collected, stopped,
+superseded, and not yet run are different; do not reuse one generic pending
+label. During execution, refresh after sealed stages and about every fifteen
+minutes when new evidence exists.
+
+Keep the main new section concise: one schedule/progress figure, training
+and fixed-reference NLL curves, A/B-initial/B-final task/reward curves, a
+paired effect/retention table, a cost/data-count table and preselected video
+links. Put large diagnostics and per-event tables in linked artifacts. End
+with a plain-language account of what was learned, what remains uncertain,
+and whether observations were saved at additional compute cost.
+
+Implement a separate versioned campaign, provisionally
+`cache/numerical_experiment/picar/phase3/curriculum-fix4-v1`, with `--resume`,
+status/report and graceful stop. Freeze resolved stage settings, references,
+source/theory hashes and seeds. Persist actual exposure clock, pending labels,
+optimizer/RNGs, parameters, current/previous centers, replay/retirement ledger,
+simulation and recurrent episode state, evaluation/predictive-scoring cursors
+and cumulative timing transactionally. Do not duplicate a training event or
+advance the schedule after recovery. Completed artifacts remain immutable.
+Retain the project's default model download/cache and optional explicit model
+override; do not introduce sibling-project imports or hard-coded archive paths.
+
+Acceptance must cover exact A/B-initial/B-final endpoints; monotonic and smooth
+ramps; no return to A; learned-state continuity across every boundary;
+nonlearning evaluation; positive FD actually affecting gradients; first-step
+EWC use; fixed-reference label/conditioning identity; joint NLL decomposition
+and recomputation; paired seeds; and interruption during ramps, B learning,
+episode labeling, predictive scoring and checkpoint publication. Run a tiny
+CPU smoke and one bounded real-model readiness check before longer work.
+
+##### 7. Additional Wall-Clock Forecast And Exit
+
+Fix 3's four FD-off pilots cost **4.646 active hours for 2,497 captured
+intervals**, including their ordinary evaluations and reward scoring. Scaling
+that entire measured cost to four 2,048-interval trajectories gives about
+15.2 hours even before new FD and measurement costs; it is a rough anchor,
+not a certified forecast or a reusable per-observation constant. A single
+paired trajectory set is roughly 7--10 hours before shared preparation.
+
+| Work | Additional active wall-clock planning range |
+|---|---:|
+| Integrity, CPU/smoke acceptance and bounded CUDA readiness | 0.25--0.75 h |
+| Restore common linear initialization / Fisher and audit | 0.10--0.35 h |
+| Seal fixed-reference banks and predictive-scoring pipeline | 0.5--1.5 h |
+| Resource pilot and bounded FD/retention calibration | 1--3 h |
+| Two paired 2,048-interval runs, including FD and evaluations | 14--19 h |
+| Final notebook, integrity/data-count audit and closeout | 0.25--0.5 h |
+| **Approximate total, allowing forecast uncertainty** | **16--26 h** |
+
+Implementation labor is separate, provisionally 3--6 elapsed hours. Propose a
+**28-additional-active-hour hard ceiling**, subject to user approval; Fix 3's
+twelve-hour ceiling and unused allowance do not authorize this work. Publish
+a revised forecast after the resource pilot and before the main pairs. If
+the approved budget cannot fit the selected complete paired scope, seek an
+extension or agree to fewer complete pairs; do not silently shorten ramps,
+omit the final-B learning period, disable FD or drop held-out NLL.
+
+Bound the local working set and forecast frames/checkpoints/reference-bank
+growth before admission; archive to a user-supplied destination if needed,
+with checksum verification before pruning. Count initialization reuse,
+reference/evaluation observations, new usable training histories, repeated
+optimization exposures and active compute separately. Charge preparation,
+scoring and failed attempts; overlapping timers are not additive and user
+pauses are not compute. Keep the existing free-space reserve and publish a
+safe checkpoint if external storage disappears.
+
+**Exit:** an audited uninterrupted A-to-B-initial-to-B-final learner trajectory;
+paired FD/control development outcomes; training and held-out losses, rewards,
+retention and cost/data counts; immutable recoverable artifacts; and a succinct
+conclusion. Missing capability is not hidden, and a negative result is not
+permission for an unbounded rescue search. Sol may correct recorded software
+defects and continue within the approved contract without routine user review.
+Material scientific changes get a new version and an explicit notebook note.
+Stop for review after this repair; do not automatically launch Phase 4 or the
+physical robot. **This draft has not been authorized or executed.**
+
+##### Execution Record (2026-11-19)
+
+The user subsequently authorized this repair and its **28-additional-active-
+hour ceiling**; the draft-only statements above are retained as planning
+history. The separate `numerical_experiment.picar_curriculum_repair` package
+implements the approved staged curriculum, complete-episode budget handling,
+fixed-reference and current-policy predictive scoring, bounded positive-FD
+calibration, paired development and transactional recovery.
+
+Canonical software acceptance passed **182 CPU tests**, followed by a real
+PyBullet/tiny-model CPU smoke: 12 accepted learning events, first-step EWC
+influence in all 12, and 21 FD evaluations. Additional reporting checks remain
+separate from numerical acceptance. The runner snapshots 102 scientific
+source files and the unchanged theory notebook. The frozen six-example Qwen
+evaluator passed actual input/response parity before reference collection.
+The GPU campaign is running in `tmux` session `plan19-fix4`; this is execution
+in progress, not completed outcomes or authorization for Phase 4.
+
+The resource/calibration runs use a declared **128-interval compressed
+diagnostic schedule**; the four main trajectories retain the proposed 2,048-
+interval schedule. Calibration candidates target FD/live-gradient ratios
+of .01, .1 and 1 after the finite-difference resolution check. Match A
+success within one small development-panel episode and A fixed-reference NLL
+within .25 of the control, then select the lowest B-initial reference NLL.
+This is a deliberately bounded exploratory matching diagnostic, not a test
+of equivalence; an unmatched candidate is reported as a trade-off. At most
+one additional FD ridge multiplier (from .1 to 1) is tried if needed. The
+calibration/control runs share a separate seed and never enter main outcomes.
+
+Actual simulator acquisition cadence remains **one second per interval**;
+the likelihood/reward's nominal discount period remains .5 seconds. Keep
+these different quantities explicit when profiling. Reference banks target
+32 usable histories across at least eight episodes per environment, admitting
+only whole episodes that fit within the 256-interval cap and reporting
+shortfalls. Each learner's trajectory cost includes evaluations and scoring;
+shared preparation and the campaign's cumulative charge are reported
+separately. Full paired results and a measured forecast are not yet available.
+
+Stop/status/resume instructions are in `PLAN19_HANDOFF.md`. The results
+notebook preserves prior results and shows provisional active checkpoint
+previews separately from sealed paired outcomes. Its budget-averaged
+reference NLL is an average over observed sample budgets, not a direct claim
+of navigation improvement or samples saved. No model update or new GPU work
+occurs when the notebook is opened or refreshed.
+
+**Measured main-run admission:** preparation/calibration charged 1.942 h. The
+three positive FD multipliers were 44.9848, 449.848 and 4498.48, corresponding
+to probed live-gradient ratios .01, .1 and 1. The matched development selector
+chose **4498.478657338156 with ridge .1**; the control keeps FD=0/ridge=.1.
+No additional ridge candidate was required. This tiny-panel matching is not
+retention equivalence or evidence of absolute skill preservation. The pilot
+forecast for all four main runs is **17.634--22.924 additional active hours**,
+approximately **19.576--24.866 total**. Main seeds 198101 and 198102 now use
+the unchanged full schedule, reversing condition order for the second pair.
+The hard ceiling remains 28 h, not the upper forecast plus a new allowance.
+
+**User-requested pause (2026-11-19):** the runner stopped cleanly at a committed
+checkpoint and released the GPU. The first main control trajectory (seed
+198101) retains 517 captured training intervals, 463 accepted learning events
+and 1,389 optimizer steps, with its in-progress episode and pending labels
+preserved. Initial and nominal-448 evaluations, including common-reference
+predictive losses, are saved; the latter occurred at 450 actual captures.
+No main trajectory is complete yet. Cumulative active compute is 2.9522 h
+against the existing 28 h ceiling. Checkpoint integrity, retirement accounting
+and all frozen numerical source hashes passed verification. The notebook is
+refreshed; restart instructions are at the top of `PLAN19_HANDOFF.md`.
+Do not resume until requested; the pause does not authorize Phase 4.
+
+**Resumed after user request (2026-11-19):** verified the same saved checkpoint,
+all 102 numerical source hashes, unchanged theory, available storage and actual
+PyTorch CUDA operation. The detached `plan19-fix4` runner resumes the existing
+517-capture control trajectory and reuses sealed preparation. The active-time
+ledger continues from 2.9522 h under the original 28 h ceiling. No scientific
+settings or scope changed; Phase 4 remains unauthorized.
+
+**Second user-requested pause (2026-11-19):** stopped cleanly at 1,787 captured
+intervals / 1,636 accepted events / 4,908 optimizer steps on the first control
+trajectory, now in the final-B learning hold. All three-environment task and
+reference evaluations through nominal 1,664 are saved (actual boundary 1,667).
+The final evaluation and all FD trajectories remain pending; no complete
+method pair exists yet. The in-progress episode, pending labels and ready
+updates are preserved. Checkpoint/retirement integrity, accepted-center and
+finite-Fisher checks, all 102 numerical source hashes and unchanged theory
+passed verification. Cumulative active compute is **5.7929 h of 28 h**; the
+runner exited and released the GPU. The notebook and latest handoff notes
+are refreshed. Wait for a new resume request; do not launch Phase 4.
+
+**Resumed from final-B hold (2026-11-19):** at the user's request, reverified
+the saved 1,787-capture checkpoint, frozen numerical source/theory hashes,
+retirement and solver state, storage and actual PyTorch CUDA execution. The
+same detached campaign resumes its saved episode and queues with 5.7929 h
+already charged against 28 h. No initialization, calibration or scientific
+setting was replaced, and Phase 4 remains unauthorized.
+
+**First main control sealed (2026-11-19):** seed 198101 completed at 2,053
+captured intervals (five whole-episode overshoot), 1,898 accepted events,
+zero FD evaluations and nonzero first-step EWC influence in all events.
+Its inclusive active trajectory time was 5.0225 h. Final success is 0/12 in
+each fixed environment; retain these results without an efficacy claim.
+The same campaign has started the paired positive-FD trajectory with the
+frozen selected strength. Sealed control curves are in the notebook; this
+milestone is not completion of Fix 4 or authorization for Phase 4.
+
+**First main pair sealed (2026-11-19):** the positive-FD trajectory completed
+at 2,056 observations, 1,781 accepted events and 5,226 FD evaluations, with
+first-step EWC influence in every event and no unfinished learning. It took
+4.1126 active hours; final A success is 4/12 versus the control's 0/12, but
+both B panels remain 0/12 for both methods. The one-pair reference-NLL effects
+are recorded in the notebook without between-replica confidence intervals or
+sample-savings claims. The .8188 total-time multiplier is policy-dependent,
+not evidence that an FD update is intrinsically cheaper. Seed 198102 has
+started in reversed condition order, with cumulative charge about 11.2 h of
+28 h. This is still paired development, not fresh confirmation or Phase 4.
+
+**Detached continuation after interim review (2026-11-20):** the user requested
+the rest of Fix 4 continue in `plan19-fix4` tmux while discussing the next
+repair. Resumed the verified seed-198102 FD checkpoint at 1,027 observations /
+938 events, preserving the recovery charge of 13.1649 h against 28 h.
+All numerical source/theory hashes and actual CUDA checks passed. The runner
+will finish FD, run the final matched control and close out this campaign;
+the notebook retains its automatic progress/report updates. Replay and STM
+capacity concerns are for the next design, not changes to this frozen run.
+Phase 4 and physical operation remain unauthorized.
+
+**Fix 4 completion and next-design pointer (2026-11-22):** the campaign is
+sealed, with all four trajectories / two paired streams complete and 19.6866
+charged active hours. No worker or subsequent phase is required to finish it.
+The next repair is the append-only [Phase 3 Fix 5 draft](#plan19-phase3-fix5)
+at the foot of this file. The user referred to the new draft as Fix 4, but
+that identifier already belongs to this completed experiment; preserve its
+identity and use Fix 5 for the new AWAC/head-only design. Neither this pointer
+nor the new draft authorizes execution or physical robot operation.
+
 ### Phase 4: Sol Fresh Paired Learning
 
 #### Evaluation Reward Recording Requirement (2026-11-16)
@@ -4682,3 +5312,789 @@ validation of this exact combination.
 [lan]: https://www.cambridge.org/core/books/abs/asymptotic-statistics/local-asymptotic-normality/558B4798D5D70D9B1C3ABC15FAFE3BA7
 [openai-models]: https://developers.openai.com/api/docs/models
 [openai-selection]: https://learn.chatgpt.com/docs/model-selection
+
+<a id="plan19-phase3-fix5"></a>
+
+## Phase 3 Fix 5: Head-Only AWAC And Replay (Draft, 2026-11-22)
+
+**Status:** experimental design and provisional theory for review, not
+implementation/execution authorization. Astra refines the mathematical contract;
+Sol implements, validates, calibrates, and executes after approval. The completed
+Fix 4 and its artifacts retain their identity. This revision consolidates the
+earlier theoretical draft and adds the requested EWC ranks; it does not revise
+any completed result. The user has now settled two design choices: use the
+frozen-reference conditional likelihood for each local fit, consistently for
+training, EWC and STM KL; use signed-square rewards with divide-by-ten encoding
+in every learner condition. Sections 5 and 8 are the operational contract.
+The stronger efficiency results in sections 1--3 remain motivation, not a
+prerequisite proof or an instruction to implement a different likelihood.
+Leave `mathematical_overview.ipynb` unchanged.
+
+**Motivation:** Fix 4 preserved some easy-A behavior but did not establish
+blocked-path B acquisition or robotics sample savings. Its fixed observed-return
+labels cannot incorporate improving continuation estimates during replay.
+Freezing the initialized representation and training only small heads could
+make substantially more replay practical. Combine head-only AWAC, refreshed
+Bellman targets, useful repeated replay, and development calibration on a
+modestly changing A task before returning to blocked B.
+
+Archive representation is also worth revisiting. Plan 18's matched
+development comparison favored rank-64-plus-diagonal EWC over diagonal EWC
+under STM FD: mean novel risk was 2.2227 versus 2.3275, with better old-data
+retention, but approximately 3.83 times the online learning time. This
+motivates testing much smaller ranks here; it does not establish a universal
+representation benefit or an interaction specifically caused by FD.
+See [Plan 18, Phase 9E](../../mnist_experiment/plan18.md).
+
+### 1. One Local Statistical Model
+
+The objective is efficient use of observations acquired near each current
+population parameter, not a globally efficient fit to an entire changing
+history. At local time $t$, let $p_\theta(y\mid x)$ be one normalized conditional
+model, with current true parameter $\theta_t^\star$. Here $x$ contains the
+declared conditioning information and $y$ the modeled response. Write
+
+$$
+\ell_n(\theta)=\sum_{i=1}^n\log p_\theta(y_i\mid x_i),\qquad
+s_\theta=\nabla_\theta\log p_\theta,\qquad
+\mathcal I(\theta)=\mathbb E_\theta[s_\theta s_\theta^T].
+$$
+
+The data loss is $-\ell_n$, so its gradient has the project's convention
+$g=-s$. The expectation includes the local input sampling law. Conditional
+Fisher contributions and their LTM/STM blocks belong to this same model.
+
+Under a correctly specified regular local model, identifiable coordinates,
+adequate information, and the usual score CLT and Hessian convergence,
+
+$$
+\sqrt n(\widehat\theta_{\rm ML}-\theta_t^\star)
+\ \Rightarrow\ \mathcal N(0,\mathcal I(\theta_t^\star)^{-1}).
+$$
+
+Conditionally independent observations suffice. Sequential observations can
+also qualify when the correctly conditioned scores are martingale differences
+and the corresponding conditional CLT and information limit hold. Require
+local distribution drift to contribute $o_p(\sqrt n)$ to the accumulated score
+and $o_p(n)$ to its curvature over the local fitting window. These are explicit
+local assumptions, not consequences of visually smooth parameter motion.
+[Local asymptotic normality][lan]
+
+This is the statistical target inherited from the mathematical overview.
+Stale replay, finite solving, and a compressed archive introduce approximation
+error. Reusing observations improves the solve without increasing $n$.
+Inverse-information statements use identifiable coordinates; redundant
+LTM/STM adapter coordinates use the same Fisher's pullback.
+
+### 2. Bellman Recursion Within That Model
+
+Bellman recursion can specify the predictive mean of a likelihood. It need
+not introduce another unknown parameter. In a local fixed-policy example,
+let $q$ be the vector of state-action values, $P$ the known policy transition
+matrix, and $0\le\gamma<1$. Termination may make $P$ substochastic. Set
+
+$$
+B=I-\gamma P,\qquad
+r_{ij}\mid j\sim\mathcal N((Bq)_j,\sigma^2).
+$$
+
+This is a single normalized Gaussian model whose mean reward is
+$q-\gamma Pq$. Equivalently, a two-slot numerical expression
+$\ell(r;q,c)$ is evaluated at $c=q$: $\ell(r;q,q)$. The same value parameter
+appears on both sides of the Bellman equation.
+
+With $n_j>0$ independent observations at each pair, reward means $\bar r_j$, and
+$D_n=\operatorname{diag}(n_j/\sigma^2)$,
+
+$$
+\boxed{
+\widehat q_{\rm ML}=B^{-1}\bar r,\qquad
+\mathcal I_n=B^TD_nB,\qquad
+\operatorname{Cov}(\widehat q_{\rm ML})=\mathcal I_n^{-1}.
+}
+$$
+
+Repeated frozen-reference fits give
+
+$$
+q^{(j+1)}=\bar r+\gamma Pq^{(j)}
+\ \longrightarrow\ \widehat q_{\rm ML}.
+$$
+
+Thus a Bellman iteration can recover a classically efficient estimate from
+the **same acquired data**. For one state this reduces to
+$\widehat q=\bar r/(1-\gamma)$ and
+$\operatorname{Var}(\widehat q)=\sigma^2/[n(1-\gamma)^2]$.
+The repeated fitting steps are computation, not additional evidence.
+
+This is an exact constructive example derived here. Known $P$, Gaussian
+rewards, and unrestricted values make the result transparent; they are not
+claims about the robot. The general framework needs a normalized local model
+and a solver that approximates its local fit, not a literal tabular world model.
+
+### 3. When An RL Solver Inherits Local Efficiency
+
+The algorithm need not take the likelihood's ordinary gradient steps. Let
+$U_n(\theta)=0$ be its estimating equation. A sufficient local compatibility
+condition is
+
+$$
+U_n(\theta)=M_n(\theta)\nabla\ell_n(\theta)+o_p(\sqrt n),
+$$
+
+uniformly in the relevant local neighborhood, where $M_n$ and its inverse
+are bounded in probability. If a consistent approximate solution satisfies
+$U_n(\widetilde\theta)=o_p(\sqrt n)$, Taylor expansion of the likelihood score
+under section 1's assumptions gives
+
+$$
+\widetilde\theta-\widehat\theta_{\rm ML}=o_p(n^{-1/2}).
+$$
+
+It therefore inherits the local MLE limit. In section 2,
+$U_n(q)=D_n(\bar r-Bq)$ and
+$\nabla\ell_n(q)=B^TU_n(q)$, so compatibility is exact.
+
+This supplies the bridge: **a single statistical model, a Bellman-based
+numerical solve, and a criterion for preserving its statistical efficiency.**
+Equal-valued anchors alone do not establish that criterion. For an expression
+$\ell(x;\theta,\theta)$ the score is its total derivative; detaching the second
+argument is a solver choice, not a definition of its Fisher.
+
+AWAC is the agreed practical starting point: bootstrapped critic fitting and
+advantage-weighted policy regression. Its weighted actor projection and a
+restricted critic's TD fixed point do not automatically satisfy this
+compatibility condition for one joint likelihood. Establishing that stronger
+result is deferred. For this experiment the user accepts the frozen-reference
+conditional family in section 5 and empirical assessment of its sequence of
+local fits. This is a settled implementation choice, not a claim that the
+conditional family's Fisher equals the self-consistent model's Fisher.
+[AWAC][awac19]
+
+### 4. The Existing Memory Theory Applies Locally
+
+For the same predictive family and a nearby accepted reference $c$,
+
+$$
+D_{\rm KL}(p_c\|p_{c+u})
+=\tfrac12u^T\mathcal I(c)u+o(\|u\|^2).
+$$
+
+With the trainable implementation coordinates split into LTM and STM, the
+local continual-learning objective has the familiar form
+
+$$
+-\ell_{\rm buffered}(\theta)
++\frac{\omega}{2}(\theta_L-a)^TF_{\rm archive}(\theta_L-a)
++\lambda_{\rm FD}\sum_{i\in\mathcal B}a_i\,\mathcal K_{S,i}(\theta)
++R_{\rm ridge}(\theta).
+$$
+
+Here $a_i$ is the declared age weight and $\mathcal K_{S,i}$ the finite-difference
+predictive-KL sensitivity to an STM perturbation. All predictive KLs and the
+archive Fisher must come from the same declared likelihood. Archive center
+$a$ summarizes retired information; it is held fixed through the accepted
+numerical solve.
+
+Eviction alone admits an observation into the archive. Reducing STM
+sensitivity before eviction makes an LTM-only approximation more faithful;
+retaining useful LTM correlations can reduce a different source of archive
+error. These are exactly the two terms separated by the archive-fidelity
+bound in Appendix C of the mathematical overview.
+
+The efficient-MLE limit applies when the fit and retained information
+approximate that local likelihood to the required order. A finite-rank
+archive, stale data or persistent regularization can instead introduce bias.
+Measure acquisition, retention and compute to assess the practical balance;
+an inverse approximate Fisher is not by itself a measured efficiency result.
+In Fix 5 apply this geometry to the explicitly conditioned family below,
+holding its reference fixed throughout each fit and each KL comparison.
+
+### 5. Accepted Frozen-Reference Likelihood Contract
+
+**Decision:** implement the following conditional working likelihood, not the
+fully differentiated self-consistent Bellman likelihood. The reference is
+conditioning information for each local fit. This resolves the prior
+likelihood-to-solver ambiguity; Sol should implement and test this contract
+without reopening the deferred MLE-efficiency proof.
+
+An acquired transition is $(h,z,\widetilde r,h',\gamma,d)$ with causal history $h$,
+actual sampled action coordinates $z$, encoded observed reward $\widetilde r$,
+next history $h'$, physical-time discount $\gamma$, and task-terminal flag $d$.
+Put $\beta=\gamma(1-d)$. An infrastructure pause is not a terminal.
+The Gaussian action policy is $\varphi_\psi(z\mid h)=
+\mathcal N(\mu_\psi(h),\Gamma)$; use $\varphi$ to distinguish it from the
+archive adaptation weight $\pi$. All $Q$, $V$, advantages and critic targets
+below use the encoded reward units defined in section 8.
+
+At an accepted reference $c$, use small action-conditioned critics and a
+declared conservative target $Q_c^{\min}=\min(Q_{1,c},Q_{2,c})$:
+
+$$
+V_c(h)=\mathbb E_{Z\sim\varphi_{\psi_c}}Q_c^{\min}(h,Z),\quad
+y_c=\widetilde r+\beta V_c(h'),\quad
+w_c=\exp((Q_c^{\min}(h,z)-V_c(h))/\tau).
+$$
+
+Refresh both $y_c$ and $w_c$ when the numerical reference advances. During each
+inner fit hold the reference, weights, action-integration draws, selected
+batch, age weights, FD probes and archive fixed. One-step TD already supplies
+Bellman recursion; in TD($\lambda$) terminology it is TD(0). A target-network
+lag is an explicit solver setting, with measured value lag and policy motion.
+Record the actual actor and critic snapshot identities if their reference
+versions differ. Refresh only between accepted local fits; never refresh from
+inside an optimizer closure or a finite-difference endpoint evaluation.
+
+For one recorded transition define $D=(h,h',\beta,w_c,V_c)$, with its realized
+$w_c>0$ fixed, and $Q_\theta^{\rm av}=(Q_{1,\theta}+Q_{2,\theta})/2$. Use
+
+$$
+\boxed{
+p_{\theta;c}(Z,R\mid D)=
+\mathcal N(Z;\mu_\psi(h),\Gamma/w_c)\,
+\mathcal N(R;Q_\theta^{\rm av}(h,Z)-\beta V_c(h'),\sigma_Q^2).
+}
+$$
+
+The observed $R$ is $\widetilde r$. Integrating over $R$ and then $Z$ gives
+one. For MC-Replay use the same conditional family with $R=\widetilde G$,
+the complete encoded observed return, and continuation offset zero; its
+advantage weights still refresh from its frozen current critics. The two
+target definitions remain distinct experimental conditions.
+
+At fixed $D$, the data NLL is exactly
+
+$$
+-\log p_{\theta;c}(z,\widetilde r\mid D)=
+\tfrac{w_c}{2}\|z-\mu_\psi(h)\|_{\Gamma^{-1}}^2
++\frac{(y_c-Q_\theta^{\rm av}(h,z))^2}{2\sigma_Q^2}+K(D),
+$$
+
+where $K(D)$ includes both Gaussian normalizers. Keep these constants in
+reported NLL. Add $(Q_1-Q_2)^2/(8\sigma_Q^2)$ as a separate disagreement
+regularizer to recover the **mean** of the two Gaussian critic losses.
+Do not count it as data NLL, a second reward, or Fisher information.
+This implements the specified AWAC-style weighted actor and twin-critic
+regression. [AWAC][awac19]
+
+Fix positive $\Gamma,\sigma_Q^2,\tau$ after development. Any bounded-weight
+variant or weight normalization must be explicit, development-selected and
+used identically in the loss, Fisher and KL. Do not silently clip overflowing
+weights, recalculate them inside a fit, or replace them with batch averages.
+
+**One model, one derivative convention:** compute
+$s=\nabla_\theta\log p_{\theta;c}=-g$ at fixed $D$, fixed numerical response
+and action, and fixed $\Gamma,\sigma_Q^2$. No gradients flow through $c$,
+$w_c$, continuation targets or their action-integration draws, even when
+the reference and candidate have equal numerical values. For model-label
+integration, use the realized $w_c$ from the recorded transition: do not
+recompute it as a function of a newly sampled $Z$.
+
+With $J_\mu=\partial\mu_\psi(h)/\partial\theta$ and
+$J_Q(h,Z)=\partial Q_\theta^{\rm av}(h,Z)/\partial\theta$, the model Fisher is
+
+$$
+F_D(\theta)=
+J_\mu^T w_c\Gamma^{-1}J_\mu+
+\sigma_Q^{-2}\mathbb E_{Z\sim\mathcal N(\mu_\psi(h),\Gamma/w_c)}
+ [J_Q(h,Z)^TJ_Q(h,Z)].
+$$
+
+The cross term vanishes because the Gaussian reward residual has conditional
+mean zero given $Z$. Use the LTM block of this Fisher for archive admission;
+average per-transition contributions with the declared evidence weights.
+The working actor covariance is $\Gamma/w_c$, whereas the executed exploration
+policy uses $\Gamma$. These distributions must not be silently interchanged
+in Fisher or KL integration. Numerical integration draws are not observations.
+
+For two candidates $u,v$ with the **same frozen $D$**, use the joint KL
+
+$$
+\begin{aligned}
+\mathcal K_D(u,v)
+&=\tfrac12\|\mu_u(h)-\mu_v(h)\|_{w_c\Gamma^{-1}}^2\\
+&\quad+\frac{1}{2\sigma_Q^2}
+\mathbb E_{Z\sim\mathcal N(\mu_u(h),\Gamma/w_c)}
+ [(Q_u^{\rm av}(h,Z)-Q_v^{\rm av}(h,Z))^2].
+\end{aligned}
+$$
+
+Use this KL for the STM finite-difference penalty. The common continuation
+offset cancels. Integrate over the **source** working actor; evaluating only
+at the recorded action is not the same joint KL. Common seeded base draws
+may approximate the integral. When differentiating the FD objective, retain
+dependence on its candidate endpoints, including the source distribution
+through a reparameterized draw; detaching the reference does not detach the
+trainable actor or critics. Validate the small-perturbation KL curvature
+against this same score Fisher.
+
+At eviction evaluate the conditional Fisher at the accepted learner using
+the declared retirement reference, then admit it once. The archive retains
+that locally conditioned approximation; later teacher refreshes do not
+recompute retired inputs. Hold the archive and its anchor fixed inside each
+fit. Initialization uses the same likelihood and equal-weight initial data.
+
+This is an explicit normalized **working** likelihood, not an assertion that
+the real behavior data are sampled from it. Data-dependent weights, replay
+dependence and estimated references leave the stronger local-MLE equivalence
+unproved. Assess applied sample efficiency with paired replicas; do not turn
+the inverse working Fisher into an empirical sampling-covariance claim.
+The theoretical extension may be revisited after useful results, without
+blocking this now-specified experiment.
+
+### 6. Fast Low-Rank-Plus-Diagonal EWC
+
+Use $F_{\rm archive}=LL^T+\Lambda$ with $L\in\mathbb R^{p_L\times r}$,
+$\Lambda=\operatorname{diag}(\lambda)$, $\lambda\ge0$, and development
+candidates $r\in\{0,3,5,10\}$. This $r$ is **EWC rank**; STM LoRA rank remains
+one. Rank zero is the diagonal control. Ranks approximate the same LTM block
+of the same likelihood Fisher.
+
+**Preferred estimator: incremental thin SVD with a residual diagonal.**
+Reuse per-observation model-score or analytic Fisher factors already needed
+for archive admission. For example, a fixed-covariance Gaussian model supplies a factor
+$J^T\Sigma^{-1/2}$; only its LTM rows enter the LTM archive. For a joint model,
+use its full derived factorization, not an assumed sum of unrelated Fishers.
+Score-draw weights include their numerical integration normalization.
+Neither draw count nor factor column count represents additional observations.
+
+Suppose $GG^T$ is the new evictee Fisher estimate, and $\alpha,\beta\ge0$
+are the existing archive/fresh mixing coefficients. They are fixed by the
+declared evidence clock, not by the number of optimizer steps. Maintain the
+full represented diagonal $d=\operatorname{diag}(F_{\rm archive})$ and form
+
+$$
+A=[\,\sqrt\alpha L,\ \sqrt\beta G\,],\qquad
+d^+=\alpha d+\beta\,\operatorname{diag}(GG^T).
+$$
+
+For a thin SVD $A=U\Sigma V^T$, take
+
+$$
+\boxed{
+L^+=U_r\Sigma_r=AV_r,\qquad
+\lambda^+=d^+-\operatorname{diag}(L^+(L^+)^T).
+}
+$$
+
+Because truncation discards a PSD factor contribution,
+$\lambda^+\ge\alpha\lambda\ge0$ in exact arithmetic. Thus the update preserves
+the full diagonal and trace while retaining up to $r$ correlated directions.
+For $r=0$ it is exactly the diagonal update. Initialization averages all
+initial observations equally; no initial $\pi$ half-life is introduced.
+Incremental SVD supplies the numerical precedent; this residual-diagonal
+archive construction and its audit are our specified approximation.
+[Brand, thin SVD updates][thin-svd19]
+
+If $G$ has $m$ columns, only a $p_L\times(r+m)$ factor is decomposed. Start
+with bounded chunks of fresh columns and benchmark thin SVD against a
+symmetrized FP64 Gram decomposition of $A^TA$. In the latter,
+$L^+=AV_r$ avoids dividing by tiny singular values. Thin QR followed by SVD
+of its small triangular factor is the stability fallback when the Gram
+method loses weak directions. Nominal direct costs are
+$O(p_L(r+m)^2+(r+m)^3)$ rather than a dense $p_L$-dimensional eigenproblem.
+All methods must use identical factor weights and truncation decisions for
+the equivalence audit. Profile CPU/GPU transfer-inclusive timings.
+
+This is a streaming approximation, not the exact top eigenspace of the full
+historical Fisher: directions already absorbed into $\Lambda$ are not
+recovered by later small SVDs. Do not call it equivalent to Plan 18's dense
+recompression. Record chunk order/size; truncation can depend on them.
+Use development snapshots to audit this loss. If it is material, first try
+a modestly wider internal sketch with the same applied ranks and account
+for its cost. Frequent Directions is a bounded-memory fallback with covariance
+error guarantees; call it "Frequent Directions" in full to avoid confusing it
+with the STM FD penalty. The legacy Lanczos operator path remains a fallback
+if the actual head dimension/factor width makes it competitive, not the
+default. [Frequent Directions][frequent-directions19]
+
+The existing `src/representations.py` already implements factor-plus-diagonal
+quadratics, products and Woodbury solves. Use it rather than reconstructing a
+dense matrix each fitting step:
+
+$$
+u^TF_{\rm archive}u=\|L^Tu\|^2+\sum_j\lambda_j u_j^2.
+$$
+
+Penalty and gradient evaluation cost $O(p_Lr+p_L)$. For a damped/proximal
+solve, factor the small Woodbury system once per unchanged archive and damping
+coefficient; apply it repeatedly during the inner solve. Setup costs
+$O(p_Lr^2+r^3)$ and subsequent applications $O(p_Lr+r^2)$.
+This requires a strictly positive diagonal after damping. Recompute when
+its inputs change and preserve the accepted-center EWC utilization tested in
+Fix 2. Re-centering and natural-parameter updates must use the represented
+operator, not diagonal-only formulas silently left in place.
+
+**Health and cost diagnostics, kept compact in the notebook:**
+
+| Diagnostic | Meaning and inexpensive calculation |
+|---|---|
+| Eigenvalues of $LL^T$ | Nonzero eigenvalues of $L^TL$, at most ten; these are not the full archive's eigenvalues |
+| Correlated trace fraction | $\|L\|_F^2/\sum_j d_j$; undefined for a zero-trace archive |
+| Retained spectrum and rank | Sorted eigenvalue trajectories, realized rank, leading share and spectral gaps |
+| Compression loss | Fresh-factor tail trace and largest discarded squared singular value; a local truncation diagnostic, not global Fisher error |
+| Diagonal/PSD integrity | Diagonal and trace error, minimum residual, and negative residual mass **before** roundoff correction |
+| Predictive fidelity | Sampled operator/solve error against the uncompressed update at audit snapshots, including the realized LTM update direction; this measures current compression error, not all accumulated history loss |
+| Resource cost | Score/Jacobian generation, compression, solve setup/application, whole fitting time, end-to-end time and archive bytes |
+
+Use a small spectrum plot and a summary table rather than another wall of
+diagnostics. Check subspace stability with projectors/principal angles when
+spectral gaps support it; eigenvector sign flips are not failures. Diagnose
+the archive along actual displacements as well as its trace. A material
+negative residual is an error, not permission for silent PSD clipping.
+Detailed numerical audit records stay in artifacts.
+
+### 7. Development-Only Calibration And Evidence Accounting
+
+Development may learn from the entire new A curriculum, including new data,
+on dedicated development replicas. Separate held-out development episodes
+guide resource/rank choices and initial-A retention matching. They do not
+enter replay or EWC. Freeze settings before fresh assessment; keep development
+outcomes separate from confirmation outcomes.
+
+Each transition has a permanent ID and is acquired once. Report acquisition,
+reward readiness, replay draws, numerical integration and optimizer exposures
+separately. Only eviction admits its information to EWC, exactly once.
+Changing a Bellman reference updates the use of existing information; it
+neither collects a new observation nor refreshes retired raw data. LFUs remain
+outside this repair. The numerical model and accepted archive center remain
+fixed throughout each inner solve.
+
+### 8. Experimental Scope And Conditions To Preserve
+
+**Question:** with one initialized frozen representation and a small trainable
+head subspace, can refreshed Bellman learning and useful repeated replay improve
+A-task learning per acquired observation, and does the STM FD penalty add value
+at comparable initial-A retention and measured compute?
+
+Use three named learner conditions; do not call these environments A and B:
+
+| Learner | Critic fitting target | Actor/representation/replay resources | STM FD |
+|---|---|---|---|
+| MC-Replay | Complete observed discounted return | Matched head-only design and calibrated resource recipe | Off |
+| TD-Replay | Refreshed one-step AWAC Bellman target | Same | Off |
+| TD-FD | Same as TD-Replay | Same | Positive, development-calibrated |
+
+The main FD comparison is TD-FD versus TD-Replay. TD-Replay versus MC-Replay
+is the matched bootstrap control. An MC-plus-FD fourth arm is not needed for
+this bounded pilot and is not automatically authorized. The MC control is a
+new matched-head control, not a rerun of the historical categorical AWR code:
+it shares the action-conditioned critic architecture and critic-derived actor
+weight rule, changing the critic's target source. Report its behavior-policy
+return interpretation rather than claiming it evaluates the current policy
+exactly. Any proposal to change the actor rule as well must be separately named.
+
+For this first target-source comparison, use common full-episode reward-ready
+admission for all three learners so the MC arm is not silently given fewer
+optimization opportunities. Raw acquisitions retain their original timestamps.
+Targets may refresh and replay repeatedly between acquisitions; label readiness
+never creates new acquisitions. This intentionally forgoes TD's potential
+earlier-update advantage. A reward-ready, immediate-TD deployment variant can
+be considered later, not mixed into this contrast without being labelled.
+
+Keep Gaussian exploration and the seven-logit-to-four-control mapping, the
+frozen six-example Qwen evaluator, physical-time discounts, and maintained
+simulator/robot interfaces. Use the signed-square reward recipe below for
+**all three learners**, replacing the earlier linear default. This is a shared
+task definition, not another reward-treatment arm. No new reward-prompt contest,
+LFU, adaptive $\pi$, physical robot motion, or B-only evaluation/learning
+campaign is included. Begin with fixed $\pi=.025$; do not
+search it merely to rescue a negative result. EWC rank is selected from
+$\{0,3,5,10\}$ during development; observations enter it only at retirement.
+The main fresh FD contrast uses the **same selected EWC rank** for TD-FD and
+TD-Replay, and the MC control shares it. A different rank per method would
+compare tuned packages rather than isolate FD, so do not silently do that.
+
+**Trainable capacity:** output/action and critic heads only, with the same LTM
+and head-only rank-one STM layout in all arms. Freeze transformer weights and
+adapters, the input projector, and all LSTM weights/adapters. Keep a parameter
+inventory for the final architecture; do not reuse the historical 11,216-head
+count after replacing the old 161-bin return head. The two small Q heads need
+state-action interactions. Do not thaw earlier layers as an undocumented rescue.
+
+Cache final frozen history representations, keyed by exact raw/context/control
+history, remaining task time where applicable, preprocessing, encoder weights,
+and normalization identity. Replay trimming must change the cache key. Raw
+transitions remain available while eligible; do not retain frozen summaries
+of retired context as an uncharged extension of replay. Keep raw immutable
+artifacts for audit separate from scientifically eligible replay.
+
+#### Shared Signed-Square Reward And Encoding
+
+Use the existing Fix 3 signed-square arithmetic, with Qwen's returned score
+$q_i\in[0,10]$ and one-time terminal bonus $b_i\in\{0,10,-5,-1\}$:
+
+$$
+F(x)=x|x|,\qquad
+r_i^{\rm raw}=\Delta t_i[0.01F(q_i)-0.04]+F(b_i),\qquad
+\widetilde r_i=r_i^{\rm raw}/10,\qquad
+\gamma_i=.99^{\Delta t_i/.5}.
+$$
+
+Transform the dimensionless Qwen score and terminal bonus separately, before
+time integration. The $0.04$-per-second time cost stays unchanged in raw units.
+Do not square an already integrated reward or the combined score-plus-bonus.
+Contact is success, not an unsafe collision; apply its terminal bonus once.
+Keep the 20-second task horizon. External halts are not timeouts.
+
+| Terminal event | Raw signed-square bonus | Encoded bonus |
+|---|---:|---:|
+| Target contact | +100 | +10 |
+| Unsafe obstacle collision | -25 | -2.5 |
+| Task timeout | -1 | -0.1 |
+| Nonterminal interval | 0 | 0 |
+
+The fixed divisor ten is numerical encoding, not another tuned parameter.
+Store raw and encoded stage rewards and observed discounted returns.
+MC-Replay fits the encoded observed return $\widetilde G$; TD learners use
+$\widetilde r+\gamma(1-d)V_c(h')$. All critics, advantages, continuation
+estimates and losses use encoded units. The frozen Qwen prompt and its six
+reference answers stay in their original 0--10 score units.
+
+Calibrate the encoded advantage temperature $\widetilde\tau$ and critic
+standard deviation $\widetilde\sigma_Q$ on development, along with the
+planned FD/ridge retention calibration. If comparing raw versus encoded
+calculations, $Q^{\rm raw}=10\widetilde Q$,
+$\tau^{\rm raw}=10\widetilde\tau$, and
+$(\sigma_Q^{\rm raw})^2=100\widetilde\sigma_Q^2$; transform offsets and
+references consistently. Equivalent unit conversions preserve advantage
+weights and predictive KL. Reward-density NLL satisfies
+$\mathrm{NLL}_{\rm raw}=\mathrm{NLL}_{\rm encoded}+\log 10$
+per scalar response; label the units.
+Do not reuse historical linear-scale hyperparameters as calibrated settings.
+
+The new heads are continuous Gaussian critics. Reuse the underlying reward
+arithmetic, not the old 161-bin categorical head, its binning requirement, or
+its Fisher. Never clip learned TD targets to the old categorical support.
+Rebuild reward-compatible head initialization and the initial Fisher before
+online comparison, using the same encoded recipe for all three learners.
+
+This recipe emphasizes substantial scores relative to modest ones; it is not
+a proved cure for loitering. At maximum visibility, both visual reward and
+success increase tenfold relative to the old linear recipe. The maximum raw
+visual contribution is 20 over the episode versus a contact bonus of 100.
+Preserve success, collision, timeout, raw Qwen score and return diagnostics;
+the earlier Fix 3 comparison remains a result with no demonstrated advantage.
+
+### 9. A-Only Curriculum And Initialization
+
+Keep A texture and steering throughout. Start with the initial broad A barrier
+distribution, hold briefly, then continuously narrow it to a **moderate**
+difficulty that still permits some clear paths, and hold again. Use the existing
+smooth easing and episode-boundary placement rules; no abrupt reset to a harder
+distribution and no continuation to the reliably blocked B law.
+
+A provisional resource-pilot schedule is 128 acquisition intervals of initial
+A, 768 intervals of smooth change, and 128 intervals of moderate-A hold,
+total 1,024. Initial barrier sigma 1 m and a provisional moderate endpoint
+0.5 m are development proposals, not selected scientific settings. Inspect
+layout and navigation diagnostics before freezing them; never tune difficulty
+using fresh confirmation results. Stationary initialization is additional.
+All learners persist through the ramp without resetting weights or memory.
+
+Reuse compatible frozen representation/distillation assets and saved raw
+stationary-A initialization observations to avoid another Qwen collection job.
+Recompute signed-square encoded labels from saved raw scores, durations and
+terminal events. Refit compatible new heads, ground the critic using these
+observed returns, and validate any TD warm-up before rebuilding a shared
+initial Fisher. Use all
+initialization observations equally, without $\pi$ decay. Construct each rank
+candidate from the same ordered initial Fisher factors, with identical full
+diagonals and trace at that common state. Keep evidence weights, ridge and
+likelihood scales fixed for the representation audit. Check held-out
+initial capability, head-loss/optimization convergence and Fisher stability;
+do not declare a converged initialization merely because it ran for a chosen
+number of epochs. Preserve all historical assets; the new likelihood and head
+layout and reward recipe require a newly versioned initialization/Fisher,
+not an in-place edit or a transplant of a linear/categorical Fisher.
+
+The frozen representation may retain useful spatial information or may be a
+bottleneck. Diagnose this without automatically unfreezing it. Any request for
+more demonstrations or a different representation is a separately recorded
+design/budget change, not an autonomous expansion of this A-only pilot.
+
+### 10. Broader Development Survey And Bounded Fresh Assessment
+
+Sol should survey useful configurations rather than repeat the old two-episode,
+three-penalty scale check. Include EWC rank $r\in\{0,3,5,10\}$ alongside replay
+resources, with speed and applied quality both affecting selection. Use the
+following staged design, not a Cartesian product of every setting:
+
+1. **Cached-data screen:** numerical grounding, target refresh, batch timing,
+   head fitting stability, target/advantage ranges, and expected reuse. A
+   proposed starting capacity set is $C\in\{32,128,256\}$, replay batch sizes
+   $b\in\{8,32,64\}$ with $b\le C$, and one, two, or four resampling rounds
+   per acquisition. Early in a run, draw at most the available eligible count
+   without replacement; report actual counts. These are proposals for the
+   resource pilot, not a demand to evaluate every combination online. Compare
+   all four EWC ranks on the same cached Fisher factor stream and realized
+   update vectors, including penalty/solve time, compression error, and spectrum.
+   A common factor stream is an audit fixture, not a claim that separate
+   online policies will acquire identical data.
+2. **Shortlist online A pilots:** compare a small diverse set of promising
+   resource recipes on dedicated development streams, including stronger reuse
+   than the historical capacity-eight/single-draw baseline. Carry rank zero and
+   at least one numerically healthy positive rank into these pilots; a spectrum
+   alone cannot establish applied value. Compare a shortlisted positive rank
+   against zero in a small paired development comparison under both TD-FD and
+   TD-Replay, holding the replay recipe fixed. This checks whether the rank
+   effect accompanies FD without expanding all learners across every rank.
+   Survey actor/critic fitting rates, target update rate, advantage temperature,
+   exploration and
+   likelihood scale as needed, with an explicit finite candidate ledger.
+   Evaluate real observed return/success and initial-A retention, not only
+   small training or TD errors. Short paths are resource/viability screens,
+   not evidence of the full ramp's sample efficiency.
+3. **Full development curriculum and retention:** run shortlisted recipes
+   through the full moderate-A ramp on separate development seeds. Choose
+   common replay/architecture resources and a common EWC rank using the measured
+   quality/compute frontier, then calibrate method-specific FD/ridge retention
+   trade-offs on held-out development panels. Fix acquisition and replay-work
+   budgets for matched contrasts and report actual wall time; equal settings do
+   not imply equal compute. If rank effects differ by FD condition, retain that
+   development observation rather than silently selecting separate fresh ranks.
+   If the methods cannot be matched, preserve the frontier and label the failure;
+   do not call
+   a nonsignificant retention gap equivalence. Do not reuse development data
+   in the fresh outcome sample.
+4. **Freeze and assess:** a provisional small assessment uses two fresh paired
+   stream replicas, all three learners, 1,024 new intervals each. Share the
+   initialized checkpoint and exogenous layout/exploration seed streams, not
+   an impossible assertion that different policies see identical trajectories.
+   Preserve each trajectory. Start with a shared initial evaluation, then
+   midpoint and final fixed initial-A/moderate-A panels; provisional per-panel
+   counts are eight episodes at midpoint and sixteen at final. These counts
+   must be priced and frozen after profiling. This is a small assessment,
+   not a promised significance result; additional replicas need approval.
+   Confirmation tests the selected common-rank recipe. The rank survey itself
+   remains development evidence unless a separate fresh rank contrast is agreed.
+
+Keep the age function tied to the declared acquisition clock, with its horizon
+explicitly recorded. Plot first-fit and replay age weights plus visits before
+eviction. If the larger buffer still produces almost universal initial age
+saturation, revise the documented candidate capacity/horizon before freezing
+confirmation; do not silently change to a different time unit mid-run. Maintain
+adequate trajectory length for multiple turnovers of the selected buffer.
+
+Keep fitting targets, weights, selected replay batch, FD probes, and archive
+fixed across each inner solve. Multiple resampling/refresh rounds can use the
+same acquired data, accepting a new numerical reference between solves. Retain
+the verified curvature-aware EWC utilization and monitor solve residuals;
+neither a three-step convention nor larger batches prove sufficient solving.
+Account for every round as compute/exposure, never as new data or EWC admission.
+
+### 11. Reporting, Recovery, And Acceptance
+
+Append a concise chronological Fix 5 section to
+`numerical_experiment/picar/plan19_results.ipynb` when implementation begins;
+preserve historical sections and outputs. Its introduction must explain the
+observed-return limitation, cheaper frozen-head learning, stronger replay,
+A-only scope, the small EWC rank survey, the shared signed-square recipe and
+the explicitly frozen conditional likelihood. Distinguish this operational
+choice from the deferred stronger MLE-efficiency claim.
+Put clear execution progress near the top: completed versus planned units,
+active stage, acquisitions,
+accepted fits, charged hours, and measured remaining-work range. The notebook
+only reads artifacts and never performs training or silent repair.
+
+The main visual story should remain small:
+
+- Success and **observed** discounted-return trajectories on fixed initial-A
+  and moderate-A held-outs, with contributing episode/replica counts.
+  Label raw versus encoded reward units and preserve raw Qwen scores.
+- Training data loss and a common frozen-reference diagnostic, with the target
+  and conditioning written down. Separately show refreshed TD residuals and
+  critic calibration against realized evaluation returns. Different teacher
+  versions, target definitions, weight scales, or fitted variances do not
+  automatically produce comparable absolute NLLs.
+- A compact retention/acquisition/compute table and replay-health panel:
+  visits before eviction, fraction never replayed, age-weight saturation,
+  target lag, effective batch size, FD influence, and fitting time. Add the
+  compact EWC spectrum/trace/cost panel specified in section 6; show selected
+  EWC rank separately from the unchanged STM LoRA rank.
+- Preselected top-down/video examples spanning learning progress, including
+  failures. Save and plot evaluation rewards and sufficient prediction outputs;
+  do not repeat the earlier omission of held-out losses or rewards.
+
+Calculate acquired-sample equivalence/$S$ only if there is a supported common
+capability crossing with retention qualification. Do not extrapolate flat
+success curves or equate lower self-generated TD loss with samples saved.
+Bootstrap whole paired replicas for applicable exploratory uncertainty; two
+replicas and common initialization do not establish broad efficacy.
+
+Create a separate configuration/versioned campaign, provisionally
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v1`, and a tiny CPU smoke
+configuration. Keep runtime dependencies self-contained and model downloads
+pinned in this checkout's ignored cache by default; an explicit model path is
+only an optional reuse/offline override. Code belongs in this repository.
+
+Checkpoint current and target heads, optimizer/proximal state, reference/target
+refresh counters, raw transition IDs, replay and pending-label queues, cached
+feature identities, ages, actual target-action integration draws or RNG states,
+actor weights, FD probes, EWC factor/diagonal, compression chunk state and
+retirement ledger, simulator state, reward scorer cache, metrics and charged
+time. `--resume` must restore the same
+sub-transaction, including before/after refresh or eviction, without adding
+observations, changing teacher order, or reusing a stale hidden state. Reuse
+completed units by validated manifest; no repeated full notebook/video replay
+on every restart. Interruptible validation and final immutable completion
+seals remain mandatory. Do not require `tmux` for correctness; optionally use
+it if the user requests detached execution.
+
+Before online calibration, test the declared conditional likelihood's
+normalization and Gaussian constants, score sign, per-sample Fisher versus
+joint KL curvature, and frozen reference/weight behavior in fitting, model
+integration and FD endpoints. Check differentiation through the trainable
+source distribution in the joint KL, and exclude twin-disagreement curvature
+from the data Fisher. Also test signed-square event/time arithmetic,
+raw/encoded reward and advantage consistency, reward-variance rescaling,
+the exact Bellman-MLE example, terminal handling,
+age/reuse clocks, frozen-module invariance, cache identity, paired seeds,
+EWC utilization, and interruption/resumption equivalence. For each archive
+rank test PSD/diagonal/trace invariants, rank-zero equivalence, rank-deficient
+and repeated-eigenvalue cases, and products/solves against small dense
+references. Compare operators, not arbitrary eigenvector signs. Verify the
+archived diagonal is not double-counted when adding $LL^T$, and that
+compression changes neither acquisition counts nor information weights.
+Section 5 settles the operational model: do not substitute derivatives of the
+self-consistent likelihood or require its deferred efficiency proof to proceed.
+Sol may repair implementation defects after execution authorization and record
+material changes.
+
+### 12. Provisional Work Breakdown And Compute Forecast
+
+These are new planning estimates, not a reuse of Fix 4's measured runtime or
+28-hour allowance. The earlier millisecond head-fitting forecasts are
+unbenchmarked; the new critic, Fisher, FD and target refresh must be timed.
+Qwen reward scoring and evaluation may dominate even if fitting becomes cheap.
+The rank survey is staged within the proposed scope, not four copies of every
+online run. The 5--13-hour range below remains provisional: the new low-rank
+costs and paired development checks must be priced in 5B, and the forecast
+revised if they do not fit.
+
+| Sub-step | Deliverable | Provisional additional time |
+|---|---|---|
+| 5A: Sol implementation after execution authorization | Frozen-conditional head learner, signed-square encoding, tests, caching, recovery, compact report | 2--4 h engineering; not a GPU-run forecast |
+| 5B: Initialization and resource pilot | Shared initialization, all four EWC ranks, measured primitive and end-to-end costs | 0.25--1.5 active compute h |
+| 5C: Cached-data candidate survey | Stable replay/rank shortlist with spectrum and compression audits | 0.25--1 active compute h |
+| 5D: Online development and retention calibration | A-only learning, paired rank check, retention-qualified recipes | 2--5 active compute h |
+| 5E: Bounded fresh assessment | Two fresh paired streams, three learners, fixed settings and panels | 2--5 active compute h |
+| 5F: Integrity and closeout | Audit/seals, final notebook, handoff and qualified conclusion | 0.1--0.5 active compute h |
+
+The provisional sum is about **5--13 additional active compute hours**, plus
+implementation time, for this bounded scope. It is not execution authorization
+or a hard guarantee. Sub-step 5B must replace this with a measured forecast
+that separately prices scoring, fitting, initialization, replay/FD/Fisher,
+evaluation, checkpointing, and reporting before committing to long online runs.
+Removing B is a scope reduction, not a promised factor-of-two speedup.
+
+Do not require a positive development result or statistically significant
+sample saving to call the *approved scope* complete. Preserve failures, report
+whether more replay and Bellman updates actually improved applied learning,
+and state what remains unresolved. Do not automatically launch Phase 4, B,
+physical learning, a fourth learner arm, or a larger confirmation campaign.
+
+[awac19]: https://arxiv.org/abs/2006.09359
+[gae19]: https://arxiv.org/abs/1506.02438
+[thin-svd19]: https://www.merl.com/publications/docs/TR2006-059.pdf
+[frequent-directions19]: https://arxiv.org/abs/1501.01711

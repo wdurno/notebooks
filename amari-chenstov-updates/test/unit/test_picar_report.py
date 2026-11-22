@@ -94,6 +94,23 @@ def test_completed_unit_validates_nested_config_and_scalar_seals(tmp_path):
         report.read_completed_unit(path)
 
 
+def test_large_scalar_summaries_have_separate_bound_without_relaxing_seals(tmp_path, monkeypatch):
+    path = unit(tmp_path/"large-summary", summary_extra={"padding": "x"*2000})
+    monkeypatch.setattr(report, "MAX_JSON_BYTES", 1200)
+    monkeypatch.setattr(report, "MAX_SUMMARY_BYTES", 4096)
+    assert len(report.read_completed_unit(path)["summary"]["padding"]) == 2000
+    with pytest.raises(report.ArtifactError, match="size limit"):
+        report._json(path/"summary.json")
+    original = (path/"summary.json").read_text()
+    (path/"summary.json").write_text(original.replace("xxx", "yyy", 1))
+    with pytest.raises(report.ArtifactError, match="hash/size"):
+        report.read_completed_unit(path)
+    (path/"summary.json").write_text(original)
+    monkeypatch.setattr(report, "MAX_SUMMARY_BYTES", 1800)
+    with pytest.raises(report.ArtifactError, match="size limit"):
+        report.read_completed_unit(path)
+
+
 def test_unknown_manifest_and_incomplete_units_fail_clearly_without_repair(tmp_path):
     path = unit(tmp_path / "unit")
     value = json.loads((path / "manifest.json").read_text())

@@ -1,4 +1,4 @@
-"""Fix 3 reset geometry, independent of Bullet, policies and learning state.
+"""Reset geometry and optional Fix 4 staging, independent of Bullet and policies.
 
 Coordinates and dimensions match the historical simulator. Screening is a
 cheap conservative admission diagnostic, not a proof of dynamic reachability.
@@ -11,7 +11,7 @@ import math
 from statistics import NormalDist
 from typing import TYPE_CHECKING, Any, Iterable
 
-from .drift import smoothstep5, steering_gain
+from .drift import smoothstep5, staged_drift_alpha, steering_gain
 
 if TYPE_CHECKING:
     from .simulator import SimulatorConfig
@@ -28,12 +28,21 @@ MAX_LAYOUT_ATTEMPTS = 1024
 
 
 def barrier_sigma(exposure: float, config: SimulatorConfig) -> float:
-    """Log-scale quintic ramp: easy hold 0--10%, ramp 10--80%, hard hold."""
+    """Log-quintic blockage ramp; Fix 4 scales 128--768 by total / 2048."""
     if not math.isfinite(exposure) or exposure < 0:
         raise ValueError("curriculum exposure must be finite and nonnegative")
     actual = (exposure if config.curriculum_exposure_override is None
               else config.curriculum_exposure_override)
-    q = smoothstep5((actual / config.curriculum_total_intervals - .1) / .7)
+    if config.staged_curriculum:
+        total = config.curriculum_total_intervals
+        r = (actual - .0625 * total) / (.3125 * total)
+        q = smoothstep5(r) if r <= .5 else 1. - smoothstep5(1. - r)
+        if q == 0.:
+            return config.barrier_sigma_easy
+        if q == 1.:
+            return config.barrier_sigma_hard
+    else:
+        q = smoothstep5((actual / config.curriculum_total_intervals - .1) / .7)
     return math.exp((1 - q) * math.log(config.barrier_sigma_easy)
                     + q * math.log(config.barrier_sigma_hard))
 
@@ -168,8 +177,11 @@ def geometry_audit(config: SimulatorConfig, *, seeds: Iterable[int] = range(512)
     if not seeds or len(set(seeds)) != len(seeds):
         raise ValueError("audit seeds must be nonempty and unique")
     if exposures is None:
-        exposures = (fraction * config.curriculum_total_intervals
-                     for fraction in (0., .1, .25, .45, .6, .8, 1.))
+        exposures = ((fraction * config.curriculum_total_intervals
+                      for fraction in (0., .0625, .21875, .375, .5, .65625, .8125, 1.))
+                     if config.staged_curriculum else
+                     (fraction * config.curriculum_total_intervals
+                      for fraction in (0., .1, .25, .45, .6, .8, 1.)))
     exposures = tuple(exposures)
     if not exposures:
         raise ValueError("audit exposures must be nonempty")
@@ -192,6 +204,11 @@ def geometry_audit(config: SimulatorConfig, *, seeds: Iterable[int] = range(512)
                      "clear_fraction": 1 - blocked / len(layouts),
                      "lateral_histogram_counts": histogram,
                      "lateral_density_per_m": [count / (len(layouts) * bin_width) for count in histogram]})
+        if config.staged_curriculum:
+            alpha = ({"A": 0., "B": 1.}[config.domain_override]
+                     if config.domain_override is not None else
+                     staged_drift_alpha(exposure, config.curriculum_total_intervals))
+            rows[-1].update(alpha=alpha, steering_gain=steering_gain(alpha))
     return {"schema_version": 1, "settings": asdict(config), "seeds": list(seeds),
             "clearance_m": CLEARANCE_M, "lateral_histogram_edges_m": edges, "rows": rows,
             "early_clear_target": [.4, .6], "late_blocked_target": .9,
