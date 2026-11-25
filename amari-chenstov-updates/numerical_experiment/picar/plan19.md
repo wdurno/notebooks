@@ -5317,9 +5317,9 @@ validation of this exact combination.
 
 ## Phase 3 Fix 5: Head-Only AWAC And Replay (Draft, 2026-11-22)
 
-**Status:** experimental design and provisional theory for review, not
-implementation/execution authorization. Astra refines the mathematical contract;
-Sol implements, validates, calibrates, and executes after approval. The completed
+**Status:** the user authorized Sol to implement and execute Fix 5 on
+2026-11-22, including the accepted conditional likelihood and signed-square
+reward decisions below. The completed
 Fix 4 and its artifacts retain their identity. This revision consolidates the
 earlier theoretical draft and adds the requested EWC ranks; it does not revise
 any completed result. The user has now settled two design choices: use the
@@ -5329,6 +5329,26 @@ in every learner condition. Sections 5 and 8 are the operational contract.
 The stronger efficiency results in sections 1--3 remain motivation, not a
 prerequisite proof or an instruction to implement a different likelihood.
 Leave `mathematical_overview.ipynb` unchanged.
+
+**Execution opening (2026-11-22):** implementation is in
+`numerical_experiment/picar_head_awac`. CPU acceptance precedes actual frozen
+Qwen initialization and a short end-to-end resource pilot. Run from the project
+root with `~/.venv/bin/python -m numerical_experiment.picar_head_awac`;
+`--resume` restores partial work and `--clear-stop` acknowledges an intentional
+earlier stop. An explicit `--model-path` can reuse an available download; the
+default remains the project's pinned model download. The initial active
+compute ledger is capped at 13 hours, including profiling and calibration.
+The pilot must replace the forecast before the longer trajectories.
+
+The small critics initially use width-12 tanh hidden maps of the concatenated
+64-dimensional frozen state and seven action coordinates, with dense LTM
+and rank-one STM on each map. The actor starts from the existing distilled
+action map; its frozen representation is reused, not re-distilled. Initial
+critic fitting uses encoded observed returns and a whole-episode validation
+split. The first declared numerical variant bounds log advantage weights
+to $[-5,5]$, consistently in data NLL, Fisher and predictive KL, and records
+bound-hit rates. These are numerical implementation settings for calibration,
+not new acquired observations or established efficiency results.
 
 **Motivation:** Fix 4 preserved some easy-A behavior but did not establish
 blocked-path B acquisition or robotics sample savings. Its fixed observed-return
@@ -6093,6 +6113,300 @@ sample saving to call the *approved scope* complete. Preserve failures, report
 whether more replay and Bellman updates actually improved applied learning,
 and state what remains unresolved. Do not automatically launch Phase 4, B,
 physical learning, a fourth learner arm, or a larger confirmation campaign.
+
+### 13. Execution Review: Corrected Preflight (2026-11-22)
+
+Implementation and the short resource pilot are complete, not the full Fix 5
+experiment. The first pilot remains immutable under `head-awac-fix5-v1`.
+The corrected `head-awac-fix5-v2` campaign reuses verified compatible sealed
+initialization assets and is currently `profile_complete`. Its cumulative
+charge, including the first pilot, is **0.375 active compute hours**.
+
+Initialization reused **515 histories from 101 training episodes** and **65
+histories from 12 validation episodes**, with no new demonstrations. The
+critic's lowest recorded validation MSE occurred at epoch 6; those weights
+were restored, rather than the epoch-60 stopping weights. The initial Fisher
+uses all 515 training histories with equal weight and no adaptation decay.
+The rank-10 representation has trace 21.6766, correlated trace fraction
+0.8948, and no material negative diagonal residual. These diagnostics do not
+establish an optimal initialization or navigation capability.
+
+The first live pilot acquired **132 training intervals across 10 episodes**
+and **147 evaluation intervals**. Three-step cached fits were roughly 20 ms
+without FD and 60 ms with FD on the first CUDA-head implementation. Those
+first timings confounded rank and FD, so v2 replaces them with repeated
+rank-by-FD cached measurements, including retirement, and uses CPU heads with
+CUDA frozen-feature extraction and Qwen scoring. In the live pilot, fitting
+took 4.86 seconds and scoring 425.78 seconds; the complete pilot unit took
+921.73 seconds. Scoring, simulation and evaluation dominate, not head fitting.
+
+Runtime accounting now divides the complete pilot cost by **all 279 scored
+training/evaluation intervals**, giving about **3.304 seconds per interval**.
+The priced remaining scope is four short resource paths, five full
+development/calibration paths, and six fresh assessment paths with shared
+initial behavioral panels. This yields a central estimate of approximately
+**13 additional active hours**, with a wide pilot-derived range of
+**8.5--17.6 hours**. The proposed **16-hour cumulative cap** is pending the
+user's response; the existing 13-hour cap is not silently increased. No long
+online stage has started while that allocation is unsettled.
+
+Before v2 was frozen, implementation checks repaired episode-boundary resume
+scheduling, actual-versus-nominal acquisition reporting, resumed-unit charge
+accounting, and the numerical dependency fingerprint. Common initial-policy
+behavioral evaluations have explicit shared provenance; incompatible initial
+NLLs are omitted, not pooled. The short development survey covers different
+replay capacities/reuse, advantage temperatures, critic variances, exploration
+scales and fitting rates before the staged rank/FD and retention calibration.
+No new observations are counted for replay, model integration or profiling.
+
+The standalone `numerical_experiment.picar_head_resume` launcher restores
+recorded paths and tracks later approved compute contributions separately
+from the immutable scientific settings. Reporting exposes both nominal
+checkpoints and actual acquisition ranges when episodes finish naturally.
+The notebook contains initialization, feature-health and EWC diagnostics now;
+it does not present the resource pilot as evidence of FD or TD efficacy.
+
+**Allocation decision (2026-11-22):** the user approved **up to 16 cumulative
+active compute hours for the full scope**, including prior pilot charges.
+Resume the verified v2 campaign with `--max-hours 16`. This resolves the
+pending choice above without changing scientific settings or adding arms.
+
+**User-requested pause (2026-11-22):** the campaign stopped through its normal
+checkpoint/STOP path after 2.071 cumulative active hours. All four short
+resource recipes are sealed. The first full development path (TD replay,
+diagonal EWC, seed 199301) is saved at 562 acquired intervals, 1,972 accepted
+fits and 5,916 inner steps. No fresh assessment has started. Current episode
+state, labeling cursor, replay, retirement ledger, learner and RNG states are
+preserved; recovery checks and all 88 scientific source hashes pass. Resume
+only upon request with `numerical_experiment.picar_head_resume --resume
+--clear-stop --max-hours 16`. Full details are in `PLAN19_HANDOFF.md`.
+
+### 14. Measured Full-Path Forecast (2026-11-22)
+
+After the requested resumption, the first full rank-zero TD-replay development
+path completed at 1,034 actual incoming intervals across 98 training episodes.
+Its **1.48218 active hours** include both invocations; pause time is excluded.
+Eight nonshared evaluation episodes contributed a further 98 scored intervals.
+Fitting took 38.79 seconds and reward scoring 1,649.13 seconds. Other elapsed
+time includes collection, frozen-feature extraction/re-encoding, storage and
+reporting; those components were not separately timed and cannot be assigned
+to one cause. The short pilot did not exercise the filled replay buffer for
+most of a long trajectory and underestimated this cost.
+
+At about 2.9 cumulative charged hours, applying that full-path cost to the ten
+remaining paths projects approximately **17.7 total hours**, before the larger
+fresh-assessment evaluation panels and additional FD work. The revised
+practical forecast is **18--20 cumulative active hours**, not 14--16. The
+assistant has requested approval for a 20-hour cap; **the current authorization
+remains 16 hours pending the reply**. Continue under that existing cap rather
+than blocking work or silently increasing it. If retained, checkpoint any
+unfinished scope honestly. Preserve the earlier immutable pilot forecasts and
+scientific settings; this is a measured forecast correction, not a new arm.
+
+### 15. Orchestration-Only Restart Repair (2026-11-23)
+
+The interrupted worker left a committed fourth-development checkpoint near
+936 incoming intervals. Restart admission incorrectly priced the entire long
+campaign again, including completed paths. This is bookkeeping, not evidence
+that more observations or different scientific settings are required.
+
+Continue in the separately versioned `head-awac-fix5-v3` directory, retaining
+v2 and its sealed units unchanged. The continuation validates the old identity
+and every numerical source hash except the explicitly revised orchestration
+files. It verifies each source unit before importing its exact checkpoint,
+records lineage, and preserves learner/target/anchor, optimizer and RNG states,
+simulator state, replay and retirement ledger. Completed evidence is imported
+with its original measured durations; it is not rerun. Prior cumulative time
+is inherited once, including the crash-recovery accounting reserve. Paused
+wall time is excluded. Unit tests require identical next-fit results after
+the import and rejection of changed numerical sources or settings.
+
+The historical pilot forecast remains visible. Restart admission permits
+partial progress rather than pricing already-completed work again; the hard
+**16-hour cumulative active cap**, including closeout reserve, remains in
+force. The proposed 20-hour extension is still unapproved. No likelihood,
+reward, curriculum, calibration criterion, sample budget, or learner changes
+are part of this correction. The theory overview remains untouched.
+
+First continuation, from the checkout root:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_head_resume \
+  --continue-from cache/numerical_experiment/picar/phase3/head-awac-fix5-v2 \
+  --resume --clear-stop --max-hours 16
+```
+
+Later v3 resumes restore that lineage from the recorded configuration and do
+not require `--continue-from`. Keep both campaign directories for recovery.
+
+**User-requested pause (2026-11-23):** v3 stopped cleanly after **13.3793
+cumulative active hours**, with 24 of 28 units sealed. Development and
+calibration are complete; selected common EWC rank is zero, and the original
+FD coefficient/ridge passed the development retention tolerance. Fresh
+MC-replay and TD-replay trajectories for seed 199101 are complete. Its FD
+trajectory is saved at 796 incoming intervals, 2,896 accepted fits and 8,688
+inner steps, with the current completed episode awaiting remaining labeling.
+Integrity checks pass and the GPU is free. Resume only upon request; details
+and the command are in `PLAN19_HANDOFF.md`. Finishing all remaining paths
+still needs roughly 5--6 active hours, more than the 2.62 hours left under the
+approved 16-hour cap. The pending 20-hour extension is not assumed approved.
+
+### 16. Allocation-Limited Checkpoint (2026-11-23)
+
+Following the requested resumption, the runner reached the **16-hour
+cumulative active allocation** and stopped normally at **15.9503 hours**,
+preserving its three-minute closeout reserve. This is budget exhaustion, not
+a failed numerical run or completed Fix 5 scope. All 26 sealed units remain
+immutable; four of six fresh trajectories are complete. The notebook was
+refreshed with provisional/incomplete status.
+
+Seed 199101 is complete for MC replay, TD replay and TD+FD; all have 4/8
+initial-A successes and 1/8 moderate-A successes. The second MC-replay path is
+also complete, with the same counts. Those descriptive observations do not
+demonstrate a success-rate advantage or equivalence. Final paired reporting
+remains gated on completion of the approved scope.
+
+Seed 199102 TD replay is preserved at 316 incoming intervals, 1,080 accepted
+fits and 3,240 inner steps, with a completed episode awaiting remaining
+labeling. Integrity checks pass, all 89 numerical source hashes match, and
+the GPU is free. Finishing this path and the remaining FD path needs roughly
+**three more active hours**, around 19 cumulative hours at measured costs.
+Further execution therefore requires an explicit allocation increase; the
+earlier 20-hour proposal remains pending. Keep both v2 and v3 artifacts and
+follow `PLAN19_HANDOFF.md` for recovery. No scientific settings or scope were
+changed to fit the time limit.
+
+### 17. Remaining-Scope Resumption (2026-11-24)
+
+The user requested resumption with a whole work day available. This
+continuation uses the announced **20-hour cumulative active cap** to finish
+the existing two remaining fresh paths, not to expand the design. Inactive
+pause time is excluded and all previous active charges remain counted.
+The earlier allocation-limited checkpoint is preserved as history.
+
+Before launch, all 89 scientific source hashes and the theory notebook
+matched; checkpoint checks verified finite learner/target/moments, accepted
+anchor equality, nonnegative archive residuals, unique retirements and
+consistent fit/inner-step counters. PyTorch CUDA execution succeeded on the
+RTX 4070. Seed 199102 TD replay resumed its saved 316-interval state and
+completed episode awaiting labels. It is followed by seed 199102 TD+FD.
+Scientific settings, development selection, paired seeds and scope are
+unchanged. Expected remaining active time at restart was about three hours.
+
+Use `numerical_experiment.picar_head_resume --resume --clear-stop
+--max-hours 20` for this continuation. The log is
+`head-awac-fix5-v3-resume2.log` beside the v3 run directory. Notebook refreshes
+continue automatically; read `PLAN19_HANDOFF.md` and current progress before
+any further restart so a duplicate worker is not launched. No subsequent
+phase or physical robot motion is authorized.
+
+### 18. Remaining-Scope Completion (2026-11-24)
+
+Fix 5 is complete: all **28 units and six fresh trajectories** are sealed.
+The runner exited normally at **19.024 cumulative active hours**, about
+**3.07 additional active hours** after the allocation-limited checkpoint,
+under the announced 20-hour cap. No subsequent phase was started.
+
+A reporting-only interruption occurred after the fifth fresh path sealed:
+completed scalar summaries occupied 65.90 MiB, exceeding the old 64 MiB
+aggregate read limit. Raising that finite bound to 96 MiB accommodates the
+approximately 73 MiB full planned scope; a regression test verifies that the
+aggregate bound still rejects oversized inputs. The fifth result remained
+sealed, and the final path resumed without changing numerical code, settings,
+selection or scope. Preserve both `resume2.log` and `resume3.log` beside v3.
+
+Final observed outcomes, pooled descriptively over two paired replicas:
+
+| Method | Initial-A Successes | Moderate-A Successes | Mean Moderate-A Raw Return |
+| --- | ---: | ---: | ---: |
+| MC replay | 8/16 (50%) | 2/16 (12.5%) | -8.556 |
+| TD replay | 8/16 (50%) | 3/16 (18.75%) | -2.068 |
+| TD + FD | 8/16 (50%) | 2/16 (12.5%) | -8.545 |
+
+These counts reuse the same eight evaluation layouts per replica, not sixteen
+independent layouts. The mean paired FD-minus-TD moderate-A return gap is
+-6.477, and its success gap is -6.25 percentage points. This pilot does not
+demonstrate an FD success advantage or sample savings; two paired replicas
+do not establish significance, equivalence or general harm. Initial-A success
+is retained. The measured mean paired FD/TD whole-trajectory active-time
+ratio is 1.0185, not a sample-efficiency estimate.
+
+The canonical notebook is refreshed with final paired tables, the post-fit
+EWC measurement, HTML video index, and a new immutable six-path action
+extraction at `head-awac-fix5-v3-action-diagnostics-complete-v2` beside v3.
+The earlier four-path extraction remains unchanged. This complete-cohort
+extraction recovers **147 full late-window command histories out of 510
+training episodes**; the missing early history is not inferred. Notably,
+FD/199102 made 16 qualifying steering bouts in its 27 recovered episodes,
+whereas FD/199101 made zero in 25. The earlier sparse-turning observation
+therefore does not generalize to every replica, and more turning alone did
+not establish successful detours. The full difficulty-ramp trend remains
+unavailable. Fourteen saved video links resolve.
+
+All **202 focused tests** pass. Closeout verifies the parent and 28 child
+completion seals, all 58 final-file checksums, the newly finished learner
+states, all 89 numerical source hashes and the unchanged theory notebook.
+No experiment GPU process remains. Use the explicit complete-cohort action
+directory when refreshing this notebook; see `PLAN19_HANDOFF.md`.
+
+### 19. EWC Rank Evidence Review (2026-11-25)
+
+The user requested a fuller account of the representation comparison before
+choosing the next navigation experiment. This is an artifact-only review;
+the completed selection and all numerical runs remain immutable. The notebook
+now exposes development rank outcomes and cached rank timings before the fresh
+assessment. Previously, fresh-result filtering hid these learning curves,
+while the archive panel mainly exposed initialization/geometry spectra.
+
+Ranks 0, 3, 5 and 10 received cached fit/retirement checks. Only 0 and 10
+received full 1,024-interval development paths under both TD replay and TD+FD,
+all on seed 199301, with two final held-out episodes per environment:
+
+| Method | EWC Rank | Initial-A Raw Return | Moderate-A Raw Return | Active h |
+| --- | ---: | ---: | ---: | ---: |
+| TD replay | 0 | 81.0137 | -20.0567 | 1.4822 |
+| TD replay | 10 | 80.9491 | -19.5284 | 1.4437 |
+| TD + FD | 0 | 81.2105 | -18.9035 | 1.4677 |
+| TD + FD | 10 | 80.5112 | -19.3826 | 1.4786 |
+
+Every row had 2/2 initial-A and 0/2 moderate-A successes. Rank selection
+maximized the sum of the four mean returns per rank: 123.2639 for zero,
+122.5493 for ten. The difference is only .1787 raw-return units when expressed
+as a mean over the four panels. This small development screen is not strong
+evidence for diagonal superiority. Retention refinement followed selection at
+rank zero only; there is no fresh positive-rank assessment or rank-specific
+FD/ridge calibration frontier.
+
+The cached C256/b64/four-round screen measured median three-step fits of
+10.20/10.58/10.63/10.67 ms without FD and 30.86/31.17/31.15/31.28 ms with
+FD=1 at ranks 0/3/5/10. The likelihood settings and FD coefficient differ from
+the final selected recipe; these timings establish inexpensive feasibility,
+not a universal overhead or sample-efficiency result.
+
+A CPU-only inspection of checksum-verified saved factors adds a structural
+lead. The final rank-10 TD/FD archives retain 63.75%/66.99% of total trace in
+their correlated factors. Splitting their 2,209 LTM rows using the saved head
+inventory (455 actor rows, 1,754 critic rows) reveals seven actor directions
+and three critic directions above numerical noise. Actor rows account for
+81.56%/85.02% of retained correlated energy; correlated factors cover only
+24.54%/23.40% of the critics' full diagonal trace, versus about 99.8%/99.7%
+of the actor trace. The remaining trace is still in the residual diagonal,
+not discarded information magnitude. These are block-factor diagnostics,
+not eigenvalues of the full Fisher or proof of a navigation bottleneck.
+Sources are the sealed `trajectory-7a3ec9eaacde` and
+`trajectory-691a161b3aab` CURRENT checkpoints. The inspection used
+`picar_head_action_report.source_files` for manifest/size verification,
+checked the state SHA256, loaded weights-only on CPU, and diagonalized only
+the two 10-by-10 block Gram matrices.
+
+This suggests testing whether a wider correlated representation preserves
+useful critic geometry. A sensible next design would retain rank zero as a
+control, screen a modest wider rank and rank 64 for cost/geometry, then compare
+one positive rank against zero with FD on and off and development-only
+retention calibration. That is a proposal, not authorization to execute.
+Plan 18 provides positive motivation, but its dense recompression and rank-64
+archive were not reproduced by this rank-10 streaming truncation. The current
+results neither establish that larger rank rescues FD nor close that question.
 
 [awac19]: https://arxiv.org/abs/2006.09359
 [gae19]: https://arxiv.org/abs/1506.02438

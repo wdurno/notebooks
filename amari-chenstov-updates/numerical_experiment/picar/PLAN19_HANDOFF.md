@@ -1,5 +1,615 @@
 # Plan 19 Handoff: Phase 3 Development
 
+## Reporting Review: EWC Rank (2026-11-25)
+
+Fix 5 remains complete; no new experimental run was started. User requested
+a richer interpretation of EWC rank before choosing the next navigation
+condition. The notebook now has **EWC Rank: Development And Selection** near
+the start of Fix 5, before fresh outcomes: four development paths, their
+retention/acquisition curves, and the cached rank timing table. All previous
+phase cells and immutable artifacts are preserved. Ninety-six reporting
+tests pass, including development/confirmation separation and rank-cost
+coverage; all 89 scientific hashes and the theory hash still match.
+
+Rank zero was selected over rank ten by a tiny summed-return margin,
+123.2639 versus 122.5493, from one seed and two evaluation episodes/environment.
+All four methods/ranks had 2/2 initial-A and 0/2 moderate-A successes.
+Ranks 3/5 had cached checks only; positive ranks had no fresh assessment or
+separate retention refinement. This is not strong evidence against positive
+rank. A CPU-only verified-checkpoint audit found that rank ten's correlated
+factor covers seven actor and three critic directions: it preserves about
+99.7--99.8% of actor trace but only 23.4--24.5% of critic trace in correlated
+form at the two development endpoints. Residual diagonal retains the rest.
+See Plan 19 Fix 5 section 19 for exact numbers, source unit IDs and the
+proposal to retain a positive-rank FD condition in the next design. Do not
+launch that proposed comparison without a new user request. Use the existing
+explicit complete-cohort action extraction when refreshing the notebook.
+
+## Current: Fix 5 Complete (2026-11-24)
+
+**Do not resume or expand this completed scope.** All 28 units, all six fresh
+trajectories and `v3/orchestration/COMPLETED` are sealed. The GPU worker exited
+normally, unified exec session 99197 is closed, and no compute process remains.
+Final cumulative charge is **19.024 active hours**, within the 20-hour cap;
+this resumption added approximately 3.07 active hours. No next phase is
+authorized. Older paused/running entries below are preserved history.
+
+Final initial-A successes are 8/16 for each method (two replicas, eight shared
+layouts each). Moderate-A successes: MC 2/16, TD replay 3/16, TD+FD 2/16.
+Mean moderate-A raw returns: -8.5555, -2.0683, -8.5451 respectively. FD-minus-TD
+paired mean gaps: -6.4768 raw return, -6.25 pp success. No demonstrated FD
+success advantage, equivalence, significance or sample savings; only two
+paired replicas. Mean paired FD/TD whole-path active-time ratio is 1.01847.
+
+The notebook includes final paired tables, corrected post-fit EWC, 14 valid
+video links and all-six-path action diagnostics. A new immutable derived
+analysis is `head-awac-fix5-v3-action-diagnostics-complete-v2`, beside v3;
+earlier partial v1/v2 analyses remain untouched. It recovers 147 complete
+late-window command histories of 510 training episodes. FD's second replica
+has 16 turns / 27 recovered episodes, versus zero / 25 in the first; do not
+generalize the earlier no-turn observation. The full ramp cannot be recovered.
+
+For a reporting-only refresh, use the explicit complete-cohort extraction:
+
+```python
+from pathlib import Path
+from numerical_experiment.picar_head_awac.report import build_notebook
+root = Path("cache/numerical_experiment/picar/phase3/head-awac-fix5-v3")
+build_notebook(
+    root,
+    Path("numerical_experiment/picar/plan19_results.ipynb"),
+    action_report=root.with_name(root.name + "-action-diagnostics-complete-v2"),
+)
+```
+
+All **202 focused tests** pass. Verified 29 completion seals and all 58
+final-file checksums, finite/exact-anchor/nonnegative-residual/count integrity
+of the two newly completed learner checkpoints, all 89 frozen numerical hashes
+and the unchanged theory notebook. The only restart correction was raising
+the reporting aggregate JSON limit from 64 to a bounded 96 MiB; full scope
+uses about 73 MiB. Preserve its traceback in resume2.log and the successful
+resume3.log, and keep v2/v3 roots for provenance. The numerical learner,
+experimental settings and selection were not changed.
+
+## Current: Final Fresh FD Path Remaining (2026-11-24)
+
+Seed 199102 TD replay is sealed: 1,025 actual intervals, 3,700 accepted
+fits, 4/8 initial-A successes (mean raw return 30.3063), and 2/8 moderate-A
+successes (4.4745). There are now 27/28 sealed units and five/six fresh paths.
+The runner then stopped on a reporting-only scalar-JSON size guard: completed
+summaries reached 65.90 MiB, above the old 64 MiB aggregate cap. Scientific
+artifacts were preserved and all 89 numerical hashes still match. No new FD
+path was started before this stop. Cumulative charge is about 17.317 hours.
+
+The report bound is now a finite 96 MiB, accommodating the approximately
+73 MiB expected for the complete planned scope, with a new aggregate-bound
+regression test. All 100 report/action tests pass and the notebook rebuilds.
+Numerical code, settings and scope are unchanged. Resume only the remaining
+seed 199102 FD path under the same 20-hour cumulative cap; no additional
+allocation is needed. Preserve `resume2.log` with its reporting traceback.
+The current invocation uses `head-awac-fix5-v3-resume3.log`, unified exec
+session **99197**. The final FD unit is `trajectory-a6b55f82374c`; its first
+verified progress is 24 incoming intervals / 60 accepted fits, label stage,
+at about 17.3705 cumulative active hours. Inspect live process and progress
+before launching a duplicate. Session 30061 has exited. Report tests now
+include explicit selection of a new immutable action-analysis directory
+(101 report/action tests pass), so final six-path diagnostics can be refreshed
+without overwriting the earlier four-path analysis.
+
+## Current: Finishing Existing Fix 5 Scope (2026-11-24)
+
+The user explicitly requested resumption with a whole work day available.
+This continuation allocates **20 cumulative active hours**, announced in the
+reply, to finish the existing remaining scope (about three active hours).
+The old 16-hour budget-pause entries below are historical. Do not add replicas,
+change scientific settings, or start another phase. All 89 scientific source
+hashes and the theory notebook match; CUDA tensor execution succeeds on the
+RTX 4070. No other GPU compute worker was present before launch.
+
+Recovery passed for seed 199102 TD replay, `trajectory-fe9d97340450`: 316
+incoming intervals, 1,080 accepted fits, 3,240 inner steps, replay 256, and 14
+unique retirements. Learner/target/moments/anchor are finite, accepted-anchor
+equality and archive residuals pass, and the completed episode awaiting labels
+is preserved. Resume that episode's labels, not a replacement episode. Then
+finish seed 199102 TD+FD; four earlier fresh trajectories remain immutable.
+
+Launcher: `numerical_experiment.picar_head_resume --resume --clear-stop
+--max-hours 20`; fresh log `head-awac-fix5-v3-resume2.log` beside the v3 root.
+Unified exec session **30061** is the current monitoring handle; it is not a
+guarantee of process survival. Startup has restored CUDA Qwen and is validating
+sealed units normally. Check current progress rather than trusting this note
+after another interruption.
+Keep previous logs and both v2/v3 roots. GPU commands require sandbox escalation.
+Check process/progress before any duplicate launch. For a new user halt, create
+v3/STOP and await saved exit. The corrected EWC panel and HTML video index are
+rebuilt by the report module. The current action diagnostic remains a clearly
+labeled four-trajectory late-window analysis until a new immutable extraction
+is produced for all six completed paths; never overwrite its completed data.
+
+## Current: Fix 5 Budget-Paused; Additional Allocation Required (2026-11-23)
+
+**Turning diagnostic (2026-11-24):** added `Turning During The Curriculum`
+below the video index, with mean commanded steering bouts per episode and
+mean absolute commanded steering while commanding motion. Definition: >5 deg
+steering, |drive| >.04 m/s, contiguous same-sign commands count once. Values
+are episode means within progress bins followed by equal replica means;
+they describe exploratory training, not greedy evaluation or measured yaw.
+Full action histories were NOT retained in completed summaries. An explicit
+CPU-only extractor, `numerical_experiment.picar_head_action_report`, verified
+current checkpoint seals and recovered the final replay windows into a
+separate immutable `head-awac-fix5-v3-action-diagnostics-v2` sibling directory.
+The notebook reads only that derived scalar JSON, never checkpoints. Earlier
+histories are unavailable; the graph shades that gap, and the coverage table
+lists the included replicas/episodes. Future fresh replicas will require a
+new versioned extraction; do not mutate this completed analysis.
+
+V2 includes 94 complete command histories: MC/199101 23 (2 turns), MC/199102
+20 (14 turns), TD/199101 26 (8 turns), FD/199101 25 (0 turns). Earliest usable
+episode starts at 753/1024; sigma covers only .5--.5169, not the full ramp.
+Do not infer full-ramp behavior or general absence of FD steering from these
+late, thresholded counts. The companion angle panel includes smaller turns.
+The preliminary v1 analysis used observation-time control readouts, which
+become neutral on episode termination. It is preserved but superseded; V2
+maps saved seven reference logits through each episode's recorded calibration
+and requires every post-startup command. Neither analysis ran any new episode,
+reward scoring, model fitting, or GPU work. Scientific sources/settings and
+the exhausted-budget pause remain unchanged.
+
+**EWC/video reporting correction (2026-11-24):** the old `ewc` series sampled
+the start of every accepted fit, always exactly at the anchor. Its entire
+zero trajectory was therefore uninformative, not just its initial point.
+The grid now plots saved `post_step_ewc` as `ewc after fit`, evaluated against
+the fit's original anchor. All 15,228 completed fresh fit records have positive
+post-fit penalties and proposal differences; inner steps two/three also have
+positive EWC. Missing post-fit values are not replaced with first-step zeros.
+This is archive-wide displacement energy, not a newly retired observation's
+loss, accumulated memory size, or proof of STM-to-LTM transfer. The glossary
+now explains the measurement times. The recording taxonomy is an HTML code
+output with source hidden, not a Markdown cell that double-click enters into
+edit mode. It remains pre-rendered and refreshable using only scalar metadata.
+All 103 focused report/learner tests pass. No scientific code, settings or
+artifacts changed, and the budget pause remains in force.
+
+**Reporting follow-up (2026-11-24):** the nine definitions previously lived
+inside a rich code-cell output. They now occupy a real Markdown cell titled
+`Training Diagnostic Headers`, immediately after the training grid. Reporting
+is split into prediction, training and archive cells. `Episode Recordings`
+follows the success figure, with collapsible condition/environment/win-loss
+groups, shared initialization deduplicated, and explicit recording coverage.
+All ten linked clips exist. Only preselected initial/final episodes were
+recorded; moderate-A wins and all midpoint episodes have no saved videos.
+The outcome/training cohort is fresh selected-rank-zero; the archive section
+also includes earlier rank-ten initialization/geometry diagnostics, now
+explicitly labeled. Rank-zero EWC is diagonal, not absent. All 88 reporting
+tests pass; all 89 frozen source hashes and the theory notebook match. No
+scientific artifacts or settings changed. The exhausted-budget pause remains.
+
+**Reporting-only clarification (2026-11-24):** added nine diagnostic-header
+definitions immediately below the training-fit grid, through the report
+builder so refreshes preserve them. All 82 reporting tests pass. No numerical
+code, artifact, settings or allocation changed, and compute was not resumed.
+The green moderate-A success curve covers three identical method means, not
+missing runs. Completed online training episode counts are 76 (MC/199101),
+83 (TD/199101), 81 (FD/199101), and 84 (MC/199102), separate from initialization
+and evaluation episodes. The budget-pause instructions below remain current.
+
+**No GPU worker is running. Do not restart under the exhausted 16-hour
+allocation.** This invocation reached the approved cumulative active limit
+and exited through the normal saved-checkpoint path, with the expected
+`TimeoutError: Fix 5 active limit reached with closeout reserve`. It charged
+**15.950324 active hours**, retaining the three-minute closeout reserve.
+Inactive pause time was excluded. The earlier 20-hour proposal is still
+unapproved; a plain resume request must not silently enlarge this budget.
+
+The canonical v3 campaign has **26 of 28 units sealed / four of six fresh
+trajectories complete**. Seed 199101 is complete for all three methods;
+seed 199102 MC replay is also complete. The current incomplete unit is:
+
+- `units/trajectory-fe9d97340450`, seed 199102, TD replay, EWC rank zero.
+- **316 acquired intervals / 1,080 accepted fits / 3,240 inner steps**.
+- Stage `label`, cursor zero, round zero. The current episode is complete;
+  resume remaining labeling before fitting or starting another episode.
+- Replay 256, ready queue zero, 14 unique retirements. All numerical source
+  hashes (89) match; finite learner/target/moments, accepted-anchor equality,
+  archive residuals and retirement/fit/step counters pass recovery checks.
+
+Remaining scope: finish this TD trajectory and its final panels, then run
+seed 199102 TD+FD. Expected additional active compute is **about three
+hours** (roughly 2.7--3.3), implying around 19 cumulative hours. A 20-hour
+allocation would provide contingency, but requires explicit approval. No
+fresh paired conclusion or sample-savings claim is warranted while the
+approved scope is incomplete. First-replica success counts are identical
+across methods (4/8 initial A, 1/8 moderate A). Second-replica MC replay also
+has 4/8 and 1/8; this does not establish method equivalence.
+
+Notebook refreshed after exit. All scientific settings and source files are
+unchanged. Keep both v2 and v3 for recovery. Last log:
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v3-resume1.log`.
+Unified exec session 11672 has exited. There is no user STOP request here:
+the reason is budget exhaustion. Preserve this log on the next invocation.
+
+**Only after an explicit increased-allocation approval**, resume using the
+same launcher, e.g. `--resume --max-hours 20` if 20 total hours is approved.
+It restores recorded lineage and paths automatically; do not change the
+scientific configuration, reset charged time, or replay completed evidence.
+CUDA needs an escalated Python tool command in this sandbox. No tmux is
+required unless detached execution is requested. Older milestones below
+remain preserved history, not instructions to keep running at 16 hours.
+
+## Milestone: First Fresh Three-Method Replica Sealed (2026-11-23)
+
+V3 has 25 sealed units. Seed 199101 is complete for MC replay, TD replay,
+and TD+FD; seed 199102 MC replay is active. All three completed methods have
+initial-A success 4/8 and moderate-A success 1/8. Final mean raw returns:
+
+| Method | Initial A | Moderate A | Full-Path Active Hours |
+| --- | ---: | ---: | ---: |
+| MC replay | 29.7900 | -8.4665 | 1.6824 |
+| TD replay | 29.9039 | -8.6110 | 1.6648 |
+| TD+FD | 30.1099 | -9.2551 | 1.6864 |
+
+This is **one completed fresh replica**, descriptive only: no demonstrated
+success-rate advantage, no equivalence claim, and no sample-savings estimate.
+The approved scope is incomplete and final paired tables remain completion
+gated. The latest check is 14.413 charged hours with the second MC path at
+397 intervals. Continue session 11672 under the unchanged **16-hour cap**;
+expect an honest checkpointed stop before all remaining paths finish. The
+20-hour proposal is still unapproved. The resume entry below supplies paths
+and halt instructions; this milestone does not authorize a cap increase.
+
+## Current: Fix 5 Resumed From Verified Fresh-FD Checkpoint (2026-11-23)
+
+The user requested resumption. The pause below is historical, not an
+instruction to remain stopped. Recovery checks pass: all 89 numerical source
+hashes match, learner/target/moments are finite, the accepted anchor is exact,
+archive residuals are nonnegative, and retirement/fit/step counts agree.
+Continue the saved 796-interval / 2,896-fit seed-199101 FD checkpoint,
+including the completed episode awaiting remaining labeling. No numerical
+settings or scientific code changed.
+
+Invocation: `numerical_experiment.picar_head_resume --resume --clear-stop
+--max-hours 16`. The new log is
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v3-resume1.log`, and
+unified exec session 11672 is the monitoring handle. Preserve the older log.
+The approved cumulative cap remains **16 hours**, with about **2.62 hours**
+left at restart; inactive pause time is not charged. Finishing all outstanding
+scope still needs roughly 5--6 active hours. The earlier 20-hour extension
+request is not treated as approved. Stop/checkpoint honestly at the current
+cap if no approval arrives. Check live v3/progress.json and the GPU before
+launching any duplicate worker. To honor a new halt, touch v3/STOP and await
+the normal checkpointed exit, then refresh the notebook and prepend notes.
+
+## Current: Fix 5 Cleanly Paused At User Request (2026-11-23)
+
+**Do not resume until requested.** The user needs the node. V3 acknowledged
+STOP through its normal checkpoint path and exited with the expected
+`InterruptedError: Fix 5 saved`. No experiment GPU process remains; no forced
+termination was used. The STOP marker is deliberately retained. The notebook
+was refreshed after exit. All earlier "Current" entries below are history.
+
+Authoritative campaign:
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v3`.
+There are **24 sealed units of 28 planned**, including all development,
+retention calibration, selection, shared fresh initialization, and the first
+replica's MC-replay and TD-replay paths. The first fresh TD+FD path is saved:
+
+- Unit `units/trajectory-4ca46ea0e2ad`; seed 199101, rank zero, C=256,
+  b=64, four rounds, three inner steps, FD strength 12.1429519653, ridge .1.
+- **796 acquired intervals / 2,896 accepted fits / 8,688 inner steps**.
+- Stage `label`, cursor zero; the current episode is complete and preserved.
+  Resume its remaining reward/feature labeling rather than replacing it.
+- Replay 256, ready queue zero, 468 unique retirements. Parameters, targets,
+  optimizer moments and anchor are finite; accepted-center equality, archive
+  residual nonnegativity, unique retirements and fit/step counts all pass.
+- All **89 frozen source hashes match**. The theory notebook is unchanged.
+- **13.379307 cumulative active hours** charged, including old profiles and
+  invocations exactly once. The approved cap remains **16 hours**, leaving
+  about **2.62 active hours**. The 20-hour proposal is still unapproved.
+
+Remaining full scope: finish this FD path and its final evaluation, then all
+three seed-199102 fresh paths. That is approximately **5--6 further active
+hours** at observed costs, so the unchanged cap will not cover everything.
+Resume within the existing allocation and checkpoint any unfinished work;
+only increase the cap after explicit approval. Unit counts are not
+time-weighted progress. No fresh FD efficacy or sample-savings claim exists.
+
+Upon a later user resume, from the checkout root:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_head_resume \
+  --resume --clear-stop --max-hours 16
+```
+
+The launcher defaults to v3 and restores v2 lineage and model overrides from
+ignored configurations. Keep **both v2 and v3** for recovery. The v3 run log
+is `head-awac-fix5-v3-run.log`; choose a new filename for the next invocation.
+Old unified exec session 27164 has exited and must not be reused. CUDA needs
+an escalated Python tool command in this sandbox, not a driver repair. No
+tmux is required unless detached execution is explicitly requested. Before
+restarting, check that no worker has already resumed. The numerical sources
+remain frozen; report/docs/tests and the standalone launcher are excluded.
+
+## Current: Fix 5 Development Complete; Fresh Assessment Starting (2026-11-23)
+
+V3 is running normally in unified exec session 27164, log
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v3-run.log`. At the
+latest milestone, 21 units are sealed and 8.858 cumulative active hours are
+charged. All four full rank-by-FD paths and the extra retention-calibration
+path are complete; selection is sealed. Common rank is **zero**; C=256,
+b=64, four rounds, three inner steps, learning rate .001, advantage
+temperature 1, critic variance 16, exploration SD 2, ridge .1. Selected FD
+strength is 12.1429519653 with ridge .1. Development initial-A raw-return gap
+is +0.1968, within the five-unit calibration tolerance, not evidence of
+statistical equivalence. Rank scores are 123.2639 (zero) and 122.5493 (ten).
+
+The shared fresh initial evaluation is active. Next are six 1,024-interval
+fresh paths: seeds 199101 and 199102, each MC replay, TD replay, TD+FD. Final
+panels have eight episodes per environment. Completed development endpoint
+panels all retain initial-A success (2/2) and have moderate-A success 0/2;
+do not present the tiny development return differences as a confirmed win.
+The approved cap remains **16 hours**, not the pending 20-hour proposal.
+The remaining compute-heavy scope may not fit: stop/checkpoint honestly at
+the hard cap rather than quietly enlarging it. Progress is in v3 and the
+notebook; earlier "Current" headings below remain preserved history.
+
+## Current: Fix 5 Orchestration Continuation (2026-11-23)
+
+The user requested resumption. The earlier worker did not survive the
+interruption; there is no active GPU writer. V2's latest mirror records
+936 acquired intervals / 3,376 fits in rank-10 TD+FD, the fourth full
+development path, with 18 sealed units and about 7.05 charged active hours.
+Canonical checkpoint integrity is checked before continuation.
+
+An orchestration-only correction now continues in `head-awac-fix5-v3`.
+It imports verified exact checkpoints and sealed results without mutating
+v2, inherits prior charge once, and avoids the old guard's double pricing of
+completed work. `continuation.py` validates all other numerical source
+hashes and full experimental identity. The numerical learner, likelihood,
+archive, features, simulation, curriculum, and selection rules are unchanged.
+The source changes are limited to campaign bookkeeping, the output default,
+and this explicit continuation support. Keep v2 and v3 for recovery.
+
+The approved limit is still **16 cumulative active hours**. The 20-hour
+request in the historical entry below remains pending. No new arms, physical
+motion, or B curriculum are authorized. The current invocation will use
+`--continue-from cache/numerical_experiment/picar/phase3/head-awac-fix5-v2
+--resume --clear-stop --max-hours 16` and preserve older logs. Later resumes
+omit `--continue-from`; the launcher restores it from v3's config. To stop,
+touch v3/STOP, wait for the worker to release CUDA, then refresh the notebook.
+
+Acceptance passed: **180 focused tests**, including exact next-update
+continuation equivalence. The canonical v2 child was actually at 940 acquired
+intervals / 3,388 fits (the parent mirror lagged by four intervals). Recovery
+audit is saved as `head-awac-fix5-v2-recovery-audit.json` next to the roots.
+The v3 GPU worker is now progressing beyond that checkpoint: the first check
+shows 982 intervals / 3,518 fits, 18 sealed units and 7.158 cumulative charged
+hours. Invocation log: `head-awac-fix5-v3-run.log`; unified exec session 27164
+is only a monitoring handle, not a guarantee of process survival. Inspect
+GPU/process state and v3/progress.json before launching a duplicate. Scientific
+sources are frozen again (89 files); reporting/docs/tests remain editable.
+Older "Current" headings below are preserved history, not the authoritative
+run position. Remaining: finish rank-10 FD development, retention calibration,
+selection, and six fresh assessment paths, stopping honestly at the approved
+cap if necessary.
+
+## Current: First Full Development Path Sealed; FD Running (2026-11-22)
+
+The resumed rank-zero TD-replay control is complete and immutable:
+`units/trajectory-2cc3fac3fc81`, 1,034 actual incoming intervals, 98 training
+episodes, and **1.48218 active hours** across both invocations. Eight nonshared
+evaluation episodes contributed 98 additional scored intervals. Fitting took
+38.79 seconds and reward scoring 1,649.13 seconds; the remainder includes
+collection, frozen-feature extraction/re-encoding, storage and reporting and
+must not be assigned to one unmeasured component. Initial-A endpoint success
+is 2/2, moderate-A is 0/2. This is development evidence, not the FD contrast.
+
+The paired rank-zero FD path has started at
+`units/trajectory-73c3f6817013`. Sixteen units are sealed. Scientific code,
+initialization, curriculum, replay recipe and sample accounting are unchanged.
+The runner session remains on the **approved 16-hour cumulative cap**.
+
+The first full path shows the short pilot underestimated long-path cost.
+Extrapolating its duration across the ten remaining paths gives roughly
+17.7 cumulative hours even before the larger fresh panels and extra FD work.
+A revised practical forecast is **18--20 cumulative active hours**. The user
+has been asked whether to approve 20 hours or retain 16 and checkpoint
+unfinished work. **That reply is pending; 20 hours is not authorized yet.**
+The current run continues under 16 while awaiting the answer; no scope or
+scientific settings have been altered. Existing pilot forecast artifacts are
+preserved, not rewritten to hide the revision.
+
+If a larger cap is approved, the running process captures its cap at startup;
+record the decision and use a clean checkpoint/restart to adopt it. Do not
+merely edit runtime_budget.json and assume the live process reads it. See the
+long-stage admission caution below if a later restart conservatively prices
+already-completed paths again.
+
+## Current: Fix 5 Resumed After Verified Pause (2026-11-22)
+
+The user requested resumption. CUDA and recovery checks passed: all 88
+scientific source hashes match, parameters/targets/moments are finite,
+accepted-center equality and archive residual nonnegativity hold, retirement
+IDs are unique, and accepted-fit/inner-step counts agree. Continue the saved
+562-interval / 1,972-fit checkpoint, including its completed episode awaiting
+labels, under the unchanged **16-hour cumulative cap**. The inactive pause is
+not charged. This invocation uses `--resume --clear-stop --max-hours 16` and
+logs to `cache/numerical_experiment/picar/phase3/head-awac-fix5-v2-resume1.log`;
+the earlier log is preserved. The pause entry below remains the recovery
+snapshot, not an instruction to stay paused after this request.
+
+## Current: Fix 5 Cleanly Paused At User Request (2026-11-22)
+
+**Do not resume until requested.** The user needs the node. A STOP request
+was acknowledged through the normal checkpoint path; the launcher exited
+with the expected `InterruptedError: Fix 5 saved`. No experiment GPU process
+remains. The STOP marker is deliberately retained. The notebook was refreshed
+with paused progress. No forced process termination was used.
+
+Current campaign is `cache/numerical_experiment/picar/phase3/head-awac-fix5-v2`.
+Fifteen units are sealed, including all four short resource/likelihood paths.
+The first full development path is incomplete:
+
+- Unit: `units/trajectory-2cc3fac3fc81`; TD replay, diagonal EWC (rank zero),
+  seed 199301, nominal total 1,024 incoming intervals.
+- Saved **562 acquired intervals / 1,972 accepted fits / 5,916 inner steps**.
+- Stage `label`: the current episode is complete and saved; its labeling
+  cursor is zero. Resume labels that episode, then continues fitting. Do not
+  discard it or start another episode to replace it.
+- Replay has 256 records, no ready fitting records, round zero, and 237 unique
+  retired IDs. Learner/target/moments/anchor are finite; accepted-center
+  equality, archive residual nonnegativity, unique retirement IDs and fit/step
+  counters passed recovery checks. All 88 scientific source hashes match.
+- Charged time is **7,455.665 seconds / 2.071 active hours**, including profiling
+  and prior invocations. The approved cumulative ceiling remains **16 hours**;
+  inactive time must not be charged.
+
+Resume from the project root, using the recorded paths:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_head_resume \
+  --resume --clear-stop --max-hours 16
+```
+
+CUDA needs an escalated Python tool command in this sandbox; no driver repair
+is indicated. No tmux is required unless detached execution is requested.
+The last invocation log is
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v2-run.log`; preserve it
+by choosing another log filename on the next invocation.
+
+Selected development recipe: C=256, b=64, four rounds, three steps,
+temperature=1, critic variance=16, exploration SD=2, learning rate=.001.
+The recalibrated FD coefficient is 12.14295 at relative initial force .3.
+The first full rank-zero control's midpoint panels retain initial-A success
+(2/2) but not moderate-A success (0/2); this is incomplete development evidence,
+not a treatment result. Remaining scope: finish that path, the other three
+paired rank/FD development paths, one retention-calibration path, select the
+common rank/recipes, then all six fresh assessment paths and closeout.
+
+Reporting-only additions now provide strict confirmation endpoint pairing,
+descriptive non-CI ranges, budget-matched active-time ratios and an
+artifact-grounded final conclusion. All **174 focused unit tests passed**.
+The running interpreter had cached an earlier reporter, so the next clean
+invocation/final manual refresh should use the updated report module. These
+edits do not change numerical identity or completed evidence.
+
+**Known orchestration caution for later restarts:** the existing admission
+guard at `campaign.py`'s long-stage entry prices the entire long scope again,
+even when some long paths are already complete. It remains within 16 hours at
+this saved position, but a later restart could be refused conservatively.
+If encountered, implement/test a separately versioned orchestration correction
+that prices only remaining work and preserves existing checkpoints; do not
+bypass the 16-hour cap, change scientific settings or edit frozen v2 sources
+in place. The actual checkpoint/STOP machinery is functioning correctly.
+
+## Current: Fix 5 Sixteen-Hour Allocation Approved (2026-11-22)
+
+The user approved **up to 16 cumulative active compute hours for the full
+Fix 5 scope**, including the 0.375 hours already charged. The pending-budget
+note below is historical. Resume the verified v2 identity with the standalone
+launcher command below and `--max-hours 16`; this changes only the compute
+allocation, not the frozen scientific settings. Continue development,
+retention calibration, the three-learner/two-stream fresh assessment, and
+closeout within that cap. No physical run, B curriculum or later phase is
+authorized. Keep notebook progress current and retain immutable artifacts.
+
+## Current: Fix 5 Preflight Complete; Long Run Awaits Budget Choice (2026-11-22)
+
+The older opening below records the first pilot, not a currently running job.
+Implementation and the bounded GPU/resource pilot are complete. No long
+development or fresh-assessment trajectory is running. All **141 unit tests**
+pass, including the final reporting-only additions; rerun the six
+`test/unit/test_picar_head_awac_*.py` modules after any further edits.
+
+Current identity is
+`cache/numerical_experiment/picar/phase3/head-awac-fix5-v2`, status
+`profile_complete`, seven sealed units, charged time **1,349.244 seconds /
+0.375 active hours**, including the first pilot exactly once. Preserve v1's
+sealed evidence. The corrected orchestration source fingerprint contains 88
+files and matches the current scientific code. Do not change those files and
+then resume v2; a numerical change requires another versioned identity.
+Reporting, tests, this note, and the standalone launcher are outside that
+scientific fingerprint.
+
+The first forecast double-counted evaluation overhead by dividing all pilot
+time by training observations alone. Correct component accounting uses 279
+training/evaluation scored intervals: **3.304 seconds per scored interval**.
+The revised central estimate is approximately 13 more active hours, with a
+wide pilot-derived range of 8.5--17.6 hours. Allowing contingency, the assistant
+asked whether the user approves a **16-hour cumulative cap**, or prefers the
+existing 13-hour cap with reduced evaluation scope. **That reply is pending;
+16 hours is not yet authorized.** Do not bypass the long-run budget guard.
+
+After approval of the revised allocation, resume from the project root:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_head_resume \
+  --resume --max-hours 16
+```
+
+Without an approved change, the recorded/default limit remains 13 hours.
+The launcher restores the optional model override and source/reuse paths from
+ignored configurations; no personal model paths belong in public notes.
+Use `--clear-stop` only to acknowledge an intentional STOP. CUDA works in an
+escalated Python command, not in this restricted sandbox. The GPU is currently
+idle. No tmux session is required for this local execution.
+
+Corrections made before freezing v2: CPU head fitting / CUDA frozen encoder
+and scorer; factorial cached rank-by-FD timing with repeated fits and measured
+retirement; episode-completion-safe milestone resumption; actual versus
+nominal acquisition counts; resumed-unit time accounting; complete numerical
+dependency fingerprints; shared initial behavioral panels with explicit
+provenance; and a four-recipe short resource/likelihood survey. Initialization
+features, fitted heads and base equal-weight Fisher were reused only after
+checking compatible sealed units. Report rendering remains JSON-only and
+preserves older notebook cells. There is no efficacy result from the resource
+pilot and no sample-savings claim yet.
+
+## Current: Fix 5 Execution Authorized And Resource Pilot Started (2026-11-22)
+
+The user authorized execution of the full new subphase. The design-only
+restrictions in older entries below are historical. Code is
+`numerical_experiment/picar_head_awac`; run with `~/.venv/bin/python -m
+numerical_experiment.picar_head_awac --resume` and the same output/model
+arguments recorded in the campaign config. `--clear-stop` acknowledges an
+intentional prior STOP. Never resume completed Fix 4.
+
+Current campaign: `cache/numerical_experiment/picar/phase3/head-awac-fix5-v1`.
+It is initially running `--stage profile` to establish end-to-end costs before
+longer development and assessment; then continue the same identity with
+`--resume --stage all`. Active compute is capped at 13 hours. The explicit
+model override is in the ignored orchestration configuration; do not put its
+personal path into source-controlled notes. Defaults remain pinned downloads.
+CUDA is unavailable inside the restricted sandbox but works in escalated
+commands; no host driver repair is needed. Use the user's venv.
+
+CPU likelihood/archive/learner tests pass, including rollback and exact RNG
+recovery. The report is appended chronologically to the same Plan 19 notebook,
+with current progress near the top. Preserve accepted conditioned-model and
+signed-square decisions below. No physical motion or later phase is authorized.
+
+Implementation checkpoint: `--stage profile` is active and must finish or be
+cleanly stopped before numerical source edits. Its source fingerprint is frozen.
+All 580 initialization features, the head fit, 515-history equal-weight Fisher
+and cached resource screen are sealed. New heads have 2,472 total parameters.
+Cached three-step fits were roughly 20 ms without FD and 60 ms with FD, but
+rank and FD are confounded in that first timing loop; do not infer isolated
+rank overhead. Initial critic MSE fell from 34.7/28.45 train/validation to
+30.13/27.49 at epoch 60; the best-validation checkpoint was selected, not an
+assertion of exact solving or model correctness. Initial rank-10 archive has
+trace 21.6766, correlated trace fraction .8948 and no material negative residual.
+Gradient-based initial FD scale is 29.1393 for target relative force .3.
+
+Before the long stage, review the resource forecast componentwise. The short
+pilot has relatively heavy evaluation overhead, so multiplying its entire
+duration by training intervals alone is overly conservative. Avoid repeating
+identical initial-policy evaluations across learner conditions; sharing them
+requires explicit provenance and honest contributing counts. Final panel sizes
+were provisional pending timing. Inspect candidate rank selection and actual
+temperature/critic-scale survey breadth before freezing the long run. Any
+numerical correction must use a new immutable run identity/version, preserving
+these sealed initialization assets where proven compatible. No in-place edits
+of a frozen computational unit. Keep the initial 13-hour accounting explicit.
+
 ## Latest: Fix 5 Conditional Likelihood And Signed-Square Rewards Agreed (2026-11-22)
 
 **Do not resume the old campaign or start a new experiment from this note.**
