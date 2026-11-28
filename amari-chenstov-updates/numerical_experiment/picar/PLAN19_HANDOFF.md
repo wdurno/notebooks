@@ -1,5 +1,662 @@
 # Plan 19 Handoff: Phase 3 Development
 
+## Current: V4 Gracefully Paused; Node Free (2026-11-27)
+
+The user requested the node. The STOP request was honored at a durable
+checkpoint; direct session **7513 has exited** with the expected checkpointed
+`InterruptedError`. No experiment worker or CUDA compute process remains.
+The following running entries are historical, not instructions to restart now.
+
+V4 has **17/23 sealed units**. Both initializations and U development are
+complete. G development is paused at **306/1,024 captured acquisitions**, 22
+completed training episodes, stage `fit`, with 1,028 fit-metric rows. Its
+nominal n=256 unassisted panels are saved: initial A 0/4 and moderate A 0/4.
+This is incomplete development evidence, not a completed paired comparison.
+U's final panels remain initial A 0/8 and moderate A 0/8. No fresh stream pair
+has started. Remaining scope is G development, two fresh U/G stream pairs,
+then the final audit/report, subject to the existing 28-hour active ceiling.
+
+The ledger is **6.285 active hours**, including the original support charge
+once. User pauses are excluded. Storage is about 20.65 GB. All 17 completion
+receipts and the active G checkpoint manifest/state checksums were verified;
+the checkpoint loads on CPU and records `reward_mode=task_only`. Scientific
+source hashes still match the resolved configuration. The theory notebook is
+unchanged and all 64 historical reporting cells are preserved exactly. The
+results notebook has been refreshed from saved artifacts to show paused state.
+
+Root: `cache/numerical_experiment/picar/phase3/coaching-fix6-v4`.
+Log: `cache/numerical_experiment/picar/phase3/coaching-fix6-v4-run2.log`.
+G unit: `units/trajectory-62c69b689cb0`; checkpoint commit
+`879792be1dc942d38ade8fbdc289b6b1`. No source changes are needed for recovery.
+When the user returns the node, inspect GPU availability and resume using the
+module entry point from the repository root:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_coaching --resume --clear-stop --offline
+```
+
+The ignored configuration restores the explicit model override. Do not add
+`--support-seconds` again. Keep adherence inference/rewards disabled, preserve
+all sealed units and prior versions, and reforecast after G development ends.
+
+## Current Milestone: V4 Coached Development Running (2026-11-27)
+
+The U development trajectory is sealed; **17/23 units are complete**. G
+development has started its n=0 unassisted panels. Session remains **7513**;
+log remains `coaching-fix6-v4-run2.log`. Do not launch a duplicate worker.
+U training ended at 1,028 captured acquisitions (allowed episode-boundary
+overshoot). Its final initial-A and moderate-A panels each had 0/8 successes.
+This is a development outcome, not a matched U/G or fresh-assessment result.
+Continue G and then both approved fresh pairs automatically if the measured
+forecast fits the remaining 28-hour allocation; no review gate was added.
+
+## Current Milestone: V4 Online Development Started (2026-11-27)
+
+Both stationary initializations are complete; **16/23 units are sealed**.
+Active session remains **7513**, log `coaching-fix6-v4-run2.log` in `phase3`.
+The first U development trajectory has begun its n=0 unassisted panels;
+online optimization follows those panels. Do not start another worker.
+The remaining scope is the U/G development pair, two fresh stream pairs and
+final audit/reporting. The main runner handles this automatically.
+
+Initialization: U 769 captures / 655 usable histories / 515 training histories;
+G 770 / 686 / 548. Teacher-collection successes were U 0/68 and G 6/53.
+Those are not student evaluation scores. Distillation selected U epoch 12
+(validation KL .17758, turning agreement 1.0) and G epoch 10 (validation KL
+.71594, turning agreement .79381). Both neutral STM checks and equal-weight
+initial Fishers completed without initialization pi decay. G used 106/200
+enabled windows and 142 cues; all adherence scoring/reward remains disabled.
+
+The ledger was about 3.49 h including old/support charges at this milestone;
+the initialization-complete planning range is 12.5--15.5 h remaining, to be
+updated using complete development-path times. Keep the 28 h total ceiling
+and .7 h closeout reserve. Earlier progress notes below are historical.
+
+## Launch Correction: Use The Module Entry Point (2026-11-27)
+
+V4's four software/geometry/teacher/resource units passed and sealed. The first
+invocation then failed before collecting an observation because Python
+multiprocessing cannot respawn the simulator from a `<stdin>` main script.
+This was a launcher defect, not a model/scientific change. Session 81033 exited.
+The campaign was resumed with the ordinary `python -m` CLI, retaining the same
+source/config identity and completed checks. The active direct execution
+session is **7513**. U stationary initialization is complete (769 captures,
+655 usable histories, 515 training histories in its equal-weight initial
+Fisher). G stationary collection is also sealed: 770 captures, 686 usable
+histories, 53 episodes and six successes (versus U's zero). Its 106/200 enabled
+windows delivered 142 cues; no adherence outcome was scored or rewarded.
+G frozen-feature/distillation preparation is running. These are teacher
+collection outcomes, not evidence of student learning. U distillation selected epoch
+12, with held-out KL 0.17758 and turn agreement 1.0. These are imitation
+diagnostics, not navigation success; U's 68 collection episodes had no success.
+Current log is
+`cache/numerical_experiment/picar/phase3/coaching-fix6-v4-run2.log`.
+Use only the module command shown below on future restarts, not an inline
+Python/heredoc invocation of `run()`. No initialization observations existed
+at the first failure; original invocation/error logs remain preserved.
+
+## Current: Fix 6 Task-Only Campaign Running (2026-11-27)
+
+V4 acceptance passed **455 CPU tests**; both bounded coding agents are closed.
+The GPU campaign is running in direct execution session **81033** (not tmux).
+Root: `cache/numerical_experiment/picar/phase3/coaching-fix6-v4`.
+Durable invocation log: `coaching-fix6-v4-run1.log` in the parent `phase3`
+directory. Do not start a second worker. The root has 23 planned units:
+software, geometry, teacher, resources; six initialization units per condition;
+six online trajectories; final integrity audit.
+
+The launch carries **5,434 support seconds**, including V3's 4,700.91-second
+charge once, this amendment/implementation, and a conservative 300-second
+allowance for preceding review/closeout not in that sealed ledger. Add runtime
+only once; exclude user pauses. The same 28-hour total ceiling and 0.7-hour
+closeout reserve remain. The model override is recorded in ignored config;
+the repository still defaults to a pinned download for a fresh installation.
+
+After a restart, inspect GPU processes, the invocation log and root
+`progress.json`, then resume from the project venv with GPU access:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_coaching --resume --clear-stop
+```
+
+Use the module's `status`, `report` and `stop` commands as needed. Do not add
+`--support-seconds` again on resume. Complete the authorized task-only scope
+autonomously if geometry/teacher/resource checks pass. Instruction adherence
+is disabled, not pending; no compliance audit or model call may be restored.
+The new notebook tag `plan19_phase3_fix6_task_only` preserves all 64 historical
+cells (including the prior failed readiness section). New progress is near
+the top; the chronological V4 section is at the bottom. Earlier notes below
+are superseded by this current-running entry.
+
+## Current: Fix 6 Task-Only Amendment Authorized (2026-11-27)
+
+The user authorized removing unreliable Qwen adherence evaluation and then
+executing the revised Fix 6 experiment. The amendment is appended to
+`plan19.md`. Current implementation targets a NEW root:
+`cache/numerical_experiment/picar/phase3/coaching-fix6-v4`.
+Preserve all V1--V3 artifacts, audit results and existing notebook cells.
+
+Both U/G now receive only the existing signed-square TASK reward divided by
+10; no adherence model is constructed/called, no compliance audit is required,
+and no shaping bonus, penalty or pending adherence label exists. G still gets
+coached initialization plus tapered online text guidance; U is uncoached.
+Instruction histories, causal publication/expiry, steering metrics and
+subtitled outcome galleries remain. Keep the V3 teacher prompt, model and seed
+namespace, fixed learner recipe and planned 6.2--6.5 scope. Reward-mode recovery
+checks reject old mixed-reward/unversioned checkpoints. This is not permission
+to replace Qwen rewards with geometric rewards.
+
+The total 28-hour ACTIVE ceiling still includes prior Fix 6 work once. V3's
+sealed ledger charged 4,700.91 seconds; add only this new implementation and
+execution time, not unrelated idle time or user pauses. Preserve 0.7 hours for
+closeout. Reforecast after readiness, initialization and development.
+Readiness still requires geometry safety and both teacher turning directions
+within the timing margin. Once acceptance passes, execute all approved stages
+without a routine user review. No category B, rank sweep or extra conditions.
+
+Two authorized Sol agents own bounded reporting/video and task-only regression
+tests; parent owns the campaign, reward path, integration and GPU execution.
+Implementation/acceptance is in progress; do not start a duplicate worker.
+The new CLI default root is V4. Earlier stop/running notes below are historical.
+
+## Current: Fix 6 Stopped At Readiness; Node Free (2026-11-26)
+
+Fix 6 software and readiness work (6.0--6.1) are complete. The final pilot
+failed its adherence-evaluator gate; initialization, development learning and
+fresh assessment **have not started**. No sample savings or coaching-learning
+effect was measured. Do not resume long collection/training against this
+failed evaluator or silently lower the readiness threshold.
+
+Current root: `cache/numerical_experiment/picar/phase3/coaching-fix6-v3`.
+Its five units and orchestration are sealed; root `progress.json` records
+`readiness_failed` and `node_free: true`. Both coding agents and the GPU worker
+have exited. The charged active ledger through the integrity audit is 4,700.91
+seconds (1.306 hours), including prior pilots/support once, not 28 hours spent.
+
+- Geometry: 12/12 audited layouts had no unsafe contact.
+- Teacher: two correct left turns, two correct right turns and two followed
+  straight requests; all 12 paired U/G calls met the timing margin. Median
+  inference was 0.507 seconds against the one-second control period.
+- Frozen Qwen adherence judge: 15/24 clear sealed audit cases correct (62.5%),
+  below the 90% guide. Six of twelve correct maneuvers were called violations;
+  three of twelve violations were called adherent. Ambiguous cases are
+  reported separately, not included in this denominator.
+- Final acceptance rerun: 407 tests passed, including the 90 reporting/video
+  tests (also run separately). The five artifact receipts/recovery states, frozen source hashes,
+  unchanged theory and all 60 historical notebook cells verified; the audit
+  is sealed at `provenance/readiness-integrity-v1` beneath the current root;
+  that earlier audit records the preceding 405-test acceptance run. Final
+  reporting code, tests and documents are captured separately at
+  `provenance/readiness-report-closeout-v1`.
+
+The canonical `plan19_results.ipynb` has concise gate outcomes, confusion
+counts, saved before/after image examples and a conclusion. V1/V2 source
+snapshots, raw judgments and separate `readiness_report.ipynb` files are
+preserved; these prompt-development pilots are not learning replicas.
+The remaining question is reliable adherence evaluation, not a demonstrated
+failure of coaching. Discuss a separately versioned repair before more model
+inference or training. The module's artifact-only `report` command can refresh
+the notebook without the GPU. Earlier running/restart notes below are history
+and are superseded by this section.
+
+## Current: Fix 6 Final Development Refinement Running (2026-11-26)
+
+Current root is `cache/numerical_experiment/picar/phase3/coaching-fix6-v3`;
+log is `coaching-fix6-v3-run1.log` in `phase3`, execution session 67622.
+The full campaign is authorized, but collection/training is gated on the new
+readiness checks. Do not start a duplicate process. Current default CLI output
+is V3, so `--resume --clear-stop` restores this version and its recorded model
+override. GPU execution needs the unsandboxed environment; the driver works.
+
+V2 is also sealed as a development refinement, with its own source snapshot
+and `readiness_report.ipynb`. Development examples improved turns/stops but
+still mislabeled correct reverse motion; teacher diagnostics produced two left
+turns, no right turns, with all 12 calls within the timing margin. V3 adds
+explicit reverse/pass-right examples. Teacher layout selection is geometry-only
+(two left, two right, two straight); compliance audit seeds are new. V2 audit
+labels were not used to select this refinement. No student has trained yet.
+
+This is the final prompt candidate within the bounded correction activity.
+If it passes, continue all approved initialization/development/assessment
+scope automatically. If it fails, preserve/report the failed gate and release
+the GPU; do not launch long paths or lower the acceptance threshold silently.
+V3 starts with 3,900 support seconds, already including V1/V2 work once.
+Do not add the earlier pilot totals again. All code/acceptance checks and
+reporting/data mechanics described below apply; both coding agents are closed.
+
+## Current: Fix 6 Corrected Readiness Started (2026-11-26)
+
+The authorized Fix 6 campaign is running under the same 28-hour active ceiling.
+Current root: `cache/numerical_experiment/picar/phase3/coaching-fix6-v2`;
+invocation log: `coaching-fix6-v2-run1.log` in the parent `phase3` directory.
+The direct execution session is 1294. No tmux was requested for this local
+session. Do not start a duplicate worker. The notebook now has a Fix 6 progress
+cell near the top and a concise chronological section at the bottom.
+
+The first pilot, `coaching-fix6-v1`, is sealed: geometry passed, compliance
+judged every example violated (12/24 clear audit correct; zero positive cases
+recognized), teacher choices were all forward, and generation took median
+1.66 s versus the 1 s control deadline. No learner was trained. Its source
+snapshot and `readiness_report.ipynb` remain intact. A bounded versioned
+correction is now being tested; do not revert to the failed prompt/path.
+
+V2 changes: short grounded action-only teacher; explicit numeric and verbal
+execution evidence for Qwen adherence; fresh compliance audit seeds; coaching
+on the control clock, actual cue-exposure IDs and scheduled policy expiry;
+full supersession/control evidence through the scoring cutoff; exact backend
+execution/expiry segments; discounted fallback gaps retained in real decision
+TD targets; physical-time replay-context masking; and resume-status/storage
+scan fixes. Both U/G use these corrections. Numerical recipe and planned
+scope are unchanged. Expanded acceptance passed 404 CPU tests before the last
+small telemetry/context changes; the campaign reruns acceptance itself.
+
+V2 starts with 3,480 support seconds, covering implementation and the first
+pilot once. Charge its subsequent execution once; exclude later user pauses.
+The first pilot's separate 2,160-second total is already included, not extra.
+Current CUDA access requires running outside the restricted process sandbox;
+the GPU driver itself works. The model override is recorded in ignored run
+configuration and restored automatically by `--resume`.
+
+After a restart, check GPU/processes and `progress.json`, then resume from the
+project venv with GPU access:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_coaching --resume --clear-stop
+```
+
+Use the module's `stop`, `status`, and `report` commands as needed. The current
+default output is V2. Readiness must pass before any collection/training; if
+the corrected audit still fails, report and pause according to the plan.
+If it passes, proceed autonomously through both stationary initializations,
+one development pair, two fresh stream pairs and integrity/report closeout.
+Keep the requested initial/medium/final win/loss gallery, without extra
+episodes just to manufacture recordings. Both coding agents are closed.
+
+## Current: Fix 6 Implementation Authorized (2026-11-26)
+
+The user requested execution of Phase 3 Fix 6, including the expanded video
+gallery. Work began at approximately 15:59 PST. Implementing a new
+`numerical_experiment.picar_coaching` package; Fix 5/5A scientific files and
+completed artifacts remain unchanged. No long GPU experiment has started yet.
+The proposed campaign root is
+`cache/numerical_experiment/picar/phase3/coaching-fix6-v1`.
+
+Scope: U/G, both head-only rank-one STM, TD+FD and rank-64 EWC; 768 stationary
+initial captures per condition; one development and two fresh stream pairs,
+1,024 new intervals per trajectory. Initial projector/LSTM/action-head LTM
+must be refit from common pristine parameters, not inherited from the old
+all-forward student. Only the common accepted frozen encoder is reused.
+Readiness must establish safe geometry, Qwen compliance and both turn
+directions before longer collection. Approved ceiling is 28 active hours,
+with 0.7 hours reserved for closeout; count implementation time once.
+
+Parallel Sol agents own `coach.py`/coach tests and `report.py`/`video.py` plus
+their tests; coordinator owns remaining integration. Focused core and actual
+simulator/recovery tests pass; integration/acceptance is still in progress.
+Do not launch a second worker. Before resuming an interrupted implementation,
+inspect existing processes, this package, tests and root progress, then finish
+acceptance and launch the versioned campaign. No physical robot access.
+
+## Current: Fix 5A Complete; Node Released (2026-11-25 Compute Completion)
+
+**Do not resume or start another phase automatically.** All 12 required
+extension units and the parent orchestration are sealed complete. The final
+GPU worker PID4747 and tmux `plan19-fix5a` have exited; no GPU compute process
+remains. The final invocation is preserved in
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1-run6.log`.
+Compute finished at 23:50 PST on November 25; closeout followed.
+
+The canonical `plan19_results.ipynb` has a completed Fix 5A conclusion, compact
+endpoint table and visible plot captions. All 56 legacy notebook cells are
+unchanged. The requested outcome-selected original-camera success clip remains
+linked below the preselected clips, with its open-direct-path qualification.
+
+| Condition | Initial A successes | Moderate A successes | Moderate A mean raw return |
+| --- | ---: | ---: | ---: |
+| TD replay, diagonal (reused) | 8/16 | 3/16 | -2.068264 |
+| TD + FD, diagonal (reused) | 8/16 | 2/16 | -8.545098 |
+| TD replay, rank 64 | 8/16 | 2/16 | -8.657295 |
+| TD + FD, rank 64 | 8/16 | 2/16 | -8.729854 |
+
+These are two paired training seeds on the same eight held-out layouts, not
+16 independent training replicas. Every condition has rank-one STM. Wider EWC
+changes mean moderate-A return by -6.589030 for TD and -0.184756 for FD. The
+positive interaction (+6.404275) is driven by TD losing one success on seed
+199102, not by an FD improvement. No samples-saved/S estimate is supported.
+Keep diagonal TD replay as the current A-only incumbent, not as a statistically
+established universal winner. No B/physical-navigation claim follows.
+
+Rank 64 passed its numerical/resource audit, genuinely expanded critic
+correlation coverage (85.1--95.4% at the new assessment endpoints), and added
+only +2.2%/+1.4% observed whole-path time for TD/FD. These include different
+policy trajectories and evaluation; they are not isolated operation timings.
+No rank fallback, ridge correction, numerical repair or scope expansion was
+used. Selection remains the original .1 ridge and 12.142951965332031 FD strength.
+
+Final acceptance: **282 tests passed in 15.39 seconds**. All 95 frozen numerical
+hashes and theory hash match. The 29 source and 13 extension completion receipts
+and all 42 recovery payload checksums passed; all six new trajectories have
+unique retired IDs, disjoint 256-item replay and finite rank-64 archives.
+Original Fix 5 is unchanged. The first sealed audit is in
+`provenance/final-audit-v1`; final reporting/caption acceptance is versioned
+separately in `provenance/final-audit-v2`. Final code/docs are captured in
+`provenance/source-snapshot-v2`, without overwriting the earlier snapshot.
+
+Campaign charge is **38,581.452 seconds (10.7163 hours)** including its initial
+implementation allowance. Total including final checks/support is about 11.1
+hours, within the 16-hour incremental ceiling; user pauses are excluded.
+See the final audit/snapshot for accounting. The extension occupies about 3.6 GB,
+far below the 500 GB ceiling. No agent or unified execution session remains open
+once closeout finishes. Historical resume/pause instructions below are history;
+a completed `--resume` may only verify/skip, never retrain sealed units.
+
+## Current: Fix 5A Assessment Resumed (2026-11-25 17:55 PST)
+
+The user requested continuation. Both paused checkpoint payloads/manifests and
+all 95 numerical source hashes pass; CUDA works, about 496 GB is free, and no
+duplicate worker remained. **Current worker: PID4747, tmux `plan19-fix5a`,
+`head-awac-rank-fix5a-v1-run6.log`** in the same phase3 directory. Resume
+verifies/skips the eight sealed units, then restores the first assessment
+path at n619/1024. The selection remains fixed; continue its remaining
+assessment scope and closeout only. About 4.79 active hours were charged
+before this resumption, excluding the user pause. Prior pause instructions
+below are historical and superseded by the user's resume request.
+
+## Current: Fix 5A Cleanly Paused For Node Use (2026-11-25 13:11 PST)
+
+**The node is released. Wait for the user's next resume instruction.**
+Worker PID7041 and tmux `plan19-fix5a` exited normally after the STOP request;
+NVIDIA reports no compute process. Current log is
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1-run5.log`.
+
+Eight of twelve mandatory new units are sealed. Both development paths and
+the selection are complete, without a retention correction. The first fresh
+assessment path is **TD replay, rank64, seed199101, n619/1024, stage collect**,
+unit `trajectory-35515deb6245`. Its midpoint (four held-out episodes/environment)
+has initial A 2/4 successes, return 29.820409, and moderate A 1/4, return 2.680148.
+These are an unsealed single-path preview, not final paired findings. Continue
+this path, then FD seed199101, FD seed199102, TD replay seed199102; do not tune
+the already sealed selection or rerun source controls.
+
+The parent and active-child CURRENT manifest/state checksums pass. Parent
+commit: `ba4f97e5207446a898173cc0f9a58694`; child:
+`83d84a27cd7945438d31f2ce1e70fbd4` (6,710,426 state bytes). All 95 frozen
+numerical hashes still match. All 279 focused tests passed after the saved
+success-video change. The notebook shows `paused` and retains the requested
+outcome-selected success link. No unified execution session or agent is open.
+
+The final invocation reports **17,230.245 charged seconds (4.7862 hours)**;
+the conservative saved restart ledger is authoritative. Keep the 16-hour active
+ceiling, include small support/reload gaps once during closeout, and exclude
+user pauses. Before restarting, check for an existing worker, then run from
+the project venv:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_head_rank --resume --clear-stop
+```
+
+Use a new invocation log if launching in tmux. Resume restores the explicit
+model override. At completion, add the actual-results conclusion, audit seals,
+source receipts/payloads and acquisition pairing, refresh acceptance snapshot
+to include the reporting/media changes, and update plan/handoff. No B, extra
+replicas or broader grid is authorized. Historical running entries below are
+superseded by this pause entry.
+
+## Current: Fix 5A Selection Sealed, Assessment Started (2026-11-25 12:19 PST)
+
+Eight of twelve mandatory new units are sealed. Both rank-64 development
+paths completed; no retention correction was indicated. The frozen selection
+is `selection-e58244573019`: ridge .1, FD coefficient12.142951965332031 in
+TD+FD and zero in TD replay, all other original settings unchanged. Initial-A
+development gaps against expanded T0 are -0.046585 for T+ and +0.165910 for
+F+; both meet the five-unit matching band. Both have initial A3/8 and moderate
+A0/8 successes. Their moderate-A returns are -19.989765 and -20.117650.
+
+The first fresh rank-64 assessment path (TD replay, seed199101) has started.
+Current worker remains PID7041 in tmux `plan19-fix5a`, run5.log. About3.93
+active hours are charged; measured remaining planning range is5.7--8.1 hours.
+Continue four assessment paths with sealed recipes, then actual-results
+conclusion/audit/closeout. Do not tune on these assessment outcomes. All279
+focused unit tests pass, including new camera recovery and video-link tests.
+Earlier entries below retain their historical process states only.
+
+## Current: Saved Success Clip Added; Fix 5A Continues (2026-11-25 11:19 PST)
+
+The user requested a successful final moderate-A recording beneath the
+preselected-video table, then continuation. First-layout preselection had
+captured failures only. An offline CPU producer recovered the original scored
+camera images by verified raw-pixel identities and assembled the TD-replay
+seed199101 endpoint success (`eval:7363326094351058254:102`). It is explicitly
+outcome-selected, not a new evaluation; the final-distribution layout has an
+open direct path. No top-down history was saved for that episode. The separate
+immutable media artifact is `head-awac-rank-fix5a-v1-success-example-v1` beside
+the extension root; its provenance and video hashes are sealed. Code is in
+`numerical_experiment/picar_saved_episode_video.py`; reporter and recovery
+tests pass (39 tests). All 95 scientific hashes still match.
+
+A brief clean checkpoint/reload made the link survive automatic refreshes.
+**Current worker: PID7041, tmux `plan19-fix5a`, run5.log** in the same parent
+directory. Run4 exited cleanly at n521 in midpoint evaluation; six units are
+sealed. Continue the original approved scope, without retraining controls or
+adding conditions. Count small support gaps once at final accounting. This
+entry supersedes the PID/log in the prior resume entry below.
+
+## Current: Fix 5A Resumed (2026-11-25 11:05 PST / 19:05 UTC)
+
+The user requested resumption. Both paused checkpoint manifests/payloads and
+all 95 numerical source hashes passed integrity checks. CUDA is available;
+approximately 496 GB is free. No prior worker remained. The new worker is
+Python PID **4693**, tmux session **`plan19-fix5a`**, with log
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1-run4.log`.
+It restored the rank-64 TD+FD development path at n423/1024, stage `label`;
+six units are sealed. The STOP flag was cleared by the resume CLI. Earlier
+pause notes below remain history, not a current instruction to stay stopped.
+
+Continue through the remaining FD development work, optional one correction,
+frozen selection and four assessment paths under the existing 16-hour active
+ceiling. Do not duplicate this worker. Source code/settings remain frozen;
+the user pause is not charged. The same resume command in the prior entry
+applies after any later halt, once the user authorizes continuation. Finish
+the results-specific conclusion, tests, source/artifact audit and closeout.
+
+## Current: Fix 5A Cleanly Paused At User Request (2026-11-25 17:44 UTC)
+
+**The node is released. Do not resume until the user asks.** The extension
+worker exited normally after its STOP request. Python PID 19419 is gone,
+tmux session `plan19-fix5a` has exited, and NVIDIA reports no compute process.
+The canonical notebook has refreshed and explicitly shows `paused`.
+
+Extension root:
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1`.
+Log: `head-awac-rank-fix5a-v1-run3.log` in the parent directory. Six of twelve
+mandatory new units are sealed. The first rank-64 TD-replay development path
+is complete at actual n1039: initial A 3/8, return 16.636658; moderate A 0/8,
+return -19.989765. Its initial-A retention gap against expanded T0 is
+-0.046585, within the declared five-unit band. The rank-64 TD+FD development
+path is checkpointed at **n423/1024**, stage `label`, before its midpoint.
+Partial outcomes are not fresh assessment or evidence of an FD/rank winner.
+
+Paused parent and active-child CURRENT manifests and state payload checksums
+were verified. Child commit is `5ab51850ac7d4e83888f854efb04943b` (5,593,337
+state bytes); parent commit is `99bab4b6e12447128b009edd93af8ebd`.
+All 95 frozen numerical source hashes still match. Report acceptance remains
+35 passing tests; the earlier combined suite was 273 passes before two added
+report tests. No sub-agent or unified execution session is running.
+
+Final invocation log reports **9,711.413 charged seconds (2.6976 hours)**;
+the saved conservative restart ledger is authoritative on resume. Preserve
+the 16-hour incremental ceiling, count support/reload gaps once at closeout,
+and exclude this user pause. Resume only after checking for another worker:
+
+```bash
+~/.venv/bin/python -u -m numerical_experiment.picar_head_rank --resume --clear-stop
+```
+
+That restores the recorded explicit model override and continues the same
+FD path, then the optional single development correction, frozen selection
+and four new assessment paths. It does not rerun sealed work. Tmux is an
+available execution choice, not a scientific requirement. Finish the actual
+results/conclusion, integrity audits, tests and plan/handoff closeout later;
+do not expand to B or new replicas. Historical running entries below are
+superseded by this pause entry.
+
+## Current: Fix 5A In Tmux, First Development Path Past Midpoint (2026-11-25)
+
+**Authoritative launch:** tmux session `plan19-fix5a`, Python PID **19419**;
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1-run3.log`.
+Earlier unified sessions 20765/8498 exited cleanly for reporting reloads;
+their logs are preserved. Do not start another worker while this session runs.
+Check progress and the live process/session before any resumption.
+
+The first rank64 TD-replay development trajectory is at about **581/1024
+incoming intervals**, 1.347 cumulative charged hours, five sealed units. Its
+midpoint at actual n525 retained initial A 2/2 (return 80.9104), moderate A
+0/2 (return -19.6976). These are development diagnostics, not final calibration.
+Expanded T0/F0 initial-A retention references are both 3/8, returns
+16.6832/16.7246. Six new training paths are still the whole approved scope;
+four old diagonal assessment paths are reused.
+
+The full reporter is now loaded, with an explicit unsealed held-out preview
+and a coarse measured remaining-time estimate after the first new path seals.
+Reporting tests are **35 passed**; the earlier combined focused suite was
+**273 passed** (two new reporting tests were then added). All **95 frozen
+numerical hashes** still match. No scientific source changed after admission.
+There are no open sub-agents. A sealed source/acceptance snapshot of 98 files
+is at `provenance/source-snapshot-v1` beneath the extension root.
+
+Continue monitoring the autonomous run through development, optional one
+retention correction and four assessment trajectories under the 16-hour cap.
+When complete, inspect paired rank/FD/interaction results, improve the final
+notebook conclusion with actual findings, audit all source/completion/state
+checks, update the plan and this handoff, and release GPU. Do not execute B or
+new replicas. Before finishing, include any post-pilot support/reload overhead
+in the final accounting (the runner's 240-second closeout reserve covers the
+small support gaps between recorded invocations). Original Fix 5 artifacts
+must remain unchanged. Restart command from the venv remains
+`python -u -m numerical_experiment.picar_head_rank --resume --clear-stop`.
+
+## Current: First Fix 5A Rank-64 Development Path Active (2026-11-25)
+
+Both diagonal endpoint expansions are sealed and verified to leave learner
+state unchanged. T0/F0 initial-A successes are both 3/8, with mean raw returns
+16.6832/16.7246; moderate-A successes are both 0/8, returns -20.1788/-19.8600.
+The first new path is TD replay, rank64, development seed 199301. At this
+check it has 44 incoming intervals and 92 accepted fits. EWC proposal
+influence and post-fit penalty are positive; no numerical error is reported.
+Five units are sealed, about .614 incremental hours charged. Worker session
+8498 / PID16792 and run2.log remain current. No agent remains open.
+
+After an unexpected halt, inspect root `progress.json` and check for an
+existing worker before launching `python -u -m numerical_experiment.picar_head_rank
+--resume --clear-stop` in the project venv. The autonomous script still has
+the remaining rank-64 development, optional single retention correction and
+four paired assessment paths to execute under the 16-hour cap. The expanded
+controls and numerical pilot need not be rerun. Keep all 95 frozen numerical
+source hashes unchanged; only reporting/docs may change during execution.
+
+## Current: Fix 5A Full Report Loaded, Calibration Resumed (2026-11-25)
+
+All **273 focused tests** pass. Both Sol agents are closed. The full report
+has been visually inspected and preserves every earlier notebook cell.
+The worker was cleanly paused to reload the reporting module, then resumed
+in unified exec session **8498**, Python PID **16792**. Current log is
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1-run2.log`;
+the original run.log preserves the first invocation and planned stop.
+
+Four units are sealed. The expanded T0 development endpoint has initial A
+3/8 successes, mean raw return 16.6832; moderate A 0/8, -20.1788. The source
+learner state was verified unchanged. The second F0 development expansion is
+active. Use the original model, archived source hashes, rank64 admission and
+16-hour incremental cap. Current charged total is about .51 hours; the six
+new training paths have not started yet. Progress and read-only diagnostics
+are now refreshed with the full Fix5A report. This entry supersedes the
+earlier request below to reload reporting. No extra phase is authorized.
+
+## Current: Fix 5A GPU Calibration Running (2026-11-25)
+
+The actual rank-64 resource pilot is sealed, all **36 extension numerical,
+source-integrity and scheduler tests pass**, and the real JSON report reads
+three pilot units plus six reused diagonal controls with rank-64 validation.
+GPU calibration is now running in unified exec session **20765**, Python
+PID **15612**, with about 6.9 GiB allocated on the RTX 4070. Log:
+`cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1-run.log`.
+The runner begins with expanded held-out development evaluations of the two
+sealed diagonal endpoints, then two new rank-64 development paths, optional
+bounded retention correction, and four new assessment paths. No B learning.
+
+The reporting agent is still finishing plots and tests. The working scaffold
+updates progress already; once reporting is finished, pause/resume the worker
+cleanly once to reload that reporting module. It is excluded from the frozen
+numerical fingerprint. Never edit the frozen numerical modules mid-run.
+Use `python -u -m numerical_experiment.picar_head_rank --resume --clear-stop`
+from the project venv for restart, after checking that no duplicate worker
+remains. Signal/STOP interruption uses the journal checkpoints.
+
+## Current: Fix 5A Resource Pilot Complete, Rank 64 Admitted (2026-11-25)
+
+The source-compatible initial Fisher and cached numerical/resource audit are
+sealed under `cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1`.
+All four tested ranks are numerically healthy. The initial full diagonal is
+bit-identical to the saved source geometry. Initial critic correlated trace
+coverage is 59.86% at rank 10, 92.95% at rank 32, and 97.65% at rank 64.
+Cached selected-recipe three-step fits are 11.05/11.54 ms for diagonal/rank-64
+TD replay and 32.18/32.86 ms for diagonal/rank-64 FD; retirement is about
+5.7--6.0 versus 7.9--8.0 ms. Rank 64 was admitted without a resource fallback.
+
+The profile invocation exited normally at 0.379 incremental hours, including
+0.375 hours of overlapping implementation/support time since 14:58:50 UTC.
+The remaining forecast is about 10--12.8 active hours under the 16-hour ceiling.
+Three units are sealed. The notebook currently has a working progress scaffold;
+the reporting agent is completing its full plots/tests before long GPU work.
+Do not interpret profile-complete as completion of development or assessment.
+
+Resume with `~/.venv/bin/python -u -m numerical_experiment.picar_head_rank
+--resume --clear-stop`. The launcher restores the recorded explicit model
+override automatically. Keep the existing numerical sources frozen; reporting
+alone may continue improving. The GPU has passed acceptance but no learning
+trajectory has started yet. A previous profile session 70502 exited cleanly.
+
+## Current: Fix 5A Authorized, Implementation In Progress (2026-11-25)
+
+The user instructed Sol to execute Fix 5A and authorized two parallel Sol
+agents for numerical audits and reporting. Implementation began at
+2026-11-25 14:58:50 UTC. CUDA execution on the RTX 4070 passed; all 89
+upstream numerical hashes and the theory notebook match. Approximately
+497 GB is free on the primary filesystem. The original Fix 5 stays sealed.
+
+New implementation lives in `numerical_experiment/picar_head_rank`. The
+runner and read-only source verification are being integrated; the numerical
+and reporting agents own separate files. No long experiment has started yet.
+The planned output is `cache/numerical_experiment/picar/phase3/head-awac-rank-fix5a-v1`.
+Keep the 16-hour incremental cap, including implementation/support time.
+Read the latest entry above the historical notes before restarting.
+
+## Next Design: Fix 5A Authored, Not Started (2026-11-25)
+
+The user approved the proposed correlated-EWC extension and requested only
+plan authoring in this turn. See [Phase 3 Fix 5A](plan19.md#plan19-phase3-fix5a).
+**Do not implement or execute until the user instructs Sol to proceed.** Sol
+owns all post-planning implementation, acceptance, calibration and execution;
+no return to Astra is required. Fix 5 remains complete and immutable.
+
+The new scope reuses its initialized model/data and four diagonal TD/FD
+assessment trajectories. Prefer EWC rank 64, with 32 as a documented resource
+fallback, paired under TD replay and TD+FD. Rebuild the wider initial Fisher
+from the same 515 training records; do not widen an already truncated factor
+or continue from trained diagonal endpoints. Keep the frozen heads-only
+architecture and A-only 1,024-interval law. Two positive-rank development paths
+and expanded eight-layout endpoint panels precede four new assessment paths
+on the original two seeds. At most one extra development correction is allowed
+within the 16-hour incremental ceiling (11--14-hour base forecast, including
+implementation). Retention, numerical checks, exact reuse contracts and
+exploratory interpretation are detailed in the amendment.
+
+Use a separate versioned extension runner/directory with `--resume`, source
+receipts and a new chronological notebook section. The old continuation API
+rejects completed parents; do not mark the old campaign incomplete. The
+current notebook has not been changed for this planning request. No experiment,
+implementation or profiling was started.
+
 ## Reporting Review: EWC Rank (2026-11-25)
 
 Fix 5 remains complete; no new experimental run was started. User requested
